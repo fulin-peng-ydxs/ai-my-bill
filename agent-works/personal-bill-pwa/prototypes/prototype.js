@@ -52,7 +52,13 @@ function openOverlay(id) {
 }
 
 function initOverlays() {
-  document.querySelectorAll('[data-open]').forEach(trigger => trigger.addEventListener('click', () => openOverlay(trigger.dataset.open)))
+  document.querySelectorAll('[data-open]').forEach(trigger => trigger.addEventListener('click', () => {
+    const overlay = document.getElementById(trigger.dataset.open)
+    if (overlay) overlay.__sourceTrigger = trigger
+    const sourceOverlay = trigger.closest('.overlay')
+    if (sourceOverlay && sourceOverlay !== overlay) closeOverlay(sourceOverlay)
+    openOverlay(trigger.dataset.open)
+  }))
   document.querySelectorAll('[data-close]').forEach(trigger => trigger.addEventListener('click', () => closeOverlay(trigger.closest('.overlay'))))
   document.querySelectorAll('.overlay').forEach(overlay => overlay.addEventListener('click', event => {
     if (event.target === overlay) closeOverlay(overlay)
@@ -96,21 +102,37 @@ function initCommonActions() {
 function initPageState() {
   const content = document.querySelector('[data-page-content]')
   if (!content) return
-  const state = new URLSearchParams(location.search).get('state') || 'ready'
+  const params = new URLSearchParams(location.search)
+  const state = params.get('state') || 'ready'
   if (state === 'ready') return
+  const page = document.body.dataset.page || 'generic'
+  if (page === 'login' && state === 'empty') return
   const definitions = {
     loading: ['正在加载', '正在读取最新数据，请稍候。', ''],
-    empty: ['暂时没有数据', '完成第一笔记录后，这里会显示内容。', '去记一笔'],
+    empty: ['暂时没有数据', '当前区域还没有可展示的内容。', '去记一笔'],
     error: ['数据加载失败', '网络或服务暂时不可用，请重试。', '重新加载'],
     permission: ['无权访问', '当前账号没有访问此页面的权限。', '返回登录']
   }
   const selected = definitions[state] || definitions.error
-  content.hidden = true
+  if (state === 'permission') content.hidden = true
+  const defaultRegions = { reports: 'report', details: 'ledger', profile: 'dictionary', admin: 'admin' }
+  const regionName = params.get('region') || defaultRegions[page]
+  const emptyCopy = {
+    report: ['暂无可统计账目', '当前范围没有有效收支；可调整筛选或先记一笔。', '去记一笔'],
+    ledger: ['当前条件没有明细', '切换账目类型或清除筛选后再试。', '清除筛选'],
+    dictionary: ['尚无字典项', '新增第一项后即可在填报中快速选择。', '新增一项'],
+    admin: ['没有匹配的管理数据', '调整搜索或状态筛选后再试。', '清除筛选']
+  }
+  if (state === 'empty' && emptyCopy[regionName]) selected.splice(0, selected.length, ...emptyCopy[regionName])
+  const region = regionName ? document.querySelector(`[data-state-region="${regionName}"]`) : null
+  if (state !== 'permission' && region?.closest('.overlay')) openOverlay(region.closest('.overlay').id)
+  const target = state === 'permission' || !region ? content.parentElement : region
   const block = document.createElement('section')
-  block.className = `state page-state ${state === 'error' || state === 'permission' ? 'error' : ''}`
-  const href = state === 'empty' ? 'expense-entry.html' : state === 'permission' ? 'login.html' : `${location.pathname.split('/').pop()}`
+  block.className = `state region-state ${state === 'error' || state === 'permission' ? 'error' : ''}`
+  const href = state === 'empty' && regionName === 'report' ? 'expense-entry.html' : state === 'permission' ? 'login.html' : `${location.pathname.split('/').pop()}`
   block.innerHTML = `<div class="state-stack"><div><strong>${selected[0]}</strong><span>${selected[1]}</span></div>${selected[2] ? `<a class="btn ${state === 'error' ? 'primary' : ''}" href="${href}">${selected[2]}</a>` : '<div class="skeleton-line" aria-hidden="true"></div>'}</div>`
-  content.parentElement.insertBefore(block, content)
+  if (state === 'loading' || state === 'empty') [...target.children].forEach(child => { child.hidden = true })
+  target.prepend(block)
 }
 
 function initMoneyForms() {
@@ -194,11 +216,12 @@ function initEntrySubmit() {
     const shell = button.closest('[data-entry-shell]')
     const scope = shell?.querySelector('[data-entry-panel]:not([hidden])') || button.closest('.sheet, .dialog') || document
     if (!validateEntry(scope)) return
-    button.disabled = true
+    const submitGroup = button.closest('[data-entry-shell]')?.querySelectorAll('[data-save-entry]') || [button]
+    submitGroup.forEach(item => { item.disabled = true })
     const original = button.textContent
     button.textContent = '保存中…'
     setTimeout(() => {
-      button.disabled = false
+      submitGroup.forEach(item => { item.disabled = false })
       button.textContent = original
       const type = scope.dataset.entryPanel === 'income' || button.dataset.saveEntry === 'edit-income' ? '收入' : '支出'
       const message = button.dataset.saveEntry === 'continue'
@@ -210,7 +233,7 @@ function initEntrySubmit() {
         fields.forEach(selector => { const input = scope.querySelector(selector); if (input) input.value = '' })
       }
       if (button.closest('.overlay')) closeOverlay(button.closest('.overlay'))
-    }, 350)
+    }, 1200)
   }))
 }
 
@@ -292,7 +315,7 @@ function initReports() {
     chart.innerHTML = view[2].map((item, index) => {
       const [label, value, height] = item.split('|')
       const seriesClass = scope === 'overview' && label.includes('支出') ? ' expense-series' : ''
-      return `<button type="button" class="bar${index === 0 ? ' active' : ''}${seriesClass}" style="--h:${height}%" data-dimension="${key}" data-label="${label}" data-value="${value}" aria-label="${label}，${value}"><span>${label}</span></button>`
+      return `<button type="button" class="bar${index === 0 ? ' active' : ''}${seriesClass}" style="--h:${height}%" data-dimension="${key}" data-label="${label}" data-value="${label}" data-metric="${value}" data-scope="${scope}" aria-label="${label}，${value}"><span>${label}</span></button>`
     }).join('')
     initReportDrill(chart)
     const ranking = document.querySelector('[data-report-ranking]')
@@ -301,27 +324,44 @@ function initReports() {
     if (ranking) ranking.innerHTML = view[2].slice(0, 3).map((item, index) => {
       const [label, value] = item.split('|')
       const sign = scope === 'expense' ? '−' : scope === 'income' ? '+' : ''
-      return `<button class="rank-row" data-drill data-dimension="${key}" data-value="${label}"><span class="rank-index">0${index + 1}</span><span>${label}</span><strong class="rank-value ${scope === 'expense' ? 'expense-amount' : scope === 'income' ? 'income-amount' : ''}">${sign}${isNaN(Number(value)) ? value : `¥${Number(value).toLocaleString('zh-CN', { minimumFractionDigits: 2 })}`}</strong></button>`
+      return `<button class="rank-row" data-drill data-scope="${scope}" data-dimension="${key}" data-value="${label}" data-metric="${value}"><span class="rank-index">0${index + 1}</span><span>${label}</span><strong class="rank-value ${scope === 'expense' ? 'expense-amount' : scope === 'income' ? 'income-amount' : ''}">${sign}${isNaN(Number(value)) ? value : `¥${Number(value).toLocaleString('zh-CN', { minimumFractionDigits: 2 })}`}</strong></button>`
     }).join('')
     initReportDrill(ranking || document)
   }
-  const renderScope = nextScope => {
+  const renderScope = (nextScope, selectedDimension) => {
     scope = nextScope
+    sessionStorage.setItem('bill-report-scope', scope)
     document.querySelectorAll('[data-report-scope]').forEach(button => {
       const active = button.dataset.reportScope === scope
       button.classList.toggle('active', active)
       button.setAttribute('aria-pressed', String(active))
     })
     const dimensions = document.querySelector('[data-report-dimensions]')
-    dimensions.innerHTML = reportScopes[scope].map((item, index) => `<button class="chip${index === 0 ? ' active' : ''}" data-report-dimension="${item.key}" aria-pressed="${index === 0}">${item.label}</button>`).join('')
+    const validDimension = reportScopes[scope].some(item => item.key === selectedDimension) ? selectedDimension : reportScopes[scope][0].key
+    dimensions.innerHTML = reportScopes[scope].map(item => `<button class="chip${item.key === validDimension ? ' active' : ''}" data-report-dimension="${item.key}" aria-pressed="${item.key === validDimension}">${item.label}</button>`).join('')
     dimensions.querySelectorAll('[data-report-dimension]').forEach(button => button.addEventListener('click', () => {
       dimensions.querySelectorAll('[data-report-dimension]').forEach(item => { item.classList.toggle('active', item === button); item.setAttribute('aria-pressed', String(item === button)) })
       render(button.dataset.reportDimension)
     }))
-    render(reportScopes[scope][0].key)
+    render(validDimension)
   }
   document.querySelectorAll('[data-report-scope]').forEach(button => button.addEventListener('click', () => renderScope(button.dataset.reportScope)))
-  renderScope('overview')
+  const params = new URLSearchParams(location.search)
+  let restored = null
+  try { restored = JSON.parse(params.get('restore') || 'null') } catch (error) { restored = null }
+  const initialScope = reportScopes[restored?.scope] ? restored.scope : sessionStorage.getItem('bill-report-scope') || 'overview'
+  renderScope(initialScope, restored?.dimension)
+  if (restored) {
+    const summary = document.querySelector('[data-filter-summary-text]')
+    if (summary && typeof restored.filters === 'string') summary.textContent = restored.filters
+    if (Array.isArray(restored.filterValues)) {
+      document.querySelectorAll('#filter-sheet input, #filter-sheet select').forEach((control, index) => {
+        if (restored.filterValues[index] !== undefined) control.value = restored.filterValues[index]
+      })
+      document.querySelector('[data-report-filter-scope]')?.dispatchEvent(new Event('change'))
+    }
+    requestAnimationFrame(() => window.scrollTo(0, Number(restored.scrollY) || 0))
+  }
 }
 
 function initReportDrill(root = document) {
@@ -331,7 +371,12 @@ function initReportDrill(root = document) {
     item.addEventListener('click', () => {
     const dimension = item.dataset.dimension || 'product'
     const value = item.dataset.value || item.dataset.label || ''
-    location.href = `bill-details.html?source=reports&dimension=${encodeURIComponent(dimension)}&value=${encodeURIComponent(value)}`
+    const scope = item.dataset.scope || document.querySelector('[data-report-scope].active')?.dataset.reportScope || 'overview'
+    const filterControls = [...document.querySelectorAll('#filter-sheet input, #filter-sheet select')]
+    const filters = document.querySelector('[data-filter-summary-text]')?.textContent || '本月 · 全部账目'
+    const context = { scope, dimension, value, range: '2026-08-01/2026-08-31', filters, filterValues: filterControls.map(control => control.value), scrollY: window.scrollY }
+    sessionStorage.setItem('bill-report-return', JSON.stringify(context))
+    location.href = `bill-details.html?source=reports&scope=${encodeURIComponent(scope)}&dimension=${encodeURIComponent(dimension)}&value=${encodeURIComponent(value)}&range=${encodeURIComponent(context.range)}&filters=${encodeURIComponent(filters)}`
     })
   })
 }
@@ -341,7 +386,13 @@ function initBillDetails() {
   const params = new URLSearchParams(location.search)
   if (context && params.get('source') === 'reports') {
     context.hidden = false
-    context.querySelector('span').textContent = `来自报表 · ${params.get('dimension') || '筛选'}：${params.get('value') || '全部'}`
+    context.querySelector('span').textContent = `来自${params.get('scope') || '全部'}报表 · ${params.get('dimension') || '筛选'}：${params.get('value') || '全部'} · ${params.get('range') || ''}`
+    const back = context.querySelector('[data-return-reports]')
+    back?.addEventListener('click', event => {
+      event.preventDefault()
+      const saved = sessionStorage.getItem('bill-report-return')
+      location.href = `reports.html?restore=${encodeURIComponent(saved || '')}`
+    })
   }
   document.querySelectorAll('[data-bill-tab]').forEach(button => button.addEventListener('click', () => {
     document.querySelectorAll('[data-bill-tab]').forEach(item => {
@@ -353,6 +404,25 @@ function initBillDetails() {
   document.querySelectorAll('[data-restore]').forEach(button => button.addEventListener('click', () => {
     button.closest('.list-item')?.remove()
     showToast('账单已恢复，并重新计入报表')
+  }))
+  const linkedTrash = [...document.querySelectorAll('[data-view="trash"] [data-ledger-item="expense"]')].find(item => item.textContent.includes('旧雨伞'))
+  if (linkedTrash) {
+    const meta = linkedTrash.querySelector('.item-meta')
+    if (meta) meta.textContent = '8月3日移入 · 关联调整 1 条已冻结 · 不参与报表'
+    const purge = linkedTrash.querySelector('[data-open="purge-dialog"]')
+    if (purge) purge.dataset.open = 'purge-linked-dialog'
+  }
+  document.querySelectorAll('[data-revoke-adjustment]').forEach(button => button.addEventListener('click', () => {
+    const row = [...document.querySelectorAll('[data-ledger-item="adjustment"]')].find(item => item.textContent.includes('早餐包部分退款'))
+    row?.remove()
+    closeOverlay(button.closest('.overlay'))
+    showToast('调整已撤销，原支出净额与报表已刷新')
+  }))
+  document.querySelectorAll('[data-purge-confirm]').forEach(button => button.addEventListener('click', () => {
+    const overlay = button.closest('.overlay')
+    overlay?.__sourceTrigger?.closest('.list-item')?.remove()
+    closeOverlay(overlay)
+    showToast(button.dataset.purgeConfirm)
   }))
   document.querySelectorAll('[data-ledger-type]').forEach(button => button.addEventListener('click', () => {
     const type = button.dataset.ledgerType
@@ -388,13 +458,163 @@ function initAdmin() {
 function initDictionaries() {
   const title = document.querySelector('[data-dictionary-title]')
   const list = document.querySelector('[data-dictionary-list]')
+  let currentName = ''
+  const renderList = name => {
+    list.innerHTML = `<div class="list-item" data-dictionary-row><div><input class="control" value="${name}示例一" aria-label="${name}名称"><div class="item-meta">历史引用保留</div></div><div class="row-actions"><button data-dictionary-move>上移</button><button data-dictionary-toggle>停用</button></div></div><div class="list-item" data-dictionary-row data-disabled="true"><div><input class="control" value="${name}示例二" aria-label="${name}名称"><div class="item-meta">已停用项不进入新填报</div></div><div class="row-actions"><button data-dictionary-move>上移</button><button data-dictionary-toggle>恢复</button></div></div>`
+    list.querySelectorAll('input').forEach(input => input.addEventListener('change', () => showToast(`${name}已改名并刷新引用展示`)))
+    list.querySelectorAll('[data-dictionary-move]').forEach(button => button.addEventListener('click', () => {
+      const row = button.closest('[data-dictionary-row]')
+      if (row.previousElementSibling) list.insertBefore(row, row.previousElementSibling)
+      showToast(`${name}排序已更新`)
+    }))
+    list.querySelectorAll('[data-dictionary-toggle]').forEach(button => button.addEventListener('click', () => {
+      const row = button.closest('[data-dictionary-row]')
+      const disabled = row.dataset.disabled === 'true'
+      row.dataset.disabled = String(!disabled)
+      button.textContent = disabled ? '停用' : '恢复'
+      showToast(`${name}${disabled ? '已恢复' : '已停用'}`)
+    }))
+  }
   document.querySelectorAll('[data-dictionary]').forEach(button => button.addEventListener('click', () => {
     if (!title || !list) return
     const name = button.dataset.dictionary
+    currentName = name
     title.textContent = `${name}管理`
-    list.innerHTML = `<div class="list-item"><div><div class="item-title">${name}示例一</div><div class="item-meta">可改名、排序或停用；历史引用保留</div></div><span class="tag success">启用</span></div><div class="list-item"><div><div class="item-title">${name}示例二</div><div class="item-meta">已停用项不进入新填报</div></div><span class="tag">已停用</span></div>`
+    renderList(name)
     openOverlay('dictionary-sheet')
   }))
+  document.querySelector('[data-dictionary-add]')?.addEventListener('click', () => {
+    const value = document.querySelector('[data-dictionary-new]')?.value.trim()
+    if (!value) return showToast(`请输入${currentName}名称`)
+    const row = document.createElement('div')
+    row.className = 'list-item'
+    const content = document.createElement('div')
+    const itemTitle = document.createElement('div')
+    itemTitle.className = 'item-title'
+    itemTitle.textContent = value
+    const meta = document.createElement('div')
+    meta.className = 'item-meta'
+    meta.textContent = '刚刚新增 · 启用'
+    const status = document.createElement('span')
+    status.className = 'tag success'
+    status.textContent = '启用'
+    content.append(itemTitle, meta)
+    row.append(content, status)
+    list.prepend(row)
+    document.querySelector('[data-dictionary-new]').value = ''
+    showToast(`${currentName}“${value}”已新增`)
+  })
+  const requested = new URLSearchParams(location.search).get('dictionary')
+  if (requested) [...document.querySelectorAll('[data-dictionary]')].find(button => button.dataset.dictionary === requested)?.click()
+}
+
+function initReportFilters() {
+  const select = document.querySelector('[data-report-filter-scope]')
+  if (!select) return
+  const update = () => {
+    document.querySelectorAll('[data-filter-for]').forEach(field => {
+      const scopes = field.dataset.filterFor.split(' ')
+      field.hidden = !scopes.includes(select.value)
+      if (field.hidden) field.querySelectorAll('input, select').forEach(input => { input.value = input.tagName === 'SELECT' ? input.options[0].value : '' })
+    })
+  }
+  select.addEventListener('change', update)
+  update()
+}
+
+function initProfileActions() {
+  document.querySelector('[data-cycle-report-range]')?.addEventListener('click', event => {
+    const value = event.currentTarget.querySelector('.setting-value')
+    const ranges = ['本月', '上月', '今年']
+    value.textContent = `${ranges[(ranges.indexOf(value.textContent.split(' · ')[0]) + 1) % ranges.length]} · 已保存`
+    showToast('报表默认范围已更新')
+  })
+  document.querySelector('[data-export-profile]')?.addEventListener('click', event => {
+    const value = event.currentTarget.querySelector('.setting-value')
+    value.textContent = '准备中…'
+    setTimeout(() => { value.textContent = 'CSV 已生成'; showToast('个人收支数据已生成') }, 600)
+  })
+  document.querySelector('[data-password-save]')?.addEventListener('click', event => {
+    const sheet = event.currentTarget.closest('.sheet')
+    if (!validateEntry(sheet)) return
+    const values = [...sheet.querySelectorAll('input')].map(input => input.value)
+    if (values[1] !== values[2]) {
+      sheet.querySelector('[data-password-confirm]').closest('.field').classList.add('invalid')
+      return
+    }
+    closeOverlay(sheet.closest('.overlay'))
+    showToast('密码已更新，其他会话已失效')
+  })
+}
+
+function initAdminActions() {
+  document.querySelectorAll('[data-user-detail]').forEach(button => button.addEventListener('click', () => openOverlay('user-detail-sheet')))
+  document.querySelectorAll('[data-user-actions]').forEach(button => button.addEventListener('click', () => openOverlay('user-actions-sheet')))
+  document.querySelectorAll('[data-default-edit]').forEach(button => button.addEventListener('click', () => {
+    const sheet = document.querySelector('#default-item-sheet .sheet')
+    const row = button.closest('tr')
+    sheet.querySelector('[data-default-type]').value = row.children[0].textContent.trim()
+    sheet.querySelector('[data-default-name]').value = row.children[1].textContent.trim()
+    sheet.__editingRow = row
+    openOverlay('default-item-sheet')
+  }))
+  document.querySelector('[data-default-add]')?.addEventListener('click', () => {
+    const sheet = document.querySelector('#default-item-sheet .sheet')
+    sheet.querySelector('[data-default-name]').value = ''
+    sheet.__editingRow = null
+    openOverlay('default-item-sheet')
+  })
+  document.querySelectorAll('[data-default-toggle]').forEach(button => button.addEventListener('click', toggleDefaultState))
+  document.querySelector('[data-default-save]')?.addEventListener('click', event => {
+    const sheet = event.currentTarget.closest('.sheet')
+    if (!validateEntry(sheet)) return
+    const name = sheet.querySelector('[data-default-name]').value.trim()
+    const type = sheet.querySelector('[data-default-type]').value
+    const editingRow = sheet.__editingRow
+    if (editingRow) {
+      editingRow.children[0].textContent = type
+      editingRow.children[1].textContent = name
+    } else {
+      const body = document.querySelector('[data-default-table-body]')
+      const row = document.createElement('tr')
+      row.innerHTML = '<td></td><td></td><td></td><td><span class="tag success">启用</span></td><td>新用户</td><td><div class="row-actions"><button data-default-edit>编辑</button><button data-default-toggle>停用</button></div></td>'
+      row.children[0].textContent = type
+      row.children[1].textContent = name
+      row.children[2].textContent = String(body.children.length + 1)
+      body.appendChild(row)
+      row.querySelector('[data-default-edit]').addEventListener('click', () => {
+        sheet.querySelector('[data-default-type]').value = row.children[0].textContent.trim()
+        sheet.querySelector('[data-default-name]').value = row.children[1].textContent.trim()
+        sheet.__editingRow = row
+        openOverlay('default-item-sheet')
+      })
+      row.querySelector('[data-default-toggle]').addEventListener('click', toggleDefaultState)
+    }
+    sheet.__editingRow = null
+    closeOverlay(sheet.closest('.overlay'))
+    showToast('默认字典项已保存，仅影响之后创建的用户')
+  })
+  document.querySelectorAll('[data-reset-password]').forEach(button => button.addEventListener('click', () => {
+    const result = document.querySelector('[data-reset-result]')
+    if (result) { result.hidden = false; result.textContent = '新临时密码：Q7mK4pV9xT2rN6zA（仅本次展示，24 小时有效）' }
+    showToast('旧会话已失效，重置动作已写入日志')
+  }))
+  document.querySelectorAll('[data-disable-user]').forEach(button => button.addEventListener('click', () => {
+    const row = document.querySelector('[data-user-row]')
+    const tag = row?.querySelector('.tag')
+    if (tag) { tag.textContent = '停用'; tag.className = 'tag warning' }
+    closeOverlay(button.closest('.overlay'))
+    showToast('用户已停用，旧会话已失效，操作已写入日志')
+  }))
+}
+
+function toggleDefaultState(event) {
+  const button = event.currentTarget
+  button.textContent = button.textContent === '停用' ? '恢复' : '停用'
+  const tag = button.closest('tr').querySelector('.tag')
+  tag.textContent = button.textContent === '恢复' ? '已停用' : '启用'
+  tag.classList.toggle('success', button.textContent !== '恢复')
+  showToast('默认字典状态已更新，仅影响之后创建的用户')
 }
 
 function initFilters() {
@@ -431,4 +651,7 @@ document.addEventListener('DOMContentLoaded', () => {
   initAdmin()
   initDictionaries()
   initFilters()
+  initReportFilters()
+  initAdminActions()
+  initProfileActions()
 })

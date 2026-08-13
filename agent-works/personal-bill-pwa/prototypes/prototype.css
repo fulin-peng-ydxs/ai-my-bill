@@ -109,7 +109,7 @@ textarea.control { min-height: 78px; resize: vertical; }
 .action-row { display: flex; gap: 8px; flex-wrap: wrap; }
 .action-row .grow { flex: 1; }
 
-.theme-segment { display: inline-grid; grid-template-columns: repeat(3, 1fr); gap: 3px; padding: 3px; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface-2); }
+.theme-segment { display: inline-grid; grid-template-columns: repeat(3, minmax(44px, 1fr)); gap: 3px; padding: 3px; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface-2); }
 .theme-segment button { min-height: 44px; border: 0; border-radius: 7px; background: transparent; color: var(--muted); padding: 8px 10px; cursor: pointer; font-size: 12px; }
 .theme-segment button.active { background: var(--surface); color: var(--text); box-shadow: var(--control-shadow); font-weight: 650; }
 
@@ -188,6 +188,7 @@ textarea.control { min-height: 78px; resize: vertical; }
 .state strong { color: var(--text); display: block; margin-bottom: 5px; }
 .state.error strong { color: var(--danger); }
 .page-state { min-height: 280px; margin-top: 24px; }
+.region-state { min-height: 140px; margin-bottom: 12px; }
 .page-state[hidden], [data-view][hidden], [data-admin-panel][hidden], [data-ledger-empty][hidden], [data-ledger-item][hidden] { display: none; }
 .skeleton-line { width: min(280px, 80%); height: 12px; border-radius: 999px; background: var(--surface-2); }
 .state-stack { display: grid; place-items: center; gap: 12px; }
@@ -265,7 +266,7 @@ td.amount { text-align: right; font-family: var(--mono); }
   .table-wrap { min-height: 0; }
   .mobile-only { display: inline-grid; }
   .admin-topbar .caption { display: none; }
-  .admin-topbar .theme-segment button { padding-inline: 7px; }
+  .admin-topbar .theme-segment button { min-width: 44px; padding-inline: 4px; }
   .metric-list { grid-template-columns: 1fr; }
 }
 
