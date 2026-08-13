@@ -5,7 +5,6 @@ const icons = {
   user: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>',
   filter: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M7 12h10m-7 6h4"/></svg>',
   close: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg>',
-  pin: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s-6-5.3-6-10a6 6 0 1 1 12 0c0 4.7-6 10-6 10Z"/><circle cx="12" cy="11" r="2.5"/></svg>',
   refresh: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5"/><path d="M18 12a6 6 0 0 0-10.2-4.3L4 12m2 0a6 6 0 0 0 10.2 4.3L20 12"/></svg>'
 }
 
@@ -125,15 +124,16 @@ function initMoneyForms() {
     if (!price || !quantity) return
     let paidTouched = false
     const update = () => {
-      const amount = Math.round((Number(price.value || 0) * Number(quantity.value || 0) + Number.EPSILON) * 100) / 100
-      if (calculated) calculated.textContent = `¥${amount.toFixed(2)}`
-      if (paid && !paidTouched) paid.value = amount.toFixed(2)
-      const paidAmount = Number(paid?.value || amount)
-      if (total) total.textContent = `¥${paidAmount.toFixed(2)}`
+      const amountCents = multiplyDecimalToCents(price.value, quantity.value)
+      const amount = formatCents(amountCents)
+      if (calculated) calculated.textContent = `¥${amount}`
+      if (paid && !paidTouched) paid.value = amount
+      const paidCents = decimalToScaledInteger(paid?.value || amount, 2)
+      if (total) total.textContent = `¥${formatCents(paidCents)}`
       if (difference) {
-        const delta = Math.round((paidAmount - amount + Number.EPSILON) * 100) / 100
-        difference.textContent = delta === 0 ? '与计算金额一致' : `与计算金额相差 ¥${Math.abs(delta).toFixed(2)}`
-        difference.style.color = delta === 0 ? 'var(--muted)' : 'var(--warning)'
+        const deltaCents = paidCents - amountCents
+        difference.textContent = deltaCents === 0n ? '与计算金额一致' : `与计算金额相差 ¥${formatCents(deltaCents < 0n ? -deltaCents : deltaCents)}`
+        difference.style.color = deltaCents === 0n ? 'var(--muted)' : 'var(--warning)'
       }
     }
     paid?.addEventListener('input', () => { paidTouched = true; update() })
@@ -143,14 +143,49 @@ function initMoneyForms() {
   })
 }
 
+function decimalToScaledInteger(rawValue, scale) {
+  const normalized = String(rawValue || '0').trim()
+  if (!/^\d+(\.\d+)?$/.test(normalized)) return 0n
+  const [integer, fraction = ''] = normalized.split('.')
+  const padded = `${fraction}${'0'.repeat(scale)}`.slice(0, scale)
+  return BigInt(integer) * (10n ** BigInt(scale)) + BigInt(padded || '0')
+}
+
+function multiplyDecimalToCents(priceValue, quantityValue) {
+  const priceUnits = decimalToScaledInteger(priceValue, 4)
+  const quantityUnits = decimalToScaledInteger(quantityValue, 3)
+  const raw = priceUnits * quantityUnits
+  const divisor = 100000n
+  return (raw + divisor / 2n) / divisor
+}
+
+function formatCents(cents) {
+  const whole = cents / 100n
+  return `${whole}.${String(cents % 100n).padStart(2, '0')}`
+}
+
 function validateEntry(scope) {
   let valid = true
   scope.querySelectorAll('[data-required]').forEach(input => {
-    const invalid = !input.value.trim() || (input.dataset.positive === 'true' && Number(input.value) <= 0) || (input.dataset.nonnegative === 'true' && Number(input.value) < 0)
+    const numeric = input.dataset.scale !== undefined
+    const decimalPattern = numeric ? new RegExp(`^\\d+(?:\\.\\d{1,${input.dataset.scale}})?$`) : null
+    const invalid = !input.value.trim()
+      || (numeric && !decimalPattern.test(input.value.trim()))
+      || (input.dataset.positive === 'true' && Number(input.value) <= 0)
+      || (input.dataset.nonnegative === 'true' && Number(input.value) < 0)
+      || (input.dataset.max && Number(input.value) > Number(input.dataset.max))
     input.closest('.field')?.classList.toggle('invalid', invalid)
     if (invalid && valid) input.focus()
     valid = valid && !invalid
   })
+  const price = scope.querySelector('[data-price]')
+  const quantity = scope.querySelector('[data-quantity]')
+  if (price && quantity && multiplyDecimalToCents(price.value, quantity.value) > 99999999999n) {
+    price.closest('.field')?.classList.add('invalid')
+    quantity.closest('.field')?.classList.add('invalid')
+    price.focus()
+    valid = false
+  }
   return valid
 }
 
@@ -249,6 +284,18 @@ function initAdmin() {
     closeOverlay(document.getElementById('admin-nav-sheet'))
   }
   document.querySelectorAll('[data-admin-nav]').forEach(button => button.addEventListener('click', () => switchPanel(button.dataset.adminNav)))
+  document.querySelectorAll('[data-create-user]').forEach(button => button.addEventListener('click', () => {
+    const dialog = button.closest('.dialog')
+    if (!validateEntry(dialog)) return
+    button.disabled = true
+    button.textContent = '创建中…'
+    setTimeout(() => {
+      button.disabled = false
+      button.textContent = '创建用户'
+      closeOverlay(button.closest('.overlay'))
+      showToast('用户已创建；临时密码：A7kP9mQ2xR4tV8zN（仅本次展示）')
+    }, 350)
+  }))
 }
 
 function initDictionaries() {
@@ -260,24 +307,6 @@ function initDictionaries() {
     title.textContent = `${name}管理`
     list.innerHTML = `<div class="list-item"><div><div class="item-title">${name}示例一</div><div class="item-meta">可改名、排序或停用；历史引用保留</div></div><span class="tag success">启用</span></div><div class="list-item"><div><div class="item-title">${name}示例二</div><div class="item-meta">已停用项不进入新填报</div></div><span class="tag">已停用</span></div>`
     openOverlay('dictionary-sheet')
-  }))
-}
-
-function initLocationPrototype() {
-  document.querySelectorAll('[data-locate]').forEach(button => button.addEventListener('click', () => {
-    button.disabled = true
-    const original = button.innerHTML
-    button.textContent = '定位中…'
-    setTimeout(() => {
-      button.disabled = false
-      button.innerHTML = original
-      initIcons()
-      showToast('已选择“当前位置示例”；服务商与坐标系仍待确认')
-    }, 350)
-  }))
-  document.querySelectorAll('[data-map-choice]').forEach(button => button.addEventListener('click', () => {
-    document.querySelectorAll('[data-map-choice]').forEach(item => item.classList.toggle('active', item === button))
-    document.querySelector('[data-map-result]').textContent = `已选：${button.textContent.trim()}`
   }))
 }
 
@@ -313,6 +342,5 @@ document.addEventListener('DOMContentLoaded', () => {
   initBillDetails()
   initAdmin()
   initDictionaries()
-  initLocationPrototype()
   initFilters()
 })

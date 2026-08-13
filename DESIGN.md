@@ -155,7 +155,7 @@ Key Characteristics：
 - PWA `theme-color` 和阻止首屏闪烁的同步脚本可在构建产物中内联由主题 token 生成的值；它们不得成为另一套人工维护的颜色事实源。
 - 铜橙不承担普通主操作，避免与靛蓝争夺主层级。
 - 绿色只用于成功、正常和健康状态，禁止重新作为按钮、导航、焦点或图表首序列的主题色。
-- 红色只用于失败和破坏性动作；本产品第一期没有收入/支出双向账目，不赋予红绿财务涨跌含义。
+- 红色只用于失败和破坏性动作；当前已确认的消费范围不赋予红绿财务涨跌含义。收入板块确认后，应以标签、正负号和非红绿单一色彩共同区分收支，不能破坏状态色语义。
 - 图表分类色表达“维度身份”，不能仅依赖颜色传达选中、异常或排序；必须辅以标签、数值、纹理或位置。
 - 夜晚模式不是白天模式的简单反相。必须分别校验正文、辅助文字、边框、焦点、禁用态、图表网格和浮层对比度。
 - 正文与背景目标达到 WCAG AA；焦点环不得被相邻边框吞没。
@@ -249,6 +249,7 @@ Key Characteristics：
 | `ProductCombobox` | 商品搜索、最近使用、快捷新增和判重 | 商品名规范化与租户内唯一规则统一消费领域 helper |
 | `FormField` | 标签、控件、辅助说明、校验错误 | 错误在字段附近呈现，不只弹 toast |
 | `PaymentMethodPicker` | 支付方式选择 | 最近使用优先，完整列表可搜索；停用项不用于新记录 |
+| `LocationLabelPicker` | 可选地点文本标签 | 第一期只消费当前租户字典，不请求定位、不展示地图占位；精准位置属于后期增强 |
 | `BillListItem` | 手机账单摘要 | 商品为主、金额为次主；日期、单位、支付方式弱化；整行可进入详情 |
 | `FilterSheet` | 手机组合筛选 | 使用底部抽屉；应用后明确展示已生效条件和清除入口 |
 | `AppDataTable` | 桌面管理表格 | 表头稳定、表体滚动、分页和操作列稳定；不用于手机核心账单流 |
@@ -448,7 +449,7 @@ Key Characteristics：
 | pageKey | 页面 | 原型 | 主任务 | 主要组件 |
 | --- | --- | --- | --- | --- |
 | `login` | 登录与安装 | `auth` | 完成安全登录并理解安装方式 | `ThemeModeControl` / `AppStateBlock` |
-| `expense-entry` | 记一笔 | `quick-entry` | 快速保存商品消费明细 | `ProductCombobox` / `MoneySummary` / `PaymentMethodPicker` |
+| `expense-entry` | 记一笔 | `quick-entry` | 快速保存商品消费明细 | `ProductCombobox` / `MoneySummary` / `PaymentMethodPicker` / `LocationLabelPicker` |
 | `reports` | 消费报表 | `dashboard` | 分析并下钻消费数据 | `MoneySummary` / `ChartPanel` / `FilterSheet` |
 | `bill-details` | 账单明细 | `list` | 查询和纠正原始账单 | `BillListItem` / `FilterSheet` / `AppDrawer` |
 | `profile-settings` | 我的 | `settings` | 管理字典、偏好和个人数据 | `ThemeModeControl` / `AppDrawer` / `AppDialog` |

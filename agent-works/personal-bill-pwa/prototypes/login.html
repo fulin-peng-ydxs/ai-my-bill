@@ -30,13 +30,13 @@
             </div>
           </div>
           <form id="login-form">
-            <div class="field"><label for="account">账号标识（类型待 B1 确认）</label><input id="account" class="control" autocomplete="username" placeholder="手机号、邮箱或用户名待确认" value="用户示例 A"></div>
-            <div class="field"><label for="password">认证凭据</label><input id="password" class="control" type="password" autocomplete="current-password" placeholder="输入认证凭据" value="12345678"><span class="field-help">开通、首次认证和找回方式等待 B1 确认</span></div>
+            <div class="field"><label for="account">用户名</label><input id="account" class="control" autocomplete="username" placeholder="输入管理员分配的用户名" value="user_demo_a"></div>
+            <div class="field"><label for="password">密码</label><input id="password" class="control" type="password" autocomplete="current-password" placeholder="首次登录可使用临时密码" value="DemoPassword123"><span class="field-help">临时密码仅展示一次、24 小时有效；首次登录需设置正式密码</span></div>
             <button class="btn primary" style="width:100%" type="submit">登录</button>
           </form>
-          <div class="action-row" style="margin-top:8px"><button class="btn text grow" type="button" data-toast="找回入口和通知渠道等待 B1 确认">无法登录？</button><button class="btn text grow" type="button" data-open="install-sheet">安装到桌面</button></div>
+          <div class="action-row" style="margin-top:8px"><button class="btn text grow" type="button" data-toast="请联系系统管理员重置密码；重置会使旧会话失效">无法登录？</button><button class="btn text grow" type="button" data-open="install-sheet">安装到桌面</button></div>
         </div>
-        <div class="prototype-note"><strong>原型边界</strong>登录成功按角色跳转；账号类型与开通/找回机制尚未确认。使用 `?state=loading|empty|error|permission` 验证页面状态。</div>
+        <div class="prototype-note"><strong>认证规则</strong>登录成功按角色跳转；临时密码首次登录进入设置正式密码流程。使用 `?state=loading|empty|error|permission` 验证页面状态。</div>
       </div>
     </section>
   </main>
