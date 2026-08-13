@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#F6F7FB">
+  <title>登录 · 我的账单原型</title>
+  <script>try{const m=localStorage.getItem('bill-prototype-theme')||'system';document.documentElement.dataset.theme=m==='system'?(matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light'):m}catch(e){}</script>
+  <link rel="stylesheet" href="prototype.css">
+</head>
+<body>
+  <main class="auth-shell">
+    <section class="auth-story">
+      <div class="brand"><span class="brand-mark">¥</span><span>我的账单</span></div>
+      <div class="auth-thesis">
+        <h1>每一笔，<br>都有来处。</h1>
+        <p>快速记下商品、价格与支付方式，再从清晰的报表回看自己的消费选择。</p>
+      </div>
+      <p class="caption">PWA · 可添加到手机桌面</p>
+    </section>
+    <section class="auth-form-area">
+      <div class="auth-card" data-page-content>
+        <div class="panel">
+          <div class="section-head">
+            <div><h2>欢迎回来</h2><p class="page-subtitle">登录后继续记录你的账单</p></div>
+            <div class="theme-segment" aria-label="主题模式">
+              <button type="button" data-theme-mode="system">跟随</button>
+              <button type="button" data-theme-mode="light">白天</button>
+              <button type="button" data-theme-mode="dark">夜晚</button>
+            </div>
+          </div>
+          <form id="login-form">
+            <div class="field"><label for="account">账号标识（类型待 B1 确认）</label><input id="account" class="control" autocomplete="username" placeholder="手机号、邮箱或用户名待确认" value="用户示例 A"></div>
+            <div class="field"><label for="password">认证凭据</label><input id="password" class="control" type="password" autocomplete="current-password" placeholder="输入认证凭据" value="12345678"><span class="field-help">开通、首次认证和找回方式等待 B1 确认</span></div>
+            <button class="btn primary" style="width:100%" type="submit">登录</button>
+          </form>
+          <div class="action-row" style="margin-top:8px"><button class="btn text grow" type="button" data-toast="找回入口和通知渠道等待 B1 确认">无法登录？</button><button class="btn text grow" type="button" data-open="install-sheet">安装到桌面</button></div>
+        </div>
+        <div class="prototype-note"><strong>原型边界</strong>登录成功按角色跳转；账号类型与开通/找回机制尚未确认。使用 `?state=loading|empty|error|permission` 验证页面状态。</div>
+      </div>
+    </section>
+  </main>
+  <div class="overlay" id="install-sheet"><section class="sheet" role="dialog" aria-modal="true"><div class="sheet-handle"></div><div class="sheet-head"><h2 class="sheet-title">安装到手机桌面</h2><button class="icon-btn" data-close aria-label="关闭"><span data-icon="close"></span></button></div><div class="state"><div><strong>按设备能力显示</strong>支持浏览器安装时提供系统安装动作；不支持时展示“添加到主屏幕”的平台步骤，网页仍可完整使用。</div></div><button class="btn primary" style="width:100%;margin-top:14px" data-close-after="已了解安装方式">知道了</button></section></div>
+  <script src="prototype.js"></script>
+  <script>
+    document.getElementById('login-form').addEventListener('submit', event => {
+      event.preventDefault();
+      const button = event.currentTarget.querySelector('button[type="submit"]');
+      button.disabled = true; button.textContent = '登录中…';
+      setTimeout(() => { button.disabled = false; button.textContent = '登录'; showToast('登录成功，普通用户将进入“记一笔”'); }, 550);
+    });
+  </script>
+</body>
+</html>
