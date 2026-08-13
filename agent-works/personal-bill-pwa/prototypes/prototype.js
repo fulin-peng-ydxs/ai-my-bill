@@ -129,7 +129,7 @@ function initMoneyForms() {
       if (calculated) calculated.textContent = `¥${amount}`
       if (paid && !paidTouched) paid.value = amount
       const paidCents = decimalToScaledInteger(paid?.value || amount, 2)
-      if (total) total.textContent = `¥${formatCents(paidCents)}`
+      if (total) total.textContent = `−¥${formatCents(paidCents)}`
       if (difference) {
         const deltaCents = paidCents - amountCents
         difference.textContent = deltaCents === 0n ? '与计算金额一致' : `与计算金额相差 ¥${formatCents(deltaCents < 0n ? -deltaCents : deltaCents)}`
@@ -191,7 +191,8 @@ function validateEntry(scope) {
 
 function initEntrySubmit() {
   document.querySelectorAll('[data-save-entry]').forEach(button => button.addEventListener('click', () => {
-    const scope = button.closest('[data-entry-shell]') || document
+    const shell = button.closest('[data-entry-shell]')
+    const scope = shell?.querySelector('[data-entry-panel]:not([hidden])') || button.closest('.sheet, .dialog') || document
     if (!validateEntry(scope)) return
     button.disabled = true
     const original = button.textContent
@@ -199,16 +200,60 @@ function initEntrySubmit() {
     setTimeout(() => {
       button.disabled = false
       button.textContent = original
+      const type = scope.dataset.entryPanel === 'income' || button.dataset.saveEntry === 'edit-income' ? '收入' : '支出'
       const message = button.dataset.saveEntry === 'continue'
-        ? '已保存，继续记下一件商品'
-        : button.dataset.saveEntry === 'edit' ? '账单已修改，报表数据将刷新' : '账单已保存，可在明细中查看'
+        ? `已保存${type}，继续记下一笔`
+        : button.dataset.saveEntry === 'adjustment' ? '调整已保存，净支出与报表已刷新' : `${type}已保存，明细与报表已刷新`
       showToast(message)
-      if (button.dataset.saveEntry === 'continue') scope.querySelector('[data-product]').value = ''
+      if (button.dataset.saveEntry === 'continue') {
+        const fields = type === '收入' ? ['[data-income-name]', '[data-payer]', '[data-income-amount]'] : ['[data-product]']
+        fields.forEach(selector => { const input = scope.querySelector(selector); if (input) input.value = '' })
+      }
+      if (button.closest('.overlay')) closeOverlay(button.closest('.overlay'))
     }, 350)
   }))
 }
 
+function initEntryTypes() {
+  const shell = document.querySelector('[data-entry-shell]')
+  if (!shell) return
+  const setType = type => {
+    const safeType = ['expense', 'income'].includes(type) ? type : 'expense'
+    shell.querySelectorAll('[data-entry-panel]').forEach(panel => { panel.hidden = panel.dataset.entryPanel !== safeType })
+    shell.querySelectorAll('[data-entry-type]').forEach(button => {
+      const active = button.dataset.entryType === safeType
+      button.classList.toggle('active', active)
+      button.setAttribute('aria-pressed', String(active))
+    })
+    const primary = shell.querySelector('[data-save-entry="save"]')
+    const copy = shell.querySelector('[data-copy-entry]')
+    if (primary) primary.textContent = safeType === 'income' ? '保存收入' : '保存支出'
+    if (copy) copy.textContent = safeType === 'income' ? '复制上一笔收入' : '复制上一笔支出'
+    localStorage.setItem('bill-prototype-entry-type', safeType)
+  }
+  shell.querySelectorAll('[data-entry-type]').forEach(button => button.addEventListener('click', () => setType(button.dataset.entryType)))
+  shell.querySelector('[data-copy-entry]')?.addEventListener('click', () => {
+    const type = shell.querySelector('[data-entry-type].active')?.dataset.entryType === 'income' ? '收入' : '支出'
+    showToast(`已复制上一笔${type}，业务时间更新为现在`)
+  })
+  const amount = shell.querySelector('[data-income-amount]')
+  const payer = shell.querySelector('[data-payer]')
+  const updateIncome = () => {
+    const cents = decimalToScaledInteger(amount?.value || '0', 2)
+    const formatted = Number(cents / 100n).toLocaleString('zh-CN') + `.${String(cents % 100n).padStart(2, '0')}`
+    const total = shell.querySelector('[data-income-total]')
+    if (total) total.textContent = `+¥${formatted}`
+    const payerText = shell.querySelector('[data-income-payer]')
+    if (payerText) payerText.textContent = payer?.value.trim() || '待填写'
+  }
+  amount?.addEventListener('input', updateIncome)
+  payer?.addEventListener('input', updateIncome)
+  setType(localStorage.getItem('bill-prototype-entry-type') || 'expense')
+  updateIncome()
+}
+
 const reportViews = {
+  overview: ['收支趋势', '人民币 · 按业务时间', ['收入|9600.00|94', '净支出|1076.80|42', '结余|8523.20|82']],
   trend: ['每日实付趋势', '人民币 · 按消费时间', ['6日|63.00|35', '7日|118.50|62', '8日|81.30|44', '9日|236.00|94', '10日|106.80|57']],
   category: ['分类消费占比', '人民币 · 一级分类', ['餐饮|528.00|88', '日用|246.80|55', '交通|188.00|42', '其他|114.00|30']],
   product: ['商品消费排行', '人民币 · 按商品', ['早餐包|168.00|80', '苹果|93.60|52', '矿泉水|28.50|28']],
@@ -218,31 +263,65 @@ const reportViews = {
   habit: ['星期消费习惯', '人民币 · 按星期', ['周一|106.00|35', '周三|248.00|62', '周六|336.00|86']],
   price: ['价格变化线索', '人民币 · 填写单价', ['早餐包|14.00|62', '苹果/千克|11.80|48', '矿泉水|3.50|28']],
   frequency: ['复购频次', '消费明细数 · 按商品', ['矿泉水|8|88', '早餐包|6|70', '苹果|4|50']],
-  quality: ['数据质量线索', '线索数 · 仅提示', ['疑似重复|2|62', '异常高价|1|38', '未分类|1|38']]
+  quality: ['数据质量线索', '线索数 · 仅提示', ['疑似重复|2|62', '异常高价|1|38', '未分类|1|38']],
+  incomeTrend: ['每日收入趋势', '人民币 · 按收入时间', ['1日|8500.00|94', '5日|300.00|36', '10日|1100.00|55']],
+  incomeCategory: ['收入分类结构', '人民币 · 按收入分类', ['工资|8500.00|94', '兼职|1100.00|55', '其他|300.00|32']],
+  payer: ['付款方结构', '人民币 · 按付款方', ['示例科技有限公司|8500.00|94', '客户李先生|1100.00|55']],
+  incomeName: ['收入名称结构', '人民币 · 名称不唯一', ['8 月工资|8500.00|94', '项目兼职|1100.00|55']],
+  receiving: ['收款方式结构', '人民币 · 按资金渠道', ['银行卡|8500.00|94', '微信|1100.00|55']],
+  incomeFrequency: ['收入频次', '收入明细数 · 按名称', ['项目兼职|2|70', '月度工资|1|42']]
+}
+
+const reportScopes = {
+  overview: [{ key: 'overview', label: '收支趋势' }],
+  expense: [{ key: 'trend', label: '趋势' }, { key: 'category', label: '分类' }, { key: 'product', label: '商品' }, { key: 'payment', label: '支付方式' }, { key: 'channel', label: '渠道' }, { key: 'location', label: '位置' }, { key: 'habit', label: '习惯' }, { key: 'price', label: '价格' }, { key: 'frequency', label: '频次' }, { key: 'quality', label: '数据质量' }],
+  income: [{ key: 'incomeTrend', label: '趋势' }, { key: 'incomeCategory', label: '收入分类' }, { key: 'payer', label: '付款方' }, { key: 'incomeName', label: '收入名称' }, { key: 'receiving', label: '收款方式' }, { key: 'incomeFrequency', label: '频次' }]
 }
 
 function initReports() {
   const host = document.querySelector('[data-report-view]')
   if (!host) return
+  let scope = 'overview'
   const render = key => {
     const view = reportViews[key]
+    if (!view) return
+    host.classList.toggle('report-expense', scope === 'expense')
     host.querySelector('[data-report-title]').textContent = view[0]
     host.querySelector('[data-report-caption]').textContent = view[1]
     const chart = host.querySelector('[data-report-chart]')
     chart.innerHTML = view[2].map((item, index) => {
       const [label, value, height] = item.split('|')
-      return `<button type="button" class="bar${index === 0 ? ' active' : ''}" style="--h:${height}%" data-dimension="${key}" data-label="${label}" data-value="${value}" aria-label="${label}，${value}"><span>${label}</span></button>`
+      const seriesClass = scope === 'overview' && label.includes('支出') ? ' expense-series' : ''
+      return `<button type="button" class="bar${index === 0 ? ' active' : ''}${seriesClass}" style="--h:${height}%" data-dimension="${key}" data-label="${label}" data-value="${value}" aria-label="${label}，${value}"><span>${label}</span></button>`
     }).join('')
     initReportDrill(chart)
+    const ranking = document.querySelector('[data-report-ranking]')
+    const rankingTitle = document.querySelector('[data-ranking-title]')
+    if (rankingTitle) rankingTitle.textContent = scope === 'income' ? '收入排行' : scope === 'expense' ? '支出排行' : '本月构成'
+    if (ranking) ranking.innerHTML = view[2].slice(0, 3).map((item, index) => {
+      const [label, value] = item.split('|')
+      const sign = scope === 'expense' ? '−' : scope === 'income' ? '+' : ''
+      return `<button class="rank-row" data-drill data-dimension="${key}" data-value="${label}"><span class="rank-index">0${index + 1}</span><span>${label}</span><strong class="rank-value ${scope === 'expense' ? 'expense-amount' : scope === 'income' ? 'income-amount' : ''}">${sign}${isNaN(Number(value)) ? value : `¥${Number(value).toLocaleString('zh-CN', { minimumFractionDigits: 2 })}`}</strong></button>`
+    }).join('')
+    initReportDrill(ranking || document)
   }
-  document.querySelectorAll('[data-report-dimension]').forEach(button => button.addEventListener('click', () => {
-    document.querySelectorAll('[data-report-dimension]').forEach(item => {
-      item.classList.toggle('active', item === button)
-      item.setAttribute('aria-pressed', String(item === button))
+  const renderScope = nextScope => {
+    scope = nextScope
+    document.querySelectorAll('[data-report-scope]').forEach(button => {
+      const active = button.dataset.reportScope === scope
+      button.classList.toggle('active', active)
+      button.setAttribute('aria-pressed', String(active))
     })
-    render(button.dataset.reportDimension)
-  }))
-  render('trend')
+    const dimensions = document.querySelector('[data-report-dimensions]')
+    dimensions.innerHTML = reportScopes[scope].map((item, index) => `<button class="chip${index === 0 ? ' active' : ''}" data-report-dimension="${item.key}" aria-pressed="${index === 0}">${item.label}</button>`).join('')
+    dimensions.querySelectorAll('[data-report-dimension]').forEach(button => button.addEventListener('click', () => {
+      dimensions.querySelectorAll('[data-report-dimension]').forEach(item => { item.classList.toggle('active', item === button); item.setAttribute('aria-pressed', String(item === button)) })
+      render(button.dataset.reportDimension)
+    }))
+    render(reportScopes[scope][0].key)
+  }
+  document.querySelectorAll('[data-report-scope]').forEach(button => button.addEventListener('click', () => renderScope(button.dataset.reportScope)))
+  renderScope('overview')
 }
 
 function initReportDrill(root = document) {
@@ -274,6 +353,14 @@ function initBillDetails() {
   document.querySelectorAll('[data-restore]').forEach(button => button.addEventListener('click', () => {
     button.closest('.list-item')?.remove()
     showToast('账单已恢复，并重新计入报表')
+  }))
+  document.querySelectorAll('[data-ledger-type]').forEach(button => button.addEventListener('click', () => {
+    const type = button.dataset.ledgerType
+    document.querySelectorAll('[data-ledger-type]').forEach(item => { item.classList.toggle('active', item === button); item.setAttribute('aria-pressed', String(item === button)) })
+    let visible = 0
+    document.querySelectorAll('[data-ledger-item]').forEach(item => { item.hidden = type !== 'all' && item.dataset.ledgerItem !== type; if (!item.hidden) visible += 1 })
+    const empty = document.querySelector('[data-ledger-empty]')
+    if (empty) empty.hidden = visible > 0
   }))
 }
 
@@ -336,6 +423,7 @@ document.addEventListener('DOMContentLoaded', () => {
   initCommonActions()
   initPageState()
   initMoneyForms()
+  initEntryTypes()
   initEntrySubmit()
   initReports()
   initReportDrill()

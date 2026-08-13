@@ -103,7 +103,7 @@ components:
 
 ## 1. Visual Theme & Atmosphere
 
-“我的账单”是随手使用的个人消费工具，不是专业会计系统、营销页或数据炫技型仪表盘。视觉目标是让用户愿意每天打开、快速填完、放心核对，并能从报表自然追溯到原始消费。
+“我的账单”是随手使用的个人收支工具，不是专业会计系统、营销页或数据炫技型仪表盘。视觉目标是让用户愿意每天打开、快速填完、放心核对，并能从报表自然追溯到原始账目和调整。
 
 界面以深靛蓝和清晰中性表面建立可信感，铜橙只负责提示金额关系。辨识度集中在“票据汇总条”：用金额对齐、细分隔线和克制的铜橙强调表达计算关系。票据语言只用于金额确认、账单详情和报表摘要，不把整个页面做成仿纸张、锯齿边或复古收银小票。
 
@@ -153,9 +153,9 @@ Key Characteristics：
 
 - 页面与组件只消费语义 token，禁止维护私有明暗 hex 值。
 - PWA `theme-color` 和阻止首屏闪烁的同步脚本可在构建产物中内联由主题 token 生成的值；它们不得成为另一套人工维护的颜色事实源。
-- 铜橙不承担普通主操作，避免与靛蓝争夺主层级。
+- 靛蓝既是主交互色，也是收入金额语义色；铜橙只承担支出金额语义，不承担普通主操作。
 - 绿色只用于成功、正常和健康状态，禁止重新作为按钮、导航、焦点或图表首序列的主题色。
-- 红色只用于失败和破坏性动作；当前已确认的消费范围不赋予红绿财务涨跌含义。收入板块确认后，应以标签、正负号和非红绿单一色彩共同区分收支，不能破坏状态色语义。
+- 红色只用于失败和破坏性动作，绿色只用于成功或健康。收入用靛蓝、支出用铜橙，并必须同时使用“收入/支出”文字和正负号，禁止只靠色彩区分收支。
 - 图表分类色表达“维度身份”，不能仅依赖颜色传达选中、异常或排序；必须辅以标签、数值、纹理或位置。
 - 夜晚模式不是白天模式的简单反相。必须分别校验正文、辅助文字、边框、焦点、禁用态、图表网格和浮层对比度。
 - 正文与背景目标达到 WCAG AA；焦点环不得被相邻边框吞没。
@@ -245,12 +245,14 @@ Key Characteristics：
 | `AppShell` | 登录后应用外壳、主题、导航和安全区 | 手机底部导航与桌面管理侧栏共享 token，不共享不合适的结构 |
 | `ThemeModeControl` | `system/light/dark` 选择 | 登录页和应用设置消费同一偏好来源；不得各自实现主题切换 |
 | `BottomNavigation` | 手机四个主入口 | 固定“记一笔/报表/明细/我的”；触摸目标不小于 44px |
-| `MoneySummary` | 票据式计算与实付汇总 | 用于记账、账单详情和报表摘要；金额右对齐，不作通用装饰卡片 |
+| `EntryTypeSwitch` | 支出/收入互斥切换 | 恢复最近类型；两类字段、校验和草稿隔离，切换不得清空未提交内容 |
+| `MoneySummary` | 票据式收支金额汇总 | 用于记账、账目详情和报表摘要；收入靛蓝、支出铜橙且带文字与正负号，金额右对齐 |
 | `ProductCombobox` | 商品搜索、最近使用、快捷新增和判重 | 商品名规范化与租户内唯一规则统一消费领域 helper |
 | `FormField` | 标签、控件、辅助说明、校验错误 | 错误在字段附近呈现，不只弹 toast |
-| `PaymentMethodPicker` | 支付方式选择 | 最近使用优先，完整列表可搜索；停用项不用于新记录 |
+| `FundingChannelPicker` | 资金渠道选择 | 同一数据在支出显示“支付方式”、收入显示“收款方式”；最近使用优先，停用项不用于新记录 |
+| `PayerCombobox` | 付款方搜索、最近使用和快捷新增 | 收入必填；新值随收入保存到个人字典，历史记录保留名称快照 |
 | `LocationLabelPicker` | 可选地点文本标签 | 第一期只消费当前租户字典，不请求定位、不展示地图占位；精准位置属于后期增强 |
-| `BillListItem` | 手机账单摘要 | 商品为主、金额为次主；日期、单位、支付方式弱化；整行可进入详情 |
+| `LedgerListItem` | 手机收支摘要 | 支出以商品、收入以收入名称为主；显示类型、对象、正负金额和业务时间，整行可进入对应详情 |
 | `FilterSheet` | 手机组合筛选 | 使用底部抽屉；应用后明确展示已生效条件和清除入口 |
 | `AppDataTable` | 桌面管理表格 | 表头稳定、表体滚动、分页和操作列稳定；不用于手机核心账单流 |
 | `ChartPanel` | 图表、口径、加载和下钻 | 标题附近显示统计口径；点击后带筛选上下文进入明细 |
@@ -429,7 +431,7 @@ Key Characteristics：
 ### Example Component Prompts
 
 - “创建手机端快速记账页，使用 `quick-entry` 原型，消费统一表单、商品选择和 `MoneySummary`，保存栏位于底部导航上方，覆盖草稿恢复与四态。”
-- “创建消费报表页，使用 `dashboard` 原型，先写统计口径与下钻关系，再选择图表；同时验证 390px 和夜晚模式。”
+- “创建收支报表页，使用 `dashboard` 原型，先写收入、原始支出、冲减、净支出和结余口径及下钻关系，再选择图表；同时验证 390px 和夜晚模式。”
 - “创建管理员用户列表，使用 `admin` 原型和统一数据表格，主表占据剩余空间，1366px 下保留状态、最近活跃和操作列。”
 
 ### Iteration Guide
@@ -449,9 +451,9 @@ Key Characteristics：
 | pageKey | 页面 | 原型 | 主任务 | 主要组件 |
 | --- | --- | --- | --- | --- |
 | `login` | 登录与安装 | `auth` | 完成安全登录并理解安装方式 | `ThemeModeControl` / `AppStateBlock` |
-| `expense-entry` | 记一笔 | `quick-entry` | 快速保存商品消费明细 | `ProductCombobox` / `MoneySummary` / `PaymentMethodPicker` / `LocationLabelPicker` |
-| `reports` | 消费报表 | `dashboard` | 分析并下钻消费数据 | `MoneySummary` / `ChartPanel` / `FilterSheet` |
-| `bill-details` | 账单明细 | `list` | 查询和纠正原始账单 | `BillListItem` / `FilterSheet` / `AppDrawer` |
+| `ledger-entry` | 记一笔 | `quick-entry` | 快速保存商品支出或金额收入 | `EntryTypeSwitch` / `ProductCombobox` / `PayerCombobox` / `FundingChannelPicker` / `MoneySummary` |
+| `reports` | 收支报表 | `dashboard` | 分析收支、调整和结余并下钻 | `MoneySummary` / `ChartPanel` / `FilterSheet` |
+| `bill-details` | 收支明细 | `list` | 查询和纠正支出、收入及调整 | `LedgerListItem` / `FilterSheet` / `AppDrawer` |
 | `profile-settings` | 我的 | `settings` | 管理字典、偏好和个人数据 | `ThemeModeControl` / `AppDrawer` / `AppDialog` |
 | `admin-console` | 系统管理 | `admin` | 管理用户、默认字典、运行概况和操作日志 | `AppDataTable` / `AppDrawer` / `AppDialog` |
 <!-- page-registry:end -->
