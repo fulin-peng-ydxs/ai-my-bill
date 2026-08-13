@@ -30,10 +30,11 @@
             </div>
           </div>
           <form id="login-form">
-            <div class="field"><label for="account">用户名</label><input id="account" class="control" autocomplete="username" placeholder="输入管理员分配的用户名" value="user_demo_a"></div>
-            <div class="field"><label for="password">密码</label><input id="password" class="control" type="password" autocomplete="current-password" placeholder="首次登录可使用临时密码" value="DemoPassword123"><span class="field-help">临时密码仅展示一次、24 小时有效；首次登录需设置正式密码</span></div>
+            <div class="field"><label for="account">用户名</label><input id="account" class="control" autocomplete="username" placeholder="输入管理员分配的用户名" value="user_demo_a" data-required><span class="field-error">请输入用户名</span></div>
+            <div class="field"><label for="password">密码</label><input id="password" class="control" type="password" autocomplete="current-password" placeholder="首次登录可使用临时密码" value="DemoPassword123" data-required><span class="field-error">请输入密码</span><span class="field-help">临时密码仅展示一次、24 小时有效；首次登录需设置正式密码</span></div>
             <button class="btn primary" style="width:100%" type="submit">登录</button>
           </form>
+          <div class="state compact error" data-login-feedback hidden><div><strong>登录失败</strong><span></span></div></div>
           <div class="action-row" style="margin-top:8px"><button class="btn text grow" type="button" data-toast="请联系系统管理员重置密码；重置会使旧会话失效">无法登录？</button><button class="btn text grow" type="button" data-open="install-sheet">安装到桌面</button></div>
         </div>
         <div class="prototype-note"><strong>认证规则</strong>登录成功按角色跳转；临时密码首次登录进入设置正式密码流程。使用 `?state=loading|empty|error|permission` 验证页面状态。</div>
@@ -41,14 +42,7 @@
     </section>
   </main>
   <div class="overlay" id="install-sheet"><section class="sheet" role="dialog" aria-modal="true"><div class="sheet-handle"></div><div class="sheet-head"><h2 class="sheet-title">安装到手机桌面</h2><button class="icon-btn" data-close aria-label="关闭"><span data-icon="close"></span></button></div><div class="state"><div><strong>按设备能力显示</strong>支持浏览器安装时提供系统安装动作；不支持时展示“添加到主屏幕”的平台步骤，网页仍可完整使用。</div></div><button class="btn primary" style="width:100%;margin-top:14px" data-close-after="已了解安装方式">知道了</button></section></div>
+  <div class="overlay" id="first-password-sheet"><section class="sheet" role="dialog" aria-modal="true"><div class="sheet-handle"></div><div class="sheet-head"><div><h2 class="sheet-title">设置正式密码</h2><div class="caption">临时密码验证成功后必须完成</div></div></div><div class="field"><label>新密码</label><input class="control" type="password" minlength="15" maxlength="64" data-required data-new-password><span class="field-error">请输入 15–64 位正式密码</span></div><div class="field"><label>确认新密码</label><input class="control" type="password" minlength="15" maxlength="64" data-required data-new-password-confirm><span class="field-error">两次密码必须一致</span></div><button class="btn primary" style="width:100%" data-first-password-save>设置并进入记一笔</button></section></div>
   <script src="prototype.js"></script>
-  <script>
-    document.getElementById('login-form').addEventListener('submit', event => {
-      event.preventDefault();
-      const button = event.currentTarget.querySelector('button[type="submit"]');
-      button.disabled = true; button.textContent = '登录中…';
-      setTimeout(() => { button.disabled = false; button.textContent = '登录'; showToast('登录成功，普通用户将进入“记一笔”'); }, 550);
-    });
-  </script>
 </body>
 </html>
