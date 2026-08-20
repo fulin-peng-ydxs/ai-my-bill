@@ -241,7 +241,7 @@ function applyTheme(mode) {
   const resolved = resolveTheme(safeMode)
   document.documentElement.dataset.theme = resolved
   document.documentElement.dataset.themeMode = safeMode
-  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', resolved === 'dark' ? '#11131A' : '#F6F7FB')
+  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', resolved === 'dark' ? '#0A0B0D' : '#FFFFFF')
   document.querySelectorAll('button[data-theme-mode]').forEach(button => {
     const active = button.dataset.themeMode === safeMode
     button.classList.toggle('active', active)
@@ -817,12 +817,13 @@ function initReports() {
     const view = reportViews[key]
     if (!view) return
     host.classList.toggle('report-expense', scope === 'expense')
+    host.classList.toggle('report-income', scope === 'income')
     host.querySelector('[data-report-title]').textContent = view[0]
     host.querySelector('[data-report-caption]').textContent = view[1]
     const chart = host.querySelector('[data-report-chart]')
     chart.innerHTML = view[2].map((item, index) => {
       const [label, value, height] = item.split('|')
-      const seriesClass = scope === 'overview' && label.includes('支出') ? ' expense-series' : ''
+      const seriesClass = scope === 'overview' && label.includes('支出') ? ' expense-series' : scope === 'overview' && label.includes('收入') ? ' income-series' : ''
       return `<button type="button" class="bar${index === 0 ? ' active' : ''}${seriesClass}" style="--h:${height}%" data-dimension="${key}" data-label="${label}" data-value="${label}" data-metric="${value}" data-scope="${scope}" aria-label="${label}，${value}"><span>${label}</span></button>`
     }).join('')
     initReportDrill(chart)
