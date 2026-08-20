@@ -1,63 +1,64 @@
 ---
 version: alpha
 name: 我的账单
-description: 面向中国大陆个人用户的手机优先账单 PWA，以快速录入、清晰核对和可追溯报表为核心，完整采用 Coinbase 的纯白画布、单一品牌蓝、近黑夜间表面和克制金融层级。
+description: 面向中国大陆个人用户的手机优先账单 PWA，以快速录入、清晰核对和可追溯报表为核心，采用雾灰画布、纯白工具卡、近黑夜间表面、系统字体和单一 Action Blue 交互色。
 colors:
-  primary-light: "#0052FF"
-  primary-dark: "#0052FF"
+  primary-light: "#0066CC"
+  primary-dark: "#2997FF"
+  primary-focus: "#0071E3"
   on-primary-light: "#FFFFFF"
   on-primary-dark: "#FFFFFF"
-  income-light: "#05B169"
-  income-dark: "#05B169"
-  expense-light: "#CF202F"
-  expense-dark: "#CF202F"
-  background-light: "#FFFFFF"
-  background-dark: "#0A0B0D"
+  income-light: "#FF3B30"
+  income-dark: "#FF3B30"
+  expense-light: "#34C759"
+  expense-dark: "#34C759"
+  background-light: "#F5F5F7"
+  background-dark: "#000000"
   surface-light: "#FFFFFF"
-  surface-dark: "#16181C"
-  text-primary-light: "#0A0B0D"
+  surface-dark: "#272729"
+  text-primary-light: "#1D1D1F"
   text-primary-dark: "#FFFFFF"
-  text-secondary-light: "#5B616E"
-  text-secondary-dark: "#A8ACB3"
-  border-light: "#DEE1E6"
-  border-dark: "#5B616E"
-  success-light: "#05B169"
-  success-dark: "#05B169"
-  warning-light: "#F4B000"
-  warning-dark: "#F4B000"
-  danger-light: "#CF202F"
-  danger-dark: "#CF202F"
+  text-secondary-light: "#7A7A7A"
+  text-secondary-dark: "#CCCCCC"
+  border-light: "#E0E0E0"
+  border-dark: "#333333"
+  success-light: "#34C759"
+  success-dark: "#34C759"
+  warning-light: "#FF9500"
+  warning-dark: "#FF9500"
+  danger-light: "#FF3B30"
+  danger-dark: "#FF3B30"
 typography:
   heading-lg:
-    fontFamily: "Inter, -apple-system, BlinkMacSystemFont, system-ui, 'Segoe UI', Roboto, Helvetica, Arial, 'PingFang SC', 'Microsoft YaHei UI', sans-serif"
-    fontSize: 24px
-    fontWeight: 400
-    lineHeight: 32px
+    fontFamily: "-apple-system, BlinkMacSystemFont, 'SF Pro Display', system-ui, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei UI', sans-serif"
+    fontSize: 28px
+    fontWeight: 600
+    lineHeight: 34px
   heading-md:
-    fontFamily: "Inter, -apple-system, BlinkMacSystemFont, system-ui, 'Segoe UI', Roboto, Helvetica, Arial, 'PingFang SC', 'Microsoft YaHei UI', sans-serif"
+    fontFamily: "-apple-system, BlinkMacSystemFont, 'SF Pro Display', system-ui, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei UI', sans-serif"
     fontSize: 18px
     fontWeight: 600
     lineHeight: 26px
   body-md:
-    fontFamily: "Inter, -apple-system, BlinkMacSystemFont, system-ui, 'Segoe UI', Roboto, Helvetica, Arial, 'PingFang SC', 'Microsoft YaHei UI', sans-serif"
-    fontSize: 15px
+    fontFamily: "-apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei UI', sans-serif"
+    fontSize: 17px
     fontWeight: 400
-    lineHeight: 24px
+    lineHeight: 25px
   label-sm:
-    fontFamily: "Inter, -apple-system, BlinkMacSystemFont, system-ui, 'Segoe UI', Roboto, Helvetica, Arial, 'PingFang SC', 'Microsoft YaHei UI', sans-serif"
-    fontSize: 13px
-    fontWeight: 500
+    fontFamily: "-apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei UI', sans-serif"
+    fontSize: 14px
+    fontWeight: 400
     lineHeight: 20px
   data-lg:
-    fontFamily: "'JetBrains Mono', ui-monospace, 'SFMono-Regular', 'Roboto Mono', 'Cascadia Mono', monospace"
+    fontFamily: "ui-monospace, 'SFMono-Regular', Menlo, Monaco, 'Cascadia Mono', monospace"
     fontSize: 28px
-    fontWeight: 500
+    fontWeight: 600
     lineHeight: 36px
 rounded:
-  sm: 4px
-  md: 12px
-  lg: 24px
-  pill: 100px
+  sm: 5px
+  md: 11px
+  lg: 18px
+  pill: 9999px
 spacing:
   xs: 4px
   sm: 8px
@@ -85,7 +86,9 @@ components:
     borderColor: "{colors.border-light}"
     rounded: "{rounded.lg}"
   bottom-navigation:
-    backgroundColor: "{colors.surface-light}"
+    backgroundColor: "{colors.background-light}"
+    backgroundOpacity: 0.8
+    backdropFilter: "saturate(180%) blur(20px)"
     borderColor: "{colors.border-light}"
     minHeight: 64px
 ---
@@ -106,7 +109,7 @@ components:
 
 “我的账单”是随手使用的个人收支工具，不是专业会计系统、营销页或数据炫技型仪表盘。视觉目标是让用户愿意每天打开、快速填完、放心核对，并能从报表自然追溯到原始账目和调整。
 
-界面完整采用 Coinbase 的视觉体系：白天以纯白画布、近黑文字和柔和灰阶建立金融可信感，夜晚以近黑画布和深色浮层承接相同结构。Coinbase Blue 是唯一操作强调色，只用于主按钮、当前导航、链接、焦点和少量选中态；收入绿与支出红只用于数字和文字语义，不承担装饰或普通操作。
+界面采用轻盈的系统级工具界面语言：白天以雾灰画布、纯白工具卡、近黑文字和极细分隔线承载内容；夜晚以纯黑画布和三档近黑表面承接相同结构。Action Blue 是唯一操作强调色，只用于主按钮、当前导航、链接、焦点和选中态。收入固定使用红色、支出固定使用绿色，明暗主题不得改变这两个业务色值。
 
 Key Characteristics：
 
@@ -114,7 +117,8 @@ Key Characteristics：
 - 首屏直接承载业务任务，不做营销 hero，不用装饰性大标题抢占空间。
 - 金额、数量和单位形成稳定的视觉对齐关系，便于快速核对。
 - 信息密度适中；记账页克制，报表页逐层展开，管理后台允许更高密度。
-- 白天与夜晚模式共享结构、间距和组件；夜晚模式直接使用 Coinbase 的 `surface-dark / surface-dark-elevated / on-dark` 层级，不混入其他主题色。
+- 白天与夜晚模式共享结构、间距和组件；夜晚模式使用纯黑画布、近黑工具卡和亮蓝链接，不对业务色做主题映射。
+- 工具卡不使用装饰阴影；固定导航和保存栏使用半透明表面与 `saturate(180%) blur(20px)` 磨砂层级。控件焦点和分段选中仅使用边框式轮廓，不作为悬浮层级。
 - 动效只服务保存反馈、抽屉切换、筛选更新和图表下钻；尊重 `prefers-reduced-motion`。
 - 不依赖联网字体、外部图片或装饰资源，保证中国大陆网络环境与 PWA 首屏稳定。
 
@@ -135,29 +139,26 @@ Key Characteristics：
 
 | 角色 | 白天 | 夜晚 | 使用规则 |
 | --- | --- | --- | --- |
-| 主交互 | `#0052FF` | `#0052FF` | 主按钮、当前导航、链接、焦点环、选中态 |
-| 主交互按下 | `#003ECC` | `#003ECC` | 仅 active/pressed，不作常驻底色 |
-| 主交互禁用 | `#A8B8CC` | `#A8B8CC` | 禁用主操作 |
-| 页面背景 | `#FFFFFF` | `#0A0B0D` | 应用主画布 |
-| 内容表面 | `#FFFFFF` | `#16181C` | 表单、列表、图表、弹窗、底部导航 |
-| 次级表面 | `#F7F7F7` | `#16181C` | 筛选区、分组区、骨架 |
-| 强次级表面 | `#EEF0F3` | `#16181C` | 次按钮、搜索、胶囊和图标底板 |
-| 主文字 | `#0A0B0D` | `#FFFFFF` | 标题、金额、主要字段 |
-| 次要文字 | `#5B616E` | `#A8ACB3` | 标签、辅助说明、时间 |
-| 占位文字 | `#7C828A` | `#7C828A` | placeholder、弱提示 |
-| 边框 | `#DEE1E6` | `#5B616E` | 控件、面板、分隔线 |
-| 强边框 | `#A8ACB3` | `#7C828A` | 高对比结构 |
-| 收入 / 成功 | `#05B169` | `#05B169` | 收入数字、保存成功和正常状态；仅文字或细线 |
-| 支出 / 危险 | `#CF202F` | `#CF202F` | 支出数字、删除、失败和不可逆风险；仅文字或细线 |
-| 警告 | `#F4B000` | `#F4B000` | 异常但可继续、数据质量提示；不得作为操作色 |
+| 主交互 | `#0066CC` | `#2997FF` | 主按钮、当前导航、链接、焦点环、选中态 |
+| 聚焦 | `#0071E3` | `#0071E3` | 2px 键盘焦点环和选中控件边界 |
+| 页面背景 | `#F5F5F7` | `#000000` | 应用主画布 |
+| 内容表面 | `#FFFFFF` | `#272729` | 表单、列表、图表、弹窗 |
+| 次级表面 | `#F5F5F7` | `#2A2A2C` | 筛选区、分组区、骨架 |
+| 珍珠表面 | `#FAFAFC` | `#252527` | 次按钮、胶囊和图标底板 |
+| 主文字 | `#1D1D1F` | `#FFFFFF` | 标题、金额、主要字段 |
+| 次要文字 | `#7A7A7A` | `#CCCCCC` | 标签、辅助说明、时间和 placeholder |
+| 边框 | `#E0E0E0` | `#333333` | 控件、工具卡、分隔线 |
+| 收入 | `#FF3B30` | `#FF3B30` | 收入文字、正金额和收入图表；两种主题固定不变 |
+| 支出 | `#34C759` | `#34C759` | 支出文字、负金额和支出图表；两种主题固定不变 |
+| 警告 | `#FF9500` | `#FF9500` | 异常但可继续、数据质量提示；不得作为操作色 |
 
 规则：
 
 - 页面与组件只消费语义 token，禁止维护私有明暗 hex 值。
 - PWA `theme-color` 和阻止首屏闪烁的同步脚本可在构建产物中内联由主题 token 生成的值；它们不得成为另一套人工维护的颜色事实源。
-- Coinbase Blue 是唯一操作色；不得引入第二品牌色，也不得把收入绿、支出红或警告黄用于普通按钮、导航和焦点。
-- 绿色只用于成功、正常和健康状态，禁止重新作为按钮、导航、焦点或图表首序列的主题色。
-- 收入沿用 Coinbase `semantic-up`，支出沿用 `semantic-down`，并必须同时使用“收入/支出”文字和正负号，禁止只靠色彩区分收支。
+- Action Blue 是唯一操作色；不得把收入红、支出绿或警告橙用于普通按钮、导航和焦点。
+- 收入红 `#FF3B30` 与支出绿 `#34C759` 是跨主题稳定业务 token，不允许在夜晚模式换色或互换；同时必须使用“收入/支出”文字和正负号，禁止只靠色彩区分收支。
+- 成功状态可与支出共享绿色 token，失败和危险状态可与收入共享红色 token，但必须通过文字明确区分业务类型与系统状态。
 - 图表分类色表达“维度身份”，不能仅依赖颜色传达选中、异常或排序；必须辅以标签、数值、纹理或位置。
 - 夜晚模式不是白天模式的简单反相。必须分别校验正文、辅助文字、边框、焦点、禁用态、图表网格和浮层对比度。
 - 正文与背景目标达到 WCAG AA；焦点环不得被相邻边框吞没。
@@ -166,11 +167,11 @@ Key Characteristics：
 
 分类和序列依次使用：
 
-`#0052FF / #05B169 / #CF202F / #5B616E / #7C828A / #F4B000`
+`#0066CC / #FF3B30 / #34C759 / #7A7A7A / #D2D2D7 / #FF9500`
 
 夜晚模式对应：
 
-`#0052FF / #05B169 / #CF202F / #A8ACB3 / #7C828A / #F4B000`
+`#2997FF / #FF3B30 / #34C759 / #CCCCCC / #7A7A7A / #FF9500`
 
 同一维度在同一会话内保持颜色身份稳定；同一图中不超过六个直接色类，更多类别合并为“其他”或改用排行列表。
 
@@ -180,26 +181,26 @@ Key Characteristics：
 
 基础字体栈：
 
-`Inter, -apple-system, BlinkMacSystemFont, system-ui, "Segoe UI", Roboto, Helvetica, Arial, "PingFang SC", "Microsoft YaHei UI", sans-serif`
+`-apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, "Segoe UI", "PingFang SC", "Microsoft YaHei UI", sans-serif`
 
 数字字体栈：
 
-`"JetBrains Mono", ui-monospace, "SFMono-Regular", "Roboto Mono", "Cascadia Mono", monospace`
+`ui-monospace, "SFMono-Regular", Menlo, Monaco, "Cascadia Mono", monospace`
 
-标题和正文使用 Coinbase 文档建议的授权字体替代方案：`Inter` 优先、系统无衬线字体回退；标题字重保持 `400`，组件标题与按钮使用 `600`。不得联网加载 Coinbase 授权字体。
+标题优先解析系统的 SF Pro Display，正文和控件优先解析 SF Pro Text；非 Apple 平台回退 `system-ui`。标题和强调文字使用 `600`，正文与普通按钮使用 `400`，禁止引入 `500` 作为中间字重。不得依赖联网字体完成首屏。
 
 ### 3.2 文字层级
 
 | 层级 | 字号 / 字重 / 行高 | 使用场景 |
 | --- | --- | --- |
-| 页面标题 | `24px / 400 / 32px` | 登录标题、页面主标题；手机紧凑页可降为 20px |
-| 分区标题 | `18px / 650 / 26px` | 图表分区、设置分组、抽屉标题 |
-| 正文 | `15px / 400 / 24px` | 表单、说明、账单列表 |
+| 页面标题 | `28px / 600 / 34px` | 登录标题、页面主标题；使用紧缩字距 |
+| 分区标题 | `18px / 600 / 26px` | 图表分区、设置分组、抽屉标题 |
+| 正文 | `17px / 400 / 25px` | 说明和阅读型正文；高密表单值可降到 15px |
 | 表格正文 | `14px / 400 / 22px` | 管理后台表格和密集列表 |
-| 标签 | `13px / 500 / 20px` | 字段名、筛选项、辅助标题 |
+| 标签 | `14px / 400 / 20px` | 字段名、筛选项；需要强调时使用 600 |
 | 辅助文字 | `12px / 400 / 18px` | 时间、来源、口径、单位 |
-| 金额强调 | `28px / 500 / 36px` | 实付金额、月份总额 |
-| 数据强调 | `18px / 500 / 26px` | KPI、排行数值、列表金额 |
+| 金额强调 | `28px / 600 / 36px` | 实付金额、月份总额 |
+| 数据强调 | `18px / 600 / 26px` | KPI、排行数值、列表金额 |
 
 排版规则：
 
@@ -244,7 +245,7 @@ Key Characteristics：
 | `ThemeModeControl` | `system/light/dark` 选择 | 登录页和应用设置消费同一偏好来源；不得各自实现主题切换 |
 | `BottomNavigation` | 手机四个主入口 | 固定“记一笔/报表/明细/我的”；触摸目标不小于 44px |
 | `EntryTypeSwitch` | 支出/收入互斥切换 | 恢复最近类型；两类字段、校验和草稿隔离，切换不得清空未提交内容 |
-| `MoneySummary` | 收支金额汇总 | 用于记账、账目详情和报表摘要；收入使用 `semantic-up`、支出使用 `semantic-down` 且带文字与正负号，金额使用等宽字体右对齐 |
+| `MoneySummary` | 收支金额汇总 | 用于记账、账目详情和报表摘要；收入固定红色、支出固定绿色且带文字与正负号，金额使用等宽字体右对齐 |
 | `ProductCombobox` | 商品搜索、最近使用、快捷新增和判重 | 商品名规范化与租户内唯一规则统一消费领域 helper |
 | `FormField` | 标签、控件、辅助说明、校验错误 | 错误在字段附近呈现，不只弹 toast |
 | `FundingChannelPicker` | 资金渠道选择 | 同一数据在支出显示“支付方式”、收入显示“收款方式”；最近使用优先，停用项不用于新记录 |
@@ -337,22 +338,23 @@ Key Characteristics：
 
 ## 6. Depth & Elevation
 
-层级以表面、边框、留白和轻阴影表达：
+层级以表面、边框、留白和磨砂固定层表达：
 
 | 层级 | 表达 | 场景 |
 | --- | --- | --- |
 | 页面 | 背景色 | 应用画布 |
 | 内容表面 | 1px 边框或无边框连续面 | 表单、列表、图表 |
 | 强调表面 | 次级表面 + 强边框 | 当前筛选、选中商品、票据汇总 |
-| 浮层 | 内容表面 + `0 4px 12px rgba(0,0,0,.04)` | 抽屉、弹窗、菜单；全系统仅此一档阴影 |
-| 遮罩 | 白天 `rgba(10,11,13,.48)` / 夜晚 `rgba(0,0,0,.64)` | 模态任务 |
+| 磨砂固定层 | 主题画布 80% + `saturate(180%) blur(20px)` | 底部导航、固定保存栏和管理顶栏 |
+| 浮层 | 内容表面 + 1px 边框，无投影 | 抽屉、弹窗、菜单 |
+| 遮罩 | 白天 `rgba(0,0,0,.40)` / 夜晚 `rgba(0,0,0,.72)` | 模态任务 |
 
 规则：
 
-- 普通面板圆角 24px，控件 12px，紧凑标签 4px，CTA 与选择胶囊 100px；同类组件不得随机改变。
+- 工具卡圆角 18px，控件 11px，紧凑工具按钮 5px，CTA 与选择胶囊 9999px；同类组件不得随机改变。
 - 不把每个 section 做成悬浮卡片；连续表单和列表可共享同一表面。
 - 金额汇总依靠等宽数字、分隔线和收支语义文字，不依靠锯齿、阴影堆叠、拟物纹理或第二品牌色。
-- 夜晚模式降低阴影存在感，提高边框和表面差异。
+- 卡片、按钮、文字和普通浮层禁止投影；层级只由表面切换、1px hairline 和磨砂固定层表达。
 
 ## 7. Do's and Don'ts
 
@@ -420,10 +422,10 @@ Key Characteristics：
 
 ### Quick Color Reference
 
-- 主交互：白天与夜晚均为 Coinbase Blue `#0052FF`。
-- 页面背景：白天 `#FFFFFF`，夜晚 `#0A0B0D`。
-- 内容表面：白天 `#FFFFFF`，夜晚 `#16181C`。
-- 收支语义：收入 `#05B169`，支出 `#CF202F`；仅用于文字、数字和细线。
+- 主交互：白天 Action Blue `#0066CC`，夜晚 Sky Link Blue `#2997FF`。
+- 页面背景：白天 `#F5F5F7`，夜晚 `#000000`。
+- 内容表面：白天 `#FFFFFF`，夜晚 `#272729`。
+- 收支语义：收入固定 `#FF3B30`，支出固定 `#34C759`，不随主题改变。
 - 任何页面不得直接复制这些值，应消费项目主题 token。
 
 ### Example Component Prompts

@@ -241,7 +241,7 @@ function applyTheme(mode) {
   const resolved = resolveTheme(safeMode)
   document.documentElement.dataset.theme = resolved
   document.documentElement.dataset.themeMode = safeMode
-  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', resolved === 'dark' ? '#0A0B0D' : '#FFFFFF')
+  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', resolved === 'dark' ? '#000000' : '#F5F5F7')
   document.querySelectorAll('button[data-theme-mode]').forEach(button => {
     const active = button.dataset.themeMode === safeMode
     button.classList.toggle('active', active)
