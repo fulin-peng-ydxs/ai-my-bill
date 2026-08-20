@@ -10,6 +10,13 @@ const icons = {
 
 const preferenceStorageKey = 'bill-prototype-preferences'
 const preferenceSessionKey = 'bill-prototype-preference-session'
+const fundingDictionaryStorageKey = 'bill-prototype-funding-dictionary'
+const fundingDictionaryDefaults = Object.freeze([
+  { name: '微信', enabled: true },
+  { name: '支付宝', enabled: true },
+  { name: '银行卡', enabled: true },
+  { name: '现金', enabled: true }
+])
 const preferenceDefaults = Object.freeze({
   fundingChannel: '微信',
   detailRange: '本月',
@@ -18,11 +25,49 @@ const preferenceDefaults = Object.freeze({
   theme: 'system'
 })
 const preferenceOptions = {
-  fundingChannel: ['微信', '支付宝', '银行卡', '现金'],
   detailRange: ['本月', '上月', '今年'],
   reportRange: ['本月', '上月', '今年'],
   entryType: ['expense', 'income'],
   theme: ['system', 'light', 'dark']
+}
+
+function normalizeFundingDictionary(raw) {
+  if (!Array.isArray(raw)) return fundingDictionaryDefaults.map(item => ({ ...item }))
+  const seen = new Set()
+  const items = raw.flatMap(item => {
+    const name = typeof item?.name === 'string' ? item.name.trim() : ''
+    if (!name || seen.has(name)) return []
+    seen.add(name)
+    return [{ name, enabled: item.enabled !== false }]
+  })
+  if (!items.length || !items.some(item => item.enabled)) return fundingDictionaryDefaults.map(item => ({ ...item }))
+  return items
+}
+
+function readFundingDictionary() {
+  let stored = null
+  try { stored = JSON.parse(localStorage.getItem(fundingDictionaryStorageKey) || 'null') } catch (error) { stored = null }
+  if (new URLSearchParams(location.search).get('funding') === 'invalid') stored = [{ name: '', enabled: true }, { name: '微信', enabled: false }]
+  return normalizeFundingDictionary(stored)
+}
+
+function writeFundingDictionary(items) {
+  const normalized = normalizeFundingDictionary(items)
+  localStorage.setItem(fundingDictionaryStorageKey, JSON.stringify(normalized))
+  return normalized
+}
+
+function getEnabledFundingChannels() {
+  return readFundingDictionary().filter(item => item.enabled).map(item => item.name)
+}
+
+function getDefaultFundingChannel() {
+  const enabled = getEnabledFundingChannels()
+  return enabled.includes(preferenceDefaults.fundingChannel) ? preferenceDefaults.fundingChannel : enabled[0]
+}
+
+function isValidPreference(key, value) {
+  return key === 'fundingChannel' ? getEnabledFundingChannels().includes(value) : preferenceOptions[key].includes(value)
 }
 const reportRangeValues = {
   本月: '2026-08-01/2026-08-31',
@@ -33,8 +78,20 @@ const reportRangeValues = {
 function normalizePreferences(raw = {}) {
   return Object.fromEntries(Object.entries(preferenceDefaults).map(([key, fallback]) => [
     key,
-    preferenceOptions[key].includes(raw[key]) ? raw[key] : fallback
+    isValidPreference(key, raw[key]) ? raw[key] : key === 'fundingChannel' ? getDefaultFundingChannel() : fallback
   ]))
+}
+
+function readPreferenceSessionState() {
+  let raw = {}
+  try { raw = JSON.parse(sessionStorage.getItem(preferenceSessionKey) || '{}') } catch (error) { raw = {} }
+  return Object.fromEntries(Object.entries(raw).flatMap(([key, item]) => {
+    if (!(key in preferenceDefaults)) return []
+    const value = typeof item === 'object' && item !== null ? item.value : item
+    if (!isValidPreference(key, value)) return []
+    const status = typeof item === 'object' && ['pending', 'error'].includes(item.status) ? item.status : 'error'
+    return [[key, { value, status }]]
+  }))
 }
 
 function readStoredPreferences() {
@@ -50,12 +107,23 @@ function readStoredPreferences() {
 }
 
 function getPreferences() {
-  let sessionValues = {}
-  try { sessionValues = JSON.parse(sessionStorage.getItem(preferenceSessionKey) || '{}') } catch (error) { sessionValues = {} }
+  return getPreferenceState().values
+}
+
+function getPreferenceState() {
+  const saved = readStoredPreferences()
+  const sessionState = readPreferenceSessionState()
   if (new URLSearchParams(location.search).get('preference') === 'invalid') {
-    return normalizePreferences({ fundingChannel: '已停用渠道', detailRange: '未来一年', reportRange: '任意时间', entryType: 'transfer', theme: 'contrast' })
+    const values = normalizePreferences({ fundingChannel: '已停用渠道', detailRange: '未来一年', reportRange: '任意时间', entryType: 'transfer', theme: 'contrast' })
+    return { values, fields: Object.fromEntries(Object.keys(preferenceDefaults).map(key => [key, { value: values[key], savedValue: saved[key], status: 'saved' }])) }
   }
-  return normalizePreferences({ ...readStoredPreferences(), ...sessionValues })
+  const values = normalizePreferences({ ...saved, ...Object.fromEntries(Object.entries(sessionState).map(([key, item]) => [key, item.value])) })
+  const fields = Object.fromEntries(Object.keys(preferenceDefaults).map(key => [key, {
+    value: values[key],
+    savedValue: saved[key],
+    status: sessionState[key]?.status || 'saved'
+  }]))
+  return { values, fields }
 }
 
 function updatePreferences(patch) {
@@ -63,20 +131,22 @@ function updatePreferences(patch) {
   localStorage.setItem(preferenceStorageKey, JSON.stringify(next))
   localStorage.removeItem('bill-prototype-entry-type')
   if (patch.theme) localStorage.setItem('bill-prototype-theme', next.theme)
-  let sessionValues = {}
-  try { sessionValues = JSON.parse(sessionStorage.getItem(preferenceSessionKey) || '{}') } catch (error) { sessionValues = {} }
-  Object.keys(patch).forEach(key => { delete sessionValues[key] })
-  if (Object.keys(sessionValues).length) sessionStorage.setItem(preferenceSessionKey, JSON.stringify(sessionValues))
+  const sessionState = readPreferenceSessionState()
+  Object.keys(patch).forEach(key => { delete sessionState[key] })
+  if (Object.keys(sessionState).length) sessionStorage.setItem(preferenceSessionKey, JSON.stringify(sessionState))
   else sessionStorage.removeItem(preferenceSessionKey)
-  return next
+  return getPreferences()
 }
 
-function stagePreferences(patch) {
-  let sessionValues = {}
-  try { sessionValues = JSON.parse(sessionStorage.getItem(preferenceSessionKey) || '{}') } catch (error) { sessionValues = {} }
+function stagePreferences(patch, status = 'pending') {
+  const sessionState = readPreferenceSessionState()
   const normalized = normalizePreferences({ ...getPreferences(), ...patch })
-  const nextPatch = Object.fromEntries(Object.keys(patch).map(key => [key, normalized[key]]))
-  sessionStorage.setItem(preferenceSessionKey, JSON.stringify({ ...sessionValues, ...nextPatch }))
+  Object.keys(patch).forEach(key => { sessionState[key] = { value: normalized[key], status } })
+  sessionStorage.setItem(preferenceSessionKey, JSON.stringify(sessionState))
+}
+
+function markPreferenceErrors(patch) {
+  stagePreferences(patch, 'error')
 }
 
 function shouldFailPreferenceOnce(button) {
@@ -85,9 +155,12 @@ function shouldFailPreferenceOnce(button) {
   return shouldFail
 }
 
-function savePreference(button, patch, { loadingText = '保存中…', optimistic = true, controls = [button], replaceLabel = true, onSuccess, onFailure } = {}) {
+function savePreference(button, patch, { loadingText = '保存中…', optimistic = true, controls = [button], replaceLabel = true, onPending, onSuccess, onFailure } = {}) {
   if (!button || button.dataset.preferenceState === 'running') return
-  if (optimistic) stagePreferences(patch)
+  if (optimistic) {
+    stagePreferences(patch)
+    onPending?.(getPreferenceState())
+  }
   button.dataset.preferenceState = 'running'
   controls.forEach(control => {
     if (replaceLabel && control === button) setButtonLoading(control, true, loadingText)
@@ -99,7 +172,10 @@ function savePreference(button, patch, { loadingText = '保存中…', optimisti
       if (replaceLabel && control === button) setButtonLoading(control, false)
       else control.disabled = false
     })
-    if (shouldFailPreferenceOnce(button)) return onFailure?.()
+    if (shouldFailPreferenceOnce(button)) {
+      if (optimistic) markPreferenceErrors(patch)
+      return onFailure?.(getPreferenceState())
+    }
     const preferences = updatePreferences(patch)
     onSuccess?.(preferences)
   }, 650)
@@ -200,6 +276,69 @@ function getActiveFormControls(scope) {
   })
 }
 
+function createFundingChip(name) {
+  const button = document.createElement('button')
+  button.type = 'button'
+  button.className = 'chip'
+  button.textContent = name
+  return button
+}
+
+function renderFundingControls() {
+  const enabledChannels = getEnabledFundingChannels()
+  document.querySelectorAll('[data-preference-options="fundingChannel"]').forEach(group => {
+    delete group.dataset.chipBound
+    group.replaceChildren(...enabledChannels.map(createFundingChip))
+  })
+  document.querySelectorAll('[data-funding-picker]').forEach(group => {
+    delete group.dataset.chipBound
+    const manage = document.createElement('button')
+    manage.type = 'button'
+    manage.className = 'chip'
+    manage.dataset.open = 'funding-sheet'
+    manage.textContent = '管理'
+    group.replaceChildren(...enabledChannels.map(createFundingChip), manage)
+  })
+  document.querySelectorAll('[data-funding-filter]').forEach(select => {
+    const selected = select.value
+    const all = document.createElement('option')
+    all.value = '全部渠道'
+    all.textContent = '全部渠道'
+    select.replaceChildren(all, ...enabledChannels.map(name => {
+      const option = document.createElement('option')
+      option.value = name
+      option.textContent = name
+      return option
+    }))
+    select.value = enabledChannels.includes(selected) ? selected : '全部渠道'
+  })
+  document.querySelectorAll('[data-funding-select]').forEach(select => {
+    const selected = select.value || select.dataset.fundingInitial
+    select.replaceChildren(...enabledChannels.map(name => {
+      const option = document.createElement('option')
+      option.value = name
+      option.textContent = name
+      return option
+    }))
+    select.value = enabledChannels.includes(selected) ? selected : getDefaultFundingChannel()
+  })
+  const count = document.querySelector('[data-funding-dictionary-count]')
+  if (count) count.textContent = `${readFundingDictionary().length} 项 · 管理`
+  document.querySelectorAll('[data-chip-group]').forEach(bindChipGroup)
+  document.querySelectorAll('[data-open="funding-sheet"]').forEach(bindOverlayTrigger)
+}
+
+function bindChipGroup(group) {
+  if (!group || group.dataset.chipBound === 'true') return
+  group.dataset.chipBound = 'true'
+  group.querySelectorAll('.chip:not([data-open])').forEach(chip => chip.addEventListener('click', () => {
+    group.querySelectorAll('.chip').forEach(item => {
+      item.classList.toggle('active', item === chip)
+      item.setAttribute('aria-pressed', String(item === chip))
+    })
+  }))
+}
+
 function initCommonActions() {
   document.querySelectorAll('[data-toast]').forEach(trigger => trigger.addEventListener('click', () => showToast(trigger.dataset.toast)))
   document.querySelectorAll('button[data-theme-mode]').forEach(button => button.addEventListener('click', () => {
@@ -220,14 +359,7 @@ function initCommonActions() {
       }
     })
   }))
-  document.querySelectorAll('[data-chip-group]').forEach(group => {
-    group.querySelectorAll('.chip:not([data-open])').forEach(chip => chip.addEventListener('click', () => {
-      group.querySelectorAll('.chip').forEach(item => {
-        item.classList.toggle('active', item === chip)
-        item.setAttribute('aria-pressed', String(item === chip))
-      })
-    }))
-  })
+  document.querySelectorAll('[data-chip-group]').forEach(bindChipGroup)
   document.querySelectorAll('[data-close-after]').forEach(button => button.addEventListener('click', () => {
     showToast(button.dataset.closeAfter)
     closeOverlay(button.closest('.overlay'))
@@ -1095,6 +1227,40 @@ function openProductMerge(sourceRow) {
   openOverlay('product-merge-sheet')
 }
 
+function reconcileFundingPreference(rename) {
+  const enabled = getEnabledFundingChannels()
+  const fallback = getDefaultFundingChannel()
+  let stored = {}
+  let sessionState = {}
+  try { stored = JSON.parse(localStorage.getItem(preferenceStorageKey) || '{}') } catch (error) { stored = {} }
+  try { sessionState = JSON.parse(sessionStorage.getItem(preferenceSessionKey) || '{}') } catch (error) { sessionState = {} }
+  if (rename && stored.fundingChannel === rename.from) stored.fundingChannel = rename.to
+  if (!enabled.includes(stored.fundingChannel)) stored.fundingChannel = fallback
+  const sessionItem = sessionState.fundingChannel
+  const sessionValue = typeof sessionItem === 'object' && sessionItem !== null ? sessionItem.value : sessionItem
+  if (rename && sessionValue === rename.from) {
+    sessionState.fundingChannel = typeof sessionItem === 'object' && sessionItem !== null ? { ...sessionItem, value: rename.to } : { value: rename.to, status: 'error' }
+  } else if (sessionValue && !enabled.includes(sessionValue)) {
+    delete sessionState.fundingChannel
+  }
+  localStorage.setItem(preferenceStorageKey, JSON.stringify(normalizePreferences(stored)))
+  if (Object.keys(sessionState).length) sessionStorage.setItem(preferenceSessionKey, JSON.stringify(sessionState))
+  else sessionStorage.removeItem(preferenceSessionKey)
+}
+
+function persistFundingDictionaryRows(container, rename) {
+  const items = [...container.querySelectorAll('[data-dictionary-row]')].map(row => ({
+    name: row.querySelector('input').value.trim(),
+    enabled: row.dataset.disabled !== 'true'
+  }))
+  if (items.some(item => !item.name) || new Set(items.map(item => item.name)).size !== items.length || !items.some(item => item.enabled)) return false
+  writeFundingDictionary(items)
+  reconcileFundingPreference(rename)
+  renderFundingControls()
+  renderProfilePreferences()
+  return true
+}
+
 function createDictionaryRow(dictionaryName, value, disabled = false, metaText = '历史引用保留', impactCount = 0) {
   const row = document.createElement('div')
   row.className = 'list-item'
@@ -1105,6 +1271,7 @@ function createDictionaryRow(dictionaryName, value, disabled = false, metaText =
   const input = document.createElement('input')
   input.className = 'control'
   input.value = value
+  input.dataset.lastValue = value
   input.setAttribute('aria-label', `${dictionaryName}名称`)
   const meta = document.createElement('div')
   meta.className = 'item-meta'
@@ -1125,18 +1292,31 @@ function createDictionaryRow(dictionaryName, value, disabled = false, metaText =
   content.append(input, meta)
   actions.append(move, merge, toggle)
   row.append(content, actions)
-  input.addEventListener('change', () => showToast(`${dictionaryName}已改名并刷新引用展示`))
+  input.addEventListener('change', () => {
+    if (dictionaryName === '资金渠道' && !persistFundingDictionaryRows(row.parentElement, { from: input.dataset.lastValue, to: input.value.trim() })) {
+      input.value = input.dataset.lastValue
+      return showToast('资金渠道名称不能为空或重复')
+    }
+    input.dataset.lastValue = input.value.trim()
+    showToast(`${dictionaryName}已改名并刷新引用展示`)
+  })
   move.addEventListener('click', () => {
     if (row.previousElementSibling) row.parentElement.insertBefore(row, row.previousElementSibling)
+    if (dictionaryName === '资金渠道') persistFundingDictionaryRows(row.parentElement)
     showToast(`${dictionaryName}排序已更新`)
   })
   merge.addEventListener('click', () => openProductMerge(row))
   toggle.addEventListener('click', () => {
     const nextDisabled = row.dataset.disabled !== 'true'
+    if (dictionaryName === '资金渠道' && nextDisabled) {
+      const enabledCount = [...row.parentElement.querySelectorAll('[data-dictionary-row]')].filter(item => item.dataset.disabled !== 'true').length
+      if (enabledCount <= 1) return showToast('至少保留一个启用资金渠道')
+    }
     row.dataset.disabled = String(nextDisabled)
     toggle.textContent = nextDisabled ? '恢复' : '停用'
     merge.disabled = nextDisabled
     meta.textContent = nextDisabled ? '已停用项不进入新填报' : '已恢复，可用于新填报'
+    if (dictionaryName === '资金渠道') persistFundingDictionaryRows(row.parentElement)
     showToast(`${dictionaryName}${nextDisabled ? '已停用' : '已恢复'}`)
   })
   return row
@@ -1147,6 +1327,10 @@ function initDictionaries() {
   const list = document.querySelector('[data-dictionary-list]')
   let currentName = ''
   const renderList = name => {
+    if (name === '资金渠道') {
+      list.replaceChildren(...readFundingDictionary().map(item => createDictionaryRow(name, item.name, !item.enabled, item.enabled ? '启用 · 所有账目页面共用' : '已停用项不进入新填报')))
+      return
+    }
     list.replaceChildren(
       createDictionaryRow(name, `${name}示例一`, false, '历史引用保留', name === '商品' ? 12 : 0),
       createDictionaryRow(name, `${name}示例二`, name !== '商品', name === '商品' ? '启用 · 可作为合并目标' : '已停用项不进入新填报', name === '商品' ? 5 : 0)
@@ -1163,7 +1347,9 @@ function initDictionaries() {
   document.querySelector('[data-dictionary-add]')?.addEventListener('click', () => {
     const value = document.querySelector('[data-dictionary-new]')?.value.trim()
     if (!value) return showToast(`请输入${currentName}名称`)
+    if (currentName === '资金渠道' && readFundingDictionary().some(item => item.name === value)) return showToast('资金渠道名称不能重复')
     list.prepend(createDictionaryRow(currentName, value, false, '刚刚新增 · 启用'))
+    if (currentName === '资金渠道') persistFundingDictionaryRows(list)
     document.querySelector('[data-dictionary-new]').value = ''
     showToast(`${currentName}“${value}”已新增`)
   })
@@ -1205,17 +1391,23 @@ function initReportFilters() {
   update()
 }
 
-function renderProfilePreferences(preferences = getPreferences()) {
+function renderProfilePreferences() {
+  const state = getPreferenceState()
+  const preferences = state.values
   const entryTypeLabels = { expense: '支出', income: '收入' }
   const themeLabels = { system: '跟随系统', light: '白天', dark: '夜晚' }
   document.querySelectorAll('[data-preference-value]').forEach(value => {
     const key = value.dataset.preferenceValue
+    const suffix = state.fields[key].status === 'pending' ? '保存中' : state.fields[key].status === 'error' ? '待重试' : key === 'entryType' ? '自动保存' : '修改'
     value.textContent = key === 'entryType'
-      ? `${entryTypeLabels[preferences.entryType]} · 自动保存`
-      : `${preferences[key]} · 修改`
+      ? `${entryTypeLabels[preferences.entryType]} · ${suffix}`
+      : `${preferences[key]} · ${suffix}`
   })
   const themeStatus = document.querySelector('[data-theme-save-status]')
-  if (themeStatus) themeStatus.textContent = `当前：${themeLabels[preferences.theme]} · 已保存`
+  if (themeStatus) {
+    const statusLabel = state.fields.theme.status === 'pending' ? '保存中' : state.fields.theme.status === 'error' ? '待重试' : '已保存'
+    themeStatus.textContent = `当前：${themeLabels[preferences.theme]} · ${statusLabel}`
+  }
 }
 
 function selectPreferenceChip(group, selectedValue) {
@@ -1231,8 +1423,9 @@ function initProfilePreferences() {
   renderProfilePreferences()
   const paymentOverlay = document.getElementById('payment-pref')
   document.querySelector('[data-open="payment-pref"]')?.addEventListener('click', () => {
+    const state = getPreferenceState()
     selectPreferenceChip(paymentOverlay.querySelector('[data-preference-options="fundingChannel"]'), getPreferences().fundingChannel)
-    paymentOverlay.querySelector('[data-preference-error="fundingChannel"]').hidden = true
+    paymentOverlay.querySelector('[data-preference-error="fundingChannel"]').hidden = state.fields.fundingChannel.status !== 'error'
   })
   document.querySelector('[data-preference-save="fundingChannel"]')?.addEventListener('click', event => {
     const button = event.currentTarget
@@ -1240,13 +1433,13 @@ function initProfilePreferences() {
     const error = paymentOverlay.querySelector('[data-preference-error="fundingChannel"]')
     error.hidden = true
     savePreference(button, { fundingChannel: selected }, {
+      onPending: () => renderProfilePreferences(),
       onFailure: () => {
         error.hidden = false
         renderProfilePreferences()
-        document.querySelector('[data-preference-value="fundingChannel"]').textContent = `${selected} · 待重试`
       },
-      onSuccess: preferences => {
-        renderProfilePreferences(preferences)
+      onSuccess: () => {
+        renderProfilePreferences()
         closeOverlay(paymentOverlay)
         showToast('默认资金渠道已保存并用于新填报')
       }
@@ -1258,7 +1451,7 @@ function initProfilePreferences() {
     rangeOverlay.__preferenceKey = key
     rangeOverlay.querySelector('[data-range-pref-title]').textContent = key === 'detailRange' ? '明细默认范围' : '报表默认范围'
     rangeOverlay.querySelector('[data-range-pref-select]').value = getPreferences()[key]
-    rangeOverlay.querySelector('[data-preference-error="range"]').hidden = true
+    rangeOverlay.querySelector('[data-preference-error="range"]').hidden = getPreferenceState().fields[key].status !== 'error'
     openOverlay('range-pref')
   }))
   document.querySelector('[data-preference-save="range"]')?.addEventListener('click', event => {
@@ -1269,13 +1462,13 @@ function initProfilePreferences() {
     const error = rangeOverlay.querySelector('[data-preference-error="range"]')
     error.hidden = true
     savePreference(button, { [key]: selected }, {
+      onPending: () => renderProfilePreferences(),
       onFailure: () => {
         error.hidden = false
         renderProfilePreferences()
-        document.querySelector(`[data-preference-value="${key}"]`).textContent = `${selected} · 待重试`
       },
-      onSuccess: preferences => {
-        renderProfilePreferences(preferences)
+      onSuccess: () => {
+        renderProfilePreferences()
         closeOverlay(rangeOverlay)
         showToast(`${key === 'detailRange' ? '明细' : '报表'}默认范围已保存`)
       }
@@ -1295,7 +1488,7 @@ function initProfilePreferences() {
       onFailure: () => { error.hidden = false },
       onSuccess: preferences => {
         applyTheme(preferences.theme)
-        renderProfilePreferences(preferences)
+        renderProfilePreferences()
         closeOverlay(resetDialog)
         showToast('全部偏好已恢复默认')
       }
@@ -1639,6 +1832,7 @@ function initFilters() {
 document.addEventListener('DOMContentLoaded', () => {
   initTheme()
   initIcons()
+  renderFundingControls()
   initOverlays()
   initCommonActions()
   initPageState()
