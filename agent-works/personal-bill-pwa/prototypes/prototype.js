@@ -8,6 +8,103 @@ const icons = {
   refresh: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5"/><path d="M18 12a6 6 0 0 0-10.2-4.3L4 12m2 0a6 6 0 0 0 10.2 4.3L20 12"/></svg>'
 }
 
+const preferenceStorageKey = 'bill-prototype-preferences'
+const preferenceSessionKey = 'bill-prototype-preference-session'
+const preferenceDefaults = Object.freeze({
+  fundingChannel: '微信',
+  detailRange: '本月',
+  reportRange: '本月',
+  entryType: 'expense',
+  theme: 'system'
+})
+const preferenceOptions = {
+  fundingChannel: ['微信', '支付宝', '银行卡', '现金'],
+  detailRange: ['本月', '上月', '今年'],
+  reportRange: ['本月', '上月', '今年'],
+  entryType: ['expense', 'income'],
+  theme: ['system', 'light', 'dark']
+}
+const reportRangeValues = {
+  本月: '2026-08-01/2026-08-31',
+  上月: '2026-07-01/2026-07-31',
+  今年: '2026-01-01/2026-12-31'
+}
+
+function normalizePreferences(raw = {}) {
+  return Object.fromEntries(Object.entries(preferenceDefaults).map(([key, fallback]) => [
+    key,
+    preferenceOptions[key].includes(raw[key]) ? raw[key] : fallback
+  ]))
+}
+
+function readStoredPreferences() {
+  let stored = {}
+  try { stored = JSON.parse(localStorage.getItem(preferenceStorageKey) || '{}') } catch (error) { stored = {} }
+  const legacyEntryType = localStorage.getItem('bill-prototype-entry-type')
+  const themeCache = localStorage.getItem('bill-prototype-theme')
+  return normalizePreferences({
+    ...stored,
+    entryType: stored.entryType || legacyEntryType,
+    theme: stored.theme || themeCache
+  })
+}
+
+function getPreferences() {
+  let sessionValues = {}
+  try { sessionValues = JSON.parse(sessionStorage.getItem(preferenceSessionKey) || '{}') } catch (error) { sessionValues = {} }
+  if (new URLSearchParams(location.search).get('preference') === 'invalid') {
+    return normalizePreferences({ fundingChannel: '已停用渠道', detailRange: '未来一年', reportRange: '任意时间', entryType: 'transfer', theme: 'contrast' })
+  }
+  return normalizePreferences({ ...readStoredPreferences(), ...sessionValues })
+}
+
+function updatePreferences(patch) {
+  const next = normalizePreferences({ ...readStoredPreferences(), ...patch })
+  localStorage.setItem(preferenceStorageKey, JSON.stringify(next))
+  localStorage.removeItem('bill-prototype-entry-type')
+  if (patch.theme) localStorage.setItem('bill-prototype-theme', next.theme)
+  let sessionValues = {}
+  try { sessionValues = JSON.parse(sessionStorage.getItem(preferenceSessionKey) || '{}') } catch (error) { sessionValues = {} }
+  Object.keys(patch).forEach(key => { delete sessionValues[key] })
+  if (Object.keys(sessionValues).length) sessionStorage.setItem(preferenceSessionKey, JSON.stringify(sessionValues))
+  else sessionStorage.removeItem(preferenceSessionKey)
+  return next
+}
+
+function stagePreferences(patch) {
+  let sessionValues = {}
+  try { sessionValues = JSON.parse(sessionStorage.getItem(preferenceSessionKey) || '{}') } catch (error) { sessionValues = {} }
+  const normalized = normalizePreferences({ ...getPreferences(), ...patch })
+  const nextPatch = Object.fromEntries(Object.keys(patch).map(key => [key, normalized[key]]))
+  sessionStorage.setItem(preferenceSessionKey, JSON.stringify({ ...sessionValues, ...nextPatch }))
+}
+
+function shouldFailPreferenceOnce(button) {
+  const shouldFail = new URLSearchParams(location.search).get('preference') === 'error' && button.dataset.failureShown !== 'true'
+  if (shouldFail) button.dataset.failureShown = 'true'
+  return shouldFail
+}
+
+function savePreference(button, patch, { loadingText = '保存中…', optimistic = true, controls = [button], replaceLabel = true, onSuccess, onFailure } = {}) {
+  if (!button || button.dataset.preferenceState === 'running') return
+  if (optimistic) stagePreferences(patch)
+  button.dataset.preferenceState = 'running'
+  controls.forEach(control => {
+    if (replaceLabel && control === button) setButtonLoading(control, true, loadingText)
+    else control.disabled = true
+  })
+  setTimeout(() => {
+    button.dataset.preferenceState = 'idle'
+    controls.forEach(control => {
+      if (replaceLabel && control === button) setButtonLoading(control, false)
+      else control.disabled = false
+    })
+    if (shouldFailPreferenceOnce(button)) return onFailure?.()
+    const preferences = updatePreferences(patch)
+    onSuccess?.(preferences)
+  }, 650)
+}
+
 function resolveTheme(mode) {
   return mode === 'system' ? (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light') : mode
 }
@@ -18,7 +115,7 @@ function applyTheme(mode) {
   document.documentElement.dataset.theme = resolved
   document.documentElement.dataset.themeMode = safeMode
   document.querySelector('meta[name="theme-color"]')?.setAttribute('content', resolved === 'dark' ? '#11131A' : '#F6F7FB')
-  document.querySelectorAll('[data-theme-mode]').forEach(button => {
+  document.querySelectorAll('button[data-theme-mode]').forEach(button => {
     const active = button.dataset.themeMode === safeMode
     button.classList.toggle('active', active)
     button.setAttribute('aria-pressed', String(active))
@@ -27,7 +124,7 @@ function applyTheme(mode) {
 }
 
 function initTheme() {
-  applyTheme(localStorage.getItem('bill-prototype-theme') || 'system')
+  applyTheme(getPreferences().theme)
   matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', () => {
     if (document.documentElement.dataset.themeMode === 'system') applyTheme('system')
   })
@@ -105,7 +202,24 @@ function getActiveFormControls(scope) {
 
 function initCommonActions() {
   document.querySelectorAll('[data-toast]').forEach(trigger => trigger.addEventListener('click', () => showToast(trigger.dataset.toast)))
-  document.querySelectorAll('[data-theme-mode]').forEach(button => button.addEventListener('click', () => applyTheme(button.dataset.themeMode)))
+  document.querySelectorAll('button[data-theme-mode]').forEach(button => button.addEventListener('click', () => {
+    const mode = button.dataset.themeMode
+    applyTheme(mode)
+    const status = document.querySelector('[data-theme-save-status]')
+    if (!status) return updatePreferences({ theme: mode })
+    const buttons = [...document.querySelectorAll('button[data-theme-mode]')]
+    status.textContent = '保存中…'
+    savePreference(button, { theme: mode }, {
+      controls: buttons,
+      replaceLabel: false,
+      onFailure: () => {
+        status.textContent = '保存失败，当前主题继续使用；点击可重试'
+      },
+      onSuccess: () => {
+        status.textContent = '已保存并跨页面生效'
+      }
+    })
+  }))
   document.querySelectorAll('[data-chip-group]').forEach(group => {
     group.querySelectorAll('.chip:not([data-open])').forEach(chip => chip.addEventListener('click', () => {
       group.querySelectorAll('.chip').forEach(item => {
@@ -279,6 +393,7 @@ function updateLedgerCounts() {
 function initEntryTypes() {
   const shell = document.querySelector('[data-entry-shell]')
   if (!shell) return
+  const preferences = getPreferences()
   const setType = type => {
     const safeType = ['expense', 'income'].includes(type) ? type : 'expense'
     shell.querySelectorAll('[data-entry-panel]').forEach(panel => { panel.hidden = panel.dataset.entryPanel !== safeType })
@@ -291,7 +406,7 @@ function initEntryTypes() {
     const copy = shell.querySelector('[data-copy-entry]')
     if (primary) primary.textContent = safeType === 'income' ? '保存收入' : '保存支出'
     if (copy) copy.textContent = safeType === 'income' ? '复制上一笔收入' : '复制上一笔支出'
-    localStorage.setItem('bill-prototype-entry-type', safeType)
+    updatePreferences({ entryType: safeType })
   }
   shell.querySelectorAll('[data-entry-type]').forEach(button => button.addEventListener('click', () => setType(button.dataset.entryType)))
   shell.querySelector('[data-copy-entry]')?.addEventListener('click', () => {
@@ -310,7 +425,16 @@ function initEntryTypes() {
   }
   amount?.addEventListener('input', updateIncome)
   payer?.addEventListener('input', updateIncome)
-  setType(localStorage.getItem('bill-prototype-entry-type') || 'expense')
+  shell.querySelectorAll('[data-funding-picker]').forEach(group => {
+    const preferred = [...group.querySelectorAll('.chip:not([data-open])')]
+      .find(chip => chip.textContent.trim() === preferences.fundingChannel)
+    group.querySelectorAll('.chip').forEach(chip => {
+      const active = chip === preferred
+      chip.classList.toggle('active', active)
+      chip.setAttribute('aria-pressed', String(active))
+    })
+  })
+  setType(preferences.entryType)
   updateIncome()
 }
 
@@ -358,12 +482,16 @@ function initLogin() {
   const form = document.getElementById('login-form')
   if (!form) return
   if (new URLSearchParams(location.search).get('reason') === 'account-cancelled') {
-    showLoginFeedback('账号已进入注销处理，原会话已失效。')
+    const sessionFeedback = document.querySelector('[data-session-feedback]')
+    sessionFeedback.hidden = false
+    sessionFeedback.querySelector('span').textContent = '账号已进入注销处理，原会话已失效。'
   }
   form.addEventListener('submit', event => {
     event.preventDefault()
     const feedback = document.querySelector('[data-login-feedback]')
     if (feedback) feedback.hidden = true
+    const sessionFeedback = document.querySelector('[data-session-feedback]')
+    if (sessionFeedback) sessionFeedback.hidden = true
     if (!validateEntry(form)) return
     const username = form.querySelector('#account').value.trim()
     const password = form.querySelector('#password').value
@@ -435,6 +563,23 @@ function getReportFilterLabel(key, value) {
   return value
 }
 
+function renderReportRangeCopy(rangeValue, scope) {
+  const label = getReportFilterLabel('range', rangeValue) || '本月'
+  const dateCaptions = {
+    '2026-08-01/2026-08-31': '本月 · 2026年8月',
+    '2026-07-01/2026-07-31': '上月 · 2026年7月',
+    '2026-01-01/2026-12-31': '今年 · 2026年'
+  }
+  const dateCaption = document.querySelector('[data-report-date-caption]')
+  if (dateCaption) dateCaption.textContent = dateCaptions[rangeValue] || `${label} · 自定义范围`
+  const balanceLabel = document.querySelector('[data-report-balance-label]')
+  if (balanceLabel) balanceLabel.textContent = `${label}结余`
+  const balanceDrill = document.querySelector('[data-report-balance-drill]')
+  if (balanceDrill) balanceDrill.dataset.value = `${label}结余`
+  const rankingTitle = document.querySelector('[data-ranking-title]')
+  if (rankingTitle) rankingTitle.textContent = scope === 'income' ? `${label}收入排行` : scope === 'expense' ? `${label}支出排行` : `${label}收支构成`
+}
+
 function deriveReportFilterState(reportFilter, scope) {
   const requestedFilterScope = scope === 'overview' ? 'all' : scope
   if (reportFilter.scope === requestedFilterScope) return reportFilter
@@ -489,8 +634,6 @@ function initReports() {
     }).join('')
     initReportDrill(chart)
     const ranking = document.querySelector('[data-report-ranking]')
-    const rankingTitle = document.querySelector('[data-ranking-title]')
-    if (rankingTitle) rankingTitle.textContent = scope === 'income' ? '收入排行' : scope === 'expense' ? '支出排行' : '本月构成'
     if (ranking) ranking.innerHTML = view[2].slice(0, 3).map((item, index) => {
       const [label, value] = item.split('|')
       const sign = scope === 'expense' ? '−' : scope === 'income' ? '+' : ''
@@ -510,6 +653,7 @@ function initReports() {
     const appliedFilter = readReportFilterState()
     host.__reportState = appliedFilter
     if (filterSummary) filterSummary.textContent = appliedFilter.summary
+    renderReportRangeCopy(appliedFilter.range, scope)
     const balanceSummary = document.querySelector('[data-balance-summary]')
     if (balanceSummary) balanceSummary.hidden = scope !== 'overview'
     const reportAll = document.querySelector('[data-report-all]')
@@ -545,7 +689,13 @@ function initReports() {
   const params = new URLSearchParams(location.search)
   let restored = null
   try { restored = JSON.parse(params.get('restore') || 'null') } catch (error) { restored = null }
-  if (restored?.filterValues) restoreReportFilterState(restored.filterValues)
+  if (restored?.filterValues) {
+    restoreReportFilterState(restored.filterValues)
+  } else {
+    const preferredRange = reportRangeValues[getPreferences().reportRange]
+    const rangeSelect = document.querySelector('[data-report-range]')
+    if (rangeSelect) rangeSelect.value = preferredRange
+  }
   const initialScope = reportScopes[restored?.scope] ? restored.scope : sessionStorage.getItem('bill-report-scope') || 'overview'
   renderScope(initialScope, restored?.dimension)
   if (restored) {
@@ -614,6 +764,11 @@ function createAdjustmentRow({ id, name, amount, state = 'pending' }) {
 function initBillDetails() {
   const context = document.querySelector('[data-drill-context]')
   const params = new URLSearchParams(location.search)
+  const detailPreferences = getPreferences()
+  const detailRange = document.querySelector('[data-detail-range]')
+  if (detailRange) detailRange.value = detailPreferences.detailRange
+  const detailSummary = document.querySelector('[data-detail-filter-summary]')
+  if (detailSummary) detailSummary.textContent = `${detailPreferences.detailRange} · 全部账目`
   if (context && params.get('source') === 'reports') {
     context.hidden = false
     const reportScope = reportScopes[params.get('scope')] ? params.get('scope') : 'overview'
@@ -1050,13 +1205,105 @@ function initReportFilters() {
   update()
 }
 
-function initProfileActions() {
-  document.querySelector('[data-cycle-report-range]')?.addEventListener('click', event => {
-    const value = event.currentTarget.querySelector('.setting-value')
-    const ranges = ['本月', '上月', '今年']
-    value.textContent = `${ranges[(ranges.indexOf(value.textContent.split(' · ')[0]) + 1) % ranges.length]} · 已保存`
-    showToast('报表默认范围已更新')
+function renderProfilePreferences(preferences = getPreferences()) {
+  const entryTypeLabels = { expense: '支出', income: '收入' }
+  const themeLabels = { system: '跟随系统', light: '白天', dark: '夜晚' }
+  document.querySelectorAll('[data-preference-value]').forEach(value => {
+    const key = value.dataset.preferenceValue
+    value.textContent = key === 'entryType'
+      ? `${entryTypeLabels[preferences.entryType]} · 自动保存`
+      : `${preferences[key]} · 修改`
   })
+  const themeStatus = document.querySelector('[data-theme-save-status]')
+  if (themeStatus) themeStatus.textContent = `当前：${themeLabels[preferences.theme]} · 已保存`
+}
+
+function selectPreferenceChip(group, selectedValue) {
+  group?.querySelectorAll('.chip').forEach(chip => {
+    const active = chip.textContent.trim() === selectedValue
+    chip.classList.toggle('active', active)
+    chip.setAttribute('aria-pressed', String(active))
+  })
+}
+
+function initProfilePreferences() {
+  if (!document.querySelector('[data-preference-value]')) return
+  renderProfilePreferences()
+  const paymentOverlay = document.getElementById('payment-pref')
+  document.querySelector('[data-open="payment-pref"]')?.addEventListener('click', () => {
+    selectPreferenceChip(paymentOverlay.querySelector('[data-preference-options="fundingChannel"]'), getPreferences().fundingChannel)
+    paymentOverlay.querySelector('[data-preference-error="fundingChannel"]').hidden = true
+  })
+  document.querySelector('[data-preference-save="fundingChannel"]')?.addEventListener('click', event => {
+    const button = event.currentTarget
+    const selected = paymentOverlay.querySelector('[data-preference-options="fundingChannel"] .chip.active')?.textContent.trim() || getPreferences().fundingChannel
+    const error = paymentOverlay.querySelector('[data-preference-error="fundingChannel"]')
+    error.hidden = true
+    savePreference(button, { fundingChannel: selected }, {
+      onFailure: () => {
+        error.hidden = false
+        renderProfilePreferences()
+        document.querySelector('[data-preference-value="fundingChannel"]').textContent = `${selected} · 待重试`
+      },
+      onSuccess: preferences => {
+        renderProfilePreferences(preferences)
+        closeOverlay(paymentOverlay)
+        showToast('默认资金渠道已保存并用于新填报')
+      }
+    })
+  })
+  const rangeOverlay = document.getElementById('range-pref')
+  document.querySelectorAll('[data-preference-range]').forEach(trigger => trigger.addEventListener('click', () => {
+    const key = trigger.dataset.preferenceRange
+    rangeOverlay.__preferenceKey = key
+    rangeOverlay.querySelector('[data-range-pref-title]').textContent = key === 'detailRange' ? '明细默认范围' : '报表默认范围'
+    rangeOverlay.querySelector('[data-range-pref-select]').value = getPreferences()[key]
+    rangeOverlay.querySelector('[data-preference-error="range"]').hidden = true
+    openOverlay('range-pref')
+  }))
+  document.querySelector('[data-preference-save="range"]')?.addEventListener('click', event => {
+    const button = event.currentTarget
+    const key = rangeOverlay.__preferenceKey
+    if (!['detailRange', 'reportRange'].includes(key)) return
+    const selected = rangeOverlay.querySelector('[data-range-pref-select]').value
+    const error = rangeOverlay.querySelector('[data-preference-error="range"]')
+    error.hidden = true
+    savePreference(button, { [key]: selected }, {
+      onFailure: () => {
+        error.hidden = false
+        renderProfilePreferences()
+        document.querySelector(`[data-preference-value="${key}"]`).textContent = `${selected} · 待重试`
+      },
+      onSuccess: preferences => {
+        renderProfilePreferences(preferences)
+        closeOverlay(rangeOverlay)
+        showToast(`${key === 'detailRange' ? '明细' : '报表'}默认范围已保存`)
+      }
+    })
+  })
+  const resetDialog = document.getElementById('preference-reset-dialog')
+  document.querySelector('[data-open="preference-reset-dialog"]')?.addEventListener('click', () => {
+    resetDialog.querySelector('[data-preference-error="reset"]').hidden = true
+  })
+  document.querySelector('[data-preference-reset]')?.addEventListener('click', event => {
+    const button = event.currentTarget
+    const error = resetDialog.querySelector('[data-preference-error="reset"]')
+    error.hidden = true
+    savePreference(button, preferenceDefaults, {
+      loadingText: '恢复中…',
+      optimistic: false,
+      onFailure: () => { error.hidden = false },
+      onSuccess: preferences => {
+        applyTheme(preferences.theme)
+        renderProfilePreferences(preferences)
+        closeOverlay(resetDialog)
+        showToast('全部偏好已恢复默认')
+      }
+    })
+  })
+}
+
+function initProfileActions() {
   document.querySelector('[data-password-save]')?.addEventListener('click', event => {
     const sheet = event.currentTarget.closest('.sheet')
     const current = sheet.querySelector('[data-current-password]')
@@ -1367,9 +1614,22 @@ function initFilters() {
     const overlay = button.closest('.overlay')
     overlay.querySelectorAll('select').forEach(select => { select.selectedIndex = 0 })
     overlay.querySelectorAll('input').forEach(input => { input.value = '' })
+    const preferences = getPreferences()
+    if (overlay.id === 'filter-sheet') {
+      const range = overlay.querySelector('[data-report-range]')
+      if (range) range.value = reportRangeValues[preferences.reportRange]
+    }
+    if (overlay.id === 'detail-filter') {
+      const range = overlay.querySelector('[data-detail-range]')
+      if (range) range.value = preferences.detailRange
+    }
     overlay.querySelector('[data-report-filter-scope]')?.dispatchEvent(new Event('change'))
     const summary = document.querySelector('[data-filter-summary-text]')
-    if (summary) summary.textContent = overlay.id === 'filter-sheet' ? '本月 · 全部 · 全部渠道' : '本月 · 全部条件'
+    const labels = getActiveFormControls(overlay)
+      .filter(control => control.tagName === 'SELECT')
+      .map(select => select.selectedOptions[0]?.textContent)
+      .filter(Boolean)
+    if (summary) summary.textContent = labels.join(' · ')
     if (overlay.id === 'filter-sheet') document.querySelector('[data-report-view]')?.__renderScope?.('overview')
     closeOverlay(overlay)
     showToast('已恢复默认筛选')
@@ -1395,6 +1655,7 @@ document.addEventListener('DOMContentLoaded', () => {
   initDictionaries()
   initFilters()
   initAdminActions()
+  initProfilePreferences()
   initProfileActions()
   initExports()
 })
