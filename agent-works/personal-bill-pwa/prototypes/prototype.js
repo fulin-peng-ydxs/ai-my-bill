@@ -11,14 +11,17 @@ const icons = {
 const preferenceStorageKey = 'bill-prototype-preferences'
 const preferenceSessionKey = 'bill-prototype-preference-session'
 const fundingDictionaryStorageKey = 'bill-prototype-funding-dictionary'
+const fundingFilterAllValue = '__all_funding_channels__'
+const fundingManagementLabel = '管理资金渠道'
+const reservedFundingIds = new Set([fundingFilterAllValue])
 const fundingDictionaryDefaults = Object.freeze([
-  { name: '微信', enabled: true },
-  { name: '支付宝', enabled: true },
-  { name: '银行卡', enabled: true },
-  { name: '现金', enabled: true }
+  { id: 'funding-wechat', name: '微信', enabled: true },
+  { id: 'funding-alipay', name: '支付宝', enabled: true },
+  { id: 'funding-bank-card', name: '银行卡', enabled: true },
+  { id: 'funding-cash', name: '现金', enabled: true }
 ])
 const preferenceDefaults = Object.freeze({
-  fundingChannel: '微信',
+  fundingChannel: 'funding-wechat',
   detailRange: '本月',
   reportRange: '本月',
   entryType: 'expense',
@@ -31,14 +34,34 @@ const preferenceOptions = {
   theme: ['system', 'light', 'dark']
 }
 
+function legacyFundingChannelId(name, index = 0) {
+  let hash = 2166136261
+  for (const character of name) {
+    hash ^= character.codePointAt(0)
+    hash = Math.imul(hash, 16777619)
+  }
+  return `funding-legacy-${(hash >>> 0).toString(36)}-${index}`
+}
+
+function createFundingChannelId() {
+  if (globalThis.crypto?.randomUUID) return `funding-${globalThis.crypto.randomUUID()}`
+  return `funding-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
+}
+
 function normalizeFundingDictionary(raw) {
   if (!Array.isArray(raw)) return fundingDictionaryDefaults.map(item => ({ ...item }))
-  const seen = new Set()
-  const items = raw.flatMap(item => {
+  const seenNames = new Set()
+  const seenIds = new Set()
+  const items = raw.flatMap((item, index) => {
     const name = typeof item?.name === 'string' ? item.name.trim() : ''
-    if (!name || seen.has(name)) return []
-    seen.add(name)
-    return [{ name, enabled: item.enabled !== false }]
+    if (!name || seenNames.has(name)) return []
+    seenNames.add(name)
+    const defaultItem = fundingDictionaryDefaults.find(candidate => candidate.name === name)
+    let id = typeof item?.id === 'string' ? item.id.trim() : ''
+    if (!id || reservedFundingIds.has(id) || seenIds.has(id)) id = defaultItem?.id || legacyFundingChannelId(name, index)
+    while (seenIds.has(id)) id = `${legacyFundingChannelId(name, index)}-${seenIds.size}`
+    seenIds.add(id)
+    return [{ id, name, enabled: item.enabled !== false }]
   })
   if (!items.length || !items.some(item => item.enabled)) return fundingDictionaryDefaults.map(item => ({ ...item }))
   return items
@@ -47,8 +70,13 @@ function normalizeFundingDictionary(raw) {
 function readFundingDictionary() {
   let stored = null
   try { stored = JSON.parse(localStorage.getItem(fundingDictionaryStorageKey) || 'null') } catch (error) { stored = null }
-  if (new URLSearchParams(location.search).get('funding') === 'invalid') stored = [{ name: '', enabled: true }, { name: '微信', enabled: false }]
-  return normalizeFundingDictionary(stored)
+  const simulateInvalid = new URLSearchParams(location.search).get('funding') === 'invalid'
+  if (simulateInvalid) stored = [{ name: '', enabled: true }, { name: '微信', enabled: false }]
+  const normalized = normalizeFundingDictionary(stored)
+  if (!simulateInvalid && Array.isArray(stored) && JSON.stringify(stored) !== JSON.stringify(normalized)) {
+    localStorage.setItem(fundingDictionaryStorageKey, JSON.stringify(normalized))
+  }
+  return normalized
 }
 
 function writeFundingDictionary(items) {
@@ -58,16 +86,26 @@ function writeFundingDictionary(items) {
 }
 
 function getEnabledFundingChannels() {
-  return readFundingDictionary().filter(item => item.enabled).map(item => item.name)
+  return readFundingDictionary().filter(item => item.enabled)
 }
 
 function getDefaultFundingChannel() {
   const enabled = getEnabledFundingChannels()
-  return enabled.includes(preferenceDefaults.fundingChannel) ? preferenceDefaults.fundingChannel : enabled[0]
+  return enabled.some(item => item.id === preferenceDefaults.fundingChannel) ? preferenceDefaults.fundingChannel : enabled[0].id
+}
+
+function resolveFundingChannelId(value, enabledOnly = true) {
+  const dictionary = readFundingDictionary().filter(item => !enabledOnly || item.enabled)
+  return dictionary.find(item => item.id === value || item.name === value)?.id || ''
+}
+
+function getFundingChannelName(id) {
+  const dictionary = readFundingDictionary()
+  return dictionary.find(item => item.id === id)?.name || dictionary.find(item => item.enabled)?.name || '未设置'
 }
 
 function isValidPreference(key, value) {
-  return key === 'fundingChannel' ? getEnabledFundingChannels().includes(value) : preferenceOptions[key].includes(value)
+  return key === 'fundingChannel' ? Boolean(resolveFundingChannelId(value)) : preferenceOptions[key].includes(value)
 }
 const reportRangeValues = {
   本月: '2026-08-01/2026-08-31',
@@ -78,20 +116,27 @@ const reportRangeValues = {
 function normalizePreferences(raw = {}) {
   return Object.fromEntries(Object.entries(preferenceDefaults).map(([key, fallback]) => [
     key,
-    isValidPreference(key, raw[key]) ? raw[key] : key === 'fundingChannel' ? getDefaultFundingChannel() : fallback
+    key === 'fundingChannel'
+      ? resolveFundingChannelId(raw[key]) || getDefaultFundingChannel()
+      : isValidPreference(key, raw[key]) ? raw[key] : fallback
   ]))
 }
 
 function readPreferenceSessionState() {
   let raw = {}
   try { raw = JSON.parse(sessionStorage.getItem(preferenceSessionKey) || '{}') } catch (error) { raw = {} }
-  return Object.fromEntries(Object.entries(raw).flatMap(([key, item]) => {
+  const normalized = Object.fromEntries(Object.entries(raw).flatMap(([key, item]) => {
     if (!(key in preferenceDefaults)) return []
     const value = typeof item === 'object' && item !== null ? item.value : item
     if (!isValidPreference(key, value)) return []
     const status = typeof item === 'object' && ['pending', 'error'].includes(item.status) ? item.status : 'error'
-    return [[key, { value, status }]]
+    return [[key, { value: key === 'fundingChannel' ? resolveFundingChannelId(value) : value, status }]]
   }))
+  if (JSON.stringify(raw) !== JSON.stringify(normalized)) {
+    if (Object.keys(normalized).length) sessionStorage.setItem(preferenceSessionKey, JSON.stringify(normalized))
+    else sessionStorage.removeItem(preferenceSessionKey)
+  }
+  return normalized
 }
 
 function readStoredPreferences() {
@@ -99,11 +144,17 @@ function readStoredPreferences() {
   try { stored = JSON.parse(localStorage.getItem(preferenceStorageKey) || '{}') } catch (error) { stored = {} }
   const legacyEntryType = localStorage.getItem('bill-prototype-entry-type')
   const themeCache = localStorage.getItem('bill-prototype-theme')
-  return normalizePreferences({
+  const normalized = normalizePreferences({
     ...stored,
     entryType: stored.entryType || legacyEntryType,
     theme: stored.theme || themeCache
   })
+  const hasLegacySource = Boolean(Object.keys(stored).length || legacyEntryType || themeCache)
+  if (hasLegacySource && JSON.stringify(stored) !== JSON.stringify(normalized)) {
+    localStorage.setItem(preferenceStorageKey, JSON.stringify(normalized))
+  }
+  if (legacyEntryType) localStorage.removeItem('bill-prototype-entry-type')
+  return normalized
 }
 
 function getPreferences() {
@@ -276,11 +327,19 @@ function getActiveFormControls(scope) {
   })
 }
 
-function createFundingChip(name) {
+function getFundingChannelDisplayName(channel, context = 'default') {
+  if (context === 'filter' && channel.name === '全部渠道') return '全部渠道（资金渠道）'
+  if (context === 'picker' && channel.name === fundingManagementLabel) return `${channel.name}（渠道）`
+  return channel.name
+}
+
+function createFundingChip(channel, context = 'default') {
   const button = document.createElement('button')
   button.type = 'button'
   button.className = 'chip'
-  button.textContent = name
+  button.dataset.fundingId = channel.id
+  button.textContent = getFundingChannelDisplayName(channel, context)
+  button.setAttribute('aria-label', `选择资金渠道：${channel.name}`)
   return button
 }
 
@@ -288,7 +347,7 @@ function renderFundingControls() {
   const enabledChannels = getEnabledFundingChannels()
   document.querySelectorAll('[data-preference-options="fundingChannel"]').forEach(group => {
     delete group.dataset.chipBound
-    group.replaceChildren(...enabledChannels.map(createFundingChip))
+    group.replaceChildren(...enabledChannels.map(channel => createFundingChip(channel)))
   })
   document.querySelectorAll('[data-funding-picker]').forEach(group => {
     delete group.dataset.chipBound
@@ -296,31 +355,33 @@ function renderFundingControls() {
     manage.type = 'button'
     manage.className = 'chip'
     manage.dataset.open = 'funding-sheet'
-    manage.textContent = '管理'
-    group.replaceChildren(...enabledChannels.map(createFundingChip), manage)
+    manage.textContent = fundingManagementLabel
+    manage.setAttribute('aria-label', fundingManagementLabel)
+    group.replaceChildren(...enabledChannels.map(channel => createFundingChip(channel, 'picker')), manage)
   })
   document.querySelectorAll('[data-funding-filter]').forEach(select => {
     const selected = select.value
     const all = document.createElement('option')
-    all.value = '全部渠道'
+    all.value = fundingFilterAllValue
     all.textContent = '全部渠道'
-    select.replaceChildren(all, ...enabledChannels.map(name => {
+    select.replaceChildren(all, ...enabledChannels.map(channel => {
       const option = document.createElement('option')
-      option.value = name
-      option.textContent = name
+      option.value = channel.id
+      option.textContent = getFundingChannelDisplayName(channel, 'filter')
       return option
     }))
-    select.value = enabledChannels.includes(selected) ? selected : '全部渠道'
+    const selectedId = resolveFundingChannelId(selected)
+    select.value = selected === fundingFilterAllValue || selected === '全部渠道' ? fundingFilterAllValue : selectedId || fundingFilterAllValue
   })
   document.querySelectorAll('[data-funding-select]').forEach(select => {
     const selected = select.value || select.dataset.fundingInitial
-    select.replaceChildren(...enabledChannels.map(name => {
+    select.replaceChildren(...enabledChannels.map(channel => {
       const option = document.createElement('option')
-      option.value = name
-      option.textContent = name
+      option.value = channel.id
+      option.textContent = channel.name
       return option
     }))
-    select.value = enabledChannels.includes(selected) ? selected : getDefaultFundingChannel()
+    select.value = resolveFundingChannelId(selected) || getDefaultFundingChannel()
   })
   const count = document.querySelector('[data-funding-dictionary-count]')
   if (count) count.textContent = `${readFundingDictionary().length} 项 · 管理`
@@ -559,7 +620,7 @@ function initEntryTypes() {
   payer?.addEventListener('input', updateIncome)
   shell.querySelectorAll('[data-funding-picker]').forEach(group => {
     const preferred = [...group.querySelectorAll('.chip:not([data-open])')]
-      .find(chip => chip.textContent.trim() === preferences.fundingChannel)
+      .find(chip => chip.dataset.fundingId === preferences.fundingChannel)
     group.querySelectorAll('.chip').forEach(chip => {
       const active = chip === preferred
       chip.classList.toggle('active', active)
@@ -1227,20 +1288,19 @@ function openProductMerge(sourceRow) {
   openOverlay('product-merge-sheet')
 }
 
-function reconcileFundingPreference(rename) {
-  const enabled = getEnabledFundingChannels()
+function reconcileFundingPreference() {
   const fallback = getDefaultFundingChannel()
   let stored = {}
   let sessionState = {}
   try { stored = JSON.parse(localStorage.getItem(preferenceStorageKey) || '{}') } catch (error) { stored = {} }
   try { sessionState = JSON.parse(sessionStorage.getItem(preferenceSessionKey) || '{}') } catch (error) { sessionState = {} }
-  if (rename && stored.fundingChannel === rename.from) stored.fundingChannel = rename.to
-  if (!enabled.includes(stored.fundingChannel)) stored.fundingChannel = fallback
+  stored.fundingChannel = resolveFundingChannelId(stored.fundingChannel) || fallback
   const sessionItem = sessionState.fundingChannel
   const sessionValue = typeof sessionItem === 'object' && sessionItem !== null ? sessionItem.value : sessionItem
-  if (rename && sessionValue === rename.from) {
-    sessionState.fundingChannel = typeof sessionItem === 'object' && sessionItem !== null ? { ...sessionItem, value: rename.to } : { value: rename.to, status: 'error' }
-  } else if (sessionValue && !enabled.includes(sessionValue)) {
+  const sessionId = resolveFundingChannelId(sessionValue)
+  if (sessionValue && sessionId) {
+    sessionState.fundingChannel = typeof sessionItem === 'object' && sessionItem !== null ? { ...sessionItem, value: sessionId } : { value: sessionId, status: 'error' }
+  } else if (sessionValue) {
     delete sessionState.fundingChannel
   }
   localStorage.setItem(preferenceStorageKey, JSON.stringify(normalizePreferences(stored)))
@@ -1248,25 +1308,27 @@ function reconcileFundingPreference(rename) {
   else sessionStorage.removeItem(preferenceSessionKey)
 }
 
-function persistFundingDictionaryRows(container, rename) {
+function persistFundingDictionaryRows(container) {
   const items = [...container.querySelectorAll('[data-dictionary-row]')].map(row => ({
+    id: row.dataset.dictionaryId || createFundingChannelId(),
     name: row.querySelector('input').value.trim(),
     enabled: row.dataset.disabled !== 'true'
   }))
   if (items.some(item => !item.name) || new Set(items.map(item => item.name)).size !== items.length || !items.some(item => item.enabled)) return false
   writeFundingDictionary(items)
-  reconcileFundingPreference(rename)
+  reconcileFundingPreference()
   renderFundingControls()
   renderProfilePreferences()
   return true
 }
 
-function createDictionaryRow(dictionaryName, value, disabled = false, metaText = '历史引用保留', impactCount = 0) {
+function createDictionaryRow(dictionaryName, value, disabled = false, metaText = '历史引用保留', impactCount = 0, dictionaryId = '') {
   const row = document.createElement('div')
   row.className = 'list-item'
   row.dataset.dictionaryRow = ''
   row.dataset.disabled = String(disabled)
   row.dataset.impactCount = String(impactCount)
+  if (dictionaryName === '资金渠道') row.dataset.dictionaryId = dictionaryId || createFundingChannelId()
   const content = document.createElement('div')
   const input = document.createElement('input')
   input.className = 'control'
@@ -1293,7 +1355,7 @@ function createDictionaryRow(dictionaryName, value, disabled = false, metaText =
   actions.append(move, merge, toggle)
   row.append(content, actions)
   input.addEventListener('change', () => {
-    if (dictionaryName === '资金渠道' && !persistFundingDictionaryRows(row.parentElement, { from: input.dataset.lastValue, to: input.value.trim() })) {
+    if (dictionaryName === '资金渠道' && !persistFundingDictionaryRows(row.parentElement)) {
       input.value = input.dataset.lastValue
       return showToast('资金渠道名称不能为空或重复')
     }
@@ -1328,7 +1390,7 @@ function initDictionaries() {
   let currentName = ''
   const renderList = name => {
     if (name === '资金渠道') {
-      list.replaceChildren(...readFundingDictionary().map(item => createDictionaryRow(name, item.name, !item.enabled, item.enabled ? '启用 · 所有账目页面共用' : '已停用项不进入新填报')))
+      list.replaceChildren(...readFundingDictionary().map(item => createDictionaryRow(name, item.name, !item.enabled, item.enabled ? '启用 · 所有账目页面共用' : '已停用项不进入新填报', 0, item.id)))
       return
     }
     list.replaceChildren(
@@ -1401,7 +1463,7 @@ function renderProfilePreferences() {
     const suffix = state.fields[key].status === 'pending' ? '保存中' : state.fields[key].status === 'error' ? '待重试' : key === 'entryType' ? '自动保存' : '修改'
     value.textContent = key === 'entryType'
       ? `${entryTypeLabels[preferences.entryType]} · ${suffix}`
-      : `${preferences[key]} · ${suffix}`
+      : `${key === 'fundingChannel' ? getFundingChannelName(preferences[key]) : preferences[key]} · ${suffix}`
   })
   const themeStatus = document.querySelector('[data-theme-save-status]')
   if (themeStatus) {
@@ -1412,7 +1474,7 @@ function renderProfilePreferences() {
 
 function selectPreferenceChip(group, selectedValue) {
   group?.querySelectorAll('.chip').forEach(chip => {
-    const active = chip.textContent.trim() === selectedValue
+    const active = chip.dataset.fundingId ? chip.dataset.fundingId === selectedValue : chip.textContent.trim() === selectedValue
     chip.classList.toggle('active', active)
     chip.setAttribute('aria-pressed', String(active))
   })
@@ -1429,7 +1491,7 @@ function initProfilePreferences() {
   })
   document.querySelector('[data-preference-save="fundingChannel"]')?.addEventListener('click', event => {
     const button = event.currentTarget
-    const selected = paymentOverlay.querySelector('[data-preference-options="fundingChannel"] .chip.active')?.textContent.trim() || getPreferences().fundingChannel
+    const selected = paymentOverlay.querySelector('[data-preference-options="fundingChannel"] .chip.active')?.dataset.fundingId || getPreferences().fundingChannel
     const error = paymentOverlay.querySelector('[data-preference-error="fundingChannel"]')
     error.hidden = true
     savePreference(button, { fundingChannel: selected }, {
