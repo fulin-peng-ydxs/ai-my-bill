@@ -357,6 +357,9 @@ function validateNewPassword(scope, passwordSelector, confirmationSelector) {
 function initLogin() {
   const form = document.getElementById('login-form')
   if (!form) return
+  if (new URLSearchParams(location.search).get('reason') === 'account-cancelled') {
+    showLoginFeedback('账号已进入注销处理，原会话已失效。')
+  }
   form.addEventListener('submit', event => {
     event.preventDefault()
     const feedback = document.querySelector('[data-login-feedback]')
@@ -373,7 +376,10 @@ function initLogin() {
       if (username === 'stopped_user') return showLoginFeedback('账号已停用，请联系系统管理员。')
       if (!['LedgerSafe!2026A', 'TempPassword123'].includes(password)) return showLoginFeedback('用户名或密码错误，请核对后重试。')
       if (password === 'TempPassword123') {
-        form.dataset.loginDestination = getLoginDestination(username)
+        const destination = getLoginDestination(username)
+        form.dataset.loginDestination = destination
+        const firstPasswordButton = document.querySelector('[data-first-password-save]')
+        firstPasswordButton.textContent = destination === 'admin-console.html' ? '设置并进入系统管理' : '设置并进入记一笔'
         return openOverlay('first-password-sheet')
       }
       location.href = getLoginDestination(username)
@@ -417,9 +423,32 @@ const reportScopes = {
 }
 
 const reportScopeLabels = { overview: '全部账目', expense: '支出', income: '收入' }
+const reportAuxDimensionLabels = { type: '账目类型', adjustment: '退款/报销调整', balance: '结余', all: '全部明细' }
 
 function getReportDimensionLabel(scope, dimension) {
-  return reportScopes[scope]?.find(item => item.key === dimension)?.label || '筛选'
+  return reportScopes[scope]?.find(item => item.key === dimension)?.label || reportAuxDimensionLabels[dimension] || '筛选'
+}
+
+function getReportFilterLabel(key, value) {
+  const control = document.querySelector(`[data-filter-key="${key}"]`)
+  if (control?.tagName === 'SELECT') return [...control.options].find(option => option.value === value)?.textContent || value
+  return value
+}
+
+function deriveReportFilterState(reportFilter, scope) {
+  const requestedFilterScope = scope === 'overview' ? 'all' : scope
+  if (reportFilter.scope === requestedFilterScope) return reportFilter
+  const values = {
+    range: reportFilter.values.range,
+    scope: requestedFilterScope,
+    funding: reportFilter.values.funding
+  }
+  const summary = [
+    getReportFilterLabel('range', values.range),
+    reportScopeLabels[scope],
+    getReportFilterLabel('funding', values.funding)
+  ].filter(Boolean).join(' · ')
+  return { scope: requestedFilterScope, range: values.range, summary, values }
 }
 
 function readReportFilterState() {
@@ -481,6 +510,13 @@ function initReports() {
     const appliedFilter = readReportFilterState()
     host.__reportState = appliedFilter
     if (filterSummary) filterSummary.textContent = appliedFilter.summary
+    const balanceSummary = document.querySelector('[data-balance-summary]')
+    if (balanceSummary) balanceSummary.hidden = scope !== 'overview'
+    const reportAll = document.querySelector('[data-report-all]')
+    if (reportAll) {
+      reportAll.dataset.drillScope = scope
+      reportAll.dataset.value = scope === 'overview' ? '全部收支明细' : scope === 'expense' ? '全部支出明细' : '全部收入明细'
+    }
     sessionStorage.setItem('bill-report-scope', scope)
     document.querySelectorAll('[data-report-scope]').forEach(button => {
       const active = button.dataset.reportScope === scope
@@ -524,8 +560,10 @@ function initReportDrill(root = document) {
     item.addEventListener('click', () => {
     const dimension = item.dataset.dimension || 'product'
     const value = item.dataset.value || item.dataset.label || ''
-    const reportFilter = document.querySelector('[data-report-view]')?.__reportState || readReportFilterState()
-    const scope = reportFilter.scope === 'all' ? 'overview' : reportFilter.scope
+    const appliedFilter = document.querySelector('[data-report-view]')?.__reportState || readReportFilterState()
+    const appliedScope = appliedFilter.scope === 'all' ? 'overview' : appliedFilter.scope
+    const scope = reportScopes[item.dataset.drillScope] ? item.dataset.drillScope : appliedScope
+    const reportFilter = deriveReportFilterState(appliedFilter, scope)
     const filters = reportFilter.summary
     const context = { scope, dimension, value, range: reportFilter.range, filters, filterValues: reportFilter.values, scrollY: window.scrollY }
     sessionStorage.setItem('bill-report-return', JSON.stringify(context))
@@ -732,6 +770,8 @@ function appendAdminLog(action, objectName, detail) {
   row.children[3].textContent = objectName
   body.prepend(row)
   bindLogDetail(row)
+  const panel = document.querySelector('[data-log-filter-panel]')
+  applyLogFilters(panel?.__appliedFilters || {})
 }
 
 function bindUserRow(row) {
@@ -813,6 +853,68 @@ function bindLogDetail(row) {
   })
 }
 
+function readLogFilterDraft() {
+  return Object.fromEntries([...document.querySelectorAll('[data-log-filter]')].map(control => [control.dataset.logFilter, control.value.trim()]))
+}
+
+function applyLogFilters(filters = {}) {
+  const rows = [...document.querySelectorAll('[data-log-table-body] tr')]
+  if (!rows.length) return
+  let visible = 0
+  rows.forEach(row => {
+    const values = {
+      time: row.children[0].textContent.trim(),
+      admin: row.children[1].textContent.trim(),
+      action: row.children[2].textContent.trim(),
+      object: row.children[3].textContent.trim(),
+      result: row.children[4].textContent.trim()
+    }
+    const textMatch = ['admin', 'action', 'object'].every(key => !filters[key] || values[key].toLocaleLowerCase('zh-CN').includes(filters[key].toLocaleLowerCase('zh-CN')))
+    const resultMatch = !filters.result || filters.result === 'all' || values.result === filters.result
+    const timeMatch = !filters.time
+      || filters.time === 'all'
+      || values.time.startsWith(filters.time)
+      || (filters.time === '今天' && values.time === '刚刚')
+    row.hidden = !(textMatch && resultMatch && timeMatch)
+    if (!row.hidden) visible += 1
+  })
+  const empty = document.querySelector('[data-log-filter-empty]')
+  const count = document.querySelector('[data-log-filter-count]')
+  if (empty) empty.hidden = visible > 0
+  if (count) count.textContent = `当前显示 ${visible} 条日志`
+}
+
+function initLogFilters() {
+  const panel = document.querySelector('[data-log-filter-panel]')
+  if (!panel) return
+  panel.__appliedFilters = {}
+  applyLogFilters(panel.__appliedFilters)
+  document.querySelector('[data-log-filter-apply]')?.addEventListener('click', event => {
+    const button = event.currentTarget
+    const error = panel.querySelector('[data-log-filter-error]')
+    const nextFilters = readLogFilterDraft()
+    error.hidden = true
+    setButtonLoading(button, true, '筛选中…')
+    setTimeout(() => {
+      setButtonLoading(button, false)
+      const failOnce = new URLSearchParams(location.search).get('logs') === 'error' && button.dataset.failureShown !== 'true'
+      if (failOnce) {
+        button.dataset.failureShown = 'true'
+        error.hidden = false
+        return
+      }
+      panel.__appliedFilters = nextFilters
+      applyLogFilters(nextFilters)
+    }, 500)
+  })
+  document.querySelector('[data-log-filter-clear]')?.addEventListener('click', () => {
+    panel.querySelectorAll('[data-log-filter]').forEach(control => { control.value = control.tagName === 'SELECT' ? 'all' : '' })
+    panel.querySelector('[data-log-filter-error]').hidden = true
+    panel.__appliedFilters = {}
+    applyLogFilters(panel.__appliedFilters)
+  })
+}
+
 function openProductMerge(sourceRow) {
   const sheet = document.getElementById('product-merge-sheet')
   const target = sheet?.querySelector('[data-product-merge-target]')
@@ -822,6 +924,7 @@ function openProductMerge(sourceRow) {
     .filter(row => row !== sourceRow && row.dataset.disabled !== 'true')
   sheet.__sourceRow = sourceRow
   sheet.querySelector('[data-product-merge-source]').textContent = sourceName
+  sheet.querySelector('[data-product-merge-impact]').textContent = `${sourceRow.dataset.impactCount || '0'} 条`
   target.replaceChildren(...candidates.map(row => {
     const option = document.createElement('option')
     option.value = row.querySelector('input').value.trim()
@@ -837,11 +940,12 @@ function openProductMerge(sourceRow) {
   openOverlay('product-merge-sheet')
 }
 
-function createDictionaryRow(dictionaryName, value, disabled = false, metaText = '历史引用保留') {
+function createDictionaryRow(dictionaryName, value, disabled = false, metaText = '历史引用保留', impactCount = 0) {
   const row = document.createElement('div')
   row.className = 'list-item'
   row.dataset.dictionaryRow = ''
   row.dataset.disabled = String(disabled)
+  row.dataset.impactCount = String(impactCount)
   const content = document.createElement('div')
   const input = document.createElement('input')
   input.className = 'control'
@@ -889,8 +993,8 @@ function initDictionaries() {
   let currentName = ''
   const renderList = name => {
     list.replaceChildren(
-      createDictionaryRow(name, `${name}示例一`),
-      createDictionaryRow(name, `${name}示例二`, name !== '商品', name === '商品' ? '启用 · 可作为合并目标' : '已停用项不进入新填报')
+      createDictionaryRow(name, `${name}示例一`, false, '历史引用保留', name === '商品' ? 12 : 0),
+      createDictionaryRow(name, `${name}示例二`, name !== '商品', name === '商品' ? '启用 · 可作为合并目标' : '已停用项不进入新填报', name === '商品' ? 5 : 0)
     )
   }
   document.querySelectorAll('[data-dictionary]').forEach(button => button.addEventListener('click', () => {
@@ -918,10 +1022,12 @@ function initDictionaries() {
     }
     const sourceRow = overlay.__sourceRow
     const sourceName = sourceRow?.querySelector('input').value.trim()
+    const impactCount = Number(sourceRow?.dataset.impactCount || 0)
     const targetRow = [...document.querySelectorAll('[data-dictionary-row]')]
       .find(row => row !== sourceRow && row.querySelector('input').value.trim() === target.value)
     if (!sourceRow || !targetRow) return
-    targetRow.querySelector('.item-meta').textContent = `已合并“${sourceName}” · 历史引用已迁移`
+    targetRow.dataset.impactCount = String(Number(targetRow.dataset.impactCount || 0) + impactCount)
+    targetRow.querySelector('.item-meta').textContent = `已合并“${sourceName}” · ${impactCount} 条历史账单引用已迁移`
     sourceRow.remove()
     closeOverlay(overlay)
     showToast(`商品“${sourceName}”已合并到“${target.value}”`)
@@ -968,6 +1074,32 @@ function initProfileActions() {
       setButtonLoading(event.currentTarget, false)
       closeOverlay(sheet.closest('.overlay'))
       showToast('密码已更新，其他会话已失效')
+    }, 650)
+  })
+  document.querySelector('[data-account-delete]')?.addEventListener('click', event => {
+    const button = event.currentTarget
+    const overlay = button.closest('.overlay')
+    const error = overlay.querySelector('[data-account-error]')
+    if (button.dataset.accountState === 'running') return
+    button.dataset.accountState = 'running'
+    error.hidden = true
+    setButtonLoading(button, true, '提交中…')
+    setTimeout(() => {
+      const shouldFailOnce = new URLSearchParams(location.search).get('account') === 'error' && button.dataset.failureShown !== 'true'
+      button.dataset.accountState = 'idle'
+      setButtonLoading(button, false)
+      if (shouldFailOnce) {
+        button.dataset.failureShown = 'true'
+        error.hidden = false
+        return
+      }
+      closeOverlay(overlay)
+      sessionStorage.clear()
+      const processing = document.querySelector('[data-account-processing]')
+      document.querySelectorAll('[data-page-content] > *').forEach(child => { child.hidden = child !== processing })
+      processing.hidden = false
+      document.querySelector('.bottom-nav').hidden = true
+      setTimeout(() => { location.href = 'login.html?reason=account-cancelled' }, 900)
     }, 650)
   })
 }
@@ -1050,6 +1182,7 @@ function openDefaultEditor(row = null) {
   if (!sheet) return
   sheet.querySelector('[data-default-type]').value = row?.children[0].textContent.trim() || '支出分类'
   sheet.querySelector('[data-default-name]').value = row?.children[1].textContent.trim() || ''
+  sheet.querySelector('[data-default-save-error]').hidden = true
   sheet.__editingRow = row
   openOverlay('default-item-sheet')
 }
@@ -1082,43 +1215,60 @@ function openAdminConfirm({ title, message, confirmText, onConfirm, sourceOverla
   openOverlay('admin-action-dialog')
 }
 
+function commitDefaultItem(sheet, type, name) {
+  const editingRow = sheet.__editingRow
+  if (editingRow) {
+    const oldType = editingRow.children[0].textContent.trim()
+    editingRow.children[0].textContent = type
+    editingRow.children[1].textContent = name
+    if (oldType !== type) {
+      const body = editingRow.parentElement
+      const lastSameType = [...body.children].filter(item => item !== editingRow && item.children[0].textContent.trim() === type).at(-1)
+      if (lastSameType) body.insertBefore(editingRow, lastSameType.nextSibling)
+      else body.appendChild(editingRow)
+    }
+    updateDefaultOrder(oldType)
+    updateDefaultOrder(type)
+  } else {
+    const body = document.querySelector('[data-default-table-body]')
+    const row = document.createElement('tr')
+    row.innerHTML = '<td></td><td></td><td></td><td><span class="tag success">启用</span></td><td>新用户</td><td><div class="row-actions"><button data-default-move>上移</button><button data-default-edit>编辑</button><button data-default-toggle>停用</button></div></td>'
+    row.children[0].textContent = type
+    row.children[1].textContent = name
+    const lastSameType = [...body.children].filter(item => item.children[0].textContent.trim() === type).at(-1)
+    if (lastSameType) body.insertBefore(row, lastSameType.nextSibling)
+    else body.appendChild(row)
+    bindDefaultRow(row)
+    updateDefaultOrder(type)
+  }
+  appendAdminLog('保存默认字典', `${type} / ${name}`, '默认项已保存，仅影响之后创建的用户')
+  sheet.__editingRow = null
+  closeOverlay(sheet.closest('.overlay'))
+  showToast('默认字典项已保存，仅影响之后创建的用户')
+}
+
 function initAdminActions() {
   document.querySelectorAll('[data-default-table-body] tr').forEach(bindDefaultRow)
   document.querySelector('[data-default-add]')?.addEventListener('click', () => openDefaultEditor())
   document.querySelector('[data-default-save]')?.addEventListener('click', event => {
-    const sheet = event.currentTarget.closest('.sheet')
+    const button = event.currentTarget
+    const sheet = button.closest('.sheet')
     if (!validateEntry(sheet)) return
     const name = sheet.querySelector('[data-default-name]').value.trim()
     const type = sheet.querySelector('[data-default-type]').value
-    const editingRow = sheet.__editingRow
-    if (editingRow) {
-      const oldType = editingRow.children[0].textContent.trim()
-      editingRow.children[0].textContent = type
-      editingRow.children[1].textContent = name
-      if (oldType !== type) {
-        const body = editingRow.parentElement
-        const lastSameType = [...body.children].filter(item => item !== editingRow && item.children[0].textContent.trim() === type).at(-1)
-        if (lastSameType) body.insertBefore(editingRow, lastSameType.nextSibling)
-        else body.appendChild(editingRow)
+    const error = sheet.querySelector('[data-default-save-error]')
+    error.hidden = true
+    setButtonLoading(button, true, '保存中…')
+    setTimeout(() => {
+      setButtonLoading(button, false)
+      const failOnce = new URLSearchParams(location.search).get('default') === 'error' && button.dataset.failureShown !== 'true'
+      if (failOnce) {
+        button.dataset.failureShown = 'true'
+        error.hidden = false
+        return
       }
-      updateDefaultOrder(oldType)
-      updateDefaultOrder(type)
-    } else {
-      const body = document.querySelector('[data-default-table-body]')
-      const row = document.createElement('tr')
-      row.innerHTML = '<td></td><td></td><td></td><td><span class="tag success">启用</span></td><td>新用户</td><td><div class="row-actions"><button data-default-move>上移</button><button data-default-edit>编辑</button><button data-default-toggle>停用</button></div></td>'
-      row.children[0].textContent = type
-      row.children[1].textContent = name
-      const lastSameType = [...body.children].filter(item => item.children[0].textContent.trim() === type).at(-1)
-      if (lastSameType) body.insertBefore(row, lastSameType.nextSibling)
-      else body.appendChild(row)
-      bindDefaultRow(row)
-      updateDefaultOrder(type)
-    }
-    appendAdminLog('保存默认字典', `${type} / ${name}`, '默认项已保存，仅影响之后创建的用户')
-    sheet.__editingRow = null
-    closeOverlay(sheet.closest('.overlay'))
-    showToast('默认字典项已保存，仅影响之后创建的用户')
+      commitDefaultItem(sheet, type, name)
+    }, 650)
   })
   document.querySelector('[data-admin-confirm]')?.addEventListener('click', event => {
     const dialog = event.currentTarget.closest('.overlay')
@@ -1241,6 +1391,7 @@ document.addEventListener('DOMContentLoaded', () => {
   initReportDrill()
   initBillDetails()
   initAdmin()
+  initLogFilters()
   initDictionaries()
   initFilters()
   initAdminActions()
