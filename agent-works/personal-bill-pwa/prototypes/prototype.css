@@ -146,7 +146,8 @@ textarea.control { min-height: 78px; resize: vertical; }
 .report-scope { grid-template-columns: repeat(3, 1fr); }
 [data-entry-panel][hidden] { display: none; }
 
-.receipt { position: relative; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 20px; overflow: hidden; }
+.receipt { position: relative; margin-top: 12px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 20px; overflow: hidden; }
+.receipt + .action-row { margin-top: 12px; }
 .receipt::before { content: none; }
 .receipt-row { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; color: var(--muted); font-size: 13px; }
 .receipt-row + .receipt-row { margin-top: 8px; }
