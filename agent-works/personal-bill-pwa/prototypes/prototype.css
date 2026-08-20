@@ -144,8 +144,7 @@ textarea.control { min-height: 78px; resize: vertical; }
 .entry-type-segment button { min-height: 44px; border: 0; border-radius: var(--radius-pill); background: transparent; color: var(--muted); cursor: pointer; font-weight: 600; }
 .entry-type-segment button.active { color: var(--primary); background: var(--surface); box-shadow: var(--control-shadow); }
 .entry-type-segment button.expense.active { color: var(--expense); }
-[data-entry-type="income"].active, [data-report-scope="income"].active { color: var(--income); }
-[data-report-scope="expense"].active { color: var(--expense); }
+.entry-type-segment button.income.active { color: var(--income); }
 .report-scope { grid-template-columns: repeat(3, 1fr); }
 [data-entry-panel][hidden] { display: none; }
 

@@ -4,7 +4,7 @@
   <script>try{const m=localStorage.getItem('bill-prototype-theme')||'system';document.documentElement.dataset.theme=m==='system'?(matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light'):m}catch(e){}</script><link rel="stylesheet" href="prototype.css">
 </head><body data-page="entry"><div class="app"><main class="mobile-shell" data-entry-shell>
   <div data-page-content><div class="page has-savebar"><header class="page-head"><div><h1 class="page-title">记一笔</h1><p class="page-subtitle">今天 · 8 月 13 日</p></div><button class="btn small" type="button" data-copy-entry>复制上一笔支出</button></header>
-    <div class="entry-type-segment" role="group" aria-label="账目类型"><button type="button" class="active expense" data-entry-type="expense" aria-pressed="true">支出</button><button type="button" data-entry-type="income" aria-pressed="false">收入</button></div>
+    <div class="entry-type-segment" role="group" aria-label="账目类型"><button type="button" class="active expense" data-entry-type="expense" aria-pressed="true">支出</button><button type="button" class="income" data-entry-type="income" aria-pressed="false">收入</button></div>
     <div class="prototype-note"><strong>独立草稿</strong>切换类型不会清空另一份输入，并恢复当前用户最近使用的类型。收入名称和付款方均必填。</div>
     <section data-entry-panel="expense" data-money-scope>
       <section class="panel"><div class="field"><label for="product">商品名称</label><input id="product" data-product data-required class="control" list="products" placeholder="搜索或输入新商品"><datalist id="products"><option value="矿泉水"></option><option value="苹果"></option><option value="早餐包"></option></datalist><span class="field-error">请先选择或输入商品</span><span class="field-help">规范化后在当前租户商品字典内唯一</span></div>

@@ -19,6 +19,8 @@ const cssContracts = [
   ["--primary: #2997ff", "深色主操作色必须为 #2997ff"],
   ["--income: #ff3b30", "收入语义色必须为固定红色"],
   ["--expense: #34c759", "支出语义色必须为固定绿色"],
+  [".entry-type-segment button.income.active { color: var(--income); }", "收入类型选中态必须消费收入语义色"],
+  [".entry-type-segment button.expense.active { color: var(--expense); }", "支出类型选中态必须消费支出语义色"],
   ["backdrop-filter: saturate(180%) blur(20px)", "固定栏必须使用共享毛玻璃效果"],
 ];
 
