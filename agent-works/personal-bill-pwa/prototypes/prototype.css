@@ -213,6 +213,9 @@ textarea.control { min-height: 78px; resize: vertical; }
 .tag.income { color: var(--income-text); background: transparent; }
 .tag.expense { color: var(--expense-text); background: transparent; }
 .tag.adjustment { color: var(--text); border: 1px solid var(--border-strong); background: var(--surface-2); }
+.item-title [data-type-tag] { border: 1px solid var(--border-strong); background: var(--surface-2); }
+[data-type-scope="expense"] [data-ledger-item="expense"] [data-type-tag],
+[data-type-scope="income"] [data-ledger-item="income"] [data-type-tag] { display: none; }
 
 .filter-summary { min-height: 56px; display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; padding: 8px 8px 8px 12px; background: var(--surface-2); border-radius: var(--radius-md); font-size: 13px; }
 .filter-summary > div { min-width: 0; display: grid; gap: 4px; }
@@ -296,6 +299,7 @@ textarea.control { min-height: 78px; resize: vertical; }
 .state [data-daily-template-retry] { margin-top: 12px; }
 .account-session-action { color: var(--primary); }
 .account-danger-action { color: var(--danger); }
+.account-actions .setting-row { justify-content: center; text-align: center; }
 
 .overlay { position: fixed; inset: 0; z-index: 50; background: var(--overlay); display: none; align-items: flex-end; justify-content: center; }
 .overlay.open { display: flex; }

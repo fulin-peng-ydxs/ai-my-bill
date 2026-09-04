@@ -114,6 +114,10 @@ assert(reports.includes('value="all">全部账目</option>'), "不限类型必�
 assert(profileSettings.includes('data-open="dictionary-index-sheet"'), "设置首页必须将八类字典收拢为单一管理入口");
 const profileHome = profileSettings.slice(0, profileSettings.indexOf('<div class="overlay"'));
 assert(!profileHome.includes("data-dictionary="), "设置首页不得直接堆叠八类字典入口");
+const dataSecuritySection = profileHome.match(/<section class="setting-group"><h2 class="setting-group-title">数据与安全<\/h2>[\s\S]*?<\/section>/)?.[0] ?? "";
+assert(dataSecuritySection.includes('data-open="dictionary-index-sheet"'), "个人字典入口必须并入数据与安全分组");
+assert(!dataSecuritySection.includes("退出登录") && !dataSecuritySection.includes("注销账号"), "退出与注销不得继续混在数据与安全分组");
+assert(/<section class="setting-group account-actions">[\s\S]*?退出登录[\s\S]*?注销账号[\s\S]*?<\/section>/.test(profileHome), "退出与注销必须归入独立账号操作分组");
 assert(!allPrototypeHtml.includes("复制上一笔"), "日常收支模板已替代复制上一笔入口");
 assert(expenseEntry.includes('data-open="daily-entry-sheet"'), "记账页必须提供日常收支入口");
 assert(expenseEntry.includes('data-daily-template-type="expense"') && expenseEntry.includes('data-daily-template-type="income"'), "日常模板抽屉必须同时承载支出与收入");
@@ -127,6 +131,11 @@ assert(/\.filter-summary \[data-return-reports\]\s*\{[^}]*white-space:\s*nowrap/
 assert(/\.filter-summary strong\s*\{[^}]*white-space:\s*normal[^}]*overflow-wrap:\s*anywhere/s.test(css), "移动端下钻与筛选摘要必须自然换行");
 assert(profileSettings.includes('class="account-session-action"') && profileSettings.includes('class="account-danger-action"'), "退出与注销必须使用独立语义色");
 assert(profileSettings.includes('<a class="setting-row" href="login.html">'), "退出登录必须复用无下划线的设置行链接");
+assert(/\.account-actions \.setting-row\s*\{[^}]*justify-content:\s*center[^}]*text-align:\s*center/s.test(css), "账号操作必须复用设置行并居中展示");
+assert.equal((billDetails.match(/data-type-tag/g) ?? []).length, 8, "所有静态明细类型必须使用统一标签锚点");
+assert(prototypeJs.includes('list.dataset.typeScope = filters.type'), "明细类型标签必须消费当前已应用页签");
+assert(/\[data-type-scope="expense"\][\s\S]*?\[data-type-scope="income"\][\s\S]*?\[data-type-tag\]\s*\{\s*display:\s*none;/s.test(css), "支出和收入单一页签必须隐藏重复类型标签");
+assert(/\.item-title \[data-type-tag\]\s*\{[^}]*border:\s*1px solid var\(--border-strong\)[^}]*background:\s*var\(--surface-2\)/s.test(css), "其他明细页签的类型必须使用统一描边标签");
 assert(design.includes("DailyEntryFavoriteAction"), "DESIGN 必须登记日常收藏共享动作");
 assert(!css.includes(".balance-summary .balance-total { grid-column"), "结余卡片不得固定跨列并制造空位");
 assert(prototypeJs.includes("normalizeDailyTemplateKey") && prototypeJs.includes("normalize('NFKC')"), "日常模板必须复用名称规范化规则");

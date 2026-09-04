@@ -1616,7 +1616,7 @@ function renderLedgerRow(row, record) {
   const title = row.querySelector('.item-title')
   const meta = row.querySelector('.item-meta')
   const amount = row.querySelector('.item-amount')
-  const tag = title?.querySelector('.tag')
+  const tag = title?.querySelector('[data-type-tag]')
   if (record.type === 'expense') {
     Object.assign(row.dataset, {
       dailyPrimaryCategory: record.primaryCategory || '', dailySecondaryCategory: record.secondaryCategory || '',
@@ -1683,6 +1683,7 @@ function createAdjustmentRow({ id, name, amount, state = 'pending', adjustmentTy
   title.className = 'item-title'
   const tag = document.createElement('span')
   tag.className = 'tag warning'
+  tag.dataset.typeTag = ''
   tag.textContent = '待归类'
   title.append(tag, ` ${name}`)
   const meta = document.createElement('div')
@@ -1784,6 +1785,7 @@ function applyDetailFilters(filters = readDetailFilterState()) {
     button.classList.toggle('active', selected)
     button.setAttribute('aria-pressed', String(selected))
   })
+  document.querySelectorAll('[data-ledger-list], [data-trash-list]').forEach(list => { list.dataset.typeScope = filters.type })
   const summary = document.querySelector('[data-detail-filter-summary]')
   if (summary) summary.textContent = detailFilterSummary(filters)
   sessionStorage.setItem(detailFilterStorageKey, JSON.stringify(filters))
@@ -1805,7 +1807,7 @@ function createLedgerRow(record) {
   row.dataset.ledgerItem = record.type
   row.dataset.dailySource = ''
   row.dataset.open = record.type === 'income' ? 'edit-income-sheet' : 'edit-expense-sheet'
-  row.innerHTML = `<div><div class="item-title"><span class="tag ${record.type}">${record.type === 'income' ? '收入' : '支出'}</span> <span data-row-name></span></div><div class="item-meta"></div></div><div class="item-amount"></div>`
+  row.innerHTML = `<div><div class="item-title"><span class="tag ${record.type}" data-type-tag>${record.type === 'income' ? '收入' : '支出'}</span> <span data-row-name></span></div><div class="item-meta"></div></div><div class="item-amount"></div>`
   const name = row.querySelector('[data-row-name]')
   name.replaceWith(document.createTextNode(record.name || '未命名'))
   renderLedgerRow(row, record)
