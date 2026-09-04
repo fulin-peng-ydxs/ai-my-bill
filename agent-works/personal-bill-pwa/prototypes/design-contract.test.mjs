@@ -81,6 +81,7 @@ assert(!/font-weight:\s*500\b/.test(css), "不得使用不稳定的 500 字重")
 for (const fragment of ["fontSize: 17px", "收入强调色 `#FF3B30`", "支出强调色 `#34C759`", "44×44px", "WCAG AA"]) {
   assert(design.includes(fragment), `DESIGN.md 缺少稳定契约：${fragment}`);
 }
+assert(design.includes('business-contract.test.mjs'), 'DESIGN.md 必须登记业务闭环契约测试');
 
 assert(design.includes("`FormSection`"), "DESIGN.md 必须登记长表单分组组件");
 for (const component of ["`AppliedFilterBar`", "`SegmentedControl`", "`SettingsDisclosureList`", "`DailyEntryPicker`"]) {
@@ -133,5 +134,8 @@ assert(prototypeJs.includes("if (!validateEntry(scope)) return"), "从明细加�
 assert(prototypeJs.includes("timeZone: 'Asia/Shanghai'"), "日常模板回填时间必须显式使用上海时区");
 assert(prototypeJs.includes("select.dataset.required = ''"), "资金渠道下拉必须进入统一必填校验");
 assert(!prototypeJs.includes("data-copy-entry"), "旧复制上一笔交互逻辑必须完全移除");
+assert(prototypeJs.includes("function initFormAccessibility()") && prototypeJs.includes("aria-labelledby"), "动态表单与芯片组必须补齐可访问名称");
+assert(prototypeJs.includes("beforeinstallprompt") && prototypeJs.includes("data-install-state=\"detecting\"") && prototypeJs.includes("data-install-state=\"unsupported\""), "PWA 安装必须区分检测、可安装与平台引导分支");
+assert(profileSettings.includes("data-install-trigger"), "“我的”页面必须继承 PWA 安装帮助职责");
 
 console.log("Design contract: OK");

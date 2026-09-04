@@ -183,8 +183,7 @@ textarea.control { min-height: 78px; resize: vertical; }
 .nav-item.active { color: var(--primary); background: var(--surface); font-weight: 600; }
 .nav-item svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 
-.chip-row { display: flex; gap: 8px; overflow-x: auto; padding: 1px 1px 4px; scrollbar-width: none; }
-.chip-row::-webkit-scrollbar { display: none; }
+.chip-row { display: flex; flex-wrap: wrap; gap: 8px; overflow: visible; padding: 1px 1px 4px; }
 .chip { flex: none; min-height: 44px; border: 1px solid transparent; border-radius: var(--radius-pill); background: var(--surface-strong); color: var(--text); padding: 9px 16px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }
 .chip svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 .chip.active { color: var(--text); border: 2px solid var(--primary-hover); background: var(--surface); font-weight: 600; }
@@ -208,6 +207,7 @@ textarea.control { min-height: 78px; resize: vertical; }
 .item-amount { font-family: var(--mono); font-variant-numeric: tabular-nums; font-weight: 600; text-align: right; }
 .tag { display: inline-flex; align-items: center; min-height: 24px; padding: 2px 10px; border-radius: var(--radius-pill); background: var(--surface-strong); color: var(--text); font-size: 12px; font-weight: 600; }
 .tag.warning { color: var(--warning); background: transparent; }
+.region-state.permission-page, body > .region-state { width: min(520px, calc(100% - 32px)); margin: max(24px, env(safe-area-inset-top)) auto; }
 .tag.success { color: var(--success); background: transparent; }
 .tag.danger { color: var(--danger); background: transparent; }
 .tag.income { color: var(--income-text); background: transparent; }

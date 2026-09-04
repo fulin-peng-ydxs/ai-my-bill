@@ -35,12 +35,11 @@
             <button class="btn primary" style="width:100%" type="submit">登录</button>
           </form>
           <div class="state compact" data-session-feedback hidden><div><strong>会话状态</strong><span></span></div></div><div class="state compact error" data-login-feedback hidden><div><strong>登录失败</strong><span></span></div></div>
-          <div class="action-row" style="margin-top:8px"><button class="btn text grow" type="button" data-toast="请联系系统管理员重置密码；重置会使旧会话失效">无法登录？</button><button class="btn text grow" type="button" data-open="install-sheet">安装到桌面</button></div>
+          <div class="action-row" style="margin-top:8px"><button class="btn text grow" type="button" data-toast="请联系系统管理员重置密码；重置会使旧会话失效">无法登录？</button><button class="btn text grow" type="button" data-install-trigger>安装到桌面</button></div>
         </div>
       </div>
     </section>
   </main>
-  <div class="overlay" id="install-sheet"><section class="sheet" role="dialog" aria-modal="true"><div class="sheet-handle"></div><div class="sheet-head"><h2 class="sheet-title">安装到手机桌面</h2><button class="icon-btn" data-close aria-label="关闭"><span data-icon="close"></span></button></div><div class="state"><div><strong>按设备能力显示</strong>支持浏览器安装时提供系统安装动作；不支持时展示“添加到主屏幕”的平台步骤，网页仍可完整使用。</div></div><button class="btn primary" style="width:100%;margin-top:14px" data-close-after="已了解安装方式">知道了</button></section></div>
   <div class="overlay" id="first-password-sheet"><section class="sheet" role="dialog" aria-modal="true"><div class="sheet-handle"></div><div class="sheet-head"><div><h2 class="sheet-title">设置正式密码</h2><div class="caption">临时密码验证成功后必须完成</div></div></div><div class="field"><label>新密码</label><input class="control" type="password" minlength="15" maxlength="64" data-required data-new-password><span class="field-error">请输入 15–64 位正式密码</span></div><div class="field"><label>确认新密码</label><input class="control" type="password" minlength="15" maxlength="64" data-required data-new-password-confirm><span class="field-error">两次密码必须一致</span></div><button class="btn primary" style="width:100%" data-first-password-save>设置并进入系统</button></section></div>
   <script src="prototype.js"></script>
 </body>

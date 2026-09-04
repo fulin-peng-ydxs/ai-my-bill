@@ -14,6 +14,8 @@ const preferenceStorageKey = 'bill-prototype-preferences'
 const preferenceSessionKey = 'bill-prototype-preference-session'
 const fundingDictionaryStorageKey = 'bill-prototype-funding-dictionary'
 const dailyTemplateStorageKey = 'bill-prototype-daily-templates'
+const ledgerStorageKey = 'bill-prototype-ledger'
+const detailFilterStorageKey = 'bill-prototype-detail-filter'
 const fundingFilterAllValue = '__all_funding_channels__'
 const fundingManagementLabel = '管理资金渠道'
 const reservedFundingIds = new Set([fundingFilterAllValue])
@@ -30,6 +32,80 @@ const preferenceDefaults = Object.freeze({
   entryType: 'expense',
   theme: 'system'
 })
+
+const ledgerDefaults = Object.freeze([
+  { id: 'income-salary', type: 'income', lifecycle: 'active', name: '8 月工资', payer: '示例科技有限公司', category: '工资', amount: '8500.00', fundingChannel: 'funding-bank-card', occurredAt: '2026-08-13T09:00', note: '' },
+  { id: 'expense-breakfast', type: 'expense', lifecycle: 'active', name: '早餐包', primaryCategory: '餐饮', secondaryCategory: '早餐', unit: '个', price: '14.00', quantity: '2', amount: '28.00', fundingChannel: 'funding-wechat', purchaseChannel: '商超', location: '家附近超市', occurredAt: '2026-08-13T08:12', note: '早市优惠' },
+  { id: 'adjustment-breakfast', type: 'adjustment', adjustmentType: '消费退款', lifecycle: 'active', state: 'active', name: '早餐包部分退款', amount: '10.00', linkedRecordId: 'expense-breakfast', occurredAt: '2026-08-13T10:20', note: '商家部分退款' },
+  { id: 'income-parttime', type: 'income', lifecycle: 'active', name: '项目兼职', payer: '客户李先生', category: '兼职', amount: '1100.00', fundingChannel: 'funding-wechat', occurredAt: '2026-08-10T18:30', note: '' },
+  { id: 'adjustment-platform', type: 'adjustment', adjustmentType: '消费退款', lifecycle: 'active', state: 'pending', name: '平台退款', amount: '36.00', linkedRecordId: '', occurredAt: '2026-08-13T10:20', note: '等待关联原支出' },
+  { id: 'expense-umbrella', type: 'expense', lifecycle: 'trash', name: '旧雨伞', primaryCategory: '日用', secondaryCategory: '', unit: '把', price: '58.00', quantity: '1', amount: '58.00', fundingChannel: 'funding-alipay', purchaseChannel: '商超', location: '', occurredAt: '2026-08-03T14:00', note: '' },
+  { id: 'adjustment-umbrella', type: 'adjustment', adjustmentType: '费用报销', lifecycle: 'trash', state: 'frozen', name: '旧雨伞报销', amount: '20.00', linkedRecordId: 'expense-umbrella', occurredAt: '2026-08-04T09:00', note: '' },
+  { id: 'income-test', type: 'income', lifecycle: 'trash', name: '测试收入', payer: '测试付款方', category: '其他收入', amount: '1.00', fundingChannel: 'funding-cash', occurredAt: '2026-07-30T09:00', note: '' }
+])
+
+function readLedgerRecords() {
+  let stored = null
+  try { stored = JSON.parse(sessionStorage.getItem(ledgerStorageKey) || 'null') } catch (error) { stored = null }
+  return (Array.isArray(stored) ? stored : ledgerDefaults).map(record => ({ ...record }))
+}
+
+function writeLedgerRecords(records) {
+  sessionStorage.setItem(ledgerStorageKey, JSON.stringify(records))
+  sessionStorage.setItem('bill-prototype-report-invalidated-at', String(Date.now()))
+  return records
+}
+
+function updateLedgerRecord(recordId, patch) {
+  const records = readLedgerRecords()
+  const index = records.findIndex(record => record.id === recordId)
+  if (index < 0) return null
+  records[index] = { ...records[index], ...patch }
+  writeLedgerRecords(records)
+  return records[index]
+}
+
+function recordFundingChannel(record, records = readLedgerRecords()) {
+  if (record.fundingChannel) return record.fundingChannel
+  return records.find(item => item.id === record.linkedRecordId)?.fundingChannel || ''
+}
+
+function recordSearchText(record, records = readLedgerRecords()) {
+  const linked = records.find(item => item.id === record.linkedRecordId)
+  return [record.name, record.payer, record.category, record.primaryCategory, record.secondaryCategory,
+    record.purchaseChannel, record.location, record.note, linked?.name, linked?.primaryCategory]
+    .filter(Boolean).join(' ').toLocaleLowerCase('zh-CN')
+}
+
+function recordInRange(record, range) {
+  const date = String(record.occurredAt || '').slice(0, 10)
+  if (!date || !range) return true
+  if (range.includes('/')) {
+    const [start, end] = range.split('/')
+    return date >= start && date <= end
+  }
+  const named = { 本月: ['2026-08-01', '2026-08-31'], 上月: ['2026-07-01', '2026-07-31'], 今年: ['2026-01-01', '2026-12-31'] }[range]
+  return !named || (date >= named[0] && date <= named[1])
+}
+
+function filterLedgerRecords(records, filters = {}, { lifecycle = 'active', reportOnly = false } = {}) {
+  const type = filters.type || filters.scope || 'all'
+  const keyword = String(filters.keyword || filters.expenseQuery || filters.incomeQuery || '').trim().toLocaleLowerCase('zh-CN')
+  const funding = filters.funding || fundingFilterAllValue
+  return records.filter(record => {
+    if (record.lifecycle !== lifecycle) return false
+    if (reportOnly && record.type === 'adjustment' && record.state !== 'active') return false
+    if (type !== 'all' && record.type !== type && !(reportOnly && type === 'expense' && record.type === 'adjustment' && record.state === 'active')) return false
+    if (!recordInRange(record, filters.range)) return false
+    if (funding !== fundingFilterAllValue && recordFundingChannel(record, records) !== funding) return false
+    if (filters.expenseCategory && filters.expenseCategory !== '全部支出分类') {
+      const source = record.type === 'adjustment' ? records.find(item => item.id === record.linkedRecordId) : record
+      if (source?.primaryCategory !== filters.expenseCategory) return false
+    }
+    if (filters.incomeCategory && filters.incomeCategory !== '全部收入分类' && record.category !== filters.incomeCategory) return false
+    return !keyword || recordSearchText(record, records).includes(keyword)
+  })
+}
 const preferenceOptions = {
   detailRange: ['本月', '上月', '今年'],
   reportRange: ['本月', '上月', '今年'],
@@ -495,7 +571,10 @@ function initPageState() {
     permission: ['无权访问', '当前账号没有访问此页面的权限。', '返回登录']
   }
   const selected = definitions[state] || definitions.error
-  if (state === 'permission') content.hidden = true
+  if (state === 'permission') {
+    const shell = document.querySelector('.admin-shell, .app, .auth-shell')
+    if (shell) shell.hidden = true
+  }
   const defaultRegions = { reports: 'report', details: 'ledger', profile: 'dictionary', admin: 'admin' }
   const regionName = params.get('region') || defaultRegions[page]
   const emptyCopy = {
@@ -507,13 +586,111 @@ function initPageState() {
   if (state === 'empty' && emptyCopy[regionName]) selected.splice(0, selected.length, ...emptyCopy[regionName])
   const region = regionName ? document.querySelector(`[data-state-region="${regionName}"]`) : null
   if (state !== 'permission' && region?.closest('.overlay')) openOverlay(region.closest('.overlay').id)
-  const target = state === 'permission' || !region ? content.parentElement : region
+  const target = state === 'permission' ? document.body : !region ? content.parentElement : region
   const block = document.createElement('section')
   block.className = `state region-state ${state === 'error' || state === 'permission' ? 'error' : ''}`
   const href = state === 'empty' && regionName === 'report' ? 'expense-entry.html' : state === 'permission' ? 'login.html' : `${location.pathname.split('/').pop()}`
   block.innerHTML = `<div class="state-stack"><div><strong>${selected[0]}</strong><span>${selected[1]}</span></div>${selected[2] ? `<a class="btn ${state === 'error' ? 'primary' : ''}" href="${href}">${selected[2]}</a>` : '<div class="skeleton-line" aria-hidden="true"></div>'}</div>`
   if (state === 'loading' || state === 'empty') [...target.children].forEach(child => { child.hidden = true })
   target.prepend(block)
+}
+
+function initFormAccessibility() {
+  const page = document.body.dataset.page || 'page'
+  let index = 0
+  const nextId = kind => {
+    let id = ''
+    do { id = `${page}-${kind}-${++index}` } while (document.getElementById(id))
+    return id
+  }
+  document.querySelectorAll('.field').forEach(field => {
+    const label = field.querySelector(':scope > label, :scope > .field-label-row > label')
+    if (!label || label.htmlFor) return
+    const control = field.querySelector(':scope > .control, :scope > .input-prefix > .control')
+    if (control) {
+      if (!control.id) control.id = nextId('field')
+      label.htmlFor = control.id
+      return
+    }
+    const group = field.querySelector(':scope > .chip-row, :scope > .field-label-row + .chip-row')
+    if (!group) return
+    if (!label.id) label.id = nextId('group')
+    group.setAttribute('role', 'group')
+    group.setAttribute('aria-labelledby', label.id)
+  })
+  const standaloneNames = new Map([
+    ['[data-user-search]', '搜索用户名'],
+    ['[data-user-status-filter]', '筛选用户状态']
+  ])
+  standaloneNames.forEach((name, selector) => document.querySelectorAll(selector).forEach(control => control.setAttribute('aria-label', name)))
+}
+
+let deferredInstallPrompt = null
+window.addEventListener('beforeinstallprompt', event => {
+  event.preventDefault()
+  deferredInstallPrompt = event
+  document.dispatchEvent(new CustomEvent('pwa-install-capability'))
+})
+
+function mountPwaInstallSheet() {
+  if (!document.querySelector('[data-install-trigger], [data-open="install-sheet"]')) return
+  document.querySelectorAll('[data-open="install-sheet"]').forEach(trigger => {
+    trigger.dataset.installTrigger = ''
+    delete trigger.dataset.open
+  })
+  if (document.getElementById('install-sheet')) document.getElementById('install-sheet').remove()
+  const overlay = document.createElement('div')
+  overlay.className = 'overlay'
+  overlay.id = 'install-sheet'
+  overlay.innerHTML = `<section class="sheet" role="dialog" aria-modal="true" aria-labelledby="install-title"><div class="sheet-handle"></div><div class="sheet-head"><h2 class="sheet-title" id="install-title">安装到手机桌面</h2><button class="icon-btn" data-close aria-label="关闭"><span data-icon="close"></span></button></div><div class="state" data-install-state="detecting"><div><strong>正在检测安装能力</strong><span>正在确认当前浏览器是否支持直接安装…</span></div><div class="skeleton-line" aria-hidden="true"></div></div><div class="state" data-install-state="supported" hidden><div><strong>可以安装</strong><span>点击后将调用浏览器提供的系统安装流程。</span></div><button class="btn primary" data-install-confirm>安装应用</button></div><div class="state" data-install-state="unsupported" hidden><div><strong>使用浏览器菜单添加</strong><span data-install-instructions></span></div></div><div class="state error" data-install-state="error" hidden><div><strong>安装流程未能打开</strong><span>页面其他功能不受影响，可重试检测或按浏览器菜单步骤操作。</span></div><button class="btn text" data-install-retry>重新检测</button></div><div class="state" data-install-state="installed" hidden><div><strong>已安装</strong><span>“我的账单”已经可以从桌面启动。</span></div></div></section>`
+  document.body.append(overlay)
+  document.querySelectorAll('[data-install-trigger]').forEach(trigger => { trigger.dataset.open = 'install-sheet' })
+}
+
+function setInstallState(state) {
+  document.querySelectorAll('[data-install-state]').forEach(block => { block.hidden = block.dataset.installState !== state })
+}
+
+function initPwaInstall() {
+  const triggers = document.querySelectorAll('[data-install-trigger]')
+  if (!triggers.length) return
+  let timer = null
+  const showCapability = () => {
+    clearTimeout(timer)
+    if (matchMedia('(display-mode: standalone)').matches || navigator.standalone) return setInstallState('installed')
+    if (deferredInstallPrompt) return setInstallState('supported')
+    const ios = /iphone|ipad|ipod/i.test(navigator.userAgent)
+    const instructions = document.querySelector('[data-install-instructions]')
+    if (instructions) instructions.textContent = ios
+      ? '在 Safari 底部点“分享”，再选择“添加到主屏幕”。'
+      : '打开浏览器菜单，选择“安装应用”或“添加到主屏幕”；当前网页仍可完整使用。'
+    setInstallState('unsupported')
+  }
+  triggers.forEach(trigger => trigger.addEventListener('click', () => {
+    setInstallState('detecting')
+    timer = setTimeout(showCapability, 450)
+  }))
+  document.addEventListener('pwa-install-capability', showCapability)
+  document.querySelector('[data-install-confirm]')?.addEventListener('click', async event => {
+    if (!deferredInstallPrompt) return showCapability()
+    try {
+      setButtonLoading(event.currentTarget, true, '正在打开系统安装…')
+      await deferredInstallPrompt.prompt()
+      const choice = await deferredInstallPrompt.userChoice
+      deferredInstallPrompt = null
+      if (choice.outcome === 'accepted') setInstallState('installed')
+      else showCapability()
+    } catch (error) {
+      setInstallState('error')
+    } finally {
+      setButtonLoading(event.currentTarget, false)
+    }
+  })
+  document.querySelector('[data-install-retry]')?.addEventListener('click', () => {
+    setInstallState('detecting')
+    timer = setTimeout(showCapability, 450)
+  })
+  window.addEventListener('appinstalled', () => setInstallState('installed'))
 }
 
 function initMoneyForms() {
@@ -608,6 +785,7 @@ function initEntrySubmit() {
       submitGroup.forEach(item => { item.disabled = false })
       button.textContent = original
       const type = scope.dataset.entryPanel === 'income' || button.dataset.saveEntry === 'edit-income' ? '收入' : '支出'
+      const persisted = persistEntryFromScope(scope, button.dataset.saveEntry)
       const message = button.dataset.saveEntry === 'continue'
         ? `已保存${type}，继续记下一笔`
         : button.dataset.saveEntry === 'adjustment' ? '调整已保存，净支出与报表已刷新' : `${type}已保存，明细与报表已刷新`
@@ -616,15 +794,81 @@ function initEntrySubmit() {
         const fields = type === '收入' ? ['[data-income-name]', '[data-payer]', '[data-income-amount]'] : ['[data-product]']
         fields.forEach(selector => { const input = scope.querySelector(selector); if (input) input.value = '' })
       }
-      if (button.closest('#unlinked-adjustment-sheet')) {
-        const name = scope.querySelector('input:not([type="datetime-local"])')?.value.trim() || '未关联调整'
-        const amount = scope.querySelector('[data-scale="2"]')?.value || '0.00'
-        document.querySelector('[data-ledger-list]')?.append(createAdjustmentRow({ id: `adjustment-${Date.now()}`, name, amount }))
+      if (persisted?.type === 'adjustment' && persisted.lifecycle === 'active') {
+        const list = document.querySelector('[data-ledger-list]')
+        if (list && !document.querySelector(`[data-record-id="${persisted.id}"]`)) {
+          const row = createAdjustmentRow(persisted)
+          renderLedgerRow(row, persisted)
+          list.append(row)
+        }
         updateLedgerCounts()
       }
       if (button.closest('.overlay')) closeOverlay(button.closest('.overlay'))
     }, 1200)
   }))
+}
+
+function selectedFundingId(scope) {
+  return scope.querySelector('[data-funding-select]')?.value
+    || scope.querySelector('[data-funding-picker] .chip.active')?.dataset.fundingId
+    || getDefaultFundingChannel()
+}
+
+function selectedFieldValue(scope, name) {
+  const field = scope.querySelector(`[data-daily-field="${name}"]`)
+  if (!field) return ''
+  if (field.matches('select, input, textarea')) return field.value
+  return field.querySelector('.chip.active')?.textContent.trim() || ''
+}
+
+function persistEntryFromScope(scope, action) {
+  const records = readLedgerRecords()
+  const nowId = `record-${Date.now()}`
+  if (action === 'adjustment') {
+    const fields = [...scope.querySelectorAll('.field')]
+    const type = fields[0]?.querySelector('select')?.value || '消费退款'
+    const name = scope.closest('#unlinked-adjustment-sheet')
+      ? fields[1]?.querySelector('input')?.value.trim() || '未关联调整'
+      : `${scope.closest('#adjustment-sheet')?.querySelector('.caption')?.textContent.split('·')[0].replace('关联：', '').trim() || '支出'}调整`
+    const amount = scope.querySelector('[data-scale="2"]')?.value || '0.00'
+    const occurredAt = scope.querySelector('input[type="datetime-local"]')?.value || currentLocalDateTime()
+    const note = scope.querySelector('[data-adjustment-note]')?.value.trim() || ''
+    const adjustmentOverlay = scope.closest('#adjustment-sheet')
+    const linkedRecordId = adjustmentOverlay?.__sourceTrigger?.closest('.sheet')?.dataset.sourceRecordId || ''
+    const record = { id: nowId, type: 'adjustment', adjustmentType: type, lifecycle: 'active', state: linkedRecordId ? 'active' : 'pending', name, amount, linkedRecordId, occurredAt, note }
+    writeLedgerRecords([...records, record])
+    return record
+  }
+  const type = scope.dataset.entryPanel === 'income' || action === 'edit-income' ? 'income' : 'expense'
+  const recordId = scope.dataset.sourceRecordId || nowId
+  const existing = records.find(record => record.id === recordId)
+  const common = { id: recordId, type, lifecycle: existing?.lifecycle || 'active', fundingChannel: selectedFundingId(scope) }
+  const record = type === 'income' ? {
+    ...existing, ...common,
+    name: scope.querySelector('[data-income-name]')?.value.trim() || '',
+    payer: scope.querySelector('[data-payer]')?.value.trim() || '',
+    category: scope.querySelector('[data-daily-field="category"], #income-category')?.value || '',
+    amount: scope.querySelector('[data-income-amount]')?.value || '0.00',
+    occurredAt: scope.querySelector('input[type="datetime-local"]')?.value || currentLocalDateTime(),
+    note: scope.querySelector('textarea')?.value.trim() || ''
+  } : {
+    ...existing, ...common,
+    name: scope.querySelector('[data-product]')?.value.trim() || '',
+    primaryCategory: scope.querySelector('[data-daily-field="primaryCategory"], #category')?.value || '',
+    secondaryCategory: scope.querySelector('[data-daily-field="secondaryCategory"], #subcategory')?.value || '',
+    unit: scope.querySelector('[data-daily-field="unit"], #unit')?.value || '',
+    price: scope.querySelector('[data-price]')?.value || '0.00',
+    quantity: scope.querySelector('[data-quantity]')?.value || '0',
+    amount: scope.querySelector('[data-paid]')?.value || '0.00',
+    purchaseChannel: selectedFieldValue(scope, 'purchaseChannel'),
+    location: selectedFieldValue(scope, 'location'),
+    occurredAt: scope.querySelector('input[type="datetime-local"]')?.value || currentLocalDateTime(),
+    note: scope.querySelector('textarea')?.value.trim() || ''
+  }
+  const next = existing ? records.map(item => item.id === recordId ? record : item) : [...records, record]
+  writeLedgerRecords(next)
+  if (scope.__sourceRow) renderLedgerRow(scope.__sourceRow, record)
+  return record
 }
 
 function updateLedgerCounts() {
@@ -785,7 +1029,9 @@ function populateDailySourceEditor(row) {
   if (!['expense', 'income'].includes(type)) return
   const scope = document.querySelector(type === 'expense' ? '#edit-expense-sheet .sheet' : '#edit-income-sheet .sheet')
   if (!scope) return
-  scope.dataset.dailySourceRecordId = row.dataset.dailySourceRecordId || `${type}-${normalizeDailyTemplateKey(row.dataset.dailyName)}`
+  scope.__sourceRow = row
+  scope.dataset.sourceRecordId = row.dataset.recordId || row.dataset.dailySourceRecordId || `${type}-${normalizeDailyTemplateKey(row.dataset.dailyName)}`
+  scope.dataset.dailySourceRecordId = scope.dataset.sourceRecordId
   if (type === 'expense') {
     setControlValue(scope, '[data-product]', row.dataset.dailyName)
     for (const field of ['primaryCategory', 'secondaryCategory', 'unit', 'purchaseChannel', 'location']) {
@@ -1111,6 +1357,72 @@ function getReportFilterLabel(key, value) {
   return value
 }
 
+function reportSummary(records) {
+  const income = records.filter(record => record.type === 'income').reduce((sum, record) => sum + Number(record.amount), 0)
+  const expense = records.filter(record => record.type === 'expense').reduce((sum, record) => sum + Number(record.amount), 0)
+  const adjustments = records.filter(record => record.type === 'adjustment' && record.state === 'active').reduce((sum, record) => sum + Number(record.amount), 0)
+  return { income, expense, adjustments, netExpense: Math.max(0, expense - adjustments), balance: income - Math.max(0, expense - adjustments) }
+}
+
+function reportSeries(scope, dimension, records) {
+  if (scope === 'overview') {
+    const summary = reportSummary(records)
+    return [['收入', summary.income], ['净支出', summary.netExpense], ['结余', summary.balance]]
+  }
+  const normal = records.filter(record => record.type === scope)
+  const adjustments = records.filter(record => record.type === 'adjustment' && record.state === 'active')
+  const keyFor = record => {
+    if (['trend', 'incomeTrend'].includes(dimension)) return `${Number(record.occurredAt?.slice(8, 10) || 0)}日`
+    if (dimension === 'category') return record.primaryCategory || '未分类'
+    if (['product', 'incomeName', 'frequency', 'incomeFrequency'].includes(dimension)) return record.name
+    if (['payment', 'receiving'].includes(dimension)) return getFundingChannelName(record.fundingChannel)
+    if (dimension === 'channel') return record.purchaseChannel || '未指定'
+    if (dimension === 'location') return record.location || '未指定'
+    if (dimension === 'price') return `${record.name}/${record.unit || '次'}`
+    if (dimension === 'incomeCategory') return record.category || '未分类'
+    if (dimension === 'payer') return record.payer || '未填写'
+    if (dimension === 'habit') return new Intl.DateTimeFormat('zh-CN', { weekday: 'short', timeZone: 'Asia/Shanghai' }).format(new Date(record.occurredAt))
+    return record.name || '其他'
+  }
+  const groups = new Map()
+  normal.forEach(record => {
+    let value = ['frequency', 'incomeFrequency'].includes(dimension) ? 1 : dimension === 'price' ? Number(record.price || record.amount) : Number(record.amount)
+    if (scope === 'expense' && !['frequency', 'price'].includes(dimension)) {
+      value -= adjustments.filter(item => item.linkedRecordId === record.id).reduce((sum, item) => sum + Number(item.amount), 0)
+    }
+    const key = keyFor(record)
+    groups.set(key, (groups.get(key) || 0) + value)
+  })
+  return [...groups.entries()].sort((a, b) => b[1] - a[1])
+}
+
+function resolveReportData(filterState, scope, dimension) {
+  const filters = { ...filterState.values, range: filterState.range, scope: scope === 'overview' ? 'all' : scope }
+  const records = filterLedgerRecords(readLedgerRecords(), filters, { reportOnly: true })
+  return { records, series: reportSeries(scope, dimension, records), summary: reportSummary(records) }
+}
+
+function updateReportSummary(summary) {
+  const values = [summary.income, summary.expense, summary.adjustments, summary.balance]
+  document.querySelectorAll('[data-balance-summary] > button strong').forEach((strong, index) => {
+    strong.textContent = `${index === 1 ? '−' : '+'}¥${formatMoney(values[index])}`
+  })
+  const formula = document.querySelector('.balance-formula')
+  if (formula) formula.textContent = `净支出 ¥${formatMoney(summary.netExpense)} = 原始支出 − 冲减；结余 = 收入 − 净支出`
+}
+
+function ensureReportEmptyState() {
+  const region = document.querySelector('[data-state-region="report"]')
+  if (!region || document.querySelector('[data-report-filter-empty]')) return
+  const state = document.createElement('section')
+  state.className = 'state'
+  state.dataset.reportFilterEmpty = ''
+  state.hidden = true
+  state.innerHTML = '<div><strong>当前条件没有可统计账目</strong><span>调整账目范围、关键词、分类、资金渠道或时间范围后重试。</span></div><button class="btn text" type="button" data-clear-report-filter>清除筛选</button>'
+  region.before(state)
+  state.querySelector('[data-clear-report-filter]').addEventListener('click', () => document.querySelector('#filter-sheet [data-clear-filters]')?.click())
+}
+
 function renderReportRangeCopy(rangeValue, scope) {
   const label = getReportFilterLabel('range', rangeValue) || '本月'
   const dateCaptions = {
@@ -1167,26 +1479,39 @@ function restoreReportFilterState(values = {}) {
 function initReports() {
   const host = document.querySelector('[data-report-view]')
   if (!host) return
+  ensureReportEmptyState()
   let scope = 'overview'
   const render = key => {
     const view = reportViews[key]
     if (!view) return
+    const data = resolveReportData(host.__reportState || readReportFilterState(), scope, key)
+    const empty = document.querySelector('[data-report-filter-empty]')
+    const region = document.querySelector('[data-state-region="report"]')
+    const hasData = data.series.length > 0
+    if (empty) empty.hidden = hasData
+    if (region) region.hidden = !hasData
+    updateReportSummary(data.summary)
+    if (!hasData) return
     host.classList.toggle('report-expense', scope === 'expense')
     host.classList.toggle('report-income', scope === 'income')
     host.querySelector('[data-report-title]').textContent = view[0]
     host.querySelector('[data-report-caption]').textContent = view[1]
     const chart = host.querySelector('[data-report-chart]')
-    chart.innerHTML = view[2].map((item, index) => {
-      const [label, value, height] = item.split('|')
+    const max = Math.max(...data.series.map(item => Math.abs(item[1])), 1)
+    chart.innerHTML = data.series.map(([label, numericValue], index) => {
+      const value = Number(numericValue).toFixed(['frequency', 'incomeFrequency'].includes(key) ? 0 : 2)
+      const height = Math.max(18, Math.round(Math.abs(numericValue) / max * 94))
+      const safeLabel = escapeHtml(label)
       const seriesClass = scope === 'overview' && label.includes('支出') ? ' expense-series' : scope === 'overview' && label.includes('收入') ? ' income-series' : ''
-      return `<button type="button" class="bar${index === 0 ? ' active' : ''}${seriesClass}" style="--h:${height}%" data-dimension="${key}" data-label="${label}" data-value="${label}" data-metric="${value}" data-scope="${scope}" aria-label="${label}，${value}"><span>${label}</span></button>`
+      return `<button type="button" class="bar${index === 0 ? ' active' : ''}${seriesClass}" style="--h:${height}%" data-dimension="${key}" data-label="${safeLabel}" data-value="${safeLabel}" data-metric="${value}" data-scope="${scope}" aria-label="${safeLabel}，${value}"><span>${safeLabel}</span></button>`
     }).join('')
     initReportDrill(chart)
     const ranking = document.querySelector('[data-report-ranking]')
-    if (ranking) ranking.innerHTML = view[2].slice(0, 3).map((item, index) => {
-      const [label, value] = item.split('|')
+    if (ranking) ranking.innerHTML = data.series.slice(0, 3).map(([label, numericValue], index) => {
+      const value = Number(numericValue).toFixed(['frequency', 'incomeFrequency'].includes(key) ? 0 : 2)
+      const safeLabel = escapeHtml(label)
       const sign = scope === 'expense' ? '−' : scope === 'income' ? '+' : ''
-      return `<button class="rank-row" data-drill data-scope="${scope}" data-dimension="${key}" data-value="${label}" data-metric="${value}"><span class="rank-index">0${index + 1}</span><span>${label}</span><strong class="rank-value ${scope === 'expense' ? 'expense-amount' : scope === 'income' ? 'income-amount' : ''}">${sign}${isNaN(Number(value)) ? value : `¥${Number(value).toLocaleString('zh-CN', { minimumFractionDigits: 2 })}`}</strong></button>`
+      return `<button class="rank-row" data-drill data-scope="${scope}" data-dimension="${key}" data-value="${safeLabel}" data-metric="${value}"><span class="rank-index">0${index + 1}</span><span>${safeLabel}</span><strong class="rank-value ${scope === 'expense' ? 'expense-amount' : scope === 'income' ? 'income-amount' : ''}">${sign}${isNaN(Number(value)) ? value : `¥${Number(value).toLocaleString('zh-CN', { minimumFractionDigits: 2 })}`}</strong></button>`
     }).join('')
     initReportDrill(ranking || document)
   }
@@ -1274,24 +1599,83 @@ function initReportDrill(root = document) {
   })
 }
 
+function formatMoney(value) {
+  return Number(value || 0).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
+
+function escapeHtml(value) {
+  return String(value ?? '').replace(/[&<>"']/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character])
+}
+
+function renderLedgerRow(row, record) {
+  if (!row || !record) return
+  row.dataset.recordId = record.id
+  row.dataset.ledgerItem = record.type
+  row.dataset.dailyName = record.name || ''
+  row.dataset.dailyFunding = record.fundingChannel || ''
+  const title = row.querySelector('.item-title')
+  const meta = row.querySelector('.item-meta')
+  const amount = row.querySelector('.item-amount')
+  const tag = title?.querySelector('.tag')
+  if (record.type === 'expense') {
+    Object.assign(row.dataset, {
+      dailyPrimaryCategory: record.primaryCategory || '', dailySecondaryCategory: record.secondaryCategory || '',
+      dailyUnit: record.unit || '', dailyPrice: record.price || '', dailyQuantity: record.quantity || '',
+      dailyPaid: record.amount || '', dailyPurchaseChannel: record.purchaseChannel || '', dailyLocation: record.location || ''
+    })
+    if (tag) { tag.textContent = '支出'; tag.className = 'tag expense' }
+    if (title) title.lastChild.textContent = ` ${record.name}`
+    if (meta) meta.innerHTML = `${escapeHtml(record.occurredAt?.slice(5).replace('T', ' ') || '')} · ${escapeHtml(record.quantity)} ${escapeHtml(record.unit)} × ¥${escapeHtml(record.price)} · ${escapeHtml(getFundingChannelName(record.fundingChannel))}<br>${escapeHtml(record.purchaseChannel || '未指定')} · ${escapeHtml(record.location || '未指定')}`
+    if (amount) { amount.textContent = `−¥${formatMoney(record.amount)}`; amount.className = 'item-amount expense-amount' }
+    const net = row.querySelector('.item-amount + .tag')
+    if (net) {
+      const adjustments = readLedgerRecords().filter(item => item.linkedRecordId === record.id && item.lifecycle === 'active' && item.state === 'active').reduce((sum, item) => sum + Number(item.amount), 0)
+      net.textContent = `净支出 ¥${formatMoney(Math.max(0, Number(record.amount) - adjustments))}`
+    }
+  } else if (record.type === 'income') {
+    Object.assign(row.dataset, { dailyPayer: record.payer || '', dailyCategory: record.category || '', dailyAmount: record.amount || '' })
+    if (tag) { tag.textContent = '收入'; tag.className = 'tag income' }
+    if (title) title.lastChild.textContent = ` ${record.name}`
+    if (meta) meta.textContent = `${record.occurredAt?.slice(5).replace('T', ' ') || ''} · ${record.payer} · ${record.category} · ${getFundingChannelName(record.fundingChannel)}`
+    if (amount) { amount.textContent = `+¥${formatMoney(record.amount)}`; amount.className = 'item-amount income-amount' }
+  } else {
+    row.dataset.adjustmentId = record.id
+    row.dataset.adjustmentState = record.state || 'pending'
+    if (record.linkedRecordId) row.dataset.originalId = record.linkedRecordId
+    if (tag) {
+      tag.textContent = record.state === 'frozen' ? '已冻结' : record.state === 'pending' ? '待归类' : record.adjustmentType === '费用报销' ? '报销' : '退款'
+      tag.className = record.state === 'pending' || record.state === 'frozen' ? 'tag warning' : 'tag adjustment'
+    }
+    if (title) title.lastChild.textContent = ` ${record.name}`
+    if (meta) meta.textContent = record.state === 'pending' ? '尚未关联原支出 · 不进入正式报表' : record.state === 'frozen' ? '随原支出冻结 · 不参与报表' : `${record.occurredAt?.slice(5).replace('T', ' ') || ''} · ${record.note || '已关联原支出'}`
+    if (amount) amount.textContent = `${record.state === 'active' ? '+' : ''}¥${formatMoney(record.amount)}`
+  }
+}
+
 function bindAdjustmentRow(row) {
   bindOverlayTrigger(row)
+  if (row.dataset.adjustmentBound === 'true') return
+  row.dataset.adjustmentBound = 'true'
   row.addEventListener('click', () => {
     const detail = document.getElementById('adjustment-detail')
     if (!detail) return
     detail.__adjustmentRow = row
+    const record = readLedgerRecords().find(item => item.id === row.dataset.recordId)
     const name = row.querySelector('.item-title')?.textContent.trim() || '当前调整'
     detail.querySelector('[data-adjustment-detail-name]').textContent = name
+    const note = detail.querySelector('[data-adjustment-detail-note]')
+    if (note) note.textContent = record?.note || '无备注'
     const pending = row.dataset.adjustmentState === 'pending'
     detail.querySelectorAll('[data-adjustment-action="link"], [data-adjustment-action="income"]').forEach(button => { button.hidden = !pending })
   })
 }
 
-function createAdjustmentRow({ id, name, amount, state = 'pending' }) {
+function createAdjustmentRow({ id, name, amount, state = 'pending', adjustmentType = '消费退款', note = '' }) {
   const row = document.createElement('button')
   row.className = 'list-item'
   row.dataset.ledgerItem = 'adjustment'
   row.dataset.adjustmentId = id
+  row.dataset.recordId = id
   row.dataset.adjustmentState = state
   row.dataset.open = 'adjustment-detail'
   const description = document.createElement('div')
@@ -1309,16 +1693,246 @@ function createAdjustmentRow({ id, name, amount, state = 'pending' }) {
   amountElement.textContent = `¥${amount}`
   description.append(title, meta)
   row.append(description, amountElement)
+  row.dataset.adjustmentType = adjustmentType
+  row.dataset.adjustmentNote = note
   bindAdjustmentRow(row)
   return row
 }
 
+function mountDetailLifecycleControls() {
+  for (const id of ['adjustment-sheet', 'unlinked-adjustment-sheet']) {
+    const sheet = document.querySelector(`#${id} .sheet`)
+    if (!sheet || sheet.querySelector('[data-adjustment-note]')) continue
+    const action = sheet.querySelector('[data-save-entry="adjustment"]')
+    const field = document.createElement('div')
+    field.className = 'field'
+    field.innerHTML = '<label>备注（选填）</label><textarea class="control" data-adjustment-note placeholder="退款原因、报销说明等"></textarea>'
+    action.before(field)
+  }
+  for (const id of ['edit-expense-sheet', 'edit-income-sheet']) {
+    const sheet = document.querySelector(`#${id} .sheet`)
+    const action = sheet?.querySelector('.action-row:last-child, [data-save-entry]')
+    if (!sheet || !action || sheet.querySelector('[data-soft-delete-current]')) continue
+    const button = document.createElement('button')
+    button.type = 'button'
+    button.className = 'btn danger'
+    button.dataset.softDeleteCurrent = ''
+    button.textContent = '移入回收站'
+    action.parentElement === sheet && action.classList.contains('action-row') ? action.prepend(button) : action.before(button)
+  }
+  const detail = document.querySelector('#adjustment-detail .sheet')
+  if (detail && !detail.querySelector('[data-adjustment-detail-note]')) {
+    const info = document.createElement('div')
+    info.className = 'setting-row static'
+    info.innerHTML = '<span>备注</span><span class="setting-value" data-adjustment-detail-note>无备注</span>'
+    detail.querySelector('.state')?.insertAdjacentElement('afterend', info)
+    const button = document.createElement('button')
+    button.type = 'button'
+    button.className = 'btn danger grow'
+    button.dataset.softDeleteAdjustment = ''
+    button.textContent = '移入回收站'
+    detail.querySelector('.action-row')?.append(button)
+  }
+  document.querySelectorAll('[data-open="adjustment-sheet"]').forEach(trigger => trigger.addEventListener('click', () => {
+    const sourceId = trigger.closest('.sheet')?.dataset.sourceRecordId
+    const records = readLedgerRecords()
+    const source = records.find(record => record.id === sourceId)
+    if (!source) return
+    const adjusted = records.filter(record => record.linkedRecordId === sourceId && record.lifecycle === 'active' && record.state === 'active').reduce((sum, record) => sum + Number(record.amount), 0)
+    const remaining = Math.max(0, Number(source.amount) - adjusted)
+    const overlay = document.getElementById('adjustment-sheet')
+    const caption = overlay.querySelector('.caption')
+    const amount = overlay.querySelector('[data-scale="2"]')
+    const error = amount?.closest('.field')?.querySelector('.field-error')
+    if (caption) caption.textContent = `关联：${source.name} · 原实付 ¥${formatMoney(source.amount)} · 已调整 ¥${formatMoney(adjusted)}`
+    if (amount) { amount.max = String(remaining); amount.dataset.max = String(remaining); amount.value = Math.min(Number(amount.value) || remaining, remaining).toFixed(2) }
+    if (error) error.textContent = `本次最多 ¥${formatMoney(remaining)}，累计不得超过原实付`
+  }))
+  initFormAccessibility()
+}
+
+function readDetailFilterState() {
+  const sheet = document.getElementById('detail-filter')
+  const values = Object.fromEntries([...sheet?.querySelectorAll('[data-detail-filter-key]') || []].map(control => [control.dataset.detailFilterKey, control.value]))
+  const lifecycle = document.querySelector('[data-bill-tab].active')?.dataset.billTab || 'active'
+  return { range: values.range || getPreferences().detailRange, type: values.type || 'all', keyword: values.keyword || '', funding: values.funding || fundingFilterAllValue, lifecycle }
+}
+
+function detailFilterSummary(filters) {
+  const labels = {
+    type: { all: '全部账目', expense: '支出', income: '收入', adjustment: '退款/报销' }[filters.type],
+    funding: filters.funding === fundingFilterAllValue ? '全部渠道' : getFundingChannelName(filters.funding)
+  }
+  return [filters.range, labels.type, filters.keyword.trim() && `“${filters.keyword.trim()}”`, labels.funding].filter(Boolean).join(' · ')
+}
+
+function applyDetailFilters(filters = readDetailFilterState()) {
+  const records = readLedgerRecords()
+  const activeIds = new Set(filterLedgerRecords(records, filters).map(record => record.id))
+  const trashIds = new Set(filterLedgerRecords(records, filters, { lifecycle: 'trash' }).map(record => record.id))
+  document.querySelectorAll('[data-view="active"] [data-record-id]').forEach(row => {
+    const host = row.closest('.ledger-entry') || row
+    host.hidden = !activeIds.has(row.dataset.recordId)
+  })
+  document.querySelectorAll('[data-view="trash"] [data-record-id]').forEach(row => { row.hidden = !trashIds.has(row.dataset.recordId) })
+  const activeView = !document.querySelector('[data-view="active"]')?.hidden
+  const visible = activeView ? activeIds.size : trashIds.size
+  const empty = document.querySelector('[data-ledger-empty]')
+  if (empty) empty.hidden = visible > 0
+  document.querySelectorAll('[data-ledger-type]').forEach(button => {
+    const selected = button.dataset.ledgerType === filters.type
+    button.classList.toggle('active', selected)
+    button.setAttribute('aria-pressed', String(selected))
+  })
+  const summary = document.querySelector('[data-detail-filter-summary]')
+  if (summary) summary.textContent = detailFilterSummary(filters)
+  sessionStorage.setItem(detailFilterStorageKey, JSON.stringify(filters))
+  document.querySelector('[data-page-content]')?.setAttribute('data-applied-detail-filter', JSON.stringify(filters))
+  return visible
+}
+
+function createLedgerRow(record) {
+  if (record.type === 'adjustment') {
+    const row = createAdjustmentRow(record)
+    if (record.linkedRecordId) row.dataset.originalId = record.linkedRecordId
+    renderLedgerRow(row, record)
+    return row
+  }
+  const row = document.createElement('button')
+  row.type = 'button'
+  row.className = 'list-item'
+  row.dataset.recordId = record.id
+  row.dataset.ledgerItem = record.type
+  row.dataset.dailySource = ''
+  row.dataset.open = record.type === 'income' ? 'edit-income-sheet' : 'edit-expense-sheet'
+  row.innerHTML = `<div><div class="item-title"><span class="tag ${record.type}">${record.type === 'income' ? '收入' : '支出'}</span> <span data-row-name></span></div><div class="item-meta"></div></div><div class="item-amount"></div>`
+  const name = row.querySelector('[data-row-name]')
+  name.replaceWith(document.createTextNode(record.name || '未命名'))
+  renderLedgerRow(row, record)
+  bindOverlayTrigger(row)
+  row.addEventListener('click', () => populateDailySourceEditor(row))
+  return row
+}
+
+function syncLedgerDomFromStore() {
+  const records = readLedgerRecords()
+  records.forEach(record => {
+    if (document.querySelector(`[data-record-id="${record.id}"]`)) return
+    const list = document.querySelector(record.lifecycle === 'trash' ? '[data-trash-list]' : '[data-ledger-list]')
+    if (list) list.append(createLedgerRow(record))
+  })
+  document.querySelectorAll('[data-record-id]').forEach(row => {
+    const record = records.find(item => item.id === row.dataset.recordId)
+    if (!record) return row.remove()
+    renderLedgerRow(row, record)
+    const expectedList = document.querySelector(record.lifecycle === 'trash' ? '[data-trash-list]' : '[data-ledger-list]')
+    let host = row.closest('.ledger-entry') || row
+    if (record.lifecycle === 'trash') {
+      if (host !== row) { host.replaceWith(row); host = row }
+      if (!row.querySelector('.row-actions')) addTrashActions(row)
+    } else {
+      row.querySelector('.row-actions')?.remove()
+      if (record.type === 'adjustment') {
+        row.dataset.open = 'adjustment-detail'
+        bindAdjustmentRow(row)
+      }
+    }
+    if (expectedList && !expectedList.contains(host)) expectedList.append(host)
+  })
+  mountDailyFavoriteControls()
+}
+
+function addTrashActions(row) {
+  row.querySelector('.row-actions')?.remove()
+  const actions = document.createElement('div')
+  actions.className = 'row-actions'
+  const recordId = row.dataset.recordId
+  const hasLinked = row.dataset.ledgerItem === 'expense' && readLedgerRecords().some(record => record.linkedRecordId === recordId)
+  if (row.dataset.ledgerItem === 'expense') row.dataset.billId = recordId
+  actions.innerHTML = `<button type="button" data-restore>恢复</button><button type="button" class="danger" data-open="${hasLinked ? 'purge-linked-dialog' : 'purge-dialog'}">永久删除</button>`
+  row.append(actions)
+  const restore = actions.querySelector('[data-restore]')
+  restore.dataset.restoreBound = 'true'
+  restore.addEventListener('click', () => {
+    restoreRecordFromTrash(row)
+    showToast(row.dataset.billId ? '原支出与关联调整已恢复并重新计入报表' : '账目已恢复，并重新计入报表')
+  })
+  bindOverlayTrigger(actions.querySelector('[data-open]'))
+}
+
+function moveRecordToTrash(row) {
+  const recordId = row?.dataset.recordId
+  if (!recordId) return
+  const records = readLedgerRecords()
+  const snapshots = records.filter(record => record.id === recordId || record.linkedRecordId === recordId).map(record => ({ ...record }))
+  const next = records.map(record => {
+    if (record.id === recordId) return { ...record, lifecycle: 'trash' }
+    if (record.linkedRecordId === recordId && record.state === 'active') return { ...record, lifecycle: 'trash', state: 'frozen' }
+    return record
+  })
+  writeLedgerRecords(next)
+  const host = row.closest('.ledger-entry') || row
+  if (host !== row) host.replaceWith(row)
+  addTrashActions(row)
+  document.querySelector('[data-trash-list]')?.append(row)
+  snapshots.filter(item => item.linkedRecordId === recordId).forEach(item => {
+    const linkedRow = document.querySelector(`[data-record-id="${item.id}"]`)
+    if (linkedRow) { renderLedgerRow(linkedRow, next.find(record => record.id === item.id)); addTrashActions(linkedRow); document.querySelector('[data-trash-list]')?.append(linkedRow) }
+  })
+  const undo = document.querySelector('[data-delete-undo]')
+  if (undo) {
+    undo.hidden = false
+    undo.__snapshots = snapshots
+    undo.querySelector('[data-delete-undo-name]').textContent = `${snapshots[0]?.name || '当前账目'}；关联调整将同步恢复。`
+  }
+  updateLedgerCounts()
+  applyDetailFilters()
+}
+
+function restoreRecordFromTrash(row) {
+  const recordId = row?.dataset.recordId
+  if (!recordId) return
+  const records = readLedgerRecords().map(record => {
+    if (record.id === recordId) return { ...record, lifecycle: 'active', state: record.type === 'adjustment' ? 'active' : record.state }
+    if (record.linkedRecordId === recordId && record.state === 'frozen') return { ...record, lifecycle: 'active', state: 'active' }
+    return record
+  })
+  writeLedgerRecords(records)
+  row.querySelector('.row-actions')?.remove()
+  document.querySelector('[data-ledger-list]')?.append(row)
+  const linked = records.filter(record => record.linkedRecordId === recordId && record.lifecycle === 'active')
+  linked.forEach(record => {
+    const linkedRow = document.querySelector(`[data-record-id="${record.id}"]`)
+    if (linkedRow) { linkedRow.querySelector('.row-actions')?.remove(); renderLedgerRow(linkedRow, record); document.querySelector('[data-ledger-list]')?.append(linkedRow) }
+  })
+  if (row.dataset.dailySource !== undefined) mountDailyFavoriteControls()
+  updateLedgerCounts()
+  applyDetailFilters()
+}
+
 function initBillDetails() {
+  if (!document.querySelector('[data-page="details"], body[data-page="details"]')) return
+  mountDetailLifecycleControls()
+  syncLedgerDomFromStore()
   const context = document.querySelector('[data-drill-context]')
   const params = new URLSearchParams(location.search)
   const detailPreferences = getPreferences()
   const detailRange = document.querySelector('[data-detail-range]')
-  if (detailRange) detailRange.value = detailPreferences.detailRange
+  let savedDetailFilters = null
+  try { savedDetailFilters = JSON.parse(sessionStorage.getItem(detailFilterStorageKey) || 'null') } catch (error) { savedDetailFilters = null }
+  if (detailRange) detailRange.value = savedDetailFilters?.range || detailPreferences.detailRange
+  Object.entries(savedDetailFilters || {}).forEach(([key, value]) => {
+    const control = document.querySelector(`[data-detail-filter-key="${key}"]`)
+    if (control && [...control.options || []].some(option => option.value === value) || control?.tagName === 'INPUT') control.value = value
+  })
+  if (savedDetailFilters?.lifecycle === 'trash') {
+    document.querySelectorAll('[data-bill-tab]').forEach(button => {
+      const active = button.dataset.billTab === 'trash'
+      button.classList.toggle('active', active)
+      button.setAttribute('aria-pressed', String(active))
+    })
+    document.querySelectorAll('[data-view]').forEach(view => { view.hidden = view.dataset.view !== 'trash' })
+  }
   const detailSummary = document.querySelector('[data-detail-filter-summary]')
   if (detailSummary) detailSummary.textContent = `${detailPreferences.detailRange} · 全部账目`
   if (context && params.get('source') === 'reports') {
@@ -1340,30 +1954,13 @@ function initBillDetails() {
       item.setAttribute('aria-pressed', String(item === button))
     })
     document.querySelectorAll('[data-view]').forEach(view => { view.hidden = view.dataset.view !== button.dataset.billTab })
+    applyDetailFilters(readDetailFilterState())
   }))
   document.querySelectorAll('[data-ledger-item="adjustment"][data-open="adjustment-detail"]').forEach(bindAdjustmentRow)
-  document.querySelectorAll('[data-restore]').forEach(button => button.addEventListener('click', () => {
+  document.querySelectorAll('[data-restore]:not([data-restore-bound])').forEach(button => button.addEventListener('click', () => {
     const row = button.closest('.list-item')
-    const activeList = document.querySelector('[data-ledger-list]')
     const billId = row?.dataset.billId
-    row?.querySelector('.row-actions')?.remove()
-    if (row) activeList.append(row)
-    if (billId) {
-      const adjustment = document.querySelector(`[data-original-id="${billId}"]`)
-      if (adjustment) {
-        adjustment.dataset.adjustmentState = 'active'
-        const tag = adjustment.querySelector('.tag')
-        tag.textContent = '报销'
-        tag.className = 'tag adjustment'
-        adjustment.querySelector('.item-meta').textContent = '原支出已恢复 · 调整重新生效并计入净支出'
-        adjustment.dataset.open = 'adjustment-detail'
-        adjustment.setAttribute('role', 'button')
-        adjustment.tabIndex = 0
-        bindAdjustmentRow(adjustment)
-        activeList.append(adjustment)
-      }
-    }
-    updateLedgerCounts()
+    restoreRecordFromTrash(row)
     showToast(billId ? '原支出与关联调整已恢复并重新计入报表' : '账单已恢复，并重新计入报表')
   }))
   const linkedTrash = [...document.querySelectorAll('[data-view="trash"] [data-ledger-item="expense"]')].find(item => item.textContent.includes('旧雨伞'))
@@ -1378,8 +1975,13 @@ function initBillDetails() {
     const row = detail.__adjustmentRow
     if (!row) return
     const action = button.dataset.adjustmentAction
-    if (action === 'revoke') row.remove()
+    const recordId = row.dataset.recordId
+    if (action === 'revoke') {
+      updateLedgerRecord(recordId, { lifecycle: 'trash', state: 'revoked' })
+      row.remove()
+    }
     if (action === 'link') {
+      updateLedgerRecord(recordId, { state: 'active', linkedRecordId: 'expense-breakfast' })
       row.dataset.adjustmentState = 'active'
       const tag = row.querySelector('.tag')
       tag.textContent = '退款'
@@ -1387,6 +1989,7 @@ function initBillDetails() {
       row.querySelector('.item-meta').textContent = '刚刚 · 已关联支出“早餐包” · 已计入净支出'
     }
     if (action === 'income') {
+      updateLedgerRecord(recordId, { type: 'income', state: undefined, linkedRecordId: '', category: '其他收入', payer: '退款来源', fundingChannel: getDefaultFundingChannel() })
       row.dataset.ledgerItem = 'income'
       delete row.dataset.adjustmentId
       delete row.dataset.adjustmentState
@@ -1405,6 +2008,11 @@ function initBillDetails() {
     const overlay = button.closest('.overlay')
     const row = overlay?.__sourceTrigger?.closest('.list-item')
     const billId = row?.dataset.billId
+    const recordId = row?.dataset.recordId
+    const sourceId = billId || recordId
+    const deleteLinked = overlay?.id === 'purge-linked-dialog'
+    const records = readLedgerRecords().filter(record => record.id !== recordId && (!deleteLinked || record.linkedRecordId !== sourceId))
+    writeLedgerRecords(records)
     if (billId) document.querySelector(`[data-original-id="${billId}"]`)?.remove()
     row?.remove()
     closeOverlay(overlay)
@@ -1413,12 +2021,45 @@ function initBillDetails() {
   }))
   document.querySelectorAll('[data-ledger-type]').forEach(button => button.addEventListener('click', () => {
     const type = button.dataset.ledgerType
-    document.querySelectorAll('[data-ledger-type]').forEach(item => { item.classList.toggle('active', item === button); item.setAttribute('aria-pressed', String(item === button)) })
-    let visible = 0
-    document.querySelectorAll('[data-ledger-item]').forEach(item => { item.hidden = type !== 'all' && item.dataset.ledgerItem !== type; if (!item.hidden) visible += 1 })
-    const empty = document.querySelector('[data-ledger-empty]')
-    if (empty) empty.hidden = visible > 0
+    const filters = { ...readDetailFilterState(), type }
+    const select = document.querySelector('[data-detail-filter-key="type"]')
+    if (select) select.value = type
+    applyDetailFilters(filters)
   }))
+  document.querySelectorAll('[data-soft-delete-current]').forEach(button => button.addEventListener('click', () => {
+    const sheet = button.closest('.sheet')
+    if (!sheet?.__sourceRow) return
+    moveRecordToTrash(sheet.__sourceRow)
+    closeOverlay(sheet.closest('.overlay'))
+    showToast('账目已移入回收站，可立即撤销')
+  }))
+  document.querySelector('[data-soft-delete-adjustment]')?.addEventListener('click', event => {
+    const detail = event.currentTarget.closest('.overlay')
+    if (!detail?.__adjustmentRow) return
+    moveRecordToTrash(detail.__adjustmentRow)
+    closeOverlay(detail)
+    showToast('调整已移入回收站，可立即撤销')
+  })
+  document.querySelector('[data-undo-delete]')?.addEventListener('click', event => {
+    const undo = event.currentTarget.closest('[data-delete-undo]')
+    const snapshots = undo.__snapshots || []
+    if (!snapshots.length) return
+    const records = readLedgerRecords().map(record => snapshots.find(snapshot => snapshot.id === record.id) || record)
+    writeLedgerRecords(records)
+    snapshots.forEach(snapshot => {
+      const row = document.querySelector(`[data-record-id="${snapshot.id}"]`)
+      if (!row) return
+      row.querySelector('.row-actions')?.remove()
+      renderLedgerRow(row, snapshot)
+      document.querySelector('[data-ledger-list]')?.append(row)
+    })
+    mountDailyFavoriteControls()
+    undo.hidden = true
+    updateLedgerCounts()
+    applyDetailFilters()
+    showToast('已撤销删除，账目和关联调整恢复生效')
+  })
+  applyDetailFilters(savedDetailFilters || readDetailFilterState())
   updateLedgerCounts()
 }
 
@@ -1975,7 +2616,11 @@ function clearCsvDownload(button) {
 }
 
 function createCsvDownload(button, filename, rows) {
-  const csv = rows.map(row => row.map(value => `"${String(value).replaceAll('"', '""')}"`).join(',')).join('\r\n')
+  const csv = rows.map(row => row.map(value => {
+    const text = String(value ?? '')
+    const safe = /^[=+\-@]/.test(text) ? `'${text}` : text
+    return `"${safe.replaceAll('"', '""')}"`
+  }).join(',')).join('\r\n')
   clearCsvDownload(button)
   const link = document.createElement('a')
   link.href = URL.createObjectURL(new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8' }))
@@ -1984,6 +2629,29 @@ function createCsvDownload(button, filename, rows) {
   link.hidden = true
   button.insertAdjacentElement('afterend', link)
   link.click()
+}
+
+function ledgerCsvRows(records) {
+  const headers = ['记录ID', '账目类型', '调整类型', '关联账目ID', '状态', '业务时间', '名称', '付款方', '一级分类', '二级分类', '单位', '单价', '数量', '金额', '资金渠道', '购买渠道', '地点', '备注', '生命周期']
+  const typeLabels = { expense: '支出', income: '收入', adjustment: '退款/报销调整' }
+  const allRecords = readLedgerRecords()
+  return [headers, ...records.map(record => {
+    const fundingId = recordFundingChannel(record, allRecords)
+    return [
+    record.id, typeLabels[record.type] || record.type, record.adjustmentType || '', record.linkedRecordId || '', record.state || '',
+    record.occurredAt || '', record.name || '', record.payer || '', record.primaryCategory || record.category || '', record.secondaryCategory || '',
+    record.unit || '', record.price || '', record.quantity || '', record.amount || '', fundingId ? getFundingChannelName(fundingId) : '',
+    record.purchaseChannel || '', record.location || '', record.note || '', record.lifecycle === 'trash' ? '回收站' : '有效'
+    ]
+  })]
+}
+
+function recordsForExport(scope) {
+  const records = readLedgerRecords()
+  if (scope === 'all-ledger') return records
+  let filters = { range: getPreferences().detailRange, type: 'all', keyword: '', funding: fundingFilterAllValue }
+  try { filters = { ...filters, ...JSON.parse(sessionStorage.getItem(detailFilterStorageKey) || '{}') } } catch (error) { /* 保留安全默认值 */ }
+  return filterLedgerRecords(records, filters, { lifecycle: filters.lifecycle === 'trash' ? 'trash' : 'active' })
 }
 
 function initExports() {
@@ -2036,10 +2704,16 @@ function initExports() {
       try {
         if (new URLSearchParams(location.search).get('export') === 'error') throw new Error('export failed')
         const allLedger = button.dataset.exportCsv === 'all-ledger'
+        const records = recordsForExport(button.dataset.exportCsv)
+        if (!records.length) {
+          if (value) value.textContent = '当前范围为空'
+          finish('当前筛选没有可导出的账目，未生成文件')
+          return
+        }
         createCsvDownload(
           button,
           allLedger ? '我的全部收支.csv' : '当前筛选收支.csv',
-          [['类型', '名称', '金额', '业务时间'], ['收入', '8 月工资', '8500.00', '2026-08-13 09:00'], ['支出', '早餐包', '28.00', '2026-08-13 08:12']]
+          ledgerCsvRows(records)
         )
         if (value) value.textContent = '下载完成'
         finish('CSV 已导出')
@@ -2242,6 +2916,8 @@ function initFilters() {
       if (summary) summary.textContent = filterState.summary
       const reportScope = filterState.scope === 'all' ? 'overview' : filterState.scope
       document.querySelector('[data-report-view]')?.__renderScope?.(reportScope)
+    } else if (overlay.id === 'detail-filter') {
+      applyDetailFilters(readDetailFilterState())
     } else {
       const labels = getActiveFormControls(overlay).filter(control => control.tagName === 'SELECT').map(select => select.selectedOptions[0]?.textContent).filter(Boolean)
       if (summary) summary.textContent = labels.join(' · ')
@@ -2270,6 +2946,7 @@ function initFilters() {
       .filter(Boolean)
     if (summary) summary.textContent = labels.join(' · ')
     if (overlay.id === 'filter-sheet') document.querySelector('[data-report-view]')?.__renderScope?.('overview')
+    if (overlay.id === 'detail-filter') applyDetailFilters(readDetailFilterState())
     closeOverlay(overlay)
     showToast('已恢复默认筛选')
   }))
@@ -2277,9 +2954,12 @@ function initFilters() {
 
 document.addEventListener('DOMContentLoaded', () => {
   initTheme()
+  mountPwaInstallSheet()
   initIcons()
   renderFundingControls()
+  initFormAccessibility()
   initOverlays()
+  initPwaInstall()
   initCommonActions()
   initPageState()
   initMoneyForms()

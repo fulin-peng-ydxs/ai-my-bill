@@ -280,6 +280,7 @@ Key Characteristics：
 | `AppDialog` | 确认和短表单 | 删除、停用和少字段编辑；不可承载复杂长流程 |
 | `AppDrawer` | 筛选、字典编辑、账单详情 | 手机从底部出现，桌面从右侧出现；正文内滚、操作区稳定 |
 | `Toast` | 短暂动作反馈和撤销 | 保存、删除成功等；失败若影响区域可用性，还必须保留页内错误态 |
+| `PwaInstallPrompt` | 登录页与“我的”的安装能力引导 | 复用同一检测状态源；只有浏览器提供安装事件时显示真实安装动作，否则显示分平台步骤或已安装状态 |
 
 ### 4.3 按钮与输入
 
@@ -296,6 +297,8 @@ Key Characteristics：
 - 数字键盘字段使用适合移动端的输入模式；不能仅依赖 HTML 输入类型完成业务校验。
 - 长表单必须按用户能够识别的业务任务分组，分区标题说明“这一组填写什么”，使用留白和 hairline 分隔；不得只按字段顺序连续堆叠，也不得用卡片套卡片制造层级。
 - 行内候选值只承载可选业务数据；“管理、新增、调整”等动作必须与候选值分离，避免被误认成选项。
+- 手机端资金渠道、购买渠道和地点等业务候选必须自然换行，不使用隐藏滚动条掩盖屏幕外选项；短动作按钮仍保持单行。
+- 普通字段必须具有可由浏览器识别的标签关联；芯片候选组使用 `fieldset/legend` 或 `aria-labelledby`，不得只依赖视觉邻近文字。
 - 同一任务在同一页面只保留一个主要入口；标题栏、摘要栏和内容区不得重复提供等价筛选动作。
 
 ### 4.4 四态反馈
@@ -470,6 +473,8 @@ Key Characteristics：
 
 `node agent-works/personal-bill-pwa/prototypes/responsive-contract.test.mjs`
 
+`node agent-works/personal-bill-pwa/prototypes/business-contract.test.mjs`
+
 ## 9. Agent Prompt Guide
 
 ### Quick Color Reference
@@ -506,7 +511,7 @@ Key Characteristics：
 | `ledger-entry` | 记一笔 | `quick-entry` | 选择日常模板或手动快速保存商品支出、金额收入 | `EntryTypeSwitch` / `DailyEntryPicker` / `ProductCombobox` / `PayerCombobox` / `FundingChannelPicker` / `MoneySummary` |
 | `reports` | 收支报表 | `dashboard` | 分析收支、调整和结余并下钻 | `MoneySummary` / `ChartPanel` / `FilterSheet` |
 | `bill-details` | 收支明细 | `list` | 查询和纠正支出、收入及调整 | `LedgerListItem` / `DailyEntryFavoriteAction` / `FilterSheet` / `AppDrawer` |
-| `profile-settings` | 我的 | `settings` | 管理字典、偏好和个人数据 | `ThemeModeControl` / `AppDrawer` / `AppDialog` |
+| `profile-settings` | 我的 | `settings` | 管理字典、偏好、安装帮助和个人数据 | `ThemeModeControl` / `PwaInstallPrompt` / `AppDrawer` / `AppDialog` |
 | `admin-console` | 系统管理 | `admin` | 管理用户、默认字典、运行概况和操作日志 | `AppDataTable` / `AppDrawer` / `AppDialog` |
 <!-- page-registry:end -->
 
@@ -515,5 +520,5 @@ Key Characteristics：
 - 前端技术栈、组件库、图标库和图表库尚未确定；确定后必须回填代码事实源路径，不得据此改变已确认视觉与交互契约。
 - 当前组件仍是原型而非正式业务前端；已提供原型视觉与响应式静态契约检查，正式实现后仍需将目标组件清单、浏览器多视口测试和代码事实源路径替换为真实工程能力。
 - 尚无正式品牌名称、图标和启动图；第一期原型使用“我的账单”文字标识，不把临时图形固化为品牌资产。
-- 浏览器状态栏和 PWA 安装表现尚待真实实现验证；原型主题文字对比度已由设计契约测试覆盖，正式实现仍需浏览器复验。
+- 原型已承载 PWA 安装检测、真实浏览器安装事件、拒绝、分平台手动步骤和已安装状态；正式工程接入 Manifest 与 Service Worker 后，仍需在目标移动浏览器复验系统安装框和状态栏表现。
 - 管理后台是否需要独立桌面域名或路径属于技术与部署决策，不影响当前设计系统。

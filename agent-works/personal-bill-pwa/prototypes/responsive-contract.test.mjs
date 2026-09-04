@@ -37,5 +37,7 @@ assert(/\.overlay:not\(\.dialog-wrap\) \.sheet\s*\{[^}]*width:\s*min\(480px, 100
 assert(/\.overlay:not\(\.dialog-wrap\) \.sheet-handle\s*\{\s*display:\s*none;\s*\}/s.test(css), '桌面右侧抽屉仍保留手机拖拽暗示')
 assert(/\.sidebar\s*\{[^}]*safe-area-inset-right[^}]*safe-area-inset-left/s.test(css), '管理端侧栏未消费横屏左右安全区')
 assert(/\.admin-content\s*\{[^}]*safe-area-inset-right[^}]*safe-area-inset-left/s.test(css), '管理端主内容未消费横屏左右安全区')
+assert(/\.chip-row\s*\{[^}]*flex-wrap:\s*wrap[^}]*overflow:\s*visible/s.test(css), '移动端业务候选必须自然换行且不得隐藏到横向滚动区')
+assert(!/\.chip-row\s*\{[^}]*overflow-x:\s*auto/s.test(css), '业务候选不得恢复隐藏滚动条的横向滚动')
 
 console.log(`Responsive contract: OK (${htmlFiles.length} pages)`)
