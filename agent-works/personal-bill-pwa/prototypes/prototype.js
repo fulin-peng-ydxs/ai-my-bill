@@ -4,6 +4,8 @@ const icons = {
   list: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6h11M9 12h11M9 18h11M4 6h.01M4 12h.01M4 18h.01"/></svg>',
   user: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>',
   filter: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M7 12h10m-7 6h4"/></svg>',
+  star: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 2.78 5.63 6.22.9-4.5 4.39 1.06 6.2L12 17.2l-5.56 2.92 1.06-6.2L3 9.53l6.22-.9L12 3Z"/></svg>',
+  download: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m-5-5 5 5 5-5M5 20h14"/></svg>',
   close: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg>',
   refresh: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5"/><path d="M18 12a6 6 0 0 0-10.2-4.3L4 12m2 0a6 6 0 0 0 10.2 4.3L20 12"/></svg>'
 }
@@ -11,6 +13,7 @@ const icons = {
 const preferenceStorageKey = 'bill-prototype-preferences'
 const preferenceSessionKey = 'bill-prototype-preference-session'
 const fundingDictionaryStorageKey = 'bill-prototype-funding-dictionary'
+const dailyTemplateStorageKey = 'bill-prototype-daily-templates'
 const fundingFilterAllValue = '__all_funding_channels__'
 const fundingManagementLabel = '管理资金渠道'
 const reservedFundingIds = new Set([fundingFilterAllValue])
@@ -32,6 +35,60 @@ const preferenceOptions = {
   reportRange: ['本月', '上月', '今年'],
   entryType: ['expense', 'income'],
   theme: ['system', 'light', 'dark']
+}
+
+const dailyTemplateDefaults = Object.freeze([
+  { id: 'daily-expense-breakfast', type: 'expense', name: '早餐包', primaryCategory: '餐饮', secondaryCategory: '早餐', unit: '个', price: '14.00', quantity: '2', paid: '28.00', fundingChannel: 'funding-wechat', purchaseChannel: '商超', location: '家附近超市', sourceRecordId: 'expense-breakfast', updatedAt: 2 },
+  { id: 'daily-income-salary', type: 'income', name: '8 月工资', payer: '示例科技有限公司', category: '工资', amount: '8500.00', fundingChannel: 'funding-bank-card', sourceRecordId: 'income-salary', updatedAt: 1 }
+])
+
+function normalizeDailyTemplateKey(value) {
+  return String(value || '').normalize('NFKC').trim().replace(/\s+/g, ' ').toLocaleLowerCase('zh-CN')
+}
+
+function createDailyTemplateId(type) {
+  if (globalThis.crypto?.randomUUID) return `daily-${type}-${globalThis.crypto.randomUUID()}`
+  return `daily-${type}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
+}
+
+function normalizeDailyTemplates(raw) {
+  const source = Array.isArray(raw) ? raw : dailyTemplateDefaults
+  const seen = new Set()
+  return source.flatMap(item => {
+    const type = item?.type === 'income' ? 'income' : item?.type === 'expense' ? 'expense' : ''
+    const name = typeof item?.name === 'string' ? item.name.normalize('NFKC').trim().replace(/\s+/g, ' ') : ''
+    const key = `${type}:${normalizeDailyTemplateKey(name)}`
+    if (!type || !name || seen.has(key)) return []
+    seen.add(key)
+    const text = field => typeof item[field] === 'string' ? item[field].trim() : ''
+    const normalized = {
+      id: typeof item.id === 'string' && item.id ? item.id : createDailyTemplateId(type),
+      type,
+      key: normalizeDailyTemplateKey(name),
+      name,
+      fundingChannel: resolveFundingChannelId(item.fundingChannel, false) || '',
+      sourceRecordId: text('sourceRecordId'),
+      updatedAt: Number.isFinite(Number(item.updatedAt)) ? Number(item.updatedAt) : 0
+    }
+    if (type === 'expense') Object.assign(normalized, {
+      primaryCategory: text('primaryCategory'), secondaryCategory: text('secondaryCategory'), unit: text('unit'),
+      price: text('price'), quantity: text('quantity'), paid: text('paid'), purchaseChannel: text('purchaseChannel'), location: text('location')
+    })
+    if (type === 'income') Object.assign(normalized, { payer: text('payer'), category: text('category'), amount: text('amount') })
+    return [normalized]
+  })
+}
+
+function readDailyTemplates() {
+  let stored = null
+  try { stored = JSON.parse(localStorage.getItem(dailyTemplateStorageKey) || 'null') } catch (error) { stored = null }
+  return normalizeDailyTemplates(stored)
+}
+
+function writeDailyTemplates(items) {
+  const normalized = normalizeDailyTemplates(items)
+  localStorage.setItem(dailyTemplateStorageKey, JSON.stringify(normalized))
+  return normalized
 }
 
 function legacyFundingChannelId(name, index = 0) {
@@ -351,13 +408,7 @@ function renderFundingControls() {
   })
   document.querySelectorAll('[data-funding-picker]').forEach(group => {
     delete group.dataset.chipBound
-    const manage = document.createElement('button')
-    manage.type = 'button'
-    manage.className = 'chip'
-    manage.dataset.open = 'funding-sheet'
-    manage.textContent = fundingManagementLabel
-    manage.setAttribute('aria-label', fundingManagementLabel)
-    group.replaceChildren(...enabledChannels.map(channel => createFundingChip(channel, 'picker')), manage)
+    group.replaceChildren(...enabledChannels.map(channel => createFundingChip(channel, 'picker')))
   })
   document.querySelectorAll('[data-funding-filter]').forEach(select => {
     const selected = select.value
@@ -374,6 +425,8 @@ function renderFundingControls() {
     select.value = selected === fundingFilterAllValue || selected === '全部渠道' ? fundingFilterAllValue : selectedId || fundingFilterAllValue
   })
   document.querySelectorAll('[data-funding-select]').forEach(select => {
+    select.required = true
+    select.dataset.required = ''
     const selected = select.value || select.dataset.fundingInitial
     select.replaceChildren(...enabledChannels.map(channel => {
       const option = document.createElement('option')
@@ -384,7 +437,7 @@ function renderFundingControls() {
     select.value = resolveFundingChannelId(selected) || getDefaultFundingChannel()
   })
   const count = document.querySelector('[data-funding-dictionary-count]')
-  if (count) count.textContent = `${readFundingDictionary().length} 项 · 管理`
+  if (count) count.textContent = `${readFundingDictionary().length} 项`
   document.querySelectorAll('[data-chip-group]').forEach(bindChipGroup)
   document.querySelectorAll('[data-open="funding-sheet"]').forEach(bindOverlayTrigger)
 }
@@ -579,8 +632,314 @@ function updateLedgerCounts() {
   const trash = document.querySelectorAll('[data-view="trash"] [data-ledger-item]').length
   const activeButton = document.querySelector('[data-bill-tab="active"]')
   const trashButton = document.querySelector('[data-bill-tab="trash"]')
-  if (activeButton) activeButton.textContent = `有效账目 ${active}`
+  if (activeButton) activeButton.textContent = `有效 ${active}`
   if (trashButton) trashButton.textContent = `回收站 ${trash}`
+}
+
+function setControlValue(scope, selector, value) {
+  const control = scope?.querySelector(selector)
+  if (!control || value === undefined || value === null) return false
+  if (control instanceof HTMLSelectElement && ![...control.options].some(option => option.value === value || option.textContent === value)) return false
+  control.value = value
+  control.dispatchEvent(new Event('input', { bubbles: true }))
+  control.dispatchEvent(new Event('change', { bubbles: true }))
+  return true
+}
+
+function selectChipValue(group, value, dataKey) {
+  if (!group) return false
+  const candidate = [...group.querySelectorAll('.chip')].find(chip => dataKey ? chip.dataset[dataKey] === value : chip.textContent.trim() === (value || '未指定'))
+  if (!candidate) return false
+  candidate.click()
+  return true
+}
+
+function currentLocalDateTime() {
+  const parts = Object.fromEntries(new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', hourCycle: 'h23'
+  }).formatToParts(new Date()).map(part => [part.type, part.value]))
+  return `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}`
+}
+
+function createDailyTemplateFromScope(type, scope) {
+  const name = type === 'expense' ? scope.querySelector('[data-product]')?.value : scope.querySelector('[data-income-name]')?.value
+  const base = {
+    id: createDailyTemplateId(type), type, name: String(name || '').trim(),
+    fundingChannel: scope.querySelector('[data-funding-select]')?.value || '',
+    sourceRecordId: scope.dataset.dailySourceRecordId || '', updatedAt: Date.now()
+  }
+  if (type === 'expense') return {
+    ...base,
+    primaryCategory: scope.querySelector('[data-daily-field="primaryCategory"]')?.value || '',
+    secondaryCategory: scope.querySelector('[data-daily-field="secondaryCategory"]')?.value || '',
+    unit: scope.querySelector('[data-daily-field="unit"]')?.value || '',
+    price: scope.querySelector('[data-price]')?.value || '',
+    quantity: scope.querySelector('[data-quantity]')?.value || '',
+    paid: scope.querySelector('[data-paid]')?.value || '',
+    purchaseChannel: scope.querySelector('[data-daily-field="purchaseChannel"]')?.value || '',
+    location: scope.querySelector('[data-daily-field="location"]')?.value || ''
+  }
+  return {
+    ...base,
+    payer: scope.querySelector('[data-payer]')?.value || '',
+    category: scope.querySelector('[data-daily-field="category"]')?.value || '',
+    amount: scope.querySelector('[data-income-amount]')?.value || ''
+  }
+}
+
+function createDailyTemplateFromSourceRow(row) {
+  const type = row.dataset.ledgerItem
+  const base = {
+    id: createDailyTemplateId(type), type, name: String(row.dataset.dailyName || '').trim(),
+    fundingChannel: row.dataset.dailyFunding || '',
+    sourceRecordId: row.dataset.dailySourceRecordId || `${type}-${normalizeDailyTemplateKey(row.dataset.dailyName)}`,
+    updatedAt: Date.now()
+  }
+  if (type === 'expense') return {
+    ...base,
+    primaryCategory: row.dataset.dailyPrimaryCategory || '',
+    secondaryCategory: row.dataset.dailySecondaryCategory || '',
+    unit: row.dataset.dailyUnit || '',
+    price: row.dataset.dailyPrice || '',
+    quantity: row.dataset.dailyQuantity || '',
+    paid: row.dataset.dailyPaid || '',
+    purchaseChannel: row.dataset.dailyPurchaseChannel || '',
+    location: row.dataset.dailyLocation || ''
+  }
+  return {
+    ...base,
+    payer: row.dataset.dailyPayer || '',
+    category: row.dataset.dailyCategory || '',
+    amount: row.dataset.dailyAmount || ''
+  }
+}
+
+function upsertDailyTemplate(template) {
+  const key = normalizeDailyTemplateKey(template.name)
+  const current = readDailyTemplates()
+  const existing = current.find(item => item.type === template.type && item.key === key)
+  if (existing) template.id = existing.id
+  writeDailyTemplates([...current.filter(item => !(item.type === template.type && item.key === key)), template])
+  refreshDailyFavoriteControls()
+  return Boolean(existing)
+}
+
+function refreshDailyFavoriteControls() {
+  const templates = readDailyTemplates()
+  document.querySelectorAll('[data-daily-favorite]').forEach(button => {
+    const sourceRow = button.__dailySourceRow
+    const type = sourceRow?.dataset.ledgerItem || button.dataset.addDailyTemplate
+    const scope = sourceRow ? null : button.closest('.sheet')
+    const name = sourceRow?.dataset.dailyName
+      || (type === 'expense' ? scope?.querySelector('[data-product]')?.value : scope?.querySelector('[data-income-name]')?.value)
+    const active = templates.some(item => item.type === type && item.key === normalizeDailyTemplateKey(name))
+    button.classList.toggle('active', active)
+    button.setAttribute('aria-pressed', String(active))
+    const action = active ? '更新' : '加入'
+    const label = `${action}日常${type === 'expense' ? '支出' : '收入'}${name ? `：${String(name).trim()}` : ''}`
+    button.setAttribute('aria-label', label)
+    button.title = label
+  })
+}
+
+function createDailyFavoriteButton(row) {
+  const button = document.createElement('button')
+  button.type = 'button'
+  button.className = 'daily-favorite-toggle'
+  button.dataset.dailyFavorite = ''
+  button.__dailySourceRow = row
+  button.innerHTML = icons.star
+  button.addEventListener('click', () => {
+    const template = createDailyTemplateFromSourceRow(row)
+    const existing = upsertDailyTemplate(template)
+    showToast(existing
+      ? `已更新日常${template.type === 'expense' ? '支出' : '收入'}“${template.name}”`
+      : `已加入日常${template.type === 'expense' ? '支出' : '收入'}“${template.name}”`)
+  })
+  return button
+}
+
+function mountDailyFavoriteControls() {
+  document.querySelectorAll('[data-daily-source]').forEach(row => {
+    if (row.closest('.ledger-entry')) return
+    const wrapper = document.createElement('div')
+    wrapper.className = 'ledger-entry'
+    row.before(wrapper)
+    wrapper.append(createDailyFavoriteButton(row), row)
+    row.classList.add('ledger-entry-main')
+  })
+  document.querySelectorAll('[data-add-daily-template]').forEach(button => {
+    const close = button.closest('.sheet')?.querySelector('.sheet-head [data-close]')
+    if (!close) return
+    button.className = 'daily-favorite-toggle'
+    button.dataset.dailyFavorite = ''
+    button.innerHTML = icons.star
+    close.before(button)
+  })
+  refreshDailyFavoriteControls()
+}
+
+function populateDailySourceEditor(row) {
+  const type = row.dataset.ledgerItem
+  if (!['expense', 'income'].includes(type)) return
+  const scope = document.querySelector(type === 'expense' ? '#edit-expense-sheet .sheet' : '#edit-income-sheet .sheet')
+  if (!scope) return
+  scope.dataset.dailySourceRecordId = row.dataset.dailySourceRecordId || `${type}-${normalizeDailyTemplateKey(row.dataset.dailyName)}`
+  if (type === 'expense') {
+    setControlValue(scope, '[data-product]', row.dataset.dailyName)
+    for (const field of ['primaryCategory', 'secondaryCategory', 'unit', 'purchaseChannel', 'location']) {
+      setControlValue(scope, `[data-daily-field="${field}"]`, row.dataset[`daily${field[0].toUpperCase()}${field.slice(1)}`])
+    }
+    setControlValue(scope, '[data-price]', row.dataset.dailyPrice)
+    setControlValue(scope, '[data-quantity]', row.dataset.dailyQuantity)
+    setControlValue(scope, '[data-paid]', row.dataset.dailyPaid)
+  } else {
+    setControlValue(scope, '[data-income-name]', row.dataset.dailyName)
+    setControlValue(scope, '[data-payer]', row.dataset.dailyPayer)
+    setControlValue(scope, '[data-daily-field="category"]', row.dataset.dailyCategory)
+    setControlValue(scope, '[data-income-amount]', row.dataset.dailyAmount)
+  }
+  setControlValue(scope, '[data-funding-select]', row.dataset.dailyFunding)
+  refreshDailyFavoriteControls()
+}
+
+function applyDailyTemplate(template) {
+  const shell = document.querySelector('[data-entry-shell]')
+  if (!shell) return
+  shell.querySelector(`[data-entry-type="${template.type}"]`)?.click()
+  const scope = shell.querySelector(`[data-entry-panel="${template.type}"]`)
+  let fallbackUsed = false
+  if (template.type === 'expense') {
+    setControlValue(scope, '[data-product]', template.name)
+    setControlValue(scope, '#category', template.primaryCategory)
+    setControlValue(scope, '#subcategory', template.secondaryCategory)
+    setControlValue(scope, '#unit', template.unit)
+    setControlValue(scope, '[data-price]', template.price)
+    setControlValue(scope, '[data-quantity]', template.quantity)
+    setControlValue(scope, '[data-paid]', template.paid)
+    fallbackUsed = !selectChipValue(scope.querySelector('[data-funding-picker="expense"]'), template.fundingChannel, 'fundingId')
+    selectChipValue(scope.querySelector('[data-daily-field="purchaseChannel"]'), template.purchaseChannel)
+    selectChipValue(scope.querySelector('[data-daily-field="location"]'), template.location)
+    setControlValue(scope, '#expense-time', currentLocalDateTime())
+    setControlValue(scope, '#expense-note', '')
+  } else {
+    setControlValue(scope, '[data-income-name]', template.name)
+    setControlValue(scope, '[data-payer]', template.payer)
+    setControlValue(scope, '#income-category', template.category)
+    setControlValue(scope, '[data-income-amount]', template.amount)
+    fallbackUsed = !selectChipValue(scope.querySelector('[data-funding-picker="income"]'), template.fundingChannel, 'fundingId')
+    setControlValue(scope, '#income-time', currentLocalDateTime())
+    setControlValue(scope, '#income-note', '')
+  }
+  if (fallbackUsed) selectChipValue(scope.querySelector('[data-funding-picker]'), getDefaultFundingChannel(), 'fundingId')
+  writeDailyTemplates(readDailyTemplates().map(item => item.id === template.id ? { ...item, updatedAt: Date.now() } : item))
+  closeOverlay(document.getElementById('daily-entry-sheet'))
+  showToast(fallbackUsed ? `已填入“${template.name}”，失效资金渠道已回退，请确认` : `已填入“${template.name}”，请确认后保存`)
+}
+
+function renderDailyTemplateList(type) {
+  const list = document.querySelector('[data-daily-template-list]')
+  if (!list) return
+  const empty = document.querySelector('[data-daily-template-empty]')
+  document.querySelector('[data-daily-sheet-title]').textContent = type === 'expense' ? '选择日常支出' : '选择日常收入'
+  document.querySelectorAll('[data-daily-template-type]').forEach(button => {
+    const active = button.dataset.dailyTemplateType === type
+    button.classList.toggle('active', active)
+    button.setAttribute('aria-pressed', String(active))
+  })
+  const simulatedState = new URLSearchParams(location.search).get('daily')
+  if (empty && ['loading', 'error'].includes(simulatedState) && empty.dataset.dailyStateResolved !== simulatedState) {
+    list.hidden = true
+    empty.hidden = false
+    const content = document.createElement('div')
+    const title = document.createElement('strong')
+    const message = document.createElement('span')
+    title.textContent = simulatedState === 'loading' ? '正在加载日常项目' : '日常项目加载失败'
+    message.textContent = simulatedState === 'loading' ? '当前表单不会被清空。' : '当前表单已保留，请重试。'
+    content.append(title, message)
+    if (simulatedState === 'error') {
+      const retry = document.createElement('button')
+      retry.type = 'button'
+      retry.className = 'btn small'
+      retry.dataset.dailyTemplateRetry = ''
+      retry.textContent = '重试'
+      retry.addEventListener('click', () => {
+        empty.dataset.dailyStateResolved = 'error'
+        renderDailyTemplateList(type)
+      })
+      content.append(retry)
+    } else {
+      setTimeout(() => {
+        empty.dataset.dailyStateResolved = 'loading'
+        const activeType = document.querySelector('[data-daily-template-type].active')?.dataset.dailyTemplateType || type
+        renderDailyTemplateList(activeType)
+      }, 650)
+    }
+    empty.replaceChildren(content)
+    return
+  }
+  const templates = readDailyTemplates().filter(item => item.type === type).sort((a, b) => b.updatedAt - a.updatedAt)
+  list.hidden = templates.length === 0
+  if (empty) empty.hidden = templates.length > 0
+  list.replaceChildren(...templates.map(template => {
+    const row = document.createElement('div')
+    row.className = 'daily-template-row'
+    const main = document.createElement('button')
+    main.type = 'button'
+    main.className = 'daily-template-main'
+    const title = document.createElement('strong')
+    title.textContent = template.name
+    const summary = document.createElement('span')
+    summary.textContent = template.type === 'expense'
+      ? `${template.primaryCategory || '未分类'} · ${template.quantity || '1'} ${template.unit || ''} · ¥${template.paid || '0.00'}`
+      : `${template.payer || '未填写付款方'} · ${template.category || '未分类'} · ¥${template.amount || '0.00'}`
+    main.append(title, summary)
+    main.addEventListener('click', () => applyDailyTemplate(template))
+    const remove = document.createElement('button')
+    remove.type = 'button'
+    remove.className = 'daily-template-remove'
+    remove.textContent = '移除'
+    remove.setAttribute('aria-label', `从日常${type === 'expense' ? '支出' : '收入'}中移除：${template.name}`)
+    remove.addEventListener('click', () => {
+      writeDailyTemplates(readDailyTemplates().filter(item => item.id !== template.id))
+      refreshDailyFavoriteControls()
+      renderDailyTemplateList(type)
+      showToast(`已移除“${template.name}”`)
+    })
+    row.append(main, remove)
+    return row
+  }))
+  if (empty && templates.length === 0) {
+    const content = document.createElement('div')
+    const title = document.createElement('strong')
+    const message = document.createElement('span')
+    title.textContent = '还没有日常项目'
+    message.textContent = '到明细中打开一笔有效账目，选择“加入日常”。'
+    content.append(title, message)
+    empty.replaceChildren(content)
+  }
+}
+
+function initDailyTemplates() {
+  mountDailyFavoriteControls()
+  document.querySelectorAll('[data-daily-source]').forEach(row => row.addEventListener('click', () => populateDailySourceEditor(row)))
+  document.querySelectorAll('[data-add-daily-template]').forEach(button => button.addEventListener('click', () => {
+    const type = button.dataset.addDailyTemplate
+    const scope = button.closest('.sheet')
+    if (!validateEntry(scope)) return
+    const template = createDailyTemplateFromScope(type, scope)
+    const existing = upsertDailyTemplate(template)
+    showToast(existing ? `已更新日常${type === 'expense' ? '支出' : '收入'}“${template.name}”` : `已加入日常${type === 'expense' ? '支出' : '收入'}“${template.name}”`)
+  }))
+  document.querySelectorAll('#edit-expense-sheet [data-product], #edit-income-sheet [data-income-name]').forEach(input => {
+    input.addEventListener('input', refreshDailyFavoriteControls)
+  })
+  document.querySelectorAll('[data-daily-template-type]').forEach(button => button.addEventListener('click', () => renderDailyTemplateList(button.dataset.dailyTemplateType)))
+  document.querySelector('[data-daily-entry-trigger]')?.addEventListener('click', () => {
+    const type = document.querySelector('[data-entry-type].active')?.dataset.entryType || 'expense'
+    renderDailyTemplateList(type)
+  })
 }
 
 function initEntryTypes() {
@@ -596,16 +955,12 @@ function initEntryTypes() {
       button.setAttribute('aria-pressed', String(active))
     })
     const primary = shell.querySelector('[data-save-entry="save"]')
-    const copy = shell.querySelector('[data-copy-entry]')
+    const daily = shell.querySelector('[data-daily-entry-trigger]')
     if (primary) primary.textContent = safeType === 'income' ? '保存收入' : '保存支出'
-    if (copy) copy.textContent = safeType === 'income' ? '复制上一笔收入' : '复制上一笔支出'
+    if (daily) daily.textContent = safeType === 'income' ? '日常收入' : '日常支出'
     updatePreferences({ entryType: safeType })
   }
   shell.querySelectorAll('[data-entry-type]').forEach(button => button.addEventListener('click', () => setType(button.dataset.entryType)))
-  shell.querySelector('[data-copy-entry]')?.addEventListener('click', () => {
-    const type = shell.querySelector('[data-entry-type].active')?.dataset.entryType === 'income' ? '收入' : '支出'
-    showToast(`已复制上一笔${type}，业务时间更新为现在`)
-  })
   const amount = shell.querySelector('[data-income-amount]')
   const payer = shell.querySelector('[data-payer]')
   const updateIncome = () => {
@@ -861,13 +1216,16 @@ function initReports() {
       button.classList.toggle('active', active)
       button.setAttribute('aria-pressed', String(active))
     })
-    const dimensions = document.querySelector('[data-report-dimensions]')
+    const dimensions = document.querySelector('[data-report-dimension-select]')
     const validDimension = reportScopes[scope].some(item => item.key === selectedDimension) ? selectedDimension : reportScopes[scope][0].key
-    dimensions.innerHTML = reportScopes[scope].map(item => `<button class="chip${item.key === validDimension ? ' active' : ''}" data-report-dimension="${item.key}" aria-pressed="${item.key === validDimension}">${item.label}</button>`).join('')
-    dimensions.querySelectorAll('[data-report-dimension]').forEach(button => button.addEventListener('click', () => {
-      dimensions.querySelectorAll('[data-report-dimension]').forEach(item => { item.classList.toggle('active', item === button); item.setAttribute('aria-pressed', String(item === button)) })
-      render(button.dataset.reportDimension)
+    dimensions.replaceChildren(...reportScopes[scope].map(item => {
+      const option = document.createElement('option')
+      option.value = item.key
+      option.textContent = item.label
+      return option
     }))
+    dimensions.value = validDimension
+    dimensions.onchange = () => render(dimensions.value)
     render(validDimension)
   }
   host.__renderScope = renderScope
@@ -968,7 +1326,7 @@ function initBillDetails() {
     const reportScope = reportScopes[params.get('scope')] ? params.get('scope') : 'overview'
     const scopeLabel = reportScopeLabels[reportScope]
     const dimensionLabel = getReportDimensionLabel(reportScope, params.get('dimension'))
-    context.querySelector('span').textContent = `来自${scopeLabel}报表 · ${dimensionLabel}：${params.get('value') || '全部'} · ${params.get('range') || ''}`
+    context.querySelector('[data-drill-context-text]').textContent = `来自${scopeLabel}报表 · ${dimensionLabel}：${params.get('value') || '全部'} · ${params.get('range') || ''}`
     const back = context.querySelector('[data-return-reports]')
     back?.addEventListener('click', event => {
       event.preventDefault()
@@ -1405,6 +1763,7 @@ function initDictionaries() {
     currentName = name
     title.textContent = `${name}管理`
     renderList(name)
+    closeOverlay(button.closest('.overlay'))
     openOverlay('dictionary-sheet')
   }))
   document.querySelector('[data-dictionary-add]')?.addEventListener('click', () => {
@@ -1461,10 +1820,11 @@ function renderProfilePreferences() {
   const themeLabels = { system: '跟随系统', light: '白天', dark: '夜晚' }
   document.querySelectorAll('[data-preference-value]').forEach(value => {
     const key = value.dataset.preferenceValue
-    const suffix = state.fields[key].status === 'pending' ? '保存中' : state.fields[key].status === 'error' ? '待重试' : key === 'entryType' ? '自动保存' : '修改'
+    const status = state.fields[key].status === 'pending' ? '保存中' : state.fields[key].status === 'error' ? '待重试' : ''
+    const current = key === 'fundingChannel' ? getFundingChannelName(preferences[key]) : preferences[key]
     value.textContent = key === 'entryType'
-      ? `${entryTypeLabels[preferences.entryType]} · ${suffix}`
-      : `${key === 'fundingChannel' ? getFundingChannelName(preferences[key]) : preferences[key]} · ${suffix}`
+      ? `${entryTypeLabels[preferences.entryType]} · 自动记录`
+      : `${current}${status ? ` · ${status}` : ''}`
   })
   const themeStatus = document.querySelector('[data-theme-save-status]')
   if (themeStatus) {
@@ -1620,34 +1980,56 @@ function createCsvDownload(button, filename, rows) {
   const link = document.createElement('a')
   link.href = URL.createObjectURL(new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8' }))
   link.download = filename
-  link.className = 'btn text'
   link.dataset.csvDownload = ''
-  link.textContent = '下载 CSV'
+  link.hidden = true
   button.insertAdjacentElement('afterend', link)
+  link.click()
 }
 
 function initExports() {
   document.querySelectorAll('[data-export-csv]').forEach(button => button.addEventListener('click', () => {
-    if (button.dataset.exportState === 'running') return
+    if (button.dataset.exportState === 'running') return button.__cancelExport?.()
     clearCsvDownload(button)
     button.dataset.exportState = 'running'
     const value = button.querySelector('.setting-value')
+    const isIconAction = button.classList.contains('icon-btn')
     if (value) {
       button.disabled = true
       value.textContent = '准备中…'
+    } else if (isIconAction) {
+      button.dataset.originalMarkup = button.innerHTML
+      button.dataset.originalLabel = button.getAttribute('aria-label') || ''
+      button.dataset.originalTitle = button.getAttribute('title') || ''
+      button.innerHTML = icons.close
+      button.setAttribute('aria-label', '取消导出')
+      button.setAttribute('title', '取消导出')
+      button.setAttribute('aria-busy', 'true')
     } else {
       setButtonLoading(button, true, '准备导出…')
     }
-    const cancel = document.createElement('button')
-    cancel.className = 'btn text'
-    cancel.type = 'button'
-    cancel.textContent = '取消导出'
-    button.insertAdjacentElement('afterend', cancel)
+    const cancel = isIconAction ? null : document.createElement('button')
+    if (cancel) {
+      cancel.className = 'btn text'
+      cancel.type = 'button'
+      cancel.textContent = '取消导出'
+      button.insertAdjacentElement('afterend', cancel)
+    }
     const finish = message => {
       button.dataset.exportState = 'idle'
       button.disabled = false
-      if (!value) setButtonLoading(button, false)
-      cancel.remove()
+      if (isIconAction) {
+        button.innerHTML = button.dataset.originalMarkup
+        button.setAttribute('aria-label', button.dataset.originalLabel)
+        button.setAttribute('title', button.dataset.originalTitle)
+        button.removeAttribute('aria-busy')
+        delete button.dataset.originalMarkup
+        delete button.dataset.originalLabel
+        delete button.dataset.originalTitle
+      } else if (!value) {
+        setButtonLoading(button, false)
+      }
+      cancel?.remove()
+      delete button.__cancelExport
       showToast(message)
     }
     const timer = setTimeout(() => {
@@ -1660,17 +2042,18 @@ function initExports() {
           [['类型', '名称', '金额', '业务时间'], ['收入', '8 月工资', '8500.00', '2026-08-13 09:00'], ['支出', '早餐包', '28.00', '2026-08-13 08:12']]
         )
         if (value) value.textContent = '下载完成'
-        finish('CSV 已生成，请点击“下载 CSV”保存文件')
+        finish('CSV 已导出')
       } catch (error) {
         if (value) value.textContent = '失败 · 可重试'
         finish('导出失败，当前筛选和页面状态已保留')
       }
     }, 750)
-    cancel.addEventListener('click', () => {
+    button.__cancelExport = () => {
       clearTimeout(timer)
       if (value) value.textContent = '已取消 · 可重试'
       finish('导出已取消，没有生成文件')
-    })
+    }
+    cancel?.addEventListener('click', button.__cancelExport)
   }))
 }
 
@@ -1902,6 +2285,7 @@ document.addEventListener('DOMContentLoaded', () => {
   initMoneyForms()
   initLogin()
   initEntryTypes()
+  initDailyTemplates()
   initEntrySubmit()
   initReportFilters()
   initReports()
