@@ -39,5 +39,8 @@ assert(/\.sidebar\s*\{[^}]*safe-area-inset-right[^}]*safe-area-inset-left/s.test
 assert(/\.admin-content\s*\{[^}]*safe-area-inset-right[^}]*safe-area-inset-left/s.test(css), '管理端主内容未消费横屏左右安全区')
 assert(/\.chip-row\s*\{[^}]*flex-wrap:\s*wrap[^}]*overflow:\s*visible/s.test(css), '移动端业务候选必须自然换行且不得隐藏到横向滚动区')
 assert(!/\.chip-row\s*\{[^}]*overflow-x:\s*auto/s.test(css), '业务候选不得恢复隐藏滚动条的横向滚动')
+assert(/\.custom-range\s*\{[^}]*grid-template-columns:\s*1fr 1fr/s.test(css), '指定日期在常规手机上必须使用紧凑双列')
+assert(/@media \(max-width: 419px\)[\s\S]*?\.custom-range\s*\{[^}]*grid-template-columns:\s*1fr/s.test(css), '指定日期在小手机上必须退化为单列')
+assert(/\.list-item\s*\{[^}]*touch-action:\s*pan-y/s.test(css), '账单手势必须保留页面纵向滚动')
 
 console.log(`Responsive contract: OK (${htmlFiles.length} pages)`)

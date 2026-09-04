@@ -84,7 +84,7 @@ for (const fragment of ["fontSize: 17px", "收入强调色 `#FF3B30`", "支出�
 assert(design.includes('business-contract.test.mjs'), 'DESIGN.md 必须登记业务闭环契约测试');
 
 assert(design.includes("`FormSection`"), "DESIGN.md 必须登记长表单分组组件");
-for (const component of ["`AppliedFilterBar`", "`SegmentedControl`", "`SettingsDisclosureList`", "`DailyEntryPicker`"]) {
+for (const component of ["`GlobalLedgerSearch`", "`AppliedFilterBar`", "`SegmentedControl`", "`SettingsDisclosureList`", "`DailyEntryPicker`", "`LedgerContextActions`", "`IncrementalLedgerList`"]) {
   assert(design.includes(component), `DESIGN.md 必须登记交互层级组件：${component}`);
 }
 assert(css.includes(".form-section + .form-section"), "长表单分组必须共享留白与分隔线样式");
@@ -121,25 +121,25 @@ assert(/<section class="setting-group account-actions">[\s\S]*?退出登录[\s\S
 assert(!allPrototypeHtml.includes("复制上一笔"), "日常收支模板已替代复制上一笔入口");
 assert(expenseEntry.includes('data-open="daily-entry-sheet"'), "记账页必须提供日常收支入口");
 assert(expenseEntry.includes('data-daily-template-type="expense"') && expenseEntry.includes('data-daily-template-type="income"'), "日常模板抽屉必须同时承载支出与收入");
-assert.equal((billDetails.match(/data-add-daily-template=/g) ?? []).length, 2, "支出与收入详情必须分别提供加入日常操作");
+assert.equal((billDetails.match(/data-add-daily-template=/g) ?? []).length, 0, "编辑抽屉不得重复提供常驻日常操作");
 assert.equal((billDetails.match(/data-daily-source/g) ?? []).length, 3, "每条示例有效收支必须可作为日常模板来源");
 assert(css.includes(".daily-template-row"), "日常模板列表必须消费共享行样式");
-assert(prototypeJs.includes("createDailyFavoriteButton") && prototypeJs.includes("mountDailyFavoriteControls"), "列表与编辑页头必须复用同一日常收藏动作");
-assert(prototypeJs.includes("close.before(button)"), "编辑账单收藏动作必须进入抽屉页头");
-assert(css.includes(".ledger-entry") && css.includes(".daily-favorite-toggle.active svg"), "账单列表必须提供独立且可见状态的收藏图标");
+assert(billDetails.includes('id="ledger-actions-sheet"') && billDetails.includes('data-ledger-action="daily"'), "加入日常必须收进统一账单上下文面板");
+assert(prototypeJs.includes("bindLedgerItemGestures") && prototypeJs.includes("event.key === 'F10'"), "上下文面板必须同时支持触摸手势和键盘入口");
+assert(!css.includes(".daily-favorite-toggle"), "账单列表和编辑抽屉不得残留常驻收藏图标");
 assert(/\.filter-summary \[data-return-reports\]\s*\{[^}]*white-space:\s*nowrap/s.test(css), "返回报表按钮必须保持单行");
 assert(/\.filter-summary strong\s*\{[^}]*white-space:\s*normal[^}]*overflow-wrap:\s*anywhere/s.test(css), "移动端下钻与筛选摘要必须自然换行");
 assert(profileSettings.includes('class="account-session-action"') && profileSettings.includes('class="account-danger-action"'), "退出与注销必须使用独立语义色");
 assert(profileSettings.includes('<a class="setting-row" href="login.html">'), "退出登录必须复用无下划线的设置行链接");
 assert(/\.account-actions \.setting-row\s*\{[^}]*justify-content:\s*center[^}]*text-align:\s*center/s.test(css), "账号操作必须复用设置行并居中展示");
-assert.equal((billDetails.match(/data-type-tag/g) ?? []).length, 8, "所有静态明细类型必须使用统一标签锚点");
+assert.equal((billDetails.match(/data-type-tag/g) ?? []).length, 7, "所有静态明细类型必须使用统一标签锚点");
 assert(prototypeJs.includes('list.dataset.typeScope = filters.type'), "明细类型标签必须消费当前已应用页签");
 assert(/\[data-type-scope="expense"\][\s\S]*?\[data-type-scope="income"\][\s\S]*?\[data-type-tag\]\s*\{\s*display:\s*none;/s.test(css), "支出和收入单一页签必须隐藏重复类型标签");
 assert(/\.item-title \[data-type-tag\]\s*\{[^}]*border:\s*1px solid var\(--border-strong\)[^}]*background:\s*var\(--surface-2\)/s.test(css), "其他明细页签的类型必须使用统一描边标签");
-assert(design.includes("DailyEntryFavoriteAction"), "DESIGN 必须登记日常收藏共享动作");
+assert(design.includes("LedgerContextActions"), "DESIGN 必须登记账单上下文共享动作");
 assert(!css.includes(".balance-summary .balance-total { grid-column"), "结余卡片不得固定跨列并制造空位");
 assert(prototypeJs.includes("normalizeDailyTemplateKey") && prototypeJs.includes("normalize('NFKC')"), "日常模板必须复用名称规范化规则");
-assert(prototypeJs.includes("if (!validateEntry(scope)) return"), "从明细加入日常模板前必须复用填报校验");
+assert(prototypeJs.includes("createDailyTemplateFromSourceRow") && prototypeJs.includes("upsertDailyTemplate"), "从明细加入日常必须复用模板领域逻辑");
 assert(prototypeJs.includes("timeZone: 'Asia/Shanghai'"), "日常模板回填时间必须显式使用上海时区");
 assert(prototypeJs.includes("select.dataset.required = ''"), "资金渠道下拉必须进入统一必填校验");
 assert(!prototypeJs.includes("data-copy-entry"), "旧复制上一笔交互逻辑必须完全移除");
