@@ -52,6 +52,7 @@ export async function apiRequest<T>(path: string, init: ApiRequestInit = {}): Pr
   if (init.signal?.aborted) abortFromCaller()
   else init.signal?.addEventListener('abort', abortFromCaller, { once: true })
   const timeout = setTimeout(() => {
+    if (controller.signal.aborted) return
     timedOut = true
     controller.abort()
   }, timeoutMs)
@@ -62,7 +63,12 @@ export async function apiRequest<T>(path: string, init: ApiRequestInit = {}): Pr
   if (!['GET', 'HEAD', 'OPTIONS'].includes(method)) {
     const csrfToken = readCookie('XSRF-TOKEN')
     if (csrfToken) {
-      headers.set('X-XSRF-TOKEN', decodeURIComponent(csrfToken))
+      try {
+        headers.set('X-XSRF-TOKEN', decodeURIComponent(csrfToken))
+      } catch {
+        // 异常 Cookie 仍交给服务端按 CSRF 规则拒绝，不能让前端解码异常绕过统一响应处理。
+        headers.set('X-XSRF-TOKEN', csrfToken)
+      }
     }
   }
 
@@ -91,6 +97,10 @@ export async function apiRequest<T>(path: string, init: ApiRequestInit = {}): Pr
     return (await response.json()) as T
   } catch (error) {
     if (timedOut) throw new ApiTimeoutError(timeoutMs)
+    if (controller.signal.aborted) {
+      if (error instanceof Error && error.name === 'AbortError') throw error
+      throw new DOMException('请求已取消。', 'AbortError')
+    }
     throw error
   } finally {
     clearTimeout(timeout)

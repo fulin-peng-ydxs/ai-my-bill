@@ -25,6 +25,17 @@ describe('shared api client', () => {
     expect(new Headers(init.headers).get('X-XSRF-TOKEN')).toBe('a/b=')
   })
 
+  it('forwards a malformed csrf cookie for server-side rejection instead of crashing locally', async () => {
+    vi.stubGlobal('document', { cookie: 'XSRF-TOKEN=%E0%A4%A' })
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 204 }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await apiRequest<void>('/auth/logout', { method: 'POST' })
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(new Headers(init.headers).get('X-XSRF-TOKEN')).toBe('%E0%A4%A')
+  })
+
   it('preserves the stable api error body for caller decisions', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({
       code: 'UNAUTHORIZED',
@@ -62,5 +73,20 @@ describe('shared api client', () => {
     vi.stubGlobal('fetch', vi.fn((_url: string, init: RequestInit) => Promise.reject(init.signal?.reason)))
 
     await expect(apiRequest('/canceled', { signal: caller.signal })).rejects.toMatchObject({ name: 'AbortError' })
+  })
+
+  it('normalizes a custom caller abort reason and never lets a later timer relabel it as timeout', async () => {
+    vi.useFakeTimers()
+    const caller = new AbortController()
+    let rejectFetch: (reason: unknown) => void = () => undefined
+    vi.stubGlobal('fetch', vi.fn(() => new Promise<Response>((_, reject) => { rejectFetch = reject })))
+
+    const request = apiRequest('/canceled', { signal: caller.signal, timeoutMs: 100 })
+    const rejection = expect(request).rejects.toMatchObject({ name: 'AbortError' })
+    caller.abort(new Error('route changed'))
+    await vi.advanceTimersByTimeAsync(100)
+    rejectFetch(caller.signal.reason)
+
+    await rejection
   })
 })

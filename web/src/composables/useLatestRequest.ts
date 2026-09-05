@@ -56,7 +56,10 @@ export function useLatestRequest<T>() {
     } catch (cause) {
       if (requestGeneration !== generation) return undefined
       const normalized = normalizeRequestError(cause)
-      if (normalized.kind === 'canceled') return undefined
+      if (normalized.kind === 'canceled') {
+        status.value = data.value === undefined ? 'idle' : 'ready'
+        return undefined
+      }
       if (intent === 'silent' && data.value !== undefined) {
         staleWarning.value = normalized
         status.value = 'ready'

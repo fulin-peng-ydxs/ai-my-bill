@@ -78,6 +78,7 @@ describe('shared frontend foundations', () => {
     const settings = await render(SettingsDisclosureList, {
       label: '偏好设置', items: [{ key: 'theme', label: '外观', value: '跟随系统' }],
     })
+    expect(settings).toContain('<ul')
     expect(settings).toContain('偏好设置')
     expect(settings).toContain('跟随系统')
   })

@@ -569,8 +569,13 @@ input:disabled {
 
 .settings-disclosure-list {
   display: grid;
+  margin: 0;
+  padding: 0;
   border-block: 1px solid var(--color-border);
+  list-style: none;
 }
+
+.settings-disclosure-list li { min-width: 0; }
 
 .settings-disclosure-list button {
   display: grid;
@@ -587,7 +592,7 @@ input:disabled {
   cursor: pointer;
 }
 
-.settings-disclosure-list button:last-child { border-bottom: 0; }
+.settings-disclosure-list li:last-child button { border-bottom: 0; }
 
 .disclosure-value {
   color: var(--color-muted);
@@ -616,6 +621,8 @@ input:disabled {
 
 .money-summary-item:nth-child(2n) { border-right: 0; }
 .money-summary-item:last-child:nth-child(odd) { grid-column: 1 / -1; border-right: 0; }
+.money-summary-item:last-child,
+.money-summary-item:nth-last-child(2):nth-child(odd) { border-bottom: 0; }
 .money-summary-item dt { color: var(--color-muted); font-size: 12px; }
 .money-summary-item dd { margin: 0; font-family: var(--font-data); font-weight: 600; text-align: right; }
 .money-income dd { color: var(--color-income-text); }

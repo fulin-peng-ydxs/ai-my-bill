@@ -19,23 +19,26 @@ defineEmits<{
 </script>
 
 <template>
-  <div
+  <ul
     class="settings-disclosure-list"
     :aria-label="label"
   >
-    <button
+    <li
       v-for="item in items"
       :key="item.key"
-      type="button"
-      :disabled="item.disabled"
-      @click="$emit('select', item.key)"
     >
-      <span>{{ item.label }}</span>
-      <span class="disclosure-value">{{ item.value }}</span>
-      <ChevronRight
-        :size="18"
-        aria-hidden="true"
-      />
-    </button>
-  </div>
+      <button
+        type="button"
+        :disabled="item.disabled"
+        @click="$emit('select', item.key)"
+      >
+        <span>{{ item.label }}</span>
+        <span class="disclosure-value">{{ item.value }}</span>
+        <ChevronRight
+          :size="18"
+          aria-hidden="true"
+        />
+      </button>
+    </li>
+  </ul>
 </template>

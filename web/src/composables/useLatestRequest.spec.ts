@@ -60,4 +60,18 @@ describe('useLatestRequest', () => {
     expect(state.error.value).toBeUndefined()
     scope.stop()
   })
+
+  it('does not leave a region loading when the request source cancels itself', async () => {
+    const scope = effectScope()
+    const state = scope.run(() => useLatestRequest<string[]>())!
+
+    await state.execute(async () => { throw new DOMException('aborted', 'AbortError') })
+    expect(state.status.value).toBe('idle')
+    await state.execute(async () => ['已有数据'])
+    await state.execute(async () => { throw new DOMException('aborted', 'AbortError') }, { intent: 'silent' })
+    expect(state.status.value).toBe('ready')
+    expect(state.data.value).toEqual(['已有数据'])
+    expect(state.error.value).toBeUndefined()
+    scope.stop()
+  })
 })

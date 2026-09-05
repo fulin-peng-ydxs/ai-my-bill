@@ -33,6 +33,9 @@ function onInput(event: unknown): void {
 }
 
 function onEnter(event: unknown): void {
+  const keyboardEvent = event as { isComposing: boolean; preventDefault: () => void }
+  if (keyboardEvent.isComposing) return
+  keyboardEvent.preventDefault()
   query.submit(inputValue(event))
 }
 
@@ -59,7 +62,7 @@ function clear(): void {
       :value="modelValue"
       :placeholder="placeholder"
       @input="onInput"
-      @keydown.enter.prevent="onEnter"
+      @keydown.enter="onEnter"
     >
     <button
       v-if="modelValue"
