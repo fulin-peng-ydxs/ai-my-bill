@@ -21,6 +21,7 @@
 - 前端开发：`npm --prefix web run dev`
 - 前端检查：`npm --prefix web run check`
 - 后端检查：`./mvnw -B verify`
+- 数据库迁移与隔离：`npm run check:database`（复用系统 PostgreSQL 16+ 可执行程序创建并销毁一次性测试集群）
 - 本地联调：`npm run dev`
 
 任何代码改动完成后，先做定向验证，再从第三方视角自审业务边界、复用、权限、安全、性能和相关事实文档是否同步。

@@ -8,3 +8,4 @@ resolve_toolchain
 cd "${PROJECT_ROOT}"
 npm --prefix web run check
 ./mvnw -B verify
+bash scripts/test-database.sh

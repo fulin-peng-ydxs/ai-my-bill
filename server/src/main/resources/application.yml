@@ -3,12 +3,22 @@ spring:
     name: my-bill-server
   datasource:
     url: jdbc:postgresql://${MY_BILL_DB_HOST:127.0.0.1}:${MY_BILL_DB_PORT:54329}/${MY_BILL_DB_NAME:my_bill_dev}
-    username: ${MY_BILL_DB_USER:my_bill_dev}
-    password: ${MY_BILL_DB_PASSWORD:}
+    username: ${MY_BILL_DB_APP_USER:my_bill_app}
+    password: ${MY_BILL_DB_APP_PASSWORD:}
     hikari:
       maximum-pool-size: 5
       minimum-idle: 1
       connection-timeout: 5000
+  flyway:
+    enabled: true
+    url: ${MY_BILL_DB_MIGRATION_URL:${spring.datasource.url}}
+    user: ${MY_BILL_DB_MIGRATION_USER:my_bill_migration}
+    password: ${MY_BILL_DB_MIGRATION_PASSWORD:}
+    validate-migration-naming: true
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
   jackson:
     default-property-inclusion: non_null
 
@@ -29,3 +39,8 @@ management:
       show-details: never
       probes:
         enabled: true
+
+my-bill:
+  schema:
+    validation-enabled: false
+    expected-version: "007"

@@ -11,6 +11,7 @@
     "bootstrap": "bash scripts/bootstrap.sh",
     "dev": "bash scripts/dev.sh",
     "check": "bash scripts/check.sh",
+    "check:database": "bash scripts/test-database.sh",
     "contracts:generate": "bash scripts/run-frontend.sh contract:generate"
   }
 }

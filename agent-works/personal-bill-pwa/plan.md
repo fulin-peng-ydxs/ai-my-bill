@@ -11,14 +11,14 @@
 - 关键实现取舍：用户已确认采用单机同源部署；后端采用模块化单体和关系型精确数据模型；金额使用 Java `BigDecimal` 与 PostgreSQL `numeric`；第一期不引入 Redis、消息队列、微服务或地图服务；共享状态通过 PostgreSQL 和应用事务闭环。该选择以更可控的中国大陆访问、服务端 Cookie 会话和单一部署边界换取主机、补丁和备份运维责任。
 - 本次不做：R25-R38、R57、R69 对应的后续或明确排除能力；不重新生成或替换已确认 HTML 原型；不把原型演示数据当成生产 seed。
 - 计划输出目录：`agent-works/personal-bill-pwa/`。
-- 计划启动状态：T1 已完成并通过本地验证，T2 可开始；T11、T19、T22、T29 因各自会改变接口、数据处理、验收或上线步骤的决策尚未确认，保持 `阻塞`。其他任务仍为 `待开始`；已完成的工程基线不冒充业务实现完成。
+- 计划启动状态：T1 已完成；T2 代码与 PostgreSQL 真实验证已完成，因当前主机没有 Docker/容器运行时，Compose 镜像构建和 `docker compose run --rm migrate` 尚未执行，T2 保持 `进行中`，不得进入 T3。T11、T19、T22、T29 的既有决策阻塞不变，其他任务仍为 `待开始`。
 
 ## 2. 当前项目依据
 
 ### 2.1 仓库现状
 
-- 当前没有业务前端、后端、数据库、构建、部署或自动化测试工程，正式代码路径均为本计划拟建路径。
-- 当前 Git 分支为 `main`；本计划基线包含已修改的 `DESIGN.md`、需求/原型整改文件和未跟踪的本计划文件，均属于 `personal-bill-pwa` 同一功能范围。实施时必须按实际 Git diff 确认改动边界，不把工作区描述为干净基线。
+- 当前已完成 T1 工程基线；T2 已新增数据库 schema、JPA 映射、角色/RLS、seed、部署迁移链路和集成测试，但未实现认证、业务接口或正式业务页面。
+- 当前 Git 分支为 `main`；每阶段均按实际 Git diff 确认改动边界，不把后续待实现能力描述为当前事实。
 - 原型基线命令及结果：
   - `node agent-works/personal-bill-pwa/prototypes/design-contract.test.mjs`：通过。
   - `node agent-works/personal-bill-pwa/prototypes/responsive-contract.test.mjs`：通过，覆盖 6 页。
@@ -150,7 +150,7 @@ Flyway 高权限凭据边界：
 - 生产 migration 只由 `deploy/compose.yaml` 中的 `migrate` 一次性服务执行；该服务使用 `server/Dockerfile` 的独立 `migrate` 构建目标，只包含 Flyway CLI、JDBC 驱动和只读复制的 `server/src/main/resources/db/migration/`，不启动 Spring Web、业务 Bean、后台任务或应用 API。
 - `server/src/main/resources/application-prod.yml` 固定 `spring.flyway.enabled: false`，常驻 `app` 服务只能使用运行角色；V007 仅向运行角色授予 `flyway_schema_history` 的 `SELECT` 供启动时核对预期版本，不符合即 fail-fast，应用不能自行取得迁移角色补跑。
 - `deploy/env/production.env.example` 只声明 `MY_BILL_MIGRATION_DB_URL`、`MY_BILL_MIGRATION_DB_USERNAME`、`MY_BILL_MIGRATION_DB_PASSWORD_FILE` 与对应 `MY_BILL_APP_DB_*` 键名。`deploy/scripts/run-flyway.sh` 从 `/run/secrets/migration_db_password` 读取密码后 `exec flyway migrate`，不得打印环境、命令展开或密码。
-- Compose 分别声明 `migration_db_password` 与 `app_db_password` secret：`migrate` 只挂载前者，`app` 只挂载后者；`deploy/scripts/run-app.sh` 只读取 `MY_BILL_APP_DB_PASSWORD_FILE` 后启动 Java，且其环境中不声明任何 `MY_BILL_MIGRATION_DB_*` 键。两类服务仅加入不对宿主机发布端口的数据库内部网络。宿主机真实 secret 放在 `/etc/my-bill/secrets/`、权限 `0600`、不进入 Git、镜像、构建参数、日志或 `.env`。
+- Compose 声明 bootstrap、migration 与 app 三类 secret：长驻 `db` 只挂 bootstrap secret；一次性 `provision` 短时挂三类 secret 创建最小角色；`migrate` 只挂 migration secret；长驻 `app` 只挂 app secret并拒绝任何 `MY_BILL_MIGRATION_DB_*`。宿主机真实 secret 放在 `/etc/my-bill/secrets/`、权限 `0600`，不进入 Git、镜像、构建参数、日志或非密钥 env 文件。
 - 发布时先执行 `docker compose run --rm migrate`；成功并核对 schema 版本后才执行常驻服务 `docker compose up -d app web proxy`。migration 失败时一次性容器退出且禁止启动新应用版本；容器删除后迁移 secret 不存在于任何常驻容器，后续升级仅在受控维护窗口再次按需挂载。
 
 ### 4.3 接口契约与权限
@@ -404,17 +404,17 @@ Flyway 高权限凭据边界：
 
 ### T2：数据库模型、约束、迁移与 seed
 
-- 状态：待开始
+- 状态：进行中（代码与本地 PostgreSQL 验证完成；Docker 运行验证待补）
 - 依赖：T1。
 - 输入：T1 字段/接口合同、需求 §6-§7、B2-B9 与已确认默认收入分类。
-- 涉及文件：`deploy/postgres/001_roles.sql`、`deploy/compose.yaml`、`deploy/env/production.env.example`、`deploy/scripts/run-flyway.sh`、`deploy/scripts/run-app.sh`、`server/Dockerfile`、`server/src/main/resources/application-prod.yml`、`server/src/main/resources/db/migration/V001__identity_and_sessions.sql` 至 `V007__tenant_rls_policies.sql`、`server/src/main/resources/db/rollback/U001__identity_and_sessions.sql` 至 `U007__tenant_rls_policies.sql`、JPA 实体和数据库集成测试。
+- 涉及文件：`deploy/postgres/001_roles.sql`、`deploy/compose.yaml`、`deploy/env/production.env.example`、`deploy/scripts/run-roles.sh`、`run-flyway.sh`、`run-app.sh`、`server/Dockerfile`、`server/src/main/resources/application-prod.yml`、`server/src/main/resources/db/migration/V001__identity_and_sessions.sql` 至 `V007__tenant_rls_policies.sql`、`server/src/main/resources/db/rollback/U001__identity_and_sessions.sql` 至 `U007__tenant_rls_policies.sql`、JPA 实体和数据库集成测试。
 - 目标：落实 §4.2 全部表、精度、状态、唯一、复合归属、检查约束、索引、角色隔离和 RLS policy。
 - 操作：实现 migration；建立金额/时间/租户约束；适用主键、唯一约束和跨表外键以 `tenant_id` 为前导归属；为全部租户业务表启用并强制 RLS，补齐 `USING`/`WITH CHECK` policy；迁移角色与应用运行角色分离，运行角色没有表所有权、超级用户或 `BYPASSRLS`，仅可读 Flyway 历史版本；实现只包含 Flyway 和 migration 的一次性 `migrate` 镜像/Compose 服务及分离的 app 启动脚本，生产应用 profile 强制关闭内嵌 Flyway并校验 schema 版本；默认项 seed 使用稳定键和 `ON CONFLICT DO NOTHING`，只补缺不覆盖；创建幂等、任务、审计表；准备受环境保护的测试 fixture。
 - 产出：可从空库迁移的 schema、人工回滚说明和 Testcontainers 数据库测试。
 - 影响范围与边界异常：影响全部持久化模型和后续任务；不从原型示例推断生产默认字典，重复启动/升级不得覆盖管理员修改，生产 migration 采用 forward-only。
 - 验证：空库和升级库通过 `docker compose run --rm migrate`；重复 migrate；migration 失败后应用新版本拒绝启动；管理员修改默认项后升级保持不变；复合租户外键负例、运行角色权限快照、RLS 上下文缺失/跨租户读写/伪造租户/直接 SQL 负例、并发唯一/调整累计/模板 upsert、EXPLAIN 基线；检查 `app` 容器无 migration secret/环境变量，`migrate` 镜像无业务 Web 入口且退出后无常驻容器。
 - 完成标准：所有实体和 B2/B3/B4/B6-B9 可由数据库或事务测试证明；运行角色不能关闭或绕过 RLS，常驻应用在文件、容器、环境变量和挂载层面均无法取得迁移凭据。
-- 实际落地情况：待实施。
+- 实际落地情况：已落地 23 张业务/身份/任务表、7 个 Flyway migration 与 7 个仅空环境人工回滚脚本；金额采用无损 `numeric` + `scale`/范围 CHECK 拒绝超精度或缺失必填金额，字段形状约束要求引用与名称快照成对，分类触发器限制最多两级，租户对象使用复合主键/外键，账目按上海时区校验业务日期，调整触发器锁定原支出并原子校验累计额且联动冻结/恢复，模板以 `(tenant_id,type,normalized_name)` 唯一。15 张租户业务表已 `ENABLE/FORCE RLS`，provision 每次强制把已有同名迁移/运行角色收敛为无超级用户、建库、建角、继承或 `BYPASSRLS` 的最小权限；默认收入分类以 8 个稳定键 `DO NOTHING` seed。生产 profile 关闭内嵌 Flyway并只读核对版本 `007`；Compose 将长驻 db/app 与一次性 provision/migrate 的三类 secret 隔离，前端 web/proxy 仍按 T29 落地。`npm run check:database` 已复用系统 PostgreSQL 16.14 创建一次性集群，6 项测试验证空库与重复迁移、seed 不覆盖、预置高权限同名角色降权、对象所有权/RLS、上下文清理与伪造、跨租户、复合归属、必填/超精度拒绝、两级分类、并发调整累计、生命周期、模板 upsert、启动版本门禁及 U007→U001 回滚脚本；脚本退出后临时集群与端口均清理。`npm run dev` 已以本地 bootstrap/迁移/应用三角色从空库迁移到 `007`，JPA 校验和前端代理健康检查通过；生产 profile 已验证版本匹配可启动、版本 `999` 不匹配时退出。Compose YAML、脚本语法和 secret 挂载边界已静态验证；当前主机不存在 Docker/Podman/Colima/OrbStack，因此尚未执行镜像构建、`docker compose run --rm migrate` 和容器退出/挂载实测，T2 不标完成且 T3 不解锁。未新增页面、认证、业务 API、菜单或权限配置表。
 
 ### T3：认证、会话与租户安全上下文
 
@@ -825,11 +825,11 @@ Flyway 高权限凭据边界：
 | `web/src/router/index.ts`、`web/src/app/pageRegistry.ts` | P1-P6 路由、普通用户四项导航、管理员入口守卫，以及页面键/角色/原型/状态轻量登记 | T1 建登记契约，T4/T24 接入真实页面，构建和测试时双向校验 | 页面、导航与前端体验权限；不提供运行时布局配置 | 回退前端镜像；服务端权限始终保留；删除页面时同步路由、登记和 DESIGN |
 | `web/vite.config.ts`、`web/public/manifest.webmanifest`、`web/src/config/runtime.ts`、`web/src/sw.ts` | PWA、API 基路径、构建策略；仅缓存哈希静态资源和无数据离线页，API/下载/个性化导航 `NetworkOnly` | T4 实现，前端构建生成版本化 SW，T29 发布后验证 | Web/PWA、离线外壳和浏览器缓存 | 回退前端镜像与 SW 版本；紧急发布新 SW 清理旧缓存，不通过缓存 API 响应恢复功能 |
 | `.env.example` | 本地/测试环境变量键名、格式与说明；记录 E2E 写开关和预期数据库指纹仅限 `dev/test`，默认关闭 | 本地准备；任何测试写入前由守卫读取 | 开发与测试配置，不直接修改业务数据 | 删除本地测试变量即可关闭；真实 `.env` 不入库，生产不得复用此文件承载 secret |
-| `deploy/env/production.env.example` | 声明 `MY_BILL_MIGRATION_DB_URL/USERNAME/PASSWORD_FILE`、`MY_BILL_APP_DB_URL/USERNAME/PASSWORD_FILE` 等生产非密钥键名；密码值只引用 `/run/secrets/*` | T2 固化 schema，T29 部署前复制为受控非密钥配置 | `migrate` 与 `app` 两套数据库身份及其他生产配置 | 回退上一配置版本；真实密码和 secret 路径对应文件不入 Git |
+| `deploy/env/production.env.example` | 声明 bootstrap host secret 路径及 `MY_BILL_MIGRATION_DB_URL/USERNAME/PASSWORD_FILE`、`MY_BILL_APP_DB_URL/USERNAME/PASSWORD_FILE` 等生产非密钥键名；密码值只引用 `/run/secrets/*` | T2 固化 schema，T29 部署前复制为受控非密钥配置 | `db/provision`、`migrate` 与 `app` 三类数据库身份边界及其他生产配置 | 回退上一配置版本；真实密码和 secret 文件不入 Git |
 | `server/Dockerfile` 的 `migrate` 构建目标 | 构建只含 Flyway CLI、JDBC 驱动和 migration 的一次性镜像，不含 Spring Web/业务启动入口 | T2 构建；T29 每次发布 migration 前 | 数据库 schema 变更执行面 | 回退到与目标 migration 匹配的上一镜像；已执行数据库变更遵循 forward-fix |
 | `deploy/scripts/run-flyway.sh` | 从 `MY_BILL_MIGRATION_DB_PASSWORD_FILE=/run/secrets/migration_db_password` 读取密码并 `exec flyway migrate`，禁止打印环境或命令展开 | `migrate` 一次性服务启动时 | 迁移凭据在短生命周期容器内的传递 | 容器退出即卸载 secret；脚本失败不启动新应用，修复后重跑同一兼容 migration |
 | `deploy/scripts/run-app.sh` | 只从 `MY_BILL_APP_DB_PASSWORD_FILE=/run/secrets/app_db_password` 读取运行密码并启动 Java；拒绝存在任何 `MY_BILL_MIGRATION_DB_*` 环境变量 | 常驻 `app` 服务每次启动 | 应用运行凭据和迁移凭据隔离 | 回退上一应用镜像/脚本；不得通过挂载 migration secret 恢复启动 |
-| `deploy/compose.yaml` | 定义 `db`、一次性 `migrate`、常驻 `app/web/proxy`、内部数据库网络和分离 secret；`migrate` 不发布端口且仅挂载 `migration_db_password`，`app` 仅挂载 `app_db_password` | T2 完成迁移链路；T29 按“先 migrate、核对版本、再启动常驻服务”执行 | 整体服务、数据库网络和凭据暴露边界 | 使用上一镜像和配置；删除失败的一次性容器；数据库不自动降级且不得把 migration secret 挂给 app |
+| `deploy/compose.yaml` | T2 定义长驻 `db/app`、一次性 `provision/migrate`、内部数据库网络和三类分离 secret；`db` 只挂 bootstrap、`provision` 短时挂三类、`migrate` 只挂 migration、`app` 只挂 app。`web/proxy` 与公网入口由 T29 补齐 | T2 建迁移链路；T29 按“先 provision/migrate、核对版本、再启动常驻服务”完善并执行 | 数据库、应用、内部网络和凭据暴露边界 | 使用上一镜像和配置；删除失败的一次性容器；数据库不自动降级且不得把 migration secret 挂给长驻服务 |
 | `deploy/Caddyfile` | 同源静态资源/API 反向代理、TLS 与安全响应头 | T29 常驻服务启动 | 公网入口 | 回退上一配置；数据库不受影响 |
 | `deploy/backup/*`、`deploy/restore/*` | PostgreSQL/导出文件备份、校验与恢复 | 定时及演练 | 备份存储 | 恢复前创建当前快照；演练在隔离环境 |
 
@@ -838,14 +838,14 @@ SQL 约束：所有脚本必须有总体、对象/字段、执行前置、影响
 ## 9. 测试与验证计划
 
 - 单元测试：金额/数量精度、ROUND_HALF_UP、名称规范化、筛选序列化、报表公式、模板白名单、状态机、密码规则和 CSV 转义。完成情况：待验证。
-- 数据库测试：Testcontainers PostgreSQL 验证 migration、唯一/检查/外键、RLS policy、运行/迁移角色边界、事务级租户上下文与连接复用、并发幂等、调整累计、商品合并、模板 upsert、游标分页和索引计划。完成情况：待验证。
+- 数据库测试：Testcontainers PostgreSQL 验证 migration、唯一/检查/外键、RLS policy、运行/迁移角色边界、事务级租户上下文与连接复用、并发幂等、调整累计、商品合并、模板 upsert、游标分页和索引计划。完成情况：T2 已通过系统现有 PostgreSQL 16.14 的一次性隔离集群执行 6 项集成测试，覆盖空库/重复迁移、seed 幂等、角色与 RLS、连接上下文清理、复合归属、金额精度、分类层级、并发调整、生命周期、模板 upsert、版本门禁和 U007→U001 回滚；Docker/Testcontainers 容器路径因当前主机无容器运行时待补，商品合并、游标分页和索引计划按后续实现任务继续验证。
 - 接口测试：OpenAPI 契约、字段校验、错误模型、版本冲突、CRUD、导出 job 和后台任务。完成情况：待验证。
 - 页面/交互测试：优先组件/状态测试；按 360/390px 先验证 P1-P5 的触摸、软键盘、安全区、底部抽屉、固定操作和自然换行，再验证平板/桌面增强；P6 分别验证窄屏摘要与桌面表格。Playwright 只覆盖登录首次改密、两类填报、日常模板、明细编辑/调整/回收站、报表下钻、管理员关键链路。完成情况：待验证。
 - 前端组件与配置接入：验证共享组件被真实消费；轻量页面注册表与 Router/DESIGN 双向一致且不演化为布局配置平台；防抖 Enter/清空、卸载取消、晚响应保护和未保存内容守卫有真实页面消费；偏好定义、存储、读取、消费、重置和非法值回退完整；Service Worker 缓存清单、API/下载 `no-store`、草稿最小字段/7 天 TTL/账号匹配/注销清理通过；不引入无消费配置体系。完成情况：待验证。
-- 权限与数据范围：双租户覆盖读写、ID 猜测、字典引用、模板、调整、报表、导出；应用层租户条件、复合归属约束和 PostgreSQL RLS 分层验证；普通用户访问 P6；管理员 DTO/SQL/日志无账目内容。完成情况：待验证。
+- 权限与数据范围：双租户覆盖读写、ID 猜测、字典引用、模板、调整、报表、导出；应用层租户条件、复合归属约束和 PostgreSQL RLS 分层验证；普通用户访问 P6；管理员 DTO/SQL/日志无账目内容。完成情况：T2 已验证数据库层上下文缺失/非法值 fail-closed、跨租户读写拒绝、复合归属、15 张租户表强制 RLS、运行角色不能关闭 RLS，以及迁移/应用角色非超级且无 `BYPASSRLS`；认证身份、应用层查询条件、报表/导出和页面权限随 T3 及后续任务验证。
 - 性能与容量：按 T26 数据集记录候选、明细、报表、导出、清理基线、查询计划和资源占用；无法在开发环境证明的境内网络与恢复在 T29 执行。完成情况：待验证。
 - 安全：认证成功/拒绝、默认拒绝路由、请求/RLS 上下文缺失与认证存储异常 fail-closed、账号枚举、限流、CSRF、会话撤销、跨租户复合归属、连接池租户上下文无残留、XSS、CSV 公式、CSP、Cookie、SW/HTTP 缓存、共享设备草稿、日志脱敏、secret/依赖扫描和下载授权。完成情况：待验证。
-- 回归：每个任务先跑定向测试；涉及构建、路由、懒加载、全局资源、PWA 或发布产物时再跑完整构建；Java 改动执行编译测试。完成情况：T1 已完成前端 typecheck/lint/单测/契约检查/生产构建、后端编译/测试/打包、本地三服务启动与浏览器自动化验证；后续任务继续按改动范围追加验证记录。
+- 回归：每个任务先跑定向测试；涉及构建、路由、懒加载、全局资源、PWA 或发布产物时再跑完整构建；Java 改动执行编译测试。完成情况：T1 已完成前端 typecheck/lint/单测/契约检查/生产构建、后端编译/测试/打包、本地三服务启动与浏览器自动化验证；T2 已完成 `npm run check`、数据库专项检查和本地三角色真实启动，未改页面所以无需重复浏览器截图/交互验证，Docker 运行验证仍待补；后续任务继续按改动范围追加验证记录。
 - 异常与边界：断网、超时已成功、重复提交、晚响应、请求取消、初载/主动刷新/静默刷新差异、空数据、403、版本冲突、任务中断与启动恢复、备份失败、数据库指纹不一致、磁盘告警、极值与上海时区边界。完成情况：待验证。
 - 图示与原型一致性：逐页对照六个 HTML 的区域、入口、弹层、四态和响应式；正式实现不得照搬原型假数据或测试查询参数。完成情况：待验证。
 - 需求映射：核对本计划 R1-R72 每个编号恰有一个范围状态；必须项有任务和验证，建议/暂不实现项均为跳过并有原因；T28 只关闭部署前证据，T29 回填环境证据和最终结论。完成情况：本次修订后需执行静态自审，业务实现待验证。
@@ -891,4 +891,4 @@ SQL 约束：所有脚本必须有总体、对象/字段、执行前置、影响
 | RPO/RTO | 阻塞 | T29；R55 | 可接受数据丢失窗口、恢复时限、备份频率和保留份数 | 不定稿备份调度，不关闭恢复验收 |
 | 正式产品名称、图标和启动图 | 阻塞 | T29；R1 最终发布验收 | 正式名称及完整 PWA 图标/启动图资产 | 可使用明确标记的临时资产开发，但不得关闭正式 PWA 发布验收 |
 
-启动边界：T1 已完成，下一阶段仅可进入依赖已满足的 T2；进入 T11、T19、T22 或 T29 前必须先取得上表对应确认并把任务及相关 R 状态从 `阻塞` 更新为 `待开始`。若上游任务尚未到达，仍可继续执行不依赖这些决策且依赖已满足的其他任务，但不得绕过任务依赖宣称后续里程碑完成。
+启动边界：T1 已完成，当前只能收口进行中的 T2；在 Docker 镜像构建、一次性 migration 服务和 secret/容器退出边界完成真实验证并提交前，T3 不得开始。进入 T11、T19、T22 或 T29 前还必须取得上表对应确认并把任务及相关 R 状态从 `阻塞` 更新为 `待开始`。若上游任务尚未到达，仍可继续执行不依赖这些决策且依赖已满足的其他任务，但不得绕过任务依赖宣称后续里程碑完成。
