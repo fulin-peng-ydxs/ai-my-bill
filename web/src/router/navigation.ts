@@ -11,7 +11,10 @@ export function postLoginPath(session: Session, requested: unknown): string {
     return homePathForRole(session.role)
   }
   const path = requested.split(/[?#]/, 1)[0]
-  const page = pageRegistry.find((candidate) => candidate.path === path)
+  const page = pageRegistry.find((candidate) => {
+    const pattern = candidate.path.replace(/:[^/]+/g, '[^/]+')
+    return new RegExp(`^${pattern}$`).test(path)
+  })
   if (!page || page.role.toUpperCase() !== session.role) return homePathForRole(session.role)
   return requested
 }

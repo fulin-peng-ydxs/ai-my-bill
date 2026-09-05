@@ -11,6 +11,7 @@ const props = withDefaults(defineProps<{
   confirmLabel?: string
   cancelLabel?: string
   busy?: boolean
+  confirmDisabled?: boolean
   danger?: boolean
   showCancel?: boolean
 }>(), {
@@ -18,6 +19,7 @@ const props = withDefaults(defineProps<{
   confirmLabel: '确认',
   cancelLabel: '取消',
   busy: false,
+  confirmDisabled: false,
   danger: false,
   showCancel: true,
 })
@@ -71,7 +73,7 @@ const { dialog, handleCancel, handleClose } = useDialogController(isOpen, (value
           type="button"
           class="primary-button"
           :class="{ 'danger-button': danger }"
-          :disabled="busy"
+          :disabled="busy || confirmDisabled"
           @click="emit('confirm')"
         >
           {{ busy ? '正在处理…' : confirmLabel }}

@@ -6,6 +6,8 @@ import LoginView from '../views/LoginView.vue'
 import PlaceholderView from '../views/PlaceholderView.vue'
 import ProfileView from '../views/ProfileView.vue'
 import UserManagementView from '../views/admin/UserManagementView.vue'
+import DictionaryDetailView from '../views/me/dictionaries/DictionaryDetailView.vue'
+import DictionaryIndexView from '../views/me/dictionaries/DictionaryIndexView.vue'
 
 const registeredRoutes: RouteRecordRaw[] = pageRegistry.map((page) => ({
   path: page.path,
@@ -16,6 +18,10 @@ const registeredRoutes: RouteRecordRaw[] = pageRegistry.map((page) => ({
       ? UserManagementView
     : page.pageKey === 'profile-settings'
       ? ProfileView
+    : page.pageKey === 'personal-dictionaries'
+      ? DictionaryIndexView
+    : page.pageKey === 'personal-dictionary-detail'
+      ? DictionaryDetailView
       : PlaceholderView,
   props: { page },
   meta: {

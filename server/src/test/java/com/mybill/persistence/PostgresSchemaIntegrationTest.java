@@ -54,8 +54,20 @@ class PostgresSchemaIntegrationTest {
         executeAdmin("ALTER ROLE my_bill_app PASSWORD 'app_test'");
         executeAdmin("ALTER ROLE my_bill_migration PASSWORD 'migration_test'");
         executeAdmin("GRANT USAGE, CREATE ON SCHEMA public TO my_bill_migration");
-        flyway = Flyway.configure().dataSource(jdbcUrl, "my_bill_migration", "migration_test").load();
+        flyway = Flyway.configure().dataSource(jdbcUrl, "my_bill_migration", "migration_test")
+                .target("008").load();
         assertThat(flyway.migrate().migrationsExecuted).isEqualTo(8);
+        executeAdmin("INSERT INTO tenant(id) VALUES ('09000000-0000-0000-0000-000000000001')");
+        executeAdmin("INSERT INTO product(tenant_id,id,display_name,normalized_name,updated_at) VALUES "
+                + "('09000000-0000-0000-0000-000000000001','09000000-0000-0000-0000-000000000002','旧商品','旧商品','2026-01-01T00:00:00Z'),"
+                + "('09000000-0000-0000-0000-000000000001','09000000-0000-0000-0000-000000000003','新商品','新商品','2026-02-01T00:00:00Z')");
+        flyway = Flyway.configure().dataSource(jdbcUrl, "my_bill_migration", "migration_test").load();
+        assertThat(flyway.migrate().migrationsExecuted).isOne();
+        assertThat(queryAdminString("SELECT string_agg(display_name || ':' || sort_order, ',' ORDER BY sort_order) "
+                + "FROM product WHERE tenant_id='09000000-0000-0000-0000-000000000001'"))
+                .isEqualTo("新商品:0,旧商品:10");
+        executeAdmin("DELETE FROM product WHERE tenant_id='09000000-0000-0000-0000-000000000001'");
+        executeAdmin("DELETE FROM tenant WHERE id='09000000-0000-0000-0000-000000000001'");
     }
 
     @Test
@@ -274,12 +286,12 @@ class PostgresSchemaIntegrationTest {
         DriverManagerDataSource appDataSource = new DriverManagerDataSource(jdbcUrl, "my_bill_app", "app_test");
         JdbcClient appJdbc = JdbcClient.create(appDataSource);
 
-        new SchemaVersionGuard(appJdbc, new SchemaVersionProperties(true, "008")).run(null);
+        new SchemaVersionGuard(appJdbc, new SchemaVersionProperties(true, "009")).run(null);
         assertThatThrownBy(() -> new SchemaVersionGuard(
                 appJdbc, new SchemaVersionProperties(true, "8")).run(null))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("期望 8")
-                .hasMessageContaining("实际 008");
+                .hasMessageContaining("实际 009");
     }
 
     @Test
@@ -287,7 +299,7 @@ class PostgresSchemaIntegrationTest {
     void documentedRollbackScriptsAreExecutableInAnEmptyEnvironment() throws Exception {
         executeAdmin("TRUNCATE tenant CASCADE");
         executeAdmin("UPDATE default_dictionary_item SET display_name='工资' WHERE stable_key='salary'");
-        for (int version = 8; version >= 1; version--) {
+        for (int version = 9; version >= 1; version--) {
             executeAdmin(readResource(String.format("db/rollback/U%03d__%s.sql", version, rollbackName(version))));
         }
         assertThat(queryAdminLong("SELECT count(*) FROM information_schema.tables WHERE table_schema='public' "
@@ -342,6 +354,7 @@ class PostgresSchemaIntegrationTest {
             case 6 -> "confirmed_default_seed";
             case 7 -> "tenant_rls_policies";
             case 8 -> "job_execution_contract";
+            case 9 -> "product_sort_order";
             default -> throw new IllegalArgumentException("unsupported rollback version " + version);
         };
     }

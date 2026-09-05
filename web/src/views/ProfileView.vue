@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
+import { useRouter } from 'vue-router'
 
 import AppDrawer from '../components/AppDrawer.vue'
 import AppStateBlock from '../components/AppStateBlock.vue'
@@ -13,6 +14,7 @@ import { useThemeStore } from '../stores/theme'
 import { themeModeLabel } from '../theme/theme'
 
 const sessionStore = useSessionStore()
+const router = useRouter()
 const themeStore = useThemeStore()
 const installStore = usePwaInstallStore()
 const { loggingOut, logoutError, logout } = useLogout()
@@ -62,6 +64,25 @@ function openSetting(key: string): void {
         label="偏好设置"
         :items="settingItems"
         @select="openSetting"
+      />
+    </section>
+
+    <section
+      class="settings-section"
+      aria-labelledby="data-security-title"
+    >
+      <div class="section-heading">
+        <div>
+          <h2 id="data-security-title">
+            数据与安全
+          </h2>
+          <p>管理当前账号的记账候选项。</p>
+        </div>
+      </div>
+      <SettingsDisclosureList
+        label="数据与安全"
+        :items="[{ key: 'dictionaries', label: '管理个人字典', value: '8 类' }]"
+        @select="router.push({ name: 'personal-dictionaries' })"
       />
     </section>
 

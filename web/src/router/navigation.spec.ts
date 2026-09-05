@@ -15,6 +15,7 @@ const admin = { ...user, role: 'ADMIN' } satisfies Session
 describe('post-login navigation', () => {
   it('restores only a registered route allowed for the authenticated role', () => {
     expect(postLoginPath(user, '/ledger?range=today')).toBe('/ledger?range=today')
+    expect(postLoginPath(user, '/me/dictionaries/unit')).toBe('/me/dictionaries/unit')
     expect(postLoginPath(user, '/admin')).toBe('/entry')
     expect(postLoginPath(admin, '/entry')).toBe('/admin')
   })

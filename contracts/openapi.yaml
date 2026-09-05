@@ -2,7 +2,7 @@ openapi: 3.1.0
 info:
   title: 我的账单 API
   version: 0.1.0
-  description: 同源 /api/v1 接口契约；T7 已开放认证、会话、管理员用户生命周期与最小健康检查。
+  description: 同源 /api/v1 接口契约；T8 已开放认证、管理员用户生命周期、个人字典与最小健康检查。
 servers:
   - url: /api/v1
 security:
@@ -225,10 +225,168 @@ paths:
       parameters: [{ $ref: "#/components/parameters/UserId" }]
       requestBody: { $ref: "#/components/requestBodies/UserVersion" }
       responses: { "200": { $ref: "#/components/responses/AdminUser" }, "401": { $ref: "#/components/responses/AuthenticationError" }, "403": { $ref: "#/components/responses/AuthorizationError" }, "404": { $ref: "#/components/responses/NotFoundError" }, "409": { $ref: "#/components/responses/ConflictError" }, "503": { $ref: "#/components/responses/ServiceUnavailableError" } }
+  /dictionaries:
+    get:
+      operationId: listDictionarySummaries
+      summary: 查询当前用户八类个人字典数量
+      tags: [personal-dictionaries]
+      responses:
+        "200":
+          description: 各类总数与启用数
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DictionarySummaries" }
+        "401": { $ref: "#/components/responses/AuthenticationError" }
+        "403": { $ref: "#/components/responses/AuthorizationError" }
+        "503": { $ref: "#/components/responses/ServiceUnavailableError" }
+  /dictionaries/{type}:
+    get:
+      operationId: listDictionaryItems
+      summary: 分页查询一个真实个人字典
+      tags: [personal-dictionaries]
+      parameters:
+        - { $ref: "#/components/parameters/DictionaryType" }
+        - name: query
+          in: query
+          schema: { type: string, maxLength: 64, default: "" }
+        - name: status
+          in: query
+          schema: { $ref: "#/components/schemas/DictionaryStatus" }
+        - name: page
+          in: query
+          schema: { type: integer, minimum: 0, maximum: 1000000, default: 0 }
+        - name: size
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 50 }
+      responses:
+        "200":
+          description: 字典项分页
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DictionaryPage" }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "401": { $ref: "#/components/responses/AuthenticationError" }
+        "403": { $ref: "#/components/responses/AuthorizationError" }
+        "404": { $ref: "#/components/responses/NotFoundError" }
+        "503": { $ref: "#/components/responses/ServiceUnavailableError" }
+    post:
+      operationId: createDictionaryItem
+      summary: 新增个人字典项
+      tags: [personal-dictionaries]
+      parameters: [{ $ref: "#/components/parameters/DictionaryType" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateDictionaryItemRequest" }
+      responses:
+        "200": { $ref: "#/components/responses/DictionaryItem" }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "401": { $ref: "#/components/responses/AuthenticationError" }
+        "403": { $ref: "#/components/responses/AuthorizationError" }
+        "404": { $ref: "#/components/responses/NotFoundError" }
+        "409": { $ref: "#/components/responses/ConflictError" }
+        "503": { $ref: "#/components/responses/ServiceUnavailableError" }
+  /dictionaries/{type}/candidates:
+    get:
+      operationId: listDictionaryCandidates
+      summary: 查询填报可用的启用候选项
+      tags: [personal-dictionaries]
+      parameters:
+        - { $ref: "#/components/parameters/DictionaryType" }
+        - name: query
+          in: query
+          schema: { type: string, maxLength: 64, default: "" }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 50, default: 20 }
+      responses:
+        "200":
+          description: 启用候选；子分类仅在父分类启用时返回
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DictionaryPage" }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "401": { $ref: "#/components/responses/AuthenticationError" }
+        "403": { $ref: "#/components/responses/AuthorizationError" }
+        "404": { $ref: "#/components/responses/NotFoundError" }
+        "503": { $ref: "#/components/responses/ServiceUnavailableError" }
+  /dictionaries/{type}/{itemId}:
+    patch:
+      operationId: renameDictionaryItem
+      summary: 修改个人字典展示名称并保留历史账目快照
+      tags: [personal-dictionaries]
+      parameters:
+        - { $ref: "#/components/parameters/DictionaryType" }
+        - { $ref: "#/components/parameters/DictionaryItemId" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RenameDictionaryItemRequest" }
+      responses:
+        "200": { $ref: "#/components/responses/DictionaryItem" }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "401": { $ref: "#/components/responses/AuthenticationError" }
+        "403": { $ref: "#/components/responses/AuthorizationError" }
+        "404": { $ref: "#/components/responses/NotFoundError" }
+        "409": { $ref: "#/components/responses/ConflictError" }
+        "503": { $ref: "#/components/responses/ServiceUnavailableError" }
+  /dictionaries/{type}/{itemId}/status:
+    post:
+      operationId: changeDictionaryItemStatus
+      summary: 停用或恢复个人字典项
+      tags: [personal-dictionaries]
+      parameters:
+        - { $ref: "#/components/parameters/DictionaryType" }
+        - { $ref: "#/components/parameters/DictionaryItemId" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/DictionaryStatusRequest" }
+      responses:
+        "200": { $ref: "#/components/responses/DictionaryItem" }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "401": { $ref: "#/components/responses/AuthenticationError" }
+        "403": { $ref: "#/components/responses/AuthorizationError" }
+        "404": { $ref: "#/components/responses/NotFoundError" }
+        "409": { $ref: "#/components/responses/ConflictError" }
+        "503": { $ref: "#/components/responses/ServiceUnavailableError" }
+  /dictionaries/{type}/{itemId}/move:
+    post:
+      operationId: moveDictionaryItem
+      summary: 在同级范围内上移或下移个人字典项
+      tags: [personal-dictionaries]
+      parameters:
+        - { $ref: "#/components/parameters/DictionaryType" }
+        - { $ref: "#/components/parameters/DictionaryItemId" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/DictionaryMoveRequest" }
+      responses:
+        "200": { $ref: "#/components/responses/DictionaryItem" }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "401": { $ref: "#/components/responses/AuthenticationError" }
+        "403": { $ref: "#/components/responses/AuthorizationError" }
+        "404": { $ref: "#/components/responses/NotFoundError" }
+        "503": { $ref: "#/components/responses/ServiceUnavailableError" }
 components:
   parameters:
     UserId:
       name: userId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    DictionaryType:
+      name: type
+      in: path
+      required: true
+      schema: { $ref: "#/components/schemas/DictionaryType" }
+    DictionaryItemId:
+      name: itemId
       in: path
       required: true
       schema: { type: string, format: uuid }
@@ -244,8 +402,13 @@ components:
       content:
         application/json:
           schema: { $ref: "#/components/schemas/AdminUser" }
+    DictionaryItem:
+      description: 个人字典项已更新
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/DictionaryItem" }
     NotFoundError:
-      description: 指定用户不存在
+      description: 指定资源不存在或对当前身份不可见
       content:
         application/json:
           schema: { $ref: "#/components/schemas/ApiError" }
@@ -274,13 +437,13 @@ components:
           schema:
             $ref: "#/components/schemas/ApiError"
     ConflictError:
-      description: 凭据版本或密码状态冲突
+      description: 当前资源状态、版本或唯一性约束冲突
       content:
         application/json:
           schema:
             $ref: "#/components/schemas/ApiError"
     ServiceUnavailableError:
-      description: 认证存储不可用
+      description: 服务端数据存储暂不可用
       content:
         application/json:
           schema:
@@ -395,6 +558,79 @@ components:
     AdminUserStatus:
       type: string
       enum: [ACTIVE, PENDING_FIRST_LOGIN, DISABLED, DELETION_PENDING]
+    DictionaryType:
+      type: string
+      enum: [product, expense-category, unit, funding-channel, purchase-channel, location, income-category, payer]
+    DictionaryStatus:
+      type: string
+      enum: [ACTIVE, INACTIVE]
+    DictionaryItem:
+      type: object
+      additionalProperties: false
+      required: [id, type, name, status, sortOrder, referenced]
+      properties:
+        id: { type: string, format: uuid }
+        type: { $ref: "#/components/schemas/DictionaryType" }
+        name: { type: string, minLength: 1, maxLength: 200 }
+        status: { $ref: "#/components/schemas/DictionaryStatus" }
+        sortOrder: { type: integer, minimum: 0 }
+        parentId: { type: string, format: uuid }
+        parentName: { type: string, minLength: 1, maxLength: 100 }
+        referenced: { type: boolean }
+    DictionaryPage:
+      type: object
+      additionalProperties: false
+      required: [items, total, page, size]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/DictionaryItem" }
+        total: { type: integer, format: int64, minimum: 0 }
+        page: { type: integer, minimum: 0 }
+        size: { type: integer, minimum: 1, maximum: 100 }
+    DictionarySummary:
+      type: object
+      additionalProperties: false
+      required: [type, total, active]
+      properties:
+        type: { $ref: "#/components/schemas/DictionaryType" }
+        total: { type: integer, format: int64, minimum: 0 }
+        active: { type: integer, format: int64, minimum: 0 }
+    DictionarySummaries:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          minItems: 8
+          maxItems: 8
+          items: { $ref: "#/components/schemas/DictionarySummary" }
+    CreateDictionaryItemRequest:
+      type: object
+      additionalProperties: false
+      required: [name]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 200 }
+        parentId: { type: string, format: uuid }
+    RenameDictionaryItemRequest:
+      type: object
+      additionalProperties: false
+      required: [name]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 200 }
+    DictionaryStatusRequest:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties:
+        status: { $ref: "#/components/schemas/DictionaryStatus" }
+    DictionaryMoveRequest:
+      type: object
+      additionalProperties: false
+      required: [direction]
+      properties:
+        direction: { type: string, enum: [UP, DOWN] }
     CreateAdminUserRequest:
       type: object
       additionalProperties: false

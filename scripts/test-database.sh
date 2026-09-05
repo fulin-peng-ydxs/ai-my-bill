@@ -70,9 +70,9 @@ if [[ "${role_flags}" != "my_bill_app:true:false:false:false:false:false,my_bill
 fi
 
 cd "${PROJECT_ROOT}"
-# 先在真实 Spring Security + PostgreSQL 上验证认证和 T7 管理用户闭环；测试库属于本次一次性集群。
+# 先在真实 Spring Security + PostgreSQL 上验证认证、T7 管理用户和 T8 个人字典闭环；测试库属于本次一次性集群。
 ./mvnw -B -pl server \
-  -Dtest=AuthHttpIntegrationTest,AdminUserHttpIntegrationTest \
+  -Dtest=AuthHttpIntegrationTest,AdminUserHttpIntegrationTest,PersonalDictionaryHttpIntegrationTest \
   -Dmybill.test.jdbc-url="jdbc:postgresql://127.0.0.1:${TEST_PORT}/${TEST_DATABASE}" \
   test
 

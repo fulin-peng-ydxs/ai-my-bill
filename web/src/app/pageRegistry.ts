@@ -6,7 +6,8 @@ export type PageNavigation = 'none' | 'primary' | 'admin'
 export type PageArchetype = 'auth' | 'quick-entry' | 'dashboard' | 'list' | 'settings' | 'admin'
 
 export interface PageRegistration {
-  readonly pageKey: 'login' | 'ledger-entry' | 'reports' | 'bill-details' | 'profile-settings' | 'admin-console'
+  readonly pageKey: 'login' | 'ledger-entry' | 'reports' | 'bill-details' | 'profile-settings'
+    | 'personal-dictionaries' | 'personal-dictionary-detail' | 'admin-console'
   readonly title: string
   readonly path: string
   readonly role: PageRole
@@ -63,6 +64,26 @@ export const pageRegistry = [
     path: '/me',
     role: 'user',
     navigation: 'primary',
+    archetype: 'settings',
+    prototype: 'profile-settings.html',
+    states: pageStates,
+  },
+  {
+    pageKey: 'personal-dictionaries',
+    title: '个人字典',
+    path: '/me/dictionaries',
+    role: 'user',
+    navigation: 'none',
+    archetype: 'settings',
+    prototype: 'profile-settings.html',
+    states: pageStates,
+  },
+  {
+    pageKey: 'personal-dictionary-detail',
+    title: '字典维护',
+    path: '/me/dictionaries/:type',
+    role: 'user',
+    navigation: 'none',
     archetype: 'settings',
     prototype: 'profile-settings.html',
     states: pageStates,

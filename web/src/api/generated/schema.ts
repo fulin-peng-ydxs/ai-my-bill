@@ -192,6 +192,109 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/dictionaries": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 查询当前用户八类个人字典数量 */
+        get: operations["listDictionarySummaries"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/dictionaries/{type}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 分页查询一个真实个人字典 */
+        get: operations["listDictionaryItems"];
+        put?: never;
+        /** 新增个人字典项 */
+        post: operations["createDictionaryItem"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/dictionaries/{type}/candidates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 查询填报可用的启用候选项 */
+        get: operations["listDictionaryCandidates"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/dictionaries/{type}/{itemId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** 修改个人字典展示名称并保留历史账目快照 */
+        patch: operations["renameDictionaryItem"];
+        trace?: never;
+    };
+    "/dictionaries/{type}/{itemId}/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 停用或恢复个人字典项 */
+        post: operations["changeDictionaryItemStatus"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/dictionaries/{type}/{itemId}/move": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 在同级范围内上移或下移个人字典项 */
+        post: operations["moveDictionaryItem"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -246,6 +349,54 @@ export interface components {
         BusinessDateTime: string;
         /** @enum {string} */
         AdminUserStatus: "ACTIVE" | "PENDING_FIRST_LOGIN" | "DISABLED" | "DELETION_PENDING";
+        /** @enum {string} */
+        DictionaryType: "product" | "expense-category" | "unit" | "funding-channel" | "purchase-channel" | "location" | "income-category" | "payer";
+        /** @enum {string} */
+        DictionaryStatus: "ACTIVE" | "INACTIVE";
+        DictionaryItem: {
+            /** Format: uuid */
+            id: string;
+            type: components["schemas"]["DictionaryType"];
+            name: string;
+            status: components["schemas"]["DictionaryStatus"];
+            sortOrder: number;
+            /** Format: uuid */
+            parentId?: string;
+            parentName?: string;
+            referenced: boolean;
+        };
+        DictionaryPage: {
+            items: components["schemas"]["DictionaryItem"][];
+            /** Format: int64 */
+            total: number;
+            page: number;
+            size: number;
+        };
+        DictionarySummary: {
+            type: components["schemas"]["DictionaryType"];
+            /** Format: int64 */
+            total: number;
+            /** Format: int64 */
+            active: number;
+        };
+        DictionarySummaries: {
+            items: components["schemas"]["DictionarySummary"][];
+        };
+        CreateDictionaryItemRequest: {
+            name: string;
+            /** Format: uuid */
+            parentId?: string;
+        };
+        RenameDictionaryItemRequest: {
+            name: string;
+        };
+        DictionaryStatusRequest: {
+            status: components["schemas"]["DictionaryStatus"];
+        };
+        DictionaryMoveRequest: {
+            /** @enum {string} */
+            direction: "UP" | "DOWN";
+        };
         CreateAdminUserRequest: {
             username: components["schemas"]["Username"];
         };
@@ -298,7 +449,16 @@ export interface components {
                 "application/json": components["schemas"]["AdminUser"];
             };
         };
-        /** @description 指定用户不存在 */
+        /** @description 个人字典项已更新 */
+        DictionaryItem: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["DictionaryItem"];
+            };
+        };
+        /** @description 指定资源不存在或对当前身份不可见 */
         NotFoundError: {
             headers: {
                 [name: string]: unknown;
@@ -343,7 +503,7 @@ export interface components {
                 "application/json": components["schemas"]["ApiError"];
             };
         };
-        /** @description 凭据版本或密码状态冲突 */
+        /** @description 当前资源状态、版本或唯一性约束冲突 */
         ConflictError: {
             headers: {
                 [name: string]: unknown;
@@ -352,7 +512,7 @@ export interface components {
                 "application/json": components["schemas"]["ApiError"];
             };
         };
-        /** @description 认证存储不可用 */
+        /** @description 服务端数据存储暂不可用 */
         ServiceUnavailableError: {
             headers: {
                 [name: string]: unknown;
@@ -364,6 +524,8 @@ export interface components {
     };
     parameters: {
         UserId: string;
+        DictionaryType: components["schemas"]["DictionaryType"];
+        DictionaryItemId: string;
     };
     requestBodies: {
         UserVersion: {
@@ -675,6 +837,189 @@ export interface operations {
             403: components["responses"]["AuthorizationError"];
             404: components["responses"]["NotFoundError"];
             409: components["responses"]["ConflictError"];
+            503: components["responses"]["ServiceUnavailableError"];
+        };
+    };
+    listDictionarySummaries: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 各类总数与启用数 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DictionarySummaries"];
+                };
+            };
+            401: components["responses"]["AuthenticationError"];
+            403: components["responses"]["AuthorizationError"];
+            503: components["responses"]["ServiceUnavailableError"];
+        };
+    };
+    listDictionaryItems: {
+        parameters: {
+            query?: {
+                query?: string;
+                status?: components["schemas"]["DictionaryStatus"];
+                page?: number;
+                size?: number;
+            };
+            header?: never;
+            path: {
+                type: components["parameters"]["DictionaryType"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 字典项分页 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DictionaryPage"];
+                };
+            };
+            400: components["responses"]["ValidationError"];
+            401: components["responses"]["AuthenticationError"];
+            403: components["responses"]["AuthorizationError"];
+            404: components["responses"]["NotFoundError"];
+            503: components["responses"]["ServiceUnavailableError"];
+        };
+    };
+    createDictionaryItem: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                type: components["parameters"]["DictionaryType"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateDictionaryItemRequest"];
+            };
+        };
+        responses: {
+            200: components["responses"]["DictionaryItem"];
+            400: components["responses"]["ValidationError"];
+            401: components["responses"]["AuthenticationError"];
+            403: components["responses"]["AuthorizationError"];
+            404: components["responses"]["NotFoundError"];
+            409: components["responses"]["ConflictError"];
+            503: components["responses"]["ServiceUnavailableError"];
+        };
+    };
+    listDictionaryCandidates: {
+        parameters: {
+            query?: {
+                query?: string;
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                type: components["parameters"]["DictionaryType"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 启用候选；子分类仅在父分类启用时返回 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DictionaryPage"];
+                };
+            };
+            400: components["responses"]["ValidationError"];
+            401: components["responses"]["AuthenticationError"];
+            403: components["responses"]["AuthorizationError"];
+            404: components["responses"]["NotFoundError"];
+            503: components["responses"]["ServiceUnavailableError"];
+        };
+    };
+    renameDictionaryItem: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                type: components["parameters"]["DictionaryType"];
+                itemId: components["parameters"]["DictionaryItemId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RenameDictionaryItemRequest"];
+            };
+        };
+        responses: {
+            200: components["responses"]["DictionaryItem"];
+            400: components["responses"]["ValidationError"];
+            401: components["responses"]["AuthenticationError"];
+            403: components["responses"]["AuthorizationError"];
+            404: components["responses"]["NotFoundError"];
+            409: components["responses"]["ConflictError"];
+            503: components["responses"]["ServiceUnavailableError"];
+        };
+    };
+    changeDictionaryItemStatus: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                type: components["parameters"]["DictionaryType"];
+                itemId: components["parameters"]["DictionaryItemId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DictionaryStatusRequest"];
+            };
+        };
+        responses: {
+            200: components["responses"]["DictionaryItem"];
+            400: components["responses"]["ValidationError"];
+            401: components["responses"]["AuthenticationError"];
+            403: components["responses"]["AuthorizationError"];
+            404: components["responses"]["NotFoundError"];
+            409: components["responses"]["ConflictError"];
+            503: components["responses"]["ServiceUnavailableError"];
+        };
+    };
+    moveDictionaryItem: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                type: components["parameters"]["DictionaryType"];
+                itemId: components["parameters"]["DictionaryItemId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DictionaryMoveRequest"];
+            };
+        };
+        responses: {
+            200: components["responses"]["DictionaryItem"];
+            400: components["responses"]["ValidationError"];
+            401: components["responses"]["AuthenticationError"];
+            403: components["responses"]["AuthorizationError"];
+            404: components["responses"]["NotFoundError"];
             503: components["responses"]["ServiceUnavailableError"];
         };
     };

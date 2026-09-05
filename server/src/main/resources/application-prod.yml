@@ -9,7 +9,7 @@ spring:
 my-bill:
   schema:
     validation-enabled: true
-    expected-version: "008"
+    expected-version: "009"
   auth:
     secure-cookie: true
     rate-limit-pepper: ""
