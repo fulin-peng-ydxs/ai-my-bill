@@ -5,6 +5,7 @@ import jakarta.validation.Valid;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.web.csrf.CsrfToken;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -18,17 +19,20 @@ final class AuthController {
 
     private final AuthenticationService authenticationService;
     private final SessionCookieService cookieService;
+    private final CsrfResponseCookieService csrfCookieService;
 
-    AuthController(AuthenticationService authenticationService, SessionCookieService cookieService) {
+    AuthController(AuthenticationService authenticationService, SessionCookieService cookieService,
+                   CsrfResponseCookieService csrfCookieService) {
         this.authenticationService = authenticationService;
         this.cookieService = cookieService;
+        this.csrfCookieService = csrfCookieService;
     }
 
     @PostMapping("/login")
-    ResponseEntity<SessionResponse> login(@Valid @RequestBody LoginRequest request) {
+    ResponseEntity<SessionResponse> login(@Valid @RequestBody LoginRequest request, CsrfToken csrfToken) {
         AuthenticationService.AuthenticatedSession session = authenticationService.login(
                 request.username(), request.password());
-        return withSessionCookie(session);
+        return withSessionCookie(session, csrfToken);
     }
 
     @GetMapping("/session")
@@ -46,20 +50,25 @@ final class AuthController {
 
     @PostMapping("/first-password")
     ResponseEntity<SessionResponse> firstPassword(@AuthenticationPrincipal CurrentPrincipal principal,
-                                                  @Valid @RequestBody FirstPasswordRequest request) {
-        return withSessionCookie(authenticationService.setFirstPassword(principal, request.newPassword()));
+                                                  @Valid @RequestBody FirstPasswordRequest request,
+                                                  CsrfToken csrfToken) {
+        return withSessionCookie(authenticationService.setFirstPassword(principal, request.newPassword()), csrfToken);
     }
 
     @PostMapping("/password")
     ResponseEntity<SessionResponse> password(@AuthenticationPrincipal CurrentPrincipal principal,
-                                             @Valid @RequestBody PasswordChangeRequest request) {
+                                             @Valid @RequestBody PasswordChangeRequest request,
+                                             CsrfToken csrfToken) {
         return withSessionCookie(authenticationService.changePassword(
-                principal, request.currentPassword(), request.newPassword()));
+                principal, request.currentPassword(), request.newPassword()), csrfToken);
     }
 
-    private ResponseEntity<SessionResponse> withSessionCookie(AuthenticationService.AuthenticatedSession session) {
+    private ResponseEntity<SessionResponse> withSessionCookie(AuthenticationService.AuthenticatedSession session,
+                                                              CsrfToken csrfToken) {
         return ResponseEntity.ok()
-                .header(HttpHeaders.SET_COOKIE, cookieService.create(session.rawToken()).toString())
+                .header(HttpHeaders.SET_COOKIE,
+                        cookieService.create(session.rawToken()).toString(),
+                        csrfCookieService.create(csrfToken).toString())
                 .body(SessionResponse.from(session.principal()));
     }
 }

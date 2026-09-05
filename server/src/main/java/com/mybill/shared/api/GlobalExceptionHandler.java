@@ -1,6 +1,7 @@
 package com.mybill.shared.api;
 
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.validation.ConstraintViolationException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
@@ -10,6 +11,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 import java.util.LinkedHashMap;
@@ -30,7 +32,7 @@ public class GlobalExceptionHandler {
         ApiError error = new ApiError(
                 exception.code(),
                 exception.getMessage(),
-                Map.of(),
+                exception.fieldErrors(),
                 traceId(),
                 exception.retryable()
         );
@@ -66,14 +68,29 @@ public class GlobalExceptionHandler {
         return ResponseEntity.badRequest().body(error);
     }
 
+    @ExceptionHandler({ConstraintViolationException.class, MethodArgumentTypeMismatchException.class})
+    ResponseEntity<ApiError> handleRequestParameterValidation(Exception exception) {
+        String field = exception instanceof MethodArgumentTypeMismatchException mismatch
+                ? mismatch.getName() : "query";
+        ApiError error = new ApiError(
+                "VALIDATION_FAILED",
+                "请检查查询参数。",
+                Map.of(field, List.of("参数无效")),
+                traceId(),
+                false
+        );
+        return ResponseEntity.badRequest().body(error);
+    }
+
     @ExceptionHandler(DataAccessException.class)
     ResponseEntity<ApiError> handleDatabaseUnavailable(DataAccessException exception, HttpServletRequest request) {
         String traceId = traceId();
         log.error("Database unavailable traceId={} method={} path={}",
                 traceId, request.getMethod(), request.getRequestURI(), exception);
+        boolean authenticationPath = request.getRequestURI().startsWith("/api/v1/auth/");
         ApiError error = new ApiError(
-                "AUTH_STORAGE_UNAVAILABLE",
-                "认证服务暂时不可用，请稍后重试。",
+                authenticationPath ? "AUTH_STORAGE_UNAVAILABLE" : "STORAGE_UNAVAILABLE",
+                authenticationPath ? "认证服务暂时不可用，请稍后重试。" : "数据服务暂时不可用，请稍后重试。",
                 Map.of(),
                 traceId,
                 true

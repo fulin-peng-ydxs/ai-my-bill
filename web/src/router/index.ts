@@ -5,12 +5,15 @@ import { useSessionStore } from '../stores/session'
 import LoginView from '../views/LoginView.vue'
 import PlaceholderView from '../views/PlaceholderView.vue'
 import ProfileView from '../views/ProfileView.vue'
+import UserManagementView from '../views/admin/UserManagementView.vue'
 
 const registeredRoutes: RouteRecordRaw[] = pageRegistry.map((page) => ({
   path: page.path,
   name: page.pageKey,
   component: page.pageKey === 'login'
     ? LoginView
+    : page.pageKey === 'admin-console'
+      ? UserManagementView
     : page.pageKey === 'profile-settings'
       ? ProfileView
       : PlaceholderView,

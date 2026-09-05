@@ -2,7 +2,7 @@ openapi: 3.1.0
 info:
   title: 我的账单 API
   version: 0.1.0
-  description: 同源 /api/v1 接口契约；T3 已开放认证、会话与最小健康检查。
+  description: 同源 /api/v1 接口契约；T7 已开放认证、会话、管理员用户生命周期与最小健康检查。
 servers:
   - url: /api/v1
 security:
@@ -146,8 +146,109 @@ paths:
           $ref: "#/components/responses/ConflictError"
         "503":
           $ref: "#/components/responses/ServiceUnavailableError"
+  /admin/users:
+    get:
+      operationId: listAdminUsers
+      summary: 分页查询普通用户账号白名单信息
+      tags: [admin-users]
+      parameters:
+        - name: query
+          in: query
+          schema: { type: string, maxLength: 64, default: "" }
+        - name: status
+          in: query
+          schema: { $ref: "#/components/schemas/AdminUserStatus" }
+        - name: page
+          in: query
+          schema: { type: integer, minimum: 0, maximum: 1000000, default: 0 }
+        - name: size
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+      responses:
+        "200":
+          description: 用户账号分页；不含租户标识和账目字段
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminUserPage" }
+        "401": { $ref: "#/components/responses/AuthenticationError" }
+        "403": { $ref: "#/components/responses/AuthorizationError" }
+        "503": { $ref: "#/components/responses/ServiceUnavailableError" }
+    post:
+      operationId: createAdminUser
+      summary: 创建普通用户、独立租户和当前默认字典副本
+      tags: [admin-users]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateAdminUserRequest" }
+      responses:
+        "200":
+          description: 创建成功；临时密码只在本次响应中展示，有效 24 小时
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TemporaryCredentialResponse" }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "401": { $ref: "#/components/responses/AuthenticationError" }
+        "403": { $ref: "#/components/responses/AuthorizationError" }
+        "409": { $ref: "#/components/responses/ConflictError" }
+        "503": { $ref: "#/components/responses/ServiceUnavailableError" }
+  /admin/users/{userId}/disable:
+    post:
+      operationId: disableAdminUser
+      summary: 停用普通用户并撤销全部会话
+      tags: [admin-users]
+      parameters: [{ $ref: "#/components/parameters/UserId" }]
+      requestBody: { $ref: "#/components/requestBodies/UserVersion" }
+      responses: { "200": { $ref: "#/components/responses/AdminUser" }, "401": { $ref: "#/components/responses/AuthenticationError" }, "403": { $ref: "#/components/responses/AuthorizationError" }, "404": { $ref: "#/components/responses/NotFoundError" }, "409": { $ref: "#/components/responses/ConflictError" }, "503": { $ref: "#/components/responses/ServiceUnavailableError" } }
+  /admin/users/{userId}/restore:
+    post:
+      operationId: restoreAdminUser
+      summary: 恢复普通用户账号
+      tags: [admin-users]
+      parameters: [{ $ref: "#/components/parameters/UserId" }]
+      requestBody: { $ref: "#/components/requestBodies/UserVersion" }
+      responses: { "200": { $ref: "#/components/responses/AdminUser" }, "401": { $ref: "#/components/responses/AuthenticationError" }, "403": { $ref: "#/components/responses/AuthorizationError" }, "404": { $ref: "#/components/responses/NotFoundError" }, "409": { $ref: "#/components/responses/ConflictError" }, "503": { $ref: "#/components/responses/ServiceUnavailableError" } }
+  /admin/users/{userId}/reset-password:
+    post:
+      operationId: resetAdminUserPassword
+      summary: 重置临时密码并撤销全部旧会话
+      tags: [admin-users]
+      parameters: [{ $ref: "#/components/parameters/UserId" }]
+      requestBody: { $ref: "#/components/requestBodies/UserVersion" }
+      responses: { "200": { description: 新临时密码仅本次展示, content: { application/json: { schema: { $ref: "#/components/schemas/TemporaryCredentialResponse" } } } }, "401": { $ref: "#/components/responses/AuthenticationError" }, "403": { $ref: "#/components/responses/AuthorizationError" }, "404": { $ref: "#/components/responses/NotFoundError" }, "409": { $ref: "#/components/responses/ConflictError" }, "503": { $ref: "#/components/responses/ServiceUnavailableError" } }
+  /admin/users/{userId}/deletion:
+    post:
+      operationId: requestAdminUserDeletion
+      summary: 停用账号、撤销会话并登记注销任务
+      tags: [admin-users]
+      parameters: [{ $ref: "#/components/parameters/UserId" }]
+      requestBody: { $ref: "#/components/requestBodies/UserVersion" }
+      responses: { "200": { $ref: "#/components/responses/AdminUser" }, "401": { $ref: "#/components/responses/AuthenticationError" }, "403": { $ref: "#/components/responses/AuthorizationError" }, "404": { $ref: "#/components/responses/NotFoundError" }, "409": { $ref: "#/components/responses/ConflictError" }, "503": { $ref: "#/components/responses/ServiceUnavailableError" } }
 components:
+  parameters:
+    UserId:
+      name: userId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+  requestBodies:
+    UserVersion:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/UserVersionRequest" }
   responses:
+    AdminUser:
+      description: 用户账号状态已更新
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/AdminUser" }
+    NotFoundError:
+      description: 指定用户不存在
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ApiError" }
     ValidationError:
       description: 输入校验失败
       content:
@@ -291,6 +392,60 @@ components:
       type: string
       format: date-time
       description: 服务端以收到请求时的当前时间为权威，业务日期按 Asia/Shanghai 生成。
+    AdminUserStatus:
+      type: string
+      enum: [ACTIVE, PENDING_FIRST_LOGIN, DISABLED, DELETION_PENDING]
+    CreateAdminUserRequest:
+      type: object
+      additionalProperties: false
+      required: [username]
+      properties:
+        username: { $ref: "#/components/schemas/Username" }
+    UserVersionRequest:
+      type: object
+      additionalProperties: false
+      required: [version]
+      properties:
+        version: { type: integer, format: int64, minimum: 1 }
+    AdminUser:
+      type: object
+      additionalProperties: false
+      required: [accountId, username, status, registeredAt, version]
+      properties:
+        accountId: { type: string, format: uuid }
+        username: { $ref: "#/components/schemas/Username" }
+        status: { $ref: "#/components/schemas/AdminUserStatus" }
+        registeredAt: { type: string, format: date-time }
+        lastActiveAt:
+          type: string
+          format: date-time
+          description: 尚无活跃记录时省略。
+        temporaryPasswordExpiresAt:
+          type: string
+          format: date-time
+          description: 已设置正式密码时省略。
+        version: { type: integer, format: int64, minimum: 1 }
+    AdminUserPage:
+      type: object
+      additionalProperties: false
+      required: [items, total, page, size]
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/AdminUser" } }
+        total: { type: integer, format: int64, minimum: 0 }
+        page: { type: integer, minimum: 0 }
+        size: { type: integer, minimum: 1, maximum: 100 }
+    TemporaryCredentialResponse:
+      type: object
+      additionalProperties: false
+      required: [user, temporaryPassword, expiresAt]
+      properties:
+        user: { $ref: "#/components/schemas/AdminUser" }
+        temporaryPassword:
+          type: string
+          minLength: 16
+          maxLength: 16
+          description: 只在本次成功响应展示，服务端不得再次查询明文。
+        expiresAt: { type: string, format: date-time }
   securitySchemes:
     sessionCookie:
       type: apiKey

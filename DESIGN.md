@@ -242,7 +242,7 @@ Key Characteristics：
 
 ## 4. Component Stylings
 
-以下清单是用户已确认的组件契约；`AppShell`、`ThemeModeControl`、`BottomNavigation`、`PwaInstallPrompt`、`AppStateBlock` 及 T5 通用表单、分段选择、金额、浮层、设置披露、搜索/筛选和账目上下文动作基础已实现。候选选择、真实账目列表、图表和后台表格等领域组件按对应业务任务落地。代码出现第二个同类消费场景时，必须抽取或消费复用单元，不允许页面继续复制结构和交互。
+以下清单是用户已确认的组件契约；`AppShell`、`ThemeModeControl`、`BottomNavigation`、`PwaInstallPrompt`、`AppStateBlock`、T5 通用表单/分段选择/金额/浮层/设置披露/搜索筛选/账目上下文动作基础，以及 T7 `AppDataTable` 与 `AppToast` 已实现。候选选择、真实账目列表和图表等领域组件按对应业务任务落地。代码出现第二个同类消费场景时，必须抽取或消费复用单元，不允许页面继续复制结构和交互。
 
 ### 4.1 组件复用与事实源
 
@@ -286,7 +286,7 @@ Key Characteristics：
 | `Toast` | 短暂动作反馈和撤销 | 保存、删除成功等；失败若影响区域可用性，还必须保留页内错误态 |
 | `PwaInstallPrompt` | 登录页与“我的”的安装能力引导 | 复用同一检测状态源；只有浏览器提供安装事件时显示真实安装动作，否则显示分平台步骤或已安装状态 |
 
-T5 代码事实：登录页真实消费 `FormField` 与 `AppDialog`，主题控件消费 `SegmentedControl`，“我的”页消费 `SettingsDisclosureList` 与 `AppDrawer`。`MoneySummary`、`GlobalLedgerSearch`、`AppliedFilterBar`、`FilterSheet`、`LedgerContextActions`、防抖和最新请求状态已通过基础契约测试，但在没有真实业务接口前不得挂载到占位页或展示模拟账单；它们仍须在 T11/T15/T20 等首次真实消费阶段完成页面级验收。`Toast`、未保存草稿守卫及其真实消费尚未实现。
+T5/T7 代码事实：登录页真实消费 `FormField` 与 `AppDialog`，主题控件消费 `SegmentedControl`，“我的”页消费 `SettingsDisclosureList` 与 `AppDrawer`；T7 用户管理页真实消费 `FormField`、`AppStateBlock`、`AppDialog`、`AppDrawer`、`useLatestRequest`，并新增复用型 `AppDataTable` 与 `AppToast`。`MoneySummary`、`GlobalLedgerSearch`、`AppliedFilterBar`、`FilterSheet`、`LedgerContextActions`、防抖和最新请求状态已通过基础契约测试，但在没有真实业务接口前不得挂载到占位页或展示模拟账单；它们仍须在 T11/T15/T20 等首次真实消费阶段完成页面级验收。未保存草稿守卫及其真实消费尚未实现。
 
 ### 4.3 按钮与输入
 
@@ -534,7 +534,7 @@ T5 代码事实：登录页真实消费 `FormField` 与 `AppDialog`，主题控�
 ## 10. Known Gaps
 
 - 前端工程已锁定 Vue 3 + Vite + TypeScript + Pinia + Vue Router，图表采用 ECharts，SVG 图标采用 Lucide Vue Next；不引入覆盖本设计契约的整套通用 UI 框架，优先实现本文定义的项目语义组件，不得据技术选型改变已确认视觉与交互契约。
-- 正式工程当前已实现登录页、主题/PWA 共享状态、普通用户四项导航、管理员外壳，以及 T5 表单、状态、金额、浮层、设置披露、搜索/筛选和上下文动作基础；登录和“我的”已完成首批真实消费。账单、字典、报表等领域组件与真实数据仍未实现。原型视觉与响应式静态契约继续有效，后续每个页面阶段必须以真实组件、浏览器多视口测试和对应代码路径逐步替换原型证明。
+- 正式工程当前已实现登录页、主题/PWA 共享状态、普通用户四项导航、管理员外壳、T5 共享基础，以及 T7 真实管理员用户面板。P6-F1 在桌面使用稳定数据表格，在 `≤833px` 使用带状态色轨的账号摘要卡和底部操作抽屉，高影响动作关闭抽屉后再进入单一二次确认框；页面明确显示“仅账号信息”的隐私边界。账单、个人字典、默认字典、运行概况、审计日志查询和报表等真实页面仍未实现。原型视觉与响应式静态契约继续有效，后续每个页面阶段必须以真实组件、浏览器多视口测试和对应代码路径逐步替换原型证明。
 - 尚无正式品牌名称、图标和启动图；第一期原型使用“我的账单”文字标识，不把临时图形固化为品牌资产。
 - 正式工程已接入 Manifest、Service Worker、真实浏览器安装事件、拒绝/不支持/已安装状态和分平台手动引导；正式图标、启动图、目标移动浏览器系统安装框、独立窗口与状态栏表现仍需在 T29 目标环境复验。
 - 管理后台是否需要独立桌面域名或路径属于技术与部署决策，不影响当前设计系统。

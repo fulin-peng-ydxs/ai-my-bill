@@ -89,8 +89,7 @@ export const useSessionStore = defineStore('session', {
         throw error
       }
       this.clear()
-      // Spring rotates/removes the CSRF cookie after a successful mutation. Refresh it
-      // before another account can log in from the same browser session.
+      // 退出后主动请求匿名端点，确保浏览器即使清理过 Cookie 也能继续切换账号。
       await this.initialize(true)
     },
     accept(session: Session): void {

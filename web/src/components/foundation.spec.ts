@@ -3,7 +3,9 @@ import { renderToString } from 'vue/server-renderer'
 import { describe, expect, it } from 'vitest'
 
 import AppDialog from './AppDialog.vue'
+import AppDataTable from './AppDataTable.vue'
 import AppStateBlock from './AppStateBlock.vue'
+import AppToast from './AppToast.vue'
 import AppliedFilterBar from './AppliedFilterBar.vue'
 import FilterSheet from './FilterSheet.vue'
 import FormField from './FormField.vue'
@@ -93,5 +95,27 @@ describe('shared frontend foundations', () => {
     const filter = await render(FilterSheet, { id: 'ledger-filter', open: false })
     expect(filter).toContain('调整中的条件只有在应用后')
     expect(filter).toContain('form="ledger-filter-form"')
+  })
+
+  it('renders reusable admin table and toast semantics', async () => {
+    const tableApp = createSSRApp({
+      render: () => h(AppDataTable, { caption: '普通用户账号' }, {
+        head: () => h('tr', [h('th', '用户名')]),
+        default: () => h('tr', [h('td', 'demo-user')]),
+      }),
+    })
+    const table = await renderToString(tableApp)
+    expect(table).toContain('<caption class="sr-only">普通用户账号</caption>')
+    expect(table).toContain('<thead>')
+    expect(table).toContain('<th>用户名</th>')
+
+    const toast = await render(AppToast, { open: true, message: '账号状态已更新', kind: 'success' })
+    expect(toast).toContain('role="status"')
+    expect(toast).toContain('aria-live="polite"')
+    expect(toast).toContain('账号状态已更新')
+
+    const errorToast = await render(AppToast, { open: true, message: '操作失败', kind: 'error' })
+    expect(errorToast).toContain('role="alert"')
+    expect(errorToast).toContain('aria-live="assertive"')
   })
 })

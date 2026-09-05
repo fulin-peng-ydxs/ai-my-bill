@@ -8,6 +8,7 @@ import com.mybill.job.JobRunRepository;
 import com.mybill.shared.persistence.TenantDatabaseExecutor;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 @SpringBootTest(properties = {
@@ -26,6 +27,7 @@ class MyBillApplicationTest {
     @MockitoBean private AdminAuditRepository adminAuditRepository;
     @MockitoBean private JobRunRepository jobRunRepository;
     @MockitoBean private JobCoordinator jobCoordinator;
+    @MockitoBean private JdbcClient jdbcClient;
 
     @Test
     void contextLoads() {

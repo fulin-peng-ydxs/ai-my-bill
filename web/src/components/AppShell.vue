@@ -31,7 +31,7 @@ const { loggingOut, logoutError, logout } = useLogout()
       </RouterLink>
       <nav>
         <RouterLink to="/admin">
-          系统管理
+          用户管理
         </RouterLink>
       </nav>
     </aside>

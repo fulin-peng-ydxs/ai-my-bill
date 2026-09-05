@@ -91,6 +91,12 @@ public class AuthenticationService {
         repository.revokeSession(principal.sessionId(), clock.instant(), "LOGOUT");
     }
 
+    /** 管理域高影响操作的唯一会话撤销入口；调用方事务会覆盖账号状态、凭据与撤销记录。 */
+    @Transactional
+    public void revokeAllSessionsForAdministration(UUID userId, Instant now, String reason) {
+        repository.revokeAllSessions(userId, now, reason);
+    }
+
     @Transactional
     public AuthenticatedSession setFirstPassword(CurrentPrincipal principal, String newPassword) {
         AuthUser user = requireCurrentUser(principal);

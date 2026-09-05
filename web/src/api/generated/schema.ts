@@ -106,6 +106,92 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/users": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 分页查询普通用户账号白名单信息 */
+        get: operations["listAdminUsers"];
+        put?: never;
+        /** 创建普通用户、独立租户和当前默认字典副本 */
+        post: operations["createAdminUser"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/users/{userId}/disable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 停用普通用户并撤销全部会话 */
+        post: operations["disableAdminUser"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/users/{userId}/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 恢复普通用户账号 */
+        post: operations["restoreAdminUser"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/users/{userId}/reset-password": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 重置临时密码并撤销全部旧会话 */
+        post: operations["resetAdminUserPassword"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/users/{userId}/deletion": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 停用账号、撤销会话并登记注销任务 */
+        post: operations["requestAdminUserDeletion"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -158,8 +244,69 @@ export interface components {
          * @description 服务端以收到请求时的当前时间为权威，业务日期按 Asia/Shanghai 生成。
          */
         BusinessDateTime: string;
+        /** @enum {string} */
+        AdminUserStatus: "ACTIVE" | "PENDING_FIRST_LOGIN" | "DISABLED" | "DELETION_PENDING";
+        CreateAdminUserRequest: {
+            username: components["schemas"]["Username"];
+        };
+        UserVersionRequest: {
+            /** Format: int64 */
+            version: number;
+        };
+        AdminUser: {
+            /** Format: uuid */
+            accountId: string;
+            username: components["schemas"]["Username"];
+            status: components["schemas"]["AdminUserStatus"];
+            /** Format: date-time */
+            registeredAt: string;
+            /**
+             * Format: date-time
+             * @description 尚无活跃记录时省略。
+             */
+            lastActiveAt?: string;
+            /**
+             * Format: date-time
+             * @description 已设置正式密码时省略。
+             */
+            temporaryPasswordExpiresAt?: string;
+            /** Format: int64 */
+            version: number;
+        };
+        AdminUserPage: {
+            items: components["schemas"]["AdminUser"][];
+            /** Format: int64 */
+            total: number;
+            page: number;
+            size: number;
+        };
+        TemporaryCredentialResponse: {
+            user: components["schemas"]["AdminUser"];
+            /** @description 只在本次成功响应展示，服务端不得再次查询明文。 */
+            temporaryPassword: string;
+            /** Format: date-time */
+            expiresAt: string;
+        };
     };
     responses: {
+        /** @description 用户账号状态已更新 */
+        AdminUser: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["AdminUser"];
+            };
+        };
+        /** @description 指定用户不存在 */
+        NotFoundError: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["ApiError"];
+            };
+        };
         /** @description 输入校验失败 */
         ValidationError: {
             headers: {
@@ -215,8 +362,16 @@ export interface components {
             };
         };
     };
-    parameters: never;
-    requestBodies: never;
+    parameters: {
+        UserId: string;
+    };
+    requestBodies: {
+        UserVersion: {
+            content: {
+                "application/json": components["schemas"]["UserVersionRequest"];
+            };
+        };
+    };
     headers: never;
     pathItems: never;
 }
@@ -378,6 +533,147 @@ export interface operations {
             400: components["responses"]["ValidationError"];
             401: components["responses"]["AuthenticationError"];
             403: components["responses"]["AuthorizationError"];
+            409: components["responses"]["ConflictError"];
+            503: components["responses"]["ServiceUnavailableError"];
+        };
+    };
+    listAdminUsers: {
+        parameters: {
+            query?: {
+                query?: string;
+                status?: components["schemas"]["AdminUserStatus"];
+                page?: number;
+                size?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 用户账号分页；不含租户标识和账目字段 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminUserPage"];
+                };
+            };
+            401: components["responses"]["AuthenticationError"];
+            403: components["responses"]["AuthorizationError"];
+            503: components["responses"]["ServiceUnavailableError"];
+        };
+    };
+    createAdminUser: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateAdminUserRequest"];
+            };
+        };
+        responses: {
+            /** @description 创建成功；临时密码只在本次响应中展示，有效 24 小时 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TemporaryCredentialResponse"];
+                };
+            };
+            400: components["responses"]["ValidationError"];
+            401: components["responses"]["AuthenticationError"];
+            403: components["responses"]["AuthorizationError"];
+            409: components["responses"]["ConflictError"];
+            503: components["responses"]["ServiceUnavailableError"];
+        };
+    };
+    disableAdminUser: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                userId: components["parameters"]["UserId"];
+            };
+            cookie?: never;
+        };
+        requestBody: components["requestBodies"]["UserVersion"];
+        responses: {
+            200: components["responses"]["AdminUser"];
+            401: components["responses"]["AuthenticationError"];
+            403: components["responses"]["AuthorizationError"];
+            404: components["responses"]["NotFoundError"];
+            409: components["responses"]["ConflictError"];
+            503: components["responses"]["ServiceUnavailableError"];
+        };
+    };
+    restoreAdminUser: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                userId: components["parameters"]["UserId"];
+            };
+            cookie?: never;
+        };
+        requestBody: components["requestBodies"]["UserVersion"];
+        responses: {
+            200: components["responses"]["AdminUser"];
+            401: components["responses"]["AuthenticationError"];
+            403: components["responses"]["AuthorizationError"];
+            404: components["responses"]["NotFoundError"];
+            409: components["responses"]["ConflictError"];
+            503: components["responses"]["ServiceUnavailableError"];
+        };
+    };
+    resetAdminUserPassword: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                userId: components["parameters"]["UserId"];
+            };
+            cookie?: never;
+        };
+        requestBody: components["requestBodies"]["UserVersion"];
+        responses: {
+            /** @description 新临时密码仅本次展示 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TemporaryCredentialResponse"];
+                };
+            };
+            401: components["responses"]["AuthenticationError"];
+            403: components["responses"]["AuthorizationError"];
+            404: components["responses"]["NotFoundError"];
+            409: components["responses"]["ConflictError"];
+            503: components["responses"]["ServiceUnavailableError"];
+        };
+    };
+    requestAdminUserDeletion: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                userId: components["parameters"]["UserId"];
+            };
+            cookie?: never;
+        };
+        requestBody: components["requestBodies"]["UserVersion"];
+        responses: {
+            200: components["responses"]["AdminUser"];
+            401: components["responses"]["AuthenticationError"];
+            403: components["responses"]["AuthorizationError"];
+            404: components["responses"]["NotFoundError"];
             409: components["responses"]["ConflictError"];
             503: components["responses"]["ServiceUnavailableError"];
         };

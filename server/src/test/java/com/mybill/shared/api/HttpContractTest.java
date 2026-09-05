@@ -14,6 +14,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.dao.DataAccessResourceFailureException;
+import org.springframework.jdbc.core.simple.JdbcClient;
 
 import jakarta.servlet.http.Cookie;
 
@@ -47,6 +48,7 @@ class HttpContractTest {
     @MockitoBean private AdminAuditRepository adminAuditRepository;
     @MockitoBean private JobRunRepository jobRunRepository;
     @MockitoBean private JobCoordinator jobCoordinator;
+    @MockitoBean private JdbcClient jdbcClient;
 
     @Test
     void exposesTheMinimalHealthEndpointWithATraceId() throws Exception {
