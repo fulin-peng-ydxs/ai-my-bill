@@ -3,6 +3,7 @@ package com.mybill.persistence.model;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
+import jakarta.persistence.Version;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -19,7 +20,7 @@ class LedgerEntryEntity extends TenantScopedEntity {
     @Column(name = "entry_type", nullable = false) String entryType;
     @Column(name = "business_time", nullable = false) Instant businessTime;
     @Column(name = "business_date", nullable = false) LocalDate businessDate;
-    @Column(nullable = false) long version;
+    @Version @Column(nullable = false) long version;
     @Column(name = "lifecycle_status", nullable = false) String lifecycleStatus;
     @Column(name = "deleted_at") Instant deletedAt;
     @Column(name = "purge_after") Instant purgeAfter;
@@ -63,7 +64,7 @@ class ExpenseAdjustmentEntity extends TenantScopedEntity {
     @Column(nullable = false) String status;
     @Column(name = "deleted_at") Instant deletedAt;
     @Column(name = "purge_after") Instant purgeAfter;
-    @Column(nullable = false) long version;
+    @Version @Column(nullable = false) long version;
     @Column(length = 500) String note;
     @Column(name = "created_at", nullable = false) Instant createdAt;
     @Column(name = "updated_at", nullable = false) Instant updatedAt;

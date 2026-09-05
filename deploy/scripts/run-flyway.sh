@@ -12,8 +12,13 @@ if [[ -z "${MY_BILL_MIGRATION_DB_URL:-}" || -z "${MY_BILL_MIGRATION_DB_USERNAME:
   exit 1
 fi
 
+migration_password="$(<"${password_file}")"
+if [[ -z "${migration_password}" ]]; then
+  echo "迁移密码 secret 不能为空。" >&2
+  exit 1
+fi
 export FLYWAY_URL="${MY_BILL_MIGRATION_DB_URL}"
 export FLYWAY_USER="${MY_BILL_MIGRATION_DB_USERNAME}"
-export FLYWAY_PASSWORD="$(<"${password_file}")"
+export FLYWAY_PASSWORD="${migration_password}"
 export FLYWAY_LOCATIONS="filesystem:/flyway/sql"
 exec flyway -connectRetries=30 -validateMigrationNaming=true migrate
