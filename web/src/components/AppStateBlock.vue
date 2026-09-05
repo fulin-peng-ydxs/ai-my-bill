@@ -24,6 +24,7 @@ defineEmits<{
     class="state-block"
     :class="`state-block-${kind}`"
     :role="role"
+    :aria-busy="kind === 'loading' ? 'true' : undefined"
   >
     <span
       v-if="kind === 'loading'"

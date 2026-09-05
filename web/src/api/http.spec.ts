@@ -4,6 +4,7 @@ import { ApiClientError, apiRequest, readCookie } from './http'
 
 afterEach(() => {
   vi.unstubAllGlobals()
+  vi.useRealTimers()
 })
 
 describe('shared api client', () => {
@@ -40,5 +41,26 @@ describe('shared api client', () => {
       expect(error).toBeInstanceOf(ApiClientError)
       expect(error).toMatchObject({ status: 401, body: { code: 'UNAUTHORIZED' } })
     }
+  })
+
+  it('aborts and classifies a request that exceeds its timeout', async () => {
+    vi.useFakeTimers()
+    vi.stubGlobal('fetch', vi.fn((_url: string, init: RequestInit) => new Promise<Response>((_, reject) => {
+      init.signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')))
+    })))
+
+    const request = apiRequest('/slow', { timeoutMs: 100 })
+    const rejection = expect(request).rejects.toMatchObject({ name: 'ApiTimeoutError', timeoutMs: 100 })
+    await vi.advanceTimersByTimeAsync(100)
+
+    await rejection
+  })
+
+  it('preserves caller cancellation instead of classifying it as a timeout', async () => {
+    const caller = new AbortController()
+    caller.abort()
+    vi.stubGlobal('fetch', vi.fn((_url: string, init: RequestInit) => Promise.reject(init.signal?.reason)))
+
+    await expect(apiRequest('/canceled', { signal: caller.signal })).rejects.toMatchObject({ name: 'AbortError' })
   })
 })

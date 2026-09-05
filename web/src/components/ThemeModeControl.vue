@@ -3,9 +3,11 @@ import { computed } from 'vue'
 
 import { useThemeStore } from '../stores/theme'
 import { themeModes, themeModeLabel, type ThemeMode } from '../theme/theme'
+import SegmentedControl from './SegmentedControl.vue'
 
 const theme = useThemeStore()
 const selectedLabel = computed(() => themeModeLabel(theme.mode))
+const options = themeModes.map((mode) => ({ value: mode, label: themeModeLabel(mode) }))
 
 function select(mode: ThemeMode): void {
   theme.setMode(mode)
@@ -13,22 +15,12 @@ function select(mode: ThemeMode): void {
 </script>
 
 <template>
-  <fieldset
+  <SegmentedControl
     class="theme-control"
     data-testid="theme-mode-control"
-  >
-    <legend class="sr-only">
-      主题模式，当前为{{ selectedLabel }}
-    </legend>
-    <button
-      v-for="mode in themeModes"
-      :key="mode"
-      type="button"
-      :aria-pressed="theme.mode === mode"
-      :data-theme-option="mode"
-      @click="select(mode)"
-    >
-      {{ themeModeLabel(mode) }}
-    </button>
-  </fieldset>
+    :label="`主题模式，当前为${selectedLabel}`"
+    :model-value="theme.mode"
+    :options="options"
+    @update:model-value="select($event as ThemeMode)"
+  />
 </template>

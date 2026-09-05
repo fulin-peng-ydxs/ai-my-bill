@@ -4,7 +4,9 @@ import { useRoute, useRouter } from 'vue-router'
 
 import { ApiClientError } from '../api/http'
 import { isFormalPasswordLengthValid } from '../auth/password'
+import AppDialog from '../components/AppDialog.vue'
 import AppStateBlock from '../components/AppStateBlock.vue'
+import FormField from '../components/FormField.vue'
 import PwaInstallPrompt from '../components/PwaInstallPrompt.vue'
 import ThemeModeControl from '../components/ThemeModeControl.vue'
 import { postLoginPath } from '../router/navigation'
@@ -119,32 +121,42 @@ async function setFirstPassword(): Promise<void> {
           data-testid="login-form"
           @submit.prevent="login"
         >
-          <label class="form-field">
-            <span>用户名</span>
+          <FormField
+            v-slot="{ describedBy }"
+            field-id="username"
+            label="用户名"
+          >
             <input
+              id="username"
               v-model="username"
               name="username"
               autocomplete="username"
               maxlength="64"
               placeholder="输入管理员分配的用户名"
+              :aria-describedby="describedBy"
               :disabled="submitting"
               required
             >
-          </label>
-          <label class="form-field">
-            <span>密码</span>
+          </FormField>
+          <FormField
+            v-slot="{ describedBy }"
+            field-id="password"
+            label="密码"
+            help="临时密码 24 小时有效，首次登录后需设置正式密码。"
+          >
             <input
+              id="password"
               v-model="password"
               name="password"
               type="password"
               autocomplete="current-password"
               maxlength="128"
               placeholder="首次登录可使用临时密码"
+              :aria-describedby="describedBy"
               :disabled="submitting"
               required
             >
-            <small>临时密码 24 小时有效，首次登录后需设置正式密码。</small>
-          </label>
+          </FormField>
           <AppStateBlock
             v-if="visibleFeedback"
             kind="error"
@@ -167,12 +179,6 @@ async function setFirstPassword(): Promise<void> {
           >
             无法登录？
           </button>
-          <p
-            v-if="showHelp"
-            class="inline-help"
-          >
-            请联系系统管理员重置密码；重置后旧会话会立即失效。
-          </p>
         </form>
 
         <form
@@ -184,31 +190,41 @@ async function setFirstPassword(): Promise<void> {
           <p class="form-intro">
             临时密码验证成功。请先设置正式密码，再进入系统。
           </p>
-          <label class="form-field">
-            <span>新密码</span>
+          <FormField
+            v-slot="{ describedBy }"
+            field-id="new-password"
+            label="新密码"
+            help="15–64 个字符，不得使用常见或已泄露密码。"
+          >
             <input
+              id="new-password"
               v-model="newPassword"
               type="password"
               autocomplete="new-password"
               minlength="15"
               maxlength="128"
+              :aria-describedby="describedBy"
               :disabled="submitting"
               required
             >
-            <small>15–64 个字符，不得使用常见或已泄露密码。</small>
-          </label>
-          <label class="form-field">
-            <span>确认新密码</span>
+          </FormField>
+          <FormField
+            v-slot="{ describedBy }"
+            field-id="confirm-password"
+            label="确认新密码"
+          >
             <input
+              id="confirm-password"
               v-model="confirmPassword"
               type="password"
               autocomplete="new-password"
               minlength="15"
               maxlength="128"
+              :aria-describedby="describedBy"
               :disabled="submitting"
               required
             >
-          </label>
+          </FormField>
           <AppStateBlock
             v-if="visibleFeedback"
             kind="error"
@@ -235,5 +251,14 @@ async function setFirstPassword(): Promise<void> {
         </section>
       </div>
     </section>
+    <AppDialog
+      id="login-help"
+      v-model:open="showHelp"
+      title="无法登录？"
+      description="请联系系统管理员重置密码；重置成功后，旧会话会立即失效。"
+      confirm-label="知道了"
+      :show-cancel="false"
+      @confirm="showHelp = false"
+    />
   </main>
 </template>
