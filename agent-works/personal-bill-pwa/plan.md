@@ -400,7 +400,7 @@ Flyway 高权限凭据边界：
 - 影响范围与边界异常：影响全工程目录、构建和接口合同；不实现业务，不引入 Redis/MQ/地图，不替换原型。
 - 验证：前端 typecheck/lint/unit 空基线、后端编译/测试、OpenAPI 校验、依赖锁文件，以及未登记受保护路由/孤立页面登记的失败用例。
 - 完成标准：本地一条命令启动前后端和 PostgreSQL，健康检查通过，契约可生成客户端类型。
-- 实际落地情况：已建立 Node 24/npm 11 与 Java 21/Spring Boot 3.5/Maven Wrapper 基线；前端落地 Vue/Vite/TypeScript/Pinia/Router、主题 token、共享空壳、六页类型化页面登记与路由/DESIGN 双向契约；后端落地 PostgreSQL 数据源、Actuator 健康检查、服务端 traceId、统一错误和模块无环依赖测试；OpenAPI 固化用户名 3-64 位可见 ASCII、备注 500 Unicode code point、人民币金额和上海时区合同并生成 TypeScript 类型；CI、`.env.example`、项目协作约束和架构决策已同步。`npm run dev` 已实际启动项目隔离 PostgreSQL 16.14、前端和后端，健康检查为 `UP`，退出后三个服务端口均释放。前端 typecheck/lint/3 项单测/OpenAPI 校验与生成漂移检查/生产构建通过，后端 5 项测试及打包通过；浏览器在 360×800、390×844 验证页面登记、路由、四态元数据、无横向溢出和无控制台错误。未实现业务表、认证、业务页面或 T2 以后能力。
+- 实际落地情况：已建立 Node 24.11.1/npm 11.6.2 与 Java 21/Spring Boot 3.5.16/Maven Wrapper 基线；前端落地 Vue/Vite/TypeScript/Pinia/Router、主题 token、共享空壳、六页类型化页面登记与路由/DESIGN 双向契约；后端落地 PostgreSQL 数据源、仅开放已登记的 Actuator 健康检查、服务端 traceId、统一错误和模块无环依赖测试；OpenAPI 固化用户名 3-64 位可见 ASCII、备注 500 Unicode code point、人民币金额和上海时区合同并生成 TypeScript 类型；CI、`.env.example`、项目协作约束和架构决策已同步。`npm run dev` 已实际启动项目隔离 PostgreSQL 16.14、前端和后端，健康检查为 `UP`，退出后三个服务端口均释放；本地启动同时校验 PostgreSQL 版本、连接参数和数据集群归属。前端 typecheck/lint/4 项单测/OpenAPI 校验与生成漂移检查/生产构建通过，后端 6 项测试及打包通过；浏览器在 360×800、390×844 验证页面登记、路由、四态元数据、普通用户导航点击、登录/管理菜单隔离、明暗主题、44px 触摸目标、无横向溢出和无控制台错误，截图保存在本地忽略目录 `.local/audit/t1/`。未实现业务表、认证、业务页面或 T2 以后能力。
 
 ### T2：数据库模型、约束、迁移与 seed
 

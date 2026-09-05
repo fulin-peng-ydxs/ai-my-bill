@@ -39,4 +39,11 @@ class HttpContractTest {
                 .andExpect(jsonPath("$.traceId").isNotEmpty())
                 .andExpect(jsonPath("$.retryable").value(false));
     }
+
+    @Test
+    void doesNotExposeActuatorEndpointsMissingFromTheOpenApiContract() throws Exception {
+        mockMvc.perform(get("/api/v1/info"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("NOT_FOUND"));
+    }
 }

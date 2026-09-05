@@ -12,7 +12,7 @@ export default defineConfig({
   },
   server: {
     proxy: {
-      '/api': {
+      '/api/v1': {
         target: `http://127.0.0.1:${process.env.MY_BILL_SERVER_PORT ?? '8080'}`,
         changeOrigin: false,
       },

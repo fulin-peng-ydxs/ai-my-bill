@@ -1,4 +1,4 @@
-export const pageStates = ['ready', 'loading', 'empty', 'error', 'permission'] as const
+export const pageStates = ['ready', 'loading', 'empty', 'error'] as const
 
 export type PageState = (typeof pageStates)[number]
 export type PageRole = 'anonymous' | 'user' | 'admin'

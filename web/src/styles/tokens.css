@@ -74,11 +74,16 @@ a {
 }
 
 .brand {
-  min-height: auto;
+  display: inline-flex;
+  align-items: center;
   color: var(--color-text);
   font-size: 18px;
   font-weight: 600;
   text-decoration: none;
+}
+
+.brand-static {
+  min-height: 44px;
 }
 
 .phase-badge {
@@ -155,7 +160,8 @@ a {
 
 @media (max-width: 419px) {
   .app-content {
-    padding-inline: max(var(--space-md), env(safe-area-inset-left));
+    padding-inline-start: max(var(--space-md), env(safe-area-inset-left));
+    padding-inline-end: max(var(--space-md), env(safe-area-inset-right));
   }
 
   .app-navigation {

@@ -2,8 +2,8 @@
 
 ## 1. 运行时与依赖基线
 
-- 前端锁定 Node.js 24 LTS 与 npm 11，使用 Vue 3、Vite、TypeScript、Pinia、Vue Router、ECharts 和 Lucide Vue Next。依赖由 `web/package-lock.json` 固化，CI 使用 `npm ci`。
-- 后端锁定 Java 21 LTS、Spring Boot 3.5 与 Maven Wrapper。选择仍受维护的 Spring Boot 3.x 基线，避免在首期业务开发前引入 Spring Framework 7 的迁移面。
+- 前端锁定 Node.js 24.11.1 与 npm 11.6.2，使用 Vue 3、Vite、TypeScript、Pinia、Vue Router、ECharts 和 Lucide Vue Next。依赖由 `web/package-lock.json` 固化，CI 使用 `npm ci`。
+- 后端锁定 Java 21 LTS、Spring Boot 3.5.16 与 Maven Wrapper。选择仍受维护的 Spring Boot 3.x 基线，避免在首期业务开发前引入 Spring Framework 7 的迁移面。
 - PostgreSQL 开发基线为 16 或更高受支持版本；T2 再固化生产镜像、迁移角色、应用角色、RLS 和 Flyway 生命周期。
 
 ## 2. 应用与模块边界
@@ -28,6 +28,6 @@
 
 ## 5. 本地启动与持续集成
 
-- `npm run dev` 使用仓库内 `.local/postgres` 数据目录启动隔离的本地 PostgreSQL，再并行启动后端和前端；退出命令时仅停止本次启动的进程。
+- `npm run dev` 使用仓库内 `.local/postgres` 数据目录启动隔离的本地 PostgreSQL，再并行启动后端和前端；脚本拒绝外部主机、非法连接参数、低于 16 的 PostgreSQL 以及被其他数据集群占用的端口，退出命令时仅停止本次启动的进程。
 - CI 分别执行前端 typecheck、lint、unit、OpenAPI 校验/类型漂移检查与后端 Maven verify。
 - 本地缺少目标工具链时立即失败并提示所需版本，不静默降级到 Node 18 或 Java 8。

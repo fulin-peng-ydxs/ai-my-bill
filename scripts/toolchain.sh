@@ -3,7 +3,7 @@
 resolve_node() {
   local required_version
   required_version="$(tr -d '[:space:]' < "${PROJECT_ROOT}/.nvmrc")"
-  if command -v node >/dev/null 2>&1 && [[ "$(node -p 'process.versions.node.split(`.`)[0]')" -ge 24 ]]; then
+  if command -v node >/dev/null 2>&1 && [[ "$(node --version)" == "v${required_version}" ]]; then
     return
   fi
   local nvm_node="${HOME}/.nvm/versions/node/v${required_version}/bin"

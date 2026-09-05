@@ -15,13 +15,21 @@ function registeredDesignPageKeys(): string[] {
 }
 
 describe('page registry contract', () => {
+  it('uses the four mutually exclusive states from the requirement and DESIGN', () => {
+    expect(pageStates).toEqual(['ready', 'loading', 'empty', 'error'])
+  })
+
   it('matches the DESIGN page registry in both directions', () => {
     expect(pageRegistry.map((page) => page.pageKey).sort()).toEqual(registeredDesignPageKeys().sort())
   })
 
   it('maps every registration to exactly one route with matching protection metadata', () => {
     const registeredRouteRecords = routes.filter((route) => route.meta?.pageKey)
+    const unregisteredProtectedRoutes = routes.filter(
+      (route) => route.meta?.requiresAuthentication && !route.meta.pageKey,
+    )
     expect(registeredRouteRecords).toHaveLength(pageRegistry.length)
+    expect(unregisteredProtectedRoutes).toHaveLength(0)
 
     for (const page of pageRegistry) {
       const matchingRoutes = registeredRouteRecords.filter((route) => route.meta?.pageKey === page.pageKey)
