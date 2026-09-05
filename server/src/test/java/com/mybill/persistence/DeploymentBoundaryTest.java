@@ -42,7 +42,7 @@ class DeploymentBoundaryTest {
         assertThat(migrateStage).contains("server/src/main/resources/db/migration", "USER 10001:10001")
                 .doesNotContain("my-bill-server.jar", "run-app.sh", "spring-boot");
         assertThat(read("server/src/main/resources/application-prod.yml"))
-                .contains("flyway:", "enabled: false", "validation-enabled: true", "expected-version: \"007\"",
+                .contains("flyway:", "enabled: false", "validation-enabled: true", "expected-version: \"008\"",
                         "secure-cookie: true", "rate-limit-pepper-file: ${MY_BILL_AUTH_RATE_LIMIT_PEPPER_FILE}");
         assertThat(read("deploy/scripts/run-app.sh"))
                 .contains("禁止出现 MY_BILL_MIGRATION_DB_*", "MY_BILL_APP_DB_PASSWORD_FILE")

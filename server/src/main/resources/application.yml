@@ -43,7 +43,7 @@ management:
 my-bill:
   schema:
     validation-enabled: false
-    expected-version: "007"
+    expected-version: "008"
   auth:
     session-cookie-name: MY_BILL_SESSION
     session-duration: PT12H
@@ -53,3 +53,5 @@ my-bill:
     max-login-failures: 5
     login-lock-duration: PT15M
     rate-limit-pepper: ${MY_BILL_AUTH_RATE_LIMIT_PEPPER:my-bill-local-rate-limit-pepper}
+  jobs:
+    lease-duration: PT30S

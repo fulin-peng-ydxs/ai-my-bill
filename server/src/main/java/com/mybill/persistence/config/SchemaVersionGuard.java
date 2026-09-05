@@ -6,11 +6,13 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Component;
+import org.springframework.core.annotation.Order;
 
 /**
  * 生产启动门禁：仅用运行角色读取 Flyway 历史，版本不符时 fail-fast，绝不补跑 migration。
  */
 @Component
+@Order(0)
 @ConditionalOnProperty(prefix = "my-bill.schema", name = "validation-enabled", havingValue = "true")
 @EnableConfigurationProperties(SchemaVersionProperties.class)
 public class SchemaVersionGuard implements ApplicationRunner {

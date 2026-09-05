@@ -147,6 +147,11 @@ class JobRunEntity {
     @Column(name = "finished_at") Instant finishedAt;
     @Column(name = "processed_count", nullable = false) long processedCount;
     @Column(name = "error_summary") String errorSummary;
+    @Column(name = "attempt_count", nullable = false) int attemptCount;
+    @Column(name = "max_attempts", nullable = false) int maxAttempts;
+    @Column(name = "lease_owner") String leaseOwner;
+    @Column(name = "lease_expires_at") Instant leaseExpiresAt;
+    @Column(name = "cancel_requested", nullable = false) boolean cancelRequested;
     @Column(name = "created_at", nullable = false) Instant createdAt;
     @Column(name = "updated_at", nullable = false) Instant updatedAt;
     protected JobRunEntity() { }

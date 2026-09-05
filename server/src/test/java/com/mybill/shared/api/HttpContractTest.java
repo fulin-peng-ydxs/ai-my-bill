@@ -1,8 +1,12 @@
 package com.mybill.shared.api;
 
+import com.mybill.admin.audit.AdminAuditRepository;
 import com.mybill.auth.AuthRepository;
 import com.mybill.auth.AuthenticationService;
 import com.mybill.auth.TenantTransactionExecutor;
+import com.mybill.job.JobCoordinator;
+import com.mybill.job.JobRunRepository;
+import com.mybill.shared.persistence.TenantDatabaseExecutor;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -38,6 +42,11 @@ class HttpContractTest {
 
     @MockitoBean
     private TenantTransactionExecutor tenantTransactionExecutor;
+
+    @MockitoBean private TenantDatabaseExecutor tenantDatabaseExecutor;
+    @MockitoBean private AdminAuditRepository adminAuditRepository;
+    @MockitoBean private JobRunRepository jobRunRepository;
+    @MockitoBean private JobCoordinator jobCoordinator;
 
     @Test
     void exposesTheMinimalHealthEndpointWithATraceId() throws Exception {

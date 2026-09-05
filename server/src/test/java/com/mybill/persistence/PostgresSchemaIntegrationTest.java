@@ -1,5 +1,6 @@
 package com.mybill.persistence;
 
+import com.mybill.job.JdbcJobRunRepository;
 import com.mybill.persistence.config.SchemaVersionGuard;
 import com.mybill.persistence.config.SchemaVersionProperties;
 import org.flywaydb.core.Flyway;
@@ -54,7 +55,7 @@ class PostgresSchemaIntegrationTest {
         executeAdmin("ALTER ROLE my_bill_migration PASSWORD 'migration_test'");
         executeAdmin("GRANT USAGE, CREATE ON SCHEMA public TO my_bill_migration");
         flyway = Flyway.configure().dataSource(jdbcUrl, "my_bill_migration", "migration_test").load();
-        assertThat(flyway.migrate().migrationsExecuted).isEqualTo(7);
+        assertThat(flyway.migrate().migrationsExecuted).isEqualTo(8);
     }
 
     @Test
@@ -225,24 +226,68 @@ class PostgresSchemaIntegrationTest {
 
     @Test
     @Order(5)
-    void runtimeSchemaGuardAcceptsOnlyTheExpectedVersion() {
+    void jobLeaseIsClaimedOnceRecoveredAndAuditIsAppendOnly() throws Exception {
         DriverManagerDataSource appDataSource = new DriverManagerDataSource(jdbcUrl, "my_bill_app", "app_test");
-        JdbcClient appJdbc = JdbcClient.create(appDataSource);
+        JdbcJobRunRepository jobs = new JdbcJobRunRepository(JdbcClient.create(appDataSource));
+        var now = java.time.Instant.parse("2026-09-05T12:00:00Z");
+        UUID runId = jobs.schedule("T6_TEST", null, "same-batch", 3, now);
+        assertThat(jobs.schedule("T6_TEST", null, "same-batch", 3, now)).isEqualTo(runId);
 
-        new SchemaVersionGuard(appJdbc, new SchemaVersionProperties(true, "007")).run(null);
-        assertThatThrownBy(() -> new SchemaVersionGuard(
-                appJdbc, new SchemaVersionProperties(true, "8")).run(null))
-                .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("期望 8")
-                .hasMessageContaining("实际 007");
+        try (var executor = Executors.newFixedThreadPool(2)) {
+            var first = executor.submit(() -> jobs.claimNext(java.util.List.of("T6_TEST"), "worker-a", now, now.plusSeconds(30)));
+            var second = executor.submit(() -> jobs.claimNext(java.util.List.of("T6_TEST"), "worker-b", now, now.plusSeconds(30)));
+            var claims = java.util.List.of(first.get(), second.get());
+            assertThat(claims.stream().filter(java.util.Optional::isPresent).count()).isEqualTo(1);
+            var claimed = claims.stream().flatMap(java.util.Optional::stream).findFirst().orElseThrow();
+            assertThatThrownBy(() -> jobs.requestCancellation(runId, false, now.plusSeconds(1)))
+                    .isInstanceOf(IllegalStateException.class);
+            assertThat(jobs.requestCancellation(runId, true, now.plusSeconds(1))).isEqualTo("CANCEL_REQUESTED");
+            jobs.cancel(runId, claimed.leaseOwner(), 0, now.plusSeconds(2));
+        }
+
+        UUID expiredId = jobs.schedule("T6_TEST", null, "expired-batch", 3, now);
+        jobs.claimNext(java.util.List.of("T6_TEST"), "dead-worker", now, now.plusSeconds(30)).orElseThrow();
+        executeAdmin("UPDATE job_run SET lease_expires_at='2026-09-05T11:59:59Z' WHERE id='" + expiredId + "'");
+        assertThat(jobs.findExpired(now)).extracting(run -> run.id()).contains(expiredId);
+        jobs.recoverExpired(expiredId, true, "LEASE_EXPIRED", now);
+        assertThat(jobs.find(expiredId).orElseThrow().status()).isEqualTo("PENDING");
+
+        String administrator = "60000000-0000-0000-0000-000000000001";
+        executeAdmin("INSERT INTO app_user(id,username,password_digest,role) VALUES ('" + administrator
+                + "','t6-admin','not-a-real-password-digest','ADMIN')");
+        try (Connection app = appConnection(); Statement statement = app.createStatement()) {
+            statement.executeUpdate("INSERT INTO admin_audit_log(id,administrator_user_id,action,object_type,object_id,result,safe_summary) "
+                    + "VALUES ('60000000-0000-0000-0000-000000000002','" + administrator
+                    + "','T6_TEST','JOB','" + runId + "','SUCCEEDED','{\"changes\":{}}')");
+            assertThatThrownBy(() -> statement.executeUpdate("UPDATE admin_audit_log SET result='FAILED' WHERE id="
+                    + "'60000000-0000-0000-0000-000000000002'"))
+                    .isInstanceOf(SQLException.class);
+        }
+        executeAdmin("DELETE FROM job_run WHERE job_type='T6_TEST'");
+        executeAdmin("DELETE FROM admin_audit_log WHERE administrator_user_id='" + administrator + "'");
+        executeAdmin("DELETE FROM app_user WHERE id='" + administrator + "'");
     }
 
     @Test
     @Order(6)
+    void runtimeSchemaGuardAcceptsOnlyTheExpectedVersion() {
+        DriverManagerDataSource appDataSource = new DriverManagerDataSource(jdbcUrl, "my_bill_app", "app_test");
+        JdbcClient appJdbc = JdbcClient.create(appDataSource);
+
+        new SchemaVersionGuard(appJdbc, new SchemaVersionProperties(true, "008")).run(null);
+        assertThatThrownBy(() -> new SchemaVersionGuard(
+                appJdbc, new SchemaVersionProperties(true, "8")).run(null))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("期望 8")
+                .hasMessageContaining("实际 008");
+    }
+
+    @Test
+    @Order(7)
     void documentedRollbackScriptsAreExecutableInAnEmptyEnvironment() throws Exception {
         executeAdmin("TRUNCATE tenant CASCADE");
         executeAdmin("UPDATE default_dictionary_item SET display_name='工资' WHERE stable_key='salary'");
-        for (int version = 7; version >= 1; version--) {
+        for (int version = 8; version >= 1; version--) {
             executeAdmin(readResource(String.format("db/rollback/U%03d__%s.sql", version, rollbackName(version))));
         }
         assertThat(queryAdminLong("SELECT count(*) FROM information_schema.tables WHERE table_schema='public' "
@@ -296,6 +341,7 @@ class PostgresSchemaIntegrationTest {
             case 5 -> "query_and_lifecycle_indexes";
             case 6 -> "confirmed_default_seed";
             case 7 -> "tenant_rls_policies";
+            case 8 -> "job_execution_contract";
             default -> throw new IllegalArgumentException("unsupported rollback version " + version);
         };
     }
