@@ -12,12 +12,12 @@ defineProps<{
     :data-page-key="page.pageKey"
   >
     <h1>{{ page.title }}</h1>
-    <p>工程基线已接入，业务能力将在对应计划阶段实现。</p>
+    <p>页面外壳已经就绪，具体业务能力将在开放后显示。</p>
     <section
       class="placeholder-panel"
       aria-label="页面契约"
     >
-      <p>当前页面只验证路由、权限元数据、页面登记和响应式外壳，不包含模拟业务数据。</p>
+      <p>这里不会展示模拟账单。功能开放前，导航、权限和响应式布局仍保持可验证。</p>
       <dl class="placeholder-meta">
         <dt>页面类型</dt>
         <dd>{{ page.archetype }}</dd>

@@ -2,12 +2,18 @@ import { createMemoryHistory, createRouter, createWebHistory, type RouteRecordRa
 
 import { pageRegistry } from '../app/pageRegistry'
 import { useSessionStore } from '../stores/session'
+import LoginView from '../views/LoginView.vue'
 import PlaceholderView from '../views/PlaceholderView.vue'
+import ProfileView from '../views/ProfileView.vue'
 
 const registeredRoutes: RouteRecordRaw[] = pageRegistry.map((page) => ({
   path: page.path,
   name: page.pageKey,
-  component: PlaceholderView,
+  component: page.pageKey === 'login'
+    ? LoginView
+    : page.pageKey === 'profile-settings'
+      ? ProfileView
+      : PlaceholderView,
   props: { page },
   meta: {
     pageKey: page.pageKey,

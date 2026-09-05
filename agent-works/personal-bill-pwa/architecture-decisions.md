@@ -10,7 +10,7 @@
 
 - 采用单仓库、Vue 单页应用、Spring Boot 模块化单体和 PostgreSQL，同源接口前缀固定为 `/api/v1`。
 - 后端领域包固定为 `auth`、`admin`、`dict`、`ledger`、`report`、`job`，公共契约位于 `shared`。跨领域写操作只经应用服务，查询只能消费明确的只读接口或投影。
-- T1 建立工程空壳，T2 建立持久化结构、JPA 映射与数据库约束，T3 已建立认证、会话、角色路由和租户事务上下文。T4 登录/PWA 正式页面、字典与收支业务 API 仍未实施。
+- T1 建立工程空壳，T2 建立持久化结构、JPA 映射与数据库约束，T3 建立认证、会话、角色路由和租户事务上下文，T4 已建立登录页、PWA/主题和双角色应用外壳。T5 共享业务组件、字典与收支业务 API 仍未实施。
 
 ## 3. HTTP 与数据契约
 
@@ -42,4 +42,10 @@
 - 会话令牌由 32 字节 `SecureRandom` 生成，浏览器仅以 `HttpOnly`/`SameSite=Lax` Cookie 保存，生产额外强制 `Secure`，数据库仅保存 SHA-256 摘要。改密通过凭据版本乐观冲突保护，并撤销该账号全部旧会话后签发新会话。
 - 变更请求采用同源 XSRF Cookie/Header 校验。登录限流在 PostgreSQL 中持久化，主体使用服务端 pepper 的 HMAC-SHA256 摘要；生产 pepper 仅通过 app 专用 secret 文件提供，不写入非密钥 env 模板、日志或数据库。
 - `CurrentPrincipal` 仅由服务端会话查询构建，对外 DTO 不返回租户 ID 或令牌。`TenantTransactionExecutor` 仅接受有租户的普通用户，并在与业务 SQL 同一事务内使用 `set_config('app.tenant_id', ..., true)`；上下文缺失、设置失败或事务回滚均默认拒绝。
-- 前端身份状态只存在于一个 Pinia session store，统一 API 客户端负责 Cookie、CSRF、`no-store` 与标准错误解析。T3 只接入未登录、首次改密和角色路由守卫；登录表单、PWA、主题和正式导航保留到 T4。
+- 前端身份状态只存在于一个 Pinia session store，统一 API 客户端负责 Cookie、CSRF、`no-store` 与标准错误解析。T4 在此基础上接入正式登录、退出后 CSRF 刷新、安全回跳、角色外壳与导航；主题和安装分别由唯一 Pinia store 供登录页与“我的”复用。
+
+## 7. PWA 与主题边界
+
+- Service Worker 只缓存带内容哈希的同源静态资源和无个人数据离线页；API、下载、个性化导航和非哈希资源始终直连网络。所有 `/api/v1/**` 响应统一 `Cache-Control: no-store`，离线不承诺提交或展示账目数据。
+- 首屏内联脚本只恢复合法的本地 `system/light/dark` 安全值并同步 `theme-color`，运行时由唯一主题 store 接管。登录后的服务端偏好权威、失败回退和跨设备恢复由 T10 偏好接口闭环，不在 T4 伪造服务端保存。
+- T4 使用明确标记的临时 SVG 安装图标；正式品牌图标、启动图、目标移动浏览器系统安装框和独立窗口验收保留到 T29。

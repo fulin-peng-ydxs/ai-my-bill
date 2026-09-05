@@ -2,8 +2,14 @@ import { createPinia } from 'pinia'
 import { createApp } from 'vue'
 
 import App from './App.vue'
+import { usePwaInstallStore } from './pwa/install'
+import { registerServiceWorker } from './pwa/register'
 import router from './router'
 import './styles/tokens.css'
+import { useThemeStore } from './stores/theme'
 
 const pinia = createPinia()
+useThemeStore(pinia).initialize()
+usePwaInstallStore(pinia).initialize()
 createApp(App).use(pinia).use(router).mount('#app')
+void registerServiceWorker()

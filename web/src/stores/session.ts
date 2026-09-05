@@ -78,9 +78,17 @@ export const useSessionStore = defineStore('session', {
     async logout(): Promise<void> {
       try {
         await apiRequest<void>('/auth/logout', { method: 'POST' })
-      } finally {
-        this.clear()
+      } catch (error) {
+        if (error instanceof ApiClientError && error.status === 401) {
+          this.clear()
+          return
+        }
+        throw error
       }
+      this.clear()
+      // Spring rotates/removes the CSRF cookie after a successful mutation. Refresh it
+      // before another account can log in from the same browser session.
+      await this.initialize(true)
     },
     accept(session: Session): void {
       this.session = session

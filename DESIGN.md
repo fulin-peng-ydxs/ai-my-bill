@@ -102,7 +102,7 @@ components:
 
 # 我的账单 Design System
 
-> 本文是“我的账单”前端视觉、交互、响应式、组件复用和页面设计约束的长期事实源。当前正式工程已建立页面登记、路由、主题 token 与响应式空壳，业务页面和目标组件仍按任务阶段落地；实际代码和自动化测试是机器事实源，并与本文同步维护。
+> 本文是“我的账单”前端视觉、交互、响应式、组件复用和页面设计约束的长期事实源。当前正式工程已建立页面登记、路由、主题与 PWA 基线、登录页和双角色响应式外壳；业务页面和其余目标组件仍按任务阶段落地。实际代码和自动化测试是机器事实源，并与本文同步维护。
 
 事实源边界：
 
@@ -242,7 +242,7 @@ Key Characteristics：
 
 ## 4. Component Stylings
 
-当前以下组件属于用户已确认的目标组件契约，尚待代码实现。代码出现第二个同类消费场景时，必须抽取或消费复用单元，不允许页面继续复制结构和交互。
+以下清单是用户已确认的组件契约；`AppShell`、`ThemeModeControl`、`BottomNavigation`、`PwaInstallPrompt` 与 `AppStateBlock` 已实现基础版本，其余组件按任务阶段落地。代码出现第二个同类消费场景时，必须抽取或消费复用单元，不允许页面继续复制结构和交互。
 
 ### 4.1 组件复用与事实源
 
@@ -521,7 +521,7 @@ Key Characteristics：
 <!-- page-registry:start -->
 | pageKey | 页面 | 原型 | 主任务 | 主要组件 |
 | --- | --- | --- | --- | --- |
-| `login` | 登录与安装 | `auth` | 完成安全登录并理解安装方式 | `ThemeModeControl` / `AppStateBlock` |
+| `login` | 登录与安装 | `auth` | 完成安全登录并理解安装方式 | `ThemeModeControl` / `PwaInstallPrompt` / `AppStateBlock` |
 | `ledger-entry` | 记一笔 | `quick-entry` | 选择日常模板或手动快速保存商品支出、金额收入 | `EntryTypeSwitch` / `DailyEntryPicker` / `ProductCombobox` / `PayerCombobox` / `FundingChannelPicker` / `MoneySummary` |
 | `reports` | 收支报表 | `dashboard` | 分析收支、调整和结余并下钻 | `GlobalLedgerSearch` / `MoneySummary` / `ChartPanel` / `FilterSheet` |
 | `bill-details` | 收支明细 | `list` | 查询和纠正支出、收入及调整 | `GlobalLedgerSearch` / `LedgerListItem` / `LedgerContextActions` / `IncrementalLedgerList` / `FilterSheet` / `AppDrawer` |
@@ -532,7 +532,7 @@ Key Characteristics：
 ## 10. Known Gaps
 
 - 前端工程已锁定 Vue 3 + Vite + TypeScript + Pinia + Vue Router，图表采用 ECharts，SVG 图标采用 Lucide Vue Next；不引入覆盖本设计契约的整套通用 UI 框架，优先实现本文定义的项目语义组件，不得据技术选型改变已确认视觉与交互契约。
-- 正式工程当前只有共享响应式空壳和六页类型化登记，目标业务组件仍未实现；原型视觉与响应式静态契约继续有效，后续每个页面阶段必须以真实组件、浏览器多视口测试和对应代码路径逐步替换原型证明。
+- 正式工程当前已实现登录页、主题/PWA 共享状态、普通用户四项导航、管理员外壳和共享状态块；账单、字典、报表等目标业务组件仍未实现。原型视觉与响应式静态契约继续有效，后续每个页面阶段必须以真实组件、浏览器多视口测试和对应代码路径逐步替换原型证明。
 - 尚无正式品牌名称、图标和启动图；第一期原型使用“我的账单”文字标识，不把临时图形固化为品牌资产。
-- 原型已承载 PWA 安装检测、真实浏览器安装事件、拒绝、分平台手动步骤和已安装状态；正式工程接入 Manifest 与 Service Worker 后，仍需在目标移动浏览器复验系统安装框和状态栏表现。
+- 正式工程已接入 Manifest、Service Worker、真实浏览器安装事件、拒绝/不支持/已安装状态和分平台手动引导；正式图标、启动图、目标移动浏览器系统安装框、独立窗口与状态栏表现仍需在 T29 目标环境复验。
 - 管理后台是否需要独立桌面域名或路径属于技术与部署决策，不影响当前设计系统。

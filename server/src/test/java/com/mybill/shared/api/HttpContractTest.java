@@ -44,6 +44,7 @@ class HttpContractTest {
         mockMvc.perform(get("/api/v1/health"))
                 .andExpect(status().isOk())
                 .andExpect(header().exists(TraceIdFilter.TRACE_ID_HEADER))
+                .andExpect(header().string("Cache-Control", "no-store"))
                 .andExpect(header().string("Set-Cookie", org.hamcrest.Matchers.containsString("XSRF-TOKEN=")))
                 .andExpect(jsonPath("$.status").value("UP"));
     }
@@ -53,6 +54,7 @@ class HttpContractTest {
         mockMvc.perform(get("/api/v1/not-registered"))
                 .andExpect(status().isUnauthorized())
                 .andExpect(header().exists(TraceIdFilter.TRACE_ID_HEADER))
+                .andExpect(header().string("Cache-Control", "no-store"))
                 .andExpect(jsonPath("$.code").value("UNAUTHORIZED"))
                 .andExpect(jsonPath("$.message").isNotEmpty())
                 .andExpect(jsonPath("$.fieldErrors").isMap())

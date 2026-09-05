@@ -4,7 +4,28 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="theme-color" content="#F5F5F7" />
-    <link rel="icon" href="data:," />
+    <meta name="description" content="手机优先的个人收支账单工具" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="icon" href="/app-icon.svg" type="image/svg+xml" />
+    <script>
+      (() => {
+        try {
+          const key = 'my-bill-theme-mode'
+          const saved = localStorage.getItem(key)
+          const mode = saved === 'light' || saved === 'dark' || saved === 'system' ? saved : 'system'
+          const resolved = mode === 'system'
+            ? (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
+            : mode
+          document.documentElement.dataset.themeMode = mode
+          document.documentElement.dataset.theme = resolved
+          document.documentElement.style.colorScheme = resolved
+          document.querySelector('meta[name="theme-color"]')
+            ?.setAttribute('content', resolved === 'dark' ? '#000000' : '#F5F5F7')
+        } catch {
+          // 浏览器禁用存储时使用文档默认主题，页面仍可继续渲染。
+        }
+      })()
+    </script>
     <title>我的账单</title>
   </head>
   <body>
