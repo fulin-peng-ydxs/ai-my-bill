@@ -1448,6 +1448,7 @@ function restoreReportFilterState(values = {}) {
 function initReports() {
   const host = document.querySelector('[data-report-view]')
   if (!host) return
+  if (document.querySelector('[data-state-region="report"] > .region-state')) return
   ensureReportEmptyState()
   let scope = 'overview'
   const render = key => {
@@ -2843,22 +2844,46 @@ function openDefaultEditor(row = null) {
   openOverlay('default-item-sheet')
 }
 
+function moveDefaultRow(row) {
+  const type = row.children[0].textContent.trim()
+  const siblings = [...row.parentElement.children]
+  const previous = siblings.slice(0, siblings.indexOf(row)).reverse()
+    .find(candidate => candidate.children[0].textContent.trim() === type)
+  if (!previous) return showToast('当前项已是该类型第一项')
+  row.parentElement.insertBefore(row, previous)
+  updateDefaultOrder(type)
+  appendAdminLog('调整默认字典排序', `${type} / ${row.children[1].textContent.trim()}`, '排序已更新，仅影响之后创建的用户')
+  showToast('默认字典排序已更新')
+}
+
+function openDefaultActions(row) {
+  const sheet = document.getElementById('default-actions-sheet')
+  if (!sheet) return
+  sheet.__defaultRow = row
+  const type = row.children[0].textContent.trim()
+  const name = row.children[1].textContent.trim()
+  const disabled = row.querySelector('.tag')?.textContent.trim() === '已停用'
+  sheet.querySelector('[data-default-action-name]').textContent = `${type} · ${name}`
+  sheet.querySelector('[data-default-sheet-toggle-label]').textContent = disabled ? '恢复' : '停用'
+  openOverlay('default-actions-sheet')
+}
+
 function bindDefaultRow(row) {
   if (row.dataset.defaultBound === 'true') return
   row.dataset.defaultBound = 'true'
   row.querySelector('[data-default-edit]')?.addEventListener('click', () => openDefaultEditor(row))
   row.querySelector('[data-default-toggle]')?.addEventListener('click', toggleDefaultState)
-  row.querySelector('[data-default-move]')?.addEventListener('click', () => {
-    const type = row.children[0].textContent.trim()
-    const siblings = [...row.parentElement.children]
-    const previous = siblings.slice(0, siblings.indexOf(row)).reverse()
-      .find(candidate => candidate.children[0].textContent.trim() === type)
-    if (!previous) return showToast('当前项已是该类型第一项')
-    row.parentElement.insertBefore(row, previous)
-    updateDefaultOrder(type)
-    appendAdminLog('调整默认字典排序', `${type} / ${row.children[1].textContent.trim()}`, '排序已更新，仅影响之后创建的用户')
-    showToast('默认字典排序已更新')
-  })
+  row.querySelector('[data-default-move]')?.addEventListener('click', () => moveDefaultRow(row))
+  const actionCell = row.lastElementChild
+  if (actionCell && !actionCell.querySelector('[data-default-mobile-action]')) {
+    const mobileAction = document.createElement('button')
+    mobileAction.type = 'button'
+    mobileAction.className = 'btn text default-mobile-action'
+    mobileAction.dataset.defaultMobileAction = ''
+    mobileAction.textContent = '更多'
+    mobileAction.addEventListener('click', () => openDefaultActions(row))
+    actionCell.append(mobileAction)
+  }
 }
 
 function openAdminConfirm({ title, message, confirmText, onConfirm, sourceOverlay }) {
@@ -2906,6 +2931,15 @@ function commitDefaultItem(sheet, type, name) {
 function initAdminActions() {
   document.querySelectorAll('[data-default-table-body] tr').forEach(bindDefaultRow)
   document.querySelector('[data-default-add]')?.addEventListener('click', () => openDefaultEditor())
+  document.querySelectorAll('[data-default-sheet-action]').forEach(button => button.addEventListener('click', () => {
+    const actions = button.closest('.overlay')
+    const row = actions.__defaultRow
+    if (!row) return
+    closeOverlay(actions)
+    if (button.dataset.defaultSheetAction === 'move') moveDefaultRow(row)
+    if (button.dataset.defaultSheetAction === 'edit') openDefaultEditor(row)
+    if (button.dataset.defaultSheetAction === 'toggle') toggleDefaultRowState(row)
+  }))
   document.querySelector('[data-default-save]')?.addEventListener('click', event => {
     const button = event.currentTarget
     const sheet = button.closest('.sheet')
@@ -2993,14 +3027,19 @@ function initAdminActions() {
   })
 }
 
-function toggleDefaultState(event) {
-  const button = event.currentTarget
-  button.textContent = button.textContent === '停用' ? '恢复' : '停用'
-  const tag = button.closest('tr').querySelector('.tag')
-  tag.textContent = button.textContent === '恢复' ? '已停用' : '启用'
-  tag.classList.toggle('success', button.textContent !== '恢复')
-  appendAdminLog(button.textContent === '恢复' ? '停用默认字典' : '恢复默认字典', `${button.closest('tr').children[0].textContent.trim()} / ${button.closest('tr').children[1].textContent.trim()}`, '状态已更新，仅影响之后创建的用户')
+function toggleDefaultRowState(row) {
+  const button = row.querySelector('[data-default-toggle]')
+  const tag = row.querySelector('.tag')
+  const disabling = tag.textContent.trim() !== '已停用'
+  tag.textContent = disabling ? '已停用' : '启用'
+  tag.classList.toggle('success', !disabling)
+  button.textContent = disabling ? '恢复' : '停用'
+  appendAdminLog(disabling ? '停用默认字典' : '恢复默认字典', `${row.children[0].textContent.trim()} / ${row.children[1].textContent.trim()}`, '状态已更新，仅影响之后创建的用户')
   showToast('默认字典状态已更新，仅影响之后创建的用户')
+}
+
+function toggleDefaultState(event) {
+  toggleDefaultRowState(event.currentTarget.closest('tr'))
 }
 
 function initFilters() {

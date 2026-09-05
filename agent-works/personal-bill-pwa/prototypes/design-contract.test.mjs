@@ -5,6 +5,7 @@ const design = readProjectFile("DESIGN.md");
 const expenseEntry = readPrototype("expense-entry.html");
 const billDetails = readPrototype("bill-details.html");
 const reports = readPrototype("reports.html");
+const adminConsole = readPrototype("admin-console.html");
 const profileSettings = readPrototype("profile-settings.html");
 const prototypeJs = readPrototype("prototype.js");
 const allPrototypeHtml = htmlFiles.map(readPrototype).join("\n");
@@ -109,6 +110,7 @@ assert(prototypeJs.includes("download: '<svg"), "共享图标事实源必须提�
 assert(prototypeJs.includes("button.__cancelExport") && prototypeJs.includes("button.innerHTML = icons.close"), "页头导出必须原位提供取消操作");
 assert(prototypeJs.includes("link.hidden = true") && prototypeJs.includes("link.click()"), "导出完成后必须直接下载，不得追加第二个可见下载入口");
 assert(reports.includes("data-report-dimension-select"), "报表分析维度必须使用明确选择器");
+assert(/data-state-region="report"[\s\S]*?data-balance-summary[\s\S]*?data-report-view/.test(reports), "报表摘要、图表和排行必须属于同一四态区域");
 assert(!reports.includes("data-report-dimensions"), "报表不得恢复高密度横向维度胶囊列表");
 assert(reports.includes('value="all">全部账目</option>'), "不限类型必须使用清晰的‘全部账目’文案");
 assert(profileSettings.includes('data-open="dictionary-index-sheet"'), "设置首页必须将八类字典收拢为单一管理入口");
@@ -146,5 +148,7 @@ assert(!prototypeJs.includes("data-copy-entry"), "旧复制上一笔交互逻辑
 assert(prototypeJs.includes("function initFormAccessibility()") && prototypeJs.includes("aria-labelledby"), "动态表单与芯片组必须补齐可访问名称");
 assert(prototypeJs.includes("beforeinstallprompt") && prototypeJs.includes("data-install-state=\"detecting\"") && prototypeJs.includes("data-install-state=\"unsupported\""), "PWA 安装必须区分检测、可安装与平台引导分支");
 assert(profileSettings.includes("data-install-trigger"), "“我的”页面必须继承 PWA 安装帮助职责");
+assert(adminConsole.includes('id="default-actions-sheet"') && adminConsole.includes('data-default-sheet-action="move"') && adminConsole.includes('data-default-sheet-action="edit"') && adminConsole.includes('data-default-sheet-action="toggle"'), "默认字典窄屏必须通过底部操作面板承载多操作");
+assert(prototypeJs.includes("openDefaultActions") && prototypeJs.includes("defaultMobileAction"), "默认字典摘要列表必须绑定统一底部操作面板入口");
 
 console.log("Design contract: OK");

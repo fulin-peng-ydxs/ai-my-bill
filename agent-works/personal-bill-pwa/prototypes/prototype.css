@@ -345,6 +345,7 @@ td.amount { text-align: right; font-family: var(--mono); }
 .row-actions { display: flex; gap: 8px; }
 .row-actions button { min-width: 44px; min-height: 44px; border: 0; background: transparent; color: var(--primary); cursor: pointer; padding: 8px; border-radius: var(--radius-sm); }
 .row-actions button:hover { background: var(--surface-2); }
+.default-mobile-action { display: none; }
 .row-actions button.danger { color: var(--danger); }
 .admin-panel-title { margin: 0; font-family: var(--display); font-weight: 600; letter-spacing: -0.01em; }
 .metric-list { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
@@ -388,7 +389,34 @@ td.amount { text-align: right; font-family: var(--mono); }
   .sidebar { display: none; }
   .admin-topbar { padding-left: max(var(--page-gutter), env(safe-area-inset-left)); padding-right: max(var(--page-gutter), env(safe-area-inset-right)); }
   .admin-content { padding: 16px max(var(--page-gutter), env(safe-area-inset-right)) calc(16px + env(safe-area-inset-bottom)) max(var(--page-gutter), env(safe-area-inset-left)); }
-  .table-wrap { min-height: 0; }
+  .admin-content .table-wrap { min-height: 0; overflow: visible; border: 0; background: transparent; }
+  .admin-content table { display: block; min-width: 0; }
+  .admin-content thead { display: none; }
+  .admin-content tbody { display: grid; gap: 12px; }
+  .admin-content tbody tr { display: grid; min-width: 0; padding: 4px 14px; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface); }
+  .admin-content tbody tr[hidden] { display: none; }
+  .admin-content tbody td { display: grid; grid-template-columns: minmax(88px, 32%) minmax(0, 1fr); align-items: center; gap: 12px; min-width: 0; padding: 10px 0; border-bottom: 1px solid var(--border); white-space: normal; overflow-wrap: anywhere; }
+  .admin-content tbody td:last-child { border-bottom: 0; }
+  .admin-content tbody td::before { color: var(--muted); font-size: 12px; line-height: 18px; }
+  [data-admin-panel="users"] td:nth-child(1)::before { content: "用户名"; }
+  [data-admin-panel="users"] td:nth-child(2)::before { content: "状态"; }
+  [data-admin-panel="users"] td:nth-child(3)::before { content: "注册时间"; }
+  [data-admin-panel="users"] td:nth-child(4)::before { content: "最近活跃"; }
+  [data-admin-panel="users"] td:nth-child(5)::before { content: "操作"; }
+  [data-admin-panel="defaults"] td:nth-child(1)::before { content: "类型"; }
+  [data-admin-panel="defaults"] td:nth-child(2)::before { content: "名称"; }
+  [data-admin-panel="defaults"] td:nth-child(3)::before { content: "排序"; }
+  [data-admin-panel="defaults"] td:nth-child(4)::before { content: "状态"; }
+  [data-admin-panel="defaults"] td:nth-child(5)::before { content: "生效范围"; }
+  [data-admin-panel="defaults"] td:nth-child(6)::before { content: "操作"; }
+  [data-admin-panel="logs"] td:nth-child(1)::before { content: "时间"; }
+  [data-admin-panel="logs"] td:nth-child(2)::before { content: "管理员"; }
+  [data-admin-panel="logs"] td:nth-child(3)::before { content: "动作"; }
+  [data-admin-panel="logs"] td:nth-child(4)::before { content: "对象"; }
+  [data-admin-panel="logs"] td:nth-child(5)::before { content: "结果"; }
+  [data-admin-panel="logs"] td:nth-child(6)::before { content: "详情"; }
+  [data-admin-panel="defaults"] .row-actions { display: none; }
+  .default-mobile-action { display: inline-flex; justify-self: start; }
   .mobile-only { display: inline-grid; }
   .admin-topbar .caption { display: none; }
   .admin-topbar .theme-segment button { min-width: 44px; padding-inline: 4px; }

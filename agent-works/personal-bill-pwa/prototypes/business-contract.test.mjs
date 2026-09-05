@@ -6,6 +6,7 @@ const source = readPrototype('prototype.js')
 const detailHtml = readPrototype('bill-details.html')
 const loginHtml = readPrototype('login.html')
 const profileHtml = readPrototype('profile-settings.html')
+const reportsHtml = readPrototype('reports.html')
 
 const memory = new Map()
 const storage = {
@@ -65,5 +66,8 @@ assert(detailHtml.includes('data-record-id="expense-breakfast"'), '账单行必�
 assert(!loginHtml.includes('data-close-after="已了解安装方式"'), 'PWA 安装不得保留提示型假按钮')
 assert(loginHtml.includes('data-install-trigger') && profileHtml.includes('data-install-trigger'), '登录与“我的”必须复用同一 PWA 安装能力入口')
 assert(source.includes('/^[=+\\-@]/.test(text)'), 'CSV 用户文本必须防止表格公式注入')
+assert(/data-state-region="report"[\s\S]*?data-balance-summary[\s\S]*?data-report-view/.test(reportsHtml), '报表 empty/loading 必须同时接管摘要、图表和排行，不能残留非零汇总')
+assert(source.includes("if (state === 'loading' || state === 'empty') [...target.children].forEach"), '页面 empty/loading 状态必须隐藏所属业务区域的 ready 内容')
+assert(source.includes("if (document.querySelector('[data-state-region=\"report\"] > .region-state')) return"), '报表初始化不得在强制 empty/loading 状态后重新显示非零摘要')
 
 console.log('Business contract: OK')
