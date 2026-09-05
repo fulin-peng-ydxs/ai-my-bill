@@ -1,26 +1,16 @@
 <script setup lang="ts">
 import { LogOut } from 'lucide-vue-next'
-import { computed, ref } from 'vue'
-import { RouterLink, useRouter } from 'vue-router'
+import { computed } from 'vue'
+import { RouterLink } from 'vue-router'
 
+import { useLogout } from '../composables/useLogout'
 import { useSessionStore } from '../stores/session'
 import AppStateBlock from './AppStateBlock.vue'
 import BottomNavigation from './BottomNavigation.vue'
 
 const sessionStore = useSessionStore()
-const router = useRouter()
 const isAdmin = computed(() => sessionStore.session?.role === 'ADMIN')
-const logoutError = ref<string>()
-
-async function logout(): Promise<void> {
-  logoutError.value = undefined
-  try {
-    await sessionStore.logout()
-    await router.replace('/login')
-  } catch (error) {
-    logoutError.value = error instanceof Error ? error.message : '退出未完成，请重试。'
-  }
-}
+const { loggingOut, logoutError, logout } = useLogout()
 </script>
 
 <template>
@@ -64,13 +54,14 @@ async function logout(): Promise<void> {
         type="button"
         class="header-action"
         aria-label="退出登录"
+        :disabled="loggingOut"
         @click="logout"
       >
         <LogOut
           :size="18"
           aria-hidden="true"
         />
-        <span>退出</span>
+        <span>{{ loggingOut ? '正在退出…' : '退出' }}</span>
       </button>
     </header>
     <main class="shell-content">

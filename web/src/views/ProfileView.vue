@@ -1,30 +1,12 @@
 <script setup lang="ts">
-import { ref } from 'vue'
-import { useRouter } from 'vue-router'
-
 import AppStateBlock from '../components/AppStateBlock.vue'
 import PwaInstallPrompt from '../components/PwaInstallPrompt.vue'
 import ThemeModeControl from '../components/ThemeModeControl.vue'
+import { useLogout } from '../composables/useLogout'
 import { useSessionStore } from '../stores/session'
 
 const sessionStore = useSessionStore()
-const router = useRouter()
-const loggingOut = ref(false)
-const logoutError = ref<string>()
-
-async function logout(): Promise<void> {
-  if (loggingOut.value) return
-  loggingOut.value = true
-  logoutError.value = undefined
-  try {
-    await sessionStore.logout()
-    await router.replace('/login')
-  } catch (error) {
-    logoutError.value = error instanceof Error ? error.message : '退出未完成，请重试。'
-  } finally {
-    loggingOut.value = false
-  }
-}
+const { loggingOut, logoutError, logout } = useLogout()
 </script>
 
 <template>

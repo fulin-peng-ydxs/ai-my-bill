@@ -75,4 +75,29 @@ describe('session store', () => {
     expect(store.status).toBe('guest')
     expect(store.session).toBeUndefined()
   })
+
+  it('refreshes the CSRF cookie before login after an initial network failure', async () => {
+    const session = {
+      accountId: '10000000-0000-0000-0000-000000000001',
+      username: 'alice',
+      role: 'USER' as const,
+      passwordChangeRequired: false,
+    }
+    const fetchMock = vi.fn()
+      .mockRejectedValueOnce(new TypeError('network unavailable'))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        code: 'UNAUTHORIZED', message: 'expired', fieldErrors: {}, traceId: 'trace', retryable: false,
+      }), { status: 401, headers: { 'Content-Type': 'application/json' } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(session), {
+        status: 200, headers: { 'Content-Type': 'application/json' },
+      }))
+    vi.stubGlobal('fetch', fetchMock)
+    const store = useSessionStore()
+    await store.initialize()
+
+    await expect(store.login('alice', 'correct password')).resolves.toEqual(session)
+
+    expect(fetchMock).toHaveBeenCalledTimes(3)
+    expect(store.isAuthenticated).toBe(true)
+  })
 })

@@ -3,6 +3,7 @@ import { computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import { ApiClientError } from '../api/http'
+import { isFormalPasswordLengthValid } from '../auth/password'
 import AppStateBlock from '../components/AppStateBlock.vue'
 import PwaInstallPrompt from '../components/PwaInstallPrompt.vue'
 import ThemeModeControl from '../components/ThemeModeControl.vue'
@@ -57,7 +58,7 @@ async function login(): Promise<void> {
 async function setFirstPassword(): Promise<void> {
   if (submitting.value) return
   feedback.value = undefined
-  if (newPassword.value.length < 15 || newPassword.value.length > 64) {
+  if (!isFormalPasswordLengthValid(newPassword.value)) {
     feedback.value = '正式密码必须为 15–64 个字符。'
     return
   }
@@ -190,7 +191,7 @@ async function setFirstPassword(): Promise<void> {
               type="password"
               autocomplete="new-password"
               minlength="15"
-              maxlength="64"
+              maxlength="128"
               :disabled="submitting"
               required
             >
@@ -203,7 +204,7 @@ async function setFirstPassword(): Promise<void> {
               type="password"
               autocomplete="new-password"
               minlength="15"
-              maxlength="64"
+              maxlength="128"
               :disabled="submitting"
               required
             >

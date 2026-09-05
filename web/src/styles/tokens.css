@@ -313,7 +313,7 @@ input:disabled {
 .auth-story {
   display: flex;
   flex-direction: column;
-  min-height: 240px;
+  min-height: auto;
   padding: max(var(--space-xl), env(safe-area-inset-top)) max(var(--space-lg), env(safe-area-inset-right)) var(--space-xl) max(var(--space-lg), env(safe-area-inset-left));
   border-bottom: 1px solid var(--color-border);
 }
@@ -324,7 +324,7 @@ input:disabled {
 }
 
 .auth-thesis {
-  display: grid;
+  display: none;
   gap: var(--space-sm);
   max-width: 520px;
   margin-block: auto;
@@ -515,6 +515,8 @@ input:disabled {
     border-right: 1px solid var(--color-border);
     border-bottom: 0;
   }
+
+  .auth-thesis { display: grid; }
 
   .auth-workspace {
     place-items: center;

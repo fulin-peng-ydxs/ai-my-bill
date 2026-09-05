@@ -65,6 +65,7 @@ export const usePwaInstallStore = defineStore('pwa-install', {
         await prompt.prompt()
         const choice = await prompt.userChoice
         deferredPrompt = undefined
+        if (this.$state.status === 'installed') return
         this.status = choice.outcome === 'accepted' ? 'installing' : 'declined'
       } catch {
         deferredPrompt = undefined

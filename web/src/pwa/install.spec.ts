@@ -28,4 +28,25 @@ describe('PWA install state', () => {
     expect(prompt).toHaveBeenCalledOnce()
     expect(store.status).toBe('declined')
   })
+
+  it('does not overwrite an appinstalled event that wins the install race', async () => {
+    const store = usePwaInstallStore()
+    let acceptInstall: (choice: { outcome: 'accepted', platform: string }) => void = () => undefined
+    const event = {
+      preventDefault: vi.fn(),
+      prompt: vi.fn().mockResolvedValue(undefined),
+      userChoice: new Promise<{ outcome: 'accepted', platform: string }>((resolve) => {
+        acceptInstall = resolve
+      }),
+    } as unknown as BeforeInstallPromptEvent
+
+    store.capturePrompt(event)
+    const installing = store.install()
+    await Promise.resolve()
+    store.markInstalled()
+    acceptInstall({ outcome: 'accepted', platform: 'web' })
+    await installing
+
+    expect(store.status).toBe('installed')
+  })
 })

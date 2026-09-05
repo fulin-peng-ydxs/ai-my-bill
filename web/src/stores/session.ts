@@ -49,8 +49,11 @@ export const useSessionStore = defineStore('session', {
       }
     },
     async login(username: string, password: string): Promise<Session> {
-      if (this.status === 'unknown') {
-        await this.initialize()
+      if (this.status === 'unknown' || this.status === 'error') {
+        await this.initialize(this.status === 'error')
+      }
+      if (this.isAuthenticated && this.session) {
+        return this.session
       }
       const session = await apiRequest<Session>('/auth/login', {
         method: 'POST',
