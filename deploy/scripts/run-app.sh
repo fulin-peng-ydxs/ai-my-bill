@@ -11,8 +11,13 @@ while IFS= read -r environment_name; do
 done < <(compgen -e)
 
 password_file="${MY_BILL_APP_DB_PASSWORD_FILE:-/run/secrets/app_db_password}"
+auth_pepper_file="${MY_BILL_AUTH_RATE_LIMIT_PEPPER_FILE:-/run/secrets/auth_rate_limit_pepper}"
 if [[ ! -r "${password_file}" ]]; then
   echo "应用数据库密码 secret 不可读。" >&2
+  exit 1
+fi
+if [[ ! -r "${auth_pepper_file}" ]]; then
+  echo "认证限流 pepper secret 不可读。" >&2
   exit 1
 fi
 if [[ -z "${MY_BILL_APP_DB_URL:-}" || -z "${MY_BILL_APP_DB_USERNAME:-}" ]]; then
@@ -23,6 +28,11 @@ fi
 app_password="$(<"${password_file}")"
 if [[ -z "${app_password}" ]]; then
   echo "应用数据库密码 secret 不能为空。" >&2
+  exit 1
+fi
+auth_pepper="$(<"${auth_pepper_file}")"
+if [[ ${#auth_pepper} -lt 32 ]]; then
+  echo "认证限流 pepper secret 至少需要 32 个字符。" >&2
   exit 1
 fi
 export SPRING_DATASOURCE_URL="${MY_BILL_APP_DB_URL}"

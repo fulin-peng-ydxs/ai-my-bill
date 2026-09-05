@@ -29,8 +29,9 @@ class DeploymentBoundaryTest {
         assertThat(db).contains("postgres_admin_password").doesNotContain("migration_db_password", "app_db_password");
         assertThat(provision).contains("restart: \"no\"", "postgres_admin_password", "migration_db_password", "app_db_password");
         assertThat(migrate).contains("restart: \"no\"", "migration_db_password")
-                .doesNotContain("app_db_password", "postgres_admin_password");
-        assertThat(app).contains("app_db_password").doesNotContain("migration_db_password", "postgres_admin_password");
+                .doesNotContain("app_db_password", "postgres_admin_password", "auth_rate_limit_pepper");
+        assertThat(app).contains("app_db_password", "auth_rate_limit_pepper")
+                .doesNotContain("migration_db_password", "postgres_admin_password");
     }
 
     @Test
@@ -41,7 +42,8 @@ class DeploymentBoundaryTest {
         assertThat(migrateStage).contains("server/src/main/resources/db/migration", "USER 10001:10001")
                 .doesNotContain("my-bill-server.jar", "run-app.sh", "spring-boot");
         assertThat(read("server/src/main/resources/application-prod.yml"))
-                .contains("flyway:", "enabled: false", "validation-enabled: true", "expected-version: \"007\"");
+                .contains("flyway:", "enabled: false", "validation-enabled: true", "expected-version: \"007\"",
+                        "secure-cookie: true", "rate-limit-pepper-file: ${MY_BILL_AUTH_RATE_LIMIT_PEPPER_FILE}");
         assertThat(read("deploy/scripts/run-app.sh"))
                 .contains("禁止出现 MY_BILL_MIGRATION_DB_*", "MY_BILL_APP_DB_PASSWORD_FILE")
                 .doesNotContain("migration_db_password");
@@ -51,14 +53,25 @@ class DeploymentBoundaryTest {
     void entrypointsRejectEmptySecretsAndAnyMigrationEnvironmentInTheApplication() throws Exception {
         Path emptySecret = Files.createTempFile("my-bill-empty-secret", ".txt");
         Path appSecret = Files.createTempFile("my-bill-app-secret", ".txt");
+        Path authPepper = Files.createTempFile("my-bill-auth-pepper", ".txt");
         try {
             Files.writeString(appSecret, "test-only-password");
+            Files.writeString(authPepper, "test-only-auth-rate-limit-pepper-32");
             ScriptResult emptyApp = runScript("deploy/scripts/run-app.sh", Map.of(
                     "MY_BILL_APP_DB_URL", "jdbc:postgresql://invalid/my_bill",
                     "MY_BILL_APP_DB_USERNAME", "my_bill_app",
-                    "MY_BILL_APP_DB_PASSWORD_FILE", emptySecret.toString()));
+                    "MY_BILL_APP_DB_PASSWORD_FILE", emptySecret.toString(),
+                    "MY_BILL_AUTH_RATE_LIMIT_PEPPER_FILE", authPepper.toString()));
             assertThat(emptyApp.exitCode()).isNotZero();
             assertThat(emptyApp.output()).contains("应用数据库密码 secret 不能为空");
+
+            ScriptResult emptyPepper = runScript("deploy/scripts/run-app.sh", Map.of(
+                    "MY_BILL_APP_DB_URL", "jdbc:postgresql://invalid/my_bill",
+                    "MY_BILL_APP_DB_USERNAME", "my_bill_app",
+                    "MY_BILL_APP_DB_PASSWORD_FILE", appSecret.toString(),
+                    "MY_BILL_AUTH_RATE_LIMIT_PEPPER_FILE", emptySecret.toString()));
+            assertThat(emptyPepper.exitCode()).isNotZero();
+            assertThat(emptyPepper.output()).contains("pepper secret 至少需要 32 个字符");
 
             ScriptResult emptyMigration = runScript("deploy/scripts/run-flyway.sh", Map.of(
                     "MY_BILL_MIGRATION_DB_URL", "jdbc:postgresql://invalid/my_bill",
@@ -71,12 +84,14 @@ class DeploymentBoundaryTest {
                     "MY_BILL_APP_DB_URL", "jdbc:postgresql://invalid/my_bill",
                     "MY_BILL_APP_DB_USERNAME", "my_bill_app",
                     "MY_BILL_APP_DB_PASSWORD_FILE", appSecret.toString(),
+                    "MY_BILL_AUTH_RATE_LIMIT_PEPPER_FILE", authPepper.toString(),
                     "MY_BILL_MIGRATION_DB_UNEXPECTED", "must-be-rejected"));
             assertThat(leakedMigrationVariable.exitCode()).isNotZero();
             assertThat(leakedMigrationVariable.output()).contains("禁止出现 MY_BILL_MIGRATION_DB_*");
         } finally {
             Files.deleteIfExists(emptySecret);
             Files.deleteIfExists(appSecret);
+            Files.deleteIfExists(authPepper);
         }
     }
 

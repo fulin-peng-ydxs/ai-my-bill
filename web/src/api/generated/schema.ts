@@ -21,6 +21,91 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/auth/login": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 使用用户名和密码创建安全会话 */
+        post: operations["login"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/session": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 获取当前服务端会话身份 */
+        get: operations["getSession"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/logout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 撤销当前会话并清除 Cookie */
+        post: operations["logout"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/first-password": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 临时密码会话设置首次正式密码 */
+        post: operations["setFirstPassword"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/password": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 校验当前密码后修改正式密码 */
+        post: operations["changePassword"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -38,6 +123,30 @@ export interface components {
             traceId: string;
             retryable: boolean;
         };
+        LoginRequest: {
+            username: components["schemas"]["Username"];
+            password: string;
+        };
+        FirstPasswordRequest: {
+            /** @description 服务端按 Unicode code point 校验 15-64 个字符并执行离线弱密码拒绝。 */
+            newPassword: string;
+        };
+        PasswordChangeRequest: {
+            currentPassword: string;
+            /** @description 服务端按 Unicode code point 校验 15-64 个字符并执行离线弱密码拒绝。 */
+            newPassword: string;
+        };
+        SessionResponse: {
+            /**
+             * Format: uuid
+             * @description 当前账号稳定标识，用于客户端内存状态及后续草稿命名空间；不是租户标识。
+             */
+            accountId: string;
+            username: components["schemas"]["Username"];
+            /** @enum {string} */
+            role: "ADMIN" | "USER";
+            passwordChangeRequired: boolean;
+        };
         /** @description 仅允许可见 ASCII 字符；租户间也保持全局唯一。 */
         Username: string;
         /** @description 去除首尾空白后最多 500 个 Unicode code point。 */
@@ -50,7 +159,62 @@ export interface components {
          */
         BusinessDateTime: string;
     };
-    responses: never;
+    responses: {
+        /** @description 输入校验失败 */
+        ValidationError: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["ApiError"];
+            };
+        };
+        /** @description 凭据错误或会话无效 */
+        AuthenticationError: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["ApiError"];
+            };
+        };
+        /** @description 账号状态、角色或 CSRF 校验不允许本次操作 */
+        AuthorizationError: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["ApiError"];
+            };
+        };
+        /** @description 登录尝试过于频繁 */
+        RateLimitError: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["ApiError"];
+            };
+        };
+        /** @description 凭据版本或密码状态冲突 */
+        ConflictError: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["ApiError"];
+            };
+        };
+        /** @description 认证存储不可用 */
+        ServiceUnavailableError: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["ApiError"];
+            };
+        };
+    };
     parameters: never;
     requestBodies: never;
     headers: never;
@@ -85,6 +249,137 @@ export interface operations {
                     "application/vnd.spring-boot.actuator.v3+json": components["schemas"]["HealthResponse"];
                 };
             };
+        };
+    };
+    login: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LoginRequest"];
+            };
+        };
+        responses: {
+            /** @description 登录成功；会话令牌只通过 HttpOnly Cookie 返回 */
+            200: {
+                headers: {
+                    "Set-Cookie"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SessionResponse"];
+                };
+            };
+            400: components["responses"]["ValidationError"];
+            401: components["responses"]["AuthenticationError"];
+            403: components["responses"]["AuthorizationError"];
+            429: components["responses"]["RateLimitError"];
+            503: components["responses"]["ServiceUnavailableError"];
+        };
+    };
+    getSession: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 当前会话有效 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SessionResponse"];
+                };
+            };
+            401: components["responses"]["AuthenticationError"];
+            503: components["responses"]["ServiceUnavailableError"];
+        };
+    };
+    logout: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 会话已撤销 */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["AuthenticationError"];
+            403: components["responses"]["AuthorizationError"];
+            503: components["responses"]["ServiceUnavailableError"];
+        };
+    };
+    setFirstPassword: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FirstPasswordRequest"];
+            };
+        };
+        responses: {
+            /** @description 密码已更新，旧会话已撤销并签发新会话 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SessionResponse"];
+                };
+            };
+            400: components["responses"]["ValidationError"];
+            401: components["responses"]["AuthenticationError"];
+            403: components["responses"]["AuthorizationError"];
+            409: components["responses"]["ConflictError"];
+            503: components["responses"]["ServiceUnavailableError"];
+        };
+    };
+    changePassword: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PasswordChangeRequest"];
+            };
+        };
+        responses: {
+            /** @description 密码已更新，全部旧会话已撤销并签发新会话 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SessionResponse"];
+                };
+            };
+            400: components["responses"]["ValidationError"];
+            401: components["responses"]["AuthenticationError"];
+            403: components["responses"]["AuthorizationError"];
+            409: components["responses"]["ConflictError"];
+            503: components["responses"]["ServiceUnavailableError"];
         };
     };
 }

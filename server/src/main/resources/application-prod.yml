@@ -10,3 +10,7 @@ my-bill:
   schema:
     validation-enabled: true
     expected-version: "007"
+  auth:
+    secure-cookie: true
+    rate-limit-pepper: ""
+    rate-limit-pepper-file: ${MY_BILL_AUTH_RATE_LIMIT_PEPPER_FILE}

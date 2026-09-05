@@ -22,7 +22,7 @@ const isUserPage = computed(() => route.meta.role === 'user')
         v-else
         class="brand brand-static"
       >我的账单</span>
-      <span class="phase-badge">T1 工程基线</span>
+      <span class="phase-badge">T3 认证基线</span>
     </header>
     <main class="app-content">
       <RouterView />

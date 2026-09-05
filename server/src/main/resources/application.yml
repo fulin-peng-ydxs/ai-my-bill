@@ -44,3 +44,12 @@ my-bill:
   schema:
     validation-enabled: false
     expected-version: "007"
+  auth:
+    session-cookie-name: MY_BILL_SESSION
+    session-duration: PT12H
+    secure-cookie: false
+    bcrypt-strength: 12
+    rate-limit-window: PT15M
+    max-login-failures: 5
+    login-lock-duration: PT15M
+    rate-limit-pepper: ${MY_BILL_AUTH_RATE_LIMIT_PEPPER:my-bill-local-rate-limit-pepper}

@@ -70,6 +70,18 @@ if [[ "${role_flags}" != "my_bill_app:true:false:false:false:false:false,my_bill
 fi
 
 cd "${PROJECT_ROOT}"
+# 先在真实 Spring Security + PostgreSQL 上验证 T3 认证闭环；测试库属于本次一次性集群。
+./mvnw -B -pl server \
+  -Dtest=AuthHttpIntegrationTest \
+  -Dmybill.test.jdbc-url="jdbc:postgresql://127.0.0.1:${TEST_PORT}/${TEST_DATABASE}" \
+  test
+
+# 认证集成测试已完成后重建隔离 schema，让 T2 空库迁移测试仍从真正的零版本开始。
+psql -h 127.0.0.1 -p "${TEST_PORT}" -U "${TEST_ADMIN}" -d "${TEST_DATABASE}" -v ON_ERROR_STOP=1 \
+  -c "DROP SCHEMA public CASCADE" \
+  -c "CREATE SCHEMA public AUTHORIZATION my_bill_migration" \
+  -c "REVOKE CREATE ON SCHEMA public FROM PUBLIC" >/dev/null
+
 ./mvnw -B -pl server \
   -Dtest=PostgresSchemaIntegrationTest \
   -Dmybill.test.jdbc-url="jdbc:postgresql://127.0.0.1:${TEST_PORT}/${TEST_DATABASE}" \

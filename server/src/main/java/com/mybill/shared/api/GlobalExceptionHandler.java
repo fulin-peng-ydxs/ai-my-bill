@@ -4,6 +4,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
+import org.springframework.dao.DataAccessException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -23,6 +24,18 @@ import java.util.UUID;
 public class GlobalExceptionHandler {
 
     private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
+
+    @ExceptionHandler(ApiException.class)
+    ResponseEntity<ApiError> handleApiException(ApiException exception) {
+        ApiError error = new ApiError(
+                exception.code(),
+                exception.getMessage(),
+                Map.of(),
+                traceId(),
+                exception.retryable()
+        );
+        return ResponseEntity.status(exception.status()).body(error);
+    }
 
     @ExceptionHandler(NoResourceFoundException.class)
     ResponseEntity<ApiError> handleNotFound(NoResourceFoundException exception) {
@@ -51,6 +64,21 @@ public class GlobalExceptionHandler {
                 false
         );
         return ResponseEntity.badRequest().body(error);
+    }
+
+    @ExceptionHandler(DataAccessException.class)
+    ResponseEntity<ApiError> handleDatabaseUnavailable(DataAccessException exception, HttpServletRequest request) {
+        String traceId = traceId();
+        log.error("Database unavailable traceId={} method={} path={}",
+                traceId, request.getMethod(), request.getRequestURI(), exception);
+        ApiError error = new ApiError(
+                "AUTH_STORAGE_UNAVAILABLE",
+                "认证服务暂时不可用，请稍后重试。",
+                Map.of(),
+                traceId,
+                true
+        );
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(error);
     }
 
     @ExceptionHandler(Exception.class)

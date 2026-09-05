@@ -75,9 +75,11 @@ services:
       MY_BILL_APP_DB_URL: ${MY_BILL_APP_DB_URL:-jdbc:postgresql://db:5432/my_bill}
       MY_BILL_APP_DB_USERNAME: ${MY_BILL_APP_DB_USERNAME:-my_bill_app}
       MY_BILL_APP_DB_PASSWORD_FILE: /run/secrets/app_db_password
+      MY_BILL_AUTH_RATE_LIMIT_PEPPER_FILE: /run/secrets/auth_rate_limit_pepper
       MY_BILL_SERVER_PORT: ${MY_BILL_SERVER_PORT:-8080}
     secrets:
       - app_db_password
+      - auth_rate_limit_pepper
     networks:
       - database
       - application
@@ -102,3 +104,5 @@ secrets:
     file: ${MY_BILL_MIGRATION_DB_PASSWORD_HOST_FILE:?set migration password file}
   app_db_password:
     file: ${MY_BILL_APP_DB_PASSWORD_HOST_FILE:?set app password file}
+  auth_rate_limit_pepper:
+    file: ${MY_BILL_AUTH_RATE_LIMIT_PEPPER_HOST_FILE:?set auth rate limit pepper file}

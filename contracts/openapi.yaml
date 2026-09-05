@@ -2,9 +2,11 @@ openapi: 3.1.0
 info:
   title: 我的账单 API
   version: 0.1.0
-  description: 同源 /api/v1 接口契约；T1 只开放最小健康检查。
+  description: 同源 /api/v1 接口契约；T3 已开放认证、会话与最小健康检查。
 servers:
   - url: /api/v1
+security:
+  - sessionCookie: []
 paths:
   /health:
     get:
@@ -25,7 +27,163 @@ paths:
             application/vnd.spring-boot.actuator.v3+json:
               schema:
                 $ref: "#/components/schemas/HealthResponse"
+  /auth/login:
+    post:
+      operationId: login
+      summary: 使用用户名和密码创建安全会话
+      tags: [auth]
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+      responses:
+        "200":
+          description: 登录成功；会话令牌只通过 HttpOnly Cookie 返回
+          headers:
+            Set-Cookie:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionResponse"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/AuthenticationError"
+        "403":
+          $ref: "#/components/responses/AuthorizationError"
+        "429":
+          $ref: "#/components/responses/RateLimitError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailableError"
+  /auth/session:
+    get:
+      operationId: getSession
+      summary: 获取当前服务端会话身份
+      tags: [auth]
+      responses:
+        "200":
+          description: 当前会话有效
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionResponse"
+        "401":
+          $ref: "#/components/responses/AuthenticationError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailableError"
+  /auth/logout:
+    post:
+      operationId: logout
+      summary: 撤销当前会话并清除 Cookie
+      tags: [auth]
+      responses:
+        "204":
+          description: 会话已撤销
+        "401":
+          $ref: "#/components/responses/AuthenticationError"
+        "403":
+          $ref: "#/components/responses/AuthorizationError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailableError"
+  /auth/first-password:
+    post:
+      operationId: setFirstPassword
+      summary: 临时密码会话设置首次正式密码
+      tags: [auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FirstPasswordRequest"
+      responses:
+        "200":
+          description: 密码已更新，旧会话已撤销并签发新会话
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionResponse"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/AuthenticationError"
+        "403":
+          $ref: "#/components/responses/AuthorizationError"
+        "409":
+          $ref: "#/components/responses/ConflictError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailableError"
+  /auth/password:
+    post:
+      operationId: changePassword
+      summary: 校验当前密码后修改正式密码
+      tags: [auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PasswordChangeRequest"
+      responses:
+        "200":
+          description: 密码已更新，全部旧会话已撤销并签发新会话
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionResponse"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/AuthenticationError"
+        "403":
+          $ref: "#/components/responses/AuthorizationError"
+        "409":
+          $ref: "#/components/responses/ConflictError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailableError"
 components:
+  responses:
+    ValidationError:
+      description: 输入校验失败
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiError"
+    AuthenticationError:
+      description: 凭据错误或会话无效
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiError"
+    AuthorizationError:
+      description: 账号状态、角色或 CSRF 校验不允许本次操作
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiError"
+    RateLimitError:
+      description: 登录尝试过于频繁
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiError"
+    ConflictError:
+      description: 凭据版本或密码状态冲突
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiError"
+    ServiceUnavailableError:
+      description: 认证存储不可用
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiError"
   schemas:
     HealthResponse:
       type: object
@@ -59,6 +217,61 @@ components:
           minLength: 1
           maxLength: 64
         retryable:
+          type: boolean
+    LoginRequest:
+      type: object
+      additionalProperties: false
+      required: [username, password]
+      properties:
+        username:
+          $ref: "#/components/schemas/Username"
+        password:
+          type: string
+          minLength: 1
+          maxLength: 128
+          writeOnly: true
+    FirstPasswordRequest:
+      type: object
+      additionalProperties: false
+      required: [newPassword]
+      properties:
+        newPassword:
+          type: string
+          minLength: 15
+          maxLength: 64
+          writeOnly: true
+          description: 服务端按 Unicode code point 校验 15-64 个字符并执行离线弱密码拒绝。
+    PasswordChangeRequest:
+      type: object
+      additionalProperties: false
+      required: [currentPassword, newPassword]
+      properties:
+        currentPassword:
+          type: string
+          minLength: 1
+          maxLength: 128
+          writeOnly: true
+        newPassword:
+          type: string
+          minLength: 15
+          maxLength: 64
+          writeOnly: true
+          description: 服务端按 Unicode code point 校验 15-64 个字符并执行离线弱密码拒绝。
+    SessionResponse:
+      type: object
+      additionalProperties: false
+      required: [accountId, username, role, passwordChangeRequired]
+      properties:
+        accountId:
+          type: string
+          format: uuid
+          description: 当前账号稳定标识，用于客户端内存状态及后续草稿命名空间；不是租户标识。
+        username:
+          $ref: "#/components/schemas/Username"
+        role:
+          type: string
+          enum: [ADMIN, USER]
+        passwordChangeRequired:
           type: boolean
     Username:
       type: string

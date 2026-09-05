@@ -4,14 +4,11 @@ import com.mybill.persistence.config.SchemaVersionGuard;
 import com.mybill.persistence.config.SchemaVersionProperties;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.BeforeAll;
-import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.MethodOrderer;
 import org.junit.jupiter.api.Order;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestMethodOrder;
-import org.junit.jupiter.api.Assumptions;
-import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.DockerClientFactory;
+import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
 
@@ -35,9 +32,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * T2 数据库真实契约：空库/重复迁移、seed 不覆盖、复合归属、RLS 以及调整并发上限。
  */
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
+@EnabledIfSystemProperty(named = "mybill.test.jdbc-url", matches = ".+")
 class PostgresSchemaIntegrationTest {
 
-    private static PostgreSQLContainer<?> postgres;
     private static String jdbcUrl;
     private static String adminUsername;
     private static String adminPassword;
@@ -45,23 +42,9 @@ class PostgresSchemaIntegrationTest {
 
     @BeforeAll
     static void migrateEmptyDatabase() throws SQLException {
-        String externalUrl = System.getProperty("mybill.test.jdbc-url");
-        if (externalUrl == null || externalUrl.isBlank()) {
-            Assumptions.assumeTrue(DockerClientFactory.instance().isDockerAvailable(),
-                    "Docker 不可用且未提供 mybill.test.jdbc-url，跳过 Testcontainers 数据库测试");
-            postgres = new PostgreSQLContainer<>("postgres:16.14-alpine")
-                    .withDatabaseName("my_bill_test")
-                    .withUsername("migration_test")
-                    .withPassword("migration_test");
-            postgres.start();
-            jdbcUrl = postgres.getJdbcUrl();
-            adminUsername = postgres.getUsername();
-            adminPassword = postgres.getPassword();
-        } else {
-            jdbcUrl = externalUrl;
-            adminUsername = System.getProperty("mybill.test.admin-user");
-            adminPassword = System.getProperty("mybill.test.admin-password", "");
-        }
+        jdbcUrl = System.getProperty("mybill.test.jdbc-url");
+        adminUsername = System.getProperty("mybill.test.admin-user");
+        adminPassword = System.getProperty("mybill.test.admin-password", "");
         executeAdmin("DO $$ BEGIN "
                 + "IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='my_bill_app') THEN "
                 + "CREATE ROLE my_bill_app LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS; END IF; "
@@ -72,13 +55,6 @@ class PostgresSchemaIntegrationTest {
         executeAdmin("GRANT USAGE, CREATE ON SCHEMA public TO my_bill_migration");
         flyway = Flyway.configure().dataSource(jdbcUrl, "my_bill_migration", "migration_test").load();
         assertThat(flyway.migrate().migrationsExecuted).isEqualTo(7);
-    }
-
-    @AfterAll
-    static void stopContainer() {
-        if (postgres != null) {
-            postgres.stop();
-        }
     }
 
     @Test
