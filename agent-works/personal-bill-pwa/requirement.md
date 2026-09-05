@@ -20,7 +20,7 @@
 
 ### 2.1 项目事实
 
-- 当前仓库已完成 T1 工程基线，并在 T2 落地数据库 migration、JPA 结构映射、RLS/角色隔离、seed、人工回滚脚本和数据库集成测试；认证、业务接口与正式业务页面尚未实现。
+- 当前仓库已完成 T1 工程基线、T2 数据库 migration/JPA 映射/RLS 与角色隔离/seed/回滚及数据库集成测试，以及 T3 认证、Cookie 会话、CSRF、登录限流、角色路由和租户事务上下文基线；T4 登录/PWA 正式页面与后续业务接口尚未实现。
 - 上游闭环事实源为 [requirement-closure.md](requirement-closure.md)。
 - 前端设计事实源为 [DESIGN.md](../../DESIGN.md)。
 - 六个页面原型位于 [prototypes](prototypes/)，用于验证结构、交互和状态，不替代本文业务规则。

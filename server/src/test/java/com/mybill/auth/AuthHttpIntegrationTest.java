@@ -77,6 +77,9 @@ class AuthHttpIntegrationTest {
     @Autowired
     private SessionTokenService tokenService;
 
+    @Autowired
+    private RateLimitSubjectHasher rateLimitSubjectHasher;
+
     @DynamicPropertySource
     static void databaseProperties(DynamicPropertyRegistry registry) {
         String jdbcUrl = System.getProperty("mybill.test.jdbc-url");
@@ -249,6 +252,28 @@ class AuthHttpIntegrationTest {
         String persistedSubject = jdbc.sql("SELECT subject_digest FROM auth_rate_limit LIMIT 1")
                 .query(String.class).single();
         assertThat(persistedSubject).hasSize(64).doesNotContain("missing-user");
+
+        String previousWindowSubject = rateLimitSubjectHasher.digest("window-boundary-user");
+        jdbc.sql("""
+                        INSERT INTO auth_rate_limit(
+                            id, entry_point, subject_digest, window_started_at,
+                            failure_count, locked_until, updated_at
+                        ) VALUES (
+                            :id, 'LOGIN', :subjectDigest, CURRENT_TIMESTAMP - INTERVAL '15 minutes',
+                            3, CURRENT_TIMESTAMP + INTERVAL '10 minutes', CURRENT_TIMESTAMP
+                        )
+                        """)
+                .param("id", UUID.randomUUID())
+                .param("subjectDigest", previousWindowSubject)
+                .update();
+        mockMvc.perform(post("/api/v1/auth/login")
+                        .with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of(
+                                "username", "window-boundary-user",
+                                "password", "wrong-password"))))
+                .andExpect(status().isTooManyRequests())
+                .andExpect(jsonPath("$.code").value("LOGIN_RATE_LIMITED"));
     }
 
     @Test

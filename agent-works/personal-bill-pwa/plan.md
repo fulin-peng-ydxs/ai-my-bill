@@ -293,7 +293,7 @@ Flyway 高权限凭据边界：
 
 | 需求/风险 | 保护对象与信任边界 | 技术方案与失败边界 | 涉及模块 | 对应任务 | 验证方式 | 剩余风险 |
 | --- | --- | --- | --- | --- | --- | --- |
-| R2 凭据与会话 | 浏览器—服务端—数据库 | 成熟密码哈希、离线弱/泄露密码表、随机不透明会话、Cookie 安全属性、CSRF、防枚举限流；失败默认拒绝 | auth/security | T3、T27 | 正反向认证、Cookie/CSRF、限流、会话撤销 | 管理员人工交付临时密码仍需运营规范 |
+| R2 凭据与会话 | 浏览器—服务端—数据库 | 成熟密码哈希、离线弱/泄露密码表、随机不透明会话、Cookie 安全属性、CSRF、防枚举限流；失败默认拒绝 | auth/security | T3、T6、T27 | 正反向认证、Cookie/CSRF、限流、会话撤销 | 当前离线词表为最小基线，正式候选前须在 T27 换用有版本与许可记录的审核词表；限流历史行的小批次清理随 T6 任务框架落地，来源级总量防护与代理信任边界在 T27 收口；管理员人工交付临时密码仍需运营规范 |
 | R3 跨租户 | 普通用户、管理员、repository、连接池与 PostgreSQL | 身份上下文、每条 SQL 显式租户条件和复合归属约束；业务表 `ENABLE/FORCE RLS`；运行角色无 `BYPASSRLS`；事务级 `set_config`，缺失/非法上下文默认拒绝 | 全后端模块、Flyway、DataSource/事务拦截器 | T2、T3、T27 | 双租户 CRUD/筛选/报表/导出/模板/调整；直接 SQL 绕过尝试；连接复用、事务回滚和后台任务负例 | 迁移/备份高权角色仍需严格隔离、轮换和主机审计 |
 | R1、R7、R45 PWA 与本地草稿 | 浏览器存储、Service Worker、共享设备和账号切换 | SW 只缓存版本化静态资源和无数据离线页，`/api/**`、下载及个性化导航 `NetworkOnly` 且服务端 `Cache-Control: no-store`；草稿仅保存未提交表单最小字段、版本、账号命名空间和 7 天 TTL，认证身份匹配后才读取；退出清内存，注销清该账号全部本地数据 | web PWA、draft store、auth/session | T4、T10、T19、T27 | Cache Storage 清单/响应头、离线、同账号恢复、跨账号/过期/注销负例 | 用户设备被完全控制时本地未过期草稿仍可能暴露，需 CSP/XSS 防线和产品提示 |
 | R4、R53 管理员窥探 | 管理 DTO 与账目域 | 管理模块不依赖账目内容 repository；DTO 白名单；接口和日志断言无账目字段 | admin | T7、T24、T27 | 序列化快照、SQL/依赖审查、普通用户 403 | 数据库超级用户仍属运维高权限，需最小授权 |
@@ -428,7 +428,7 @@ Flyway 高权限凭据边界：
 - 影响范围与边界异常：影响所有受保护接口与页面；不区分“账号不存在/密码错误”，停用和改密使旧会话失效，客户端无租户切换能力。
 - 验证：认证集成测试、Cookie/CSRF、限流、会话撤销、请求上下文缺失/认证存储故障、全部 Controller 路由清单、对象 ID 猜测、跨租户 repository 契约，以及同一连接先后服务 A/B 租户和事务回滚后的上下文清理测试。
 - 完成标准：匿名、普通用户、管理员三类访问矩阵通过。
-- 实际落地情况：已实现 Spring Security 默认拒绝链和 `/api/v1/auth/login|session|logout|first-password|password`；密码使用 BCrypt，正式密码按 15-64 Unicode code point 及离线弱/泄露密码表校验。会话使用 256 bit 随机不透明令牌，数据库仅保存 SHA-256 摘要；Cookie 统一 `HttpOnly`/`SameSite=Lax`，生产强制 `Secure`，变更请求校验 Cookie/Header CSRF。登录失败以服务端 pepper HMAC 主体摘要写入 PostgreSQL 限流，生产 pepper 仅由 app 专用 secret 文件读取。停用账号/租户、临时密码过期、凭据版本变化和会话过期均 fail-closed，改密撤销全部旧会话并签发新会话。`CurrentPrincipal` 是服务端唯一身份来源，`TenantTransactionExecutor` 在同一事务首条业务 SQL 前执行事务级 `set_config`；真实 PostgreSQL 测试已验证 A/B 租户切换、缺失上下文、管理员拒绝和回滚清理。前端新增共享 API 客户端、唯一 Pinia 会话 store 和角色/首次改密路由守卫，没有提前实现 T4 登录表单、PWA、主题或导航。本阶段未新增 SQL/migration、seed、菜单或权限表；仅同步 OpenAPI、认证配置和 app 专用 pepper secret 声明。验证已通过前端 11 项单测、Maven verify、真实 PostgreSQL 9 项认证与 6 项 schema 集成测试，以及真实本地联调的浏览器截图/交互：未登录访问 `/entry` 与 `/admin` 均保留目标路径并转到 `/login`，页面无 console warning/error。
+- 实际落地情况：已实现 Spring Security 默认拒绝链和 `/api/v1/auth/login|session|logout|first-password|password`；密码使用 BCrypt，正式密码按 15-64 Unicode code point 及离线弱/泄露密码表校验。会话使用 256 bit 随机不透明令牌，数据库仅保存 SHA-256 摘要；Cookie 统一 `HttpOnly`/`SameSite=Lax`，生产强制 `Secure`，变更请求校验 Cookie/Header CSRF。登录失败以服务端 pepper HMAC 主体摘要写入 PostgreSQL 限流，生产 pepper 仅由 app 专用 secret 文件读取；T3 自审补齐跨固定窗口的未到期锁校验，并以真实 PostgreSQL 用例防止窗口切换绕过。停用账号/租户、临时密码过期、凭据版本变化和会话过期均 fail-closed，改密撤销全部旧会话并签发新会话。`CurrentPrincipal` 是服务端唯一身份来源，`TenantTransactionExecutor` 在同一事务首条业务 SQL 前执行事务级 `set_config`；真实 PostgreSQL 测试已验证 A/B 租户切换、缺失上下文、管理员拒绝和回滚清理。前端新增共享 API 客户端、唯一 Pinia 会话 store 和角色/首次改密路由守卫，没有提前实现 T4 登录表单、PWA、主题或导航。本阶段未新增 SQL/migration、seed、菜单或权限表；仅同步 OpenAPI、认证配置和 app 专用 pepper secret 声明。验证已通过前端 11 项单测、Maven verify、真实 PostgreSQL 9 项认证与 6 项 schema 集成测试，以及真实本地联调的浏览器截图/交互：在 360×800 和 390×844 下，未登录访问 `/entry` 与 `/admin` 均保留目标路径并转到 `/login`，页面无横向溢出和 console warning/error。
 
 ### T4：PWA、主题与应用外壳
 

@@ -33,6 +33,10 @@ public class LoginRateLimiter {
     public void assertAllowed(String username) {
         Instant now = clock.instant();
         String subject = subjectHasher.digest(username);
+        // 锁定时长可能跨越固定窗口边界，必须先检查该主体所有尚未到期的锁。
+        if (repository.hasActiveLoginLock(subject, now)) {
+            throw rateLimited();
+        }
         Instant windowStart = windowStart(now);
         repository.ensureRateLimitRow(subject, windowStart, now);
         RateLimitState state = repository.lockRateLimit(subject, windowStart);

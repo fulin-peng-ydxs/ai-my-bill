@@ -163,6 +163,21 @@ public class AuthRepository {
                 .update();
     }
 
+    boolean hasActiveLoginLock(String subjectDigest, Instant now) {
+        return jdbc.sql("""
+                        SELECT EXISTS (
+                            SELECT 1
+                            FROM auth_rate_limit
+                            WHERE entry_point = 'LOGIN' AND subject_digest = :subjectDigest
+                              AND locked_until > :now
+                        )
+                        """)
+                .param("subjectDigest", subjectDigest)
+                .param("now", sqlTimestamp(now))
+                .query(Boolean.class)
+                .single();
+    }
+
     RateLimitState lockRateLimit(String subjectDigest, Instant windowStart) {
         return jdbc.sql("""
                         SELECT failure_count, locked_until
