@@ -1,0 +1,16 @@
+{
+  "name": "my-bill",
+  "version": "0.1.0",
+  "private": true,
+  "engines": {
+    "node": ">=24.11.1",
+    "npm": ">=11.6.2"
+  },
+  "packageManager": "npm@11.6.2",
+  "scripts": {
+    "bootstrap": "bash scripts/bootstrap.sh",
+    "dev": "bash scripts/dev.sh",
+    "check": "bash scripts/check.sh",
+    "contracts:generate": "bash scripts/run-frontend.sh contract:generate"
+  }
+}

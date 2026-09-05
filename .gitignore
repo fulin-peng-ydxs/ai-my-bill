@@ -31,6 +31,11 @@ frontend/.vite/
 frontend/*.tsbuildinfo
 frontend/test-results/
 frontend/playwright-report/
+web/node_modules/
+web/dist/
+web/.vite/
+web/*.tsbuildinfo
+web/coverage/
 # 根目录孤立 node_modules（在错误 cwd 下跑前端命令产生的缓存残留，正常前端依赖在 frontend/ 下）
 /node_modules/
 
@@ -47,5 +52,8 @@ config/secrets.yaml
 
 # 后端运行时日志与 PID（start.sh 产物）
 logs/
+.local/
+server/target/
+target/
 # AI 验证截图目录（任意含 screenshot(s) 的目录名，如 screenshots/、page-test-screenshots/）
 **/*screenshot*/

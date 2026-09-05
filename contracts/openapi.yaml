@@ -1,0 +1,85 @@
+openapi: 3.1.0
+info:
+  title: 我的账单 API
+  version: 0.1.0
+  description: 同源 /api/v1 接口契约；T1 只开放最小健康检查。
+servers:
+  - url: /api/v1
+paths:
+  /health:
+    get:
+      operationId: getHealth
+      summary: 获取应用与数据库健康状态
+      tags: [system]
+      security: []
+      responses:
+        "200":
+          description: 应用及其必要依赖可用
+          content:
+            application/vnd.spring-boot.actuator.v3+json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+        "503":
+          description: 应用或必要依赖不可用
+          content:
+            application/vnd.spring-boot.actuator.v3+json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+components:
+  schemas:
+    HealthResponse:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [UP, DOWN, OUT_OF_SERVICE, UNKNOWN]
+    ApiError:
+      type: object
+      additionalProperties: false
+      required: [code, message, fieldErrors, traceId, retryable]
+      properties:
+        code:
+          type: string
+          minLength: 1
+          maxLength: 64
+        message:
+          type: string
+          minLength: 1
+          maxLength: 500
+        fieldErrors:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              type: string
+              maxLength: 500
+        traceId:
+          type: string
+          minLength: 1
+          maxLength: 64
+        retryable:
+          type: boolean
+    Username:
+      type: string
+      minLength: 3
+      maxLength: 64
+      pattern: "^[!-~]+$"
+      description: 仅允许可见 ASCII 字符；租户间也保持全局唯一。
+    Note:
+      type: string
+      maxLength: 500
+      description: 去除首尾空白后最多 500 个 Unicode code point。
+    Money:
+      type: string
+      pattern: "^(0|[1-9][0-9]{0,8})(\\.[0-9]{1,2})?$"
+      description: 人民币十进制字符串，范围 0 至 999,999,999.99；需要正数的字段另加排除零值约束。
+    BusinessDateTime:
+      type: string
+      format: date-time
+      description: 服务端以收到请求时的当前时间为权威，业务日期按 Asia/Shanghai 生成。
+  securitySchemes:
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: MY_BILL_SESSION

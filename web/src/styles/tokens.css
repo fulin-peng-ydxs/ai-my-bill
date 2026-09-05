@@ -1,0 +1,165 @@
+:root {
+  color-scheme: light dark;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, "Segoe UI", "PingFang SC", "Microsoft YaHei UI", sans-serif;
+  --color-primary: #0066cc;
+  --color-background: #f5f5f7;
+  --color-surface: #ffffff;
+  --color-text: #1d1d1f;
+  --color-muted: #6e6e73;
+  --color-border: #e0e0e0;
+  --radius-control: 11px;
+  --radius-panel: 18px;
+  --space-sm: 8px;
+  --space-md: 12px;
+  --space-lg: 16px;
+  --space-xl: 24px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-primary: #2997ff;
+    --color-background: #000000;
+    --color-surface: #272729;
+    --color-text: #ffffff;
+    --color-muted: #cccccc;
+    --color-border: #333333;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  min-height: 100%;
+  margin: 0;
+}
+
+body {
+  color: var(--color-text);
+  background: var(--color-background);
+}
+
+button,
+a {
+  min-height: 44px;
+}
+
+a {
+  color: var(--color-primary);
+}
+
+.app-shell {
+  min-height: 100dvh;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+}
+
+.app-header,
+.app-navigation {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  padding: max(var(--space-md), env(safe-area-inset-top)) max(var(--space-lg), env(safe-area-inset-right)) var(--space-md) max(var(--space-lg), env(safe-area-inset-left));
+  background: color-mix(in srgb, var(--color-background) 80%, transparent);
+  border-color: var(--color-border);
+  backdrop-filter: saturate(180%) blur(20px);
+}
+
+.app-header {
+  justify-content: space-between;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.brand {
+  min-height: auto;
+  color: var(--color-text);
+  font-size: 18px;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.phase-badge {
+  color: var(--color-muted);
+  font-size: 12px;
+}
+
+.app-content {
+  min-width: 0;
+  padding: var(--space-xl) max(var(--space-lg), env(safe-area-inset-right)) var(--space-xl) max(var(--space-lg), env(safe-area-inset-left));
+}
+
+.app-navigation {
+  position: sticky;
+  bottom: 0;
+  justify-content: space-around;
+  padding-top: var(--space-sm);
+  padding-bottom: max(var(--space-sm), env(safe-area-inset-bottom));
+  border-top: 1px solid var(--color-border);
+}
+
+.app-navigation a {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 var(--space-sm);
+  text-decoration: none;
+}
+
+.app-navigation a.router-link-active {
+  font-weight: 600;
+}
+
+.placeholder-page {
+  width: min(100%, 720px);
+  margin: 0 auto;
+}
+
+.placeholder-page h1 {
+  margin: 0 0 var(--space-sm);
+  font-size: 28px;
+  line-height: 34px;
+}
+
+.placeholder-panel {
+  margin-top: var(--space-xl);
+  padding: var(--space-lg);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-panel);
+}
+
+.placeholder-panel p {
+  margin: 0;
+  color: var(--color-muted);
+  line-height: 1.6;
+}
+
+.placeholder-meta {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: var(--space-sm) var(--space-md);
+  margin: var(--space-lg) 0 0;
+}
+
+.placeholder-meta dt {
+  color: var(--color-muted);
+}
+
+.placeholder-meta dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 419px) {
+  .app-content {
+    padding-inline: max(var(--space-md), env(safe-area-inset-left));
+  }
+
+  .app-navigation {
+    gap: 0;
+    font-size: 14px;
+  }
+}

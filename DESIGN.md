@@ -102,14 +102,14 @@ components:
 
 # 我的账单 Design System
 
-> 本文是“我的账单”前端视觉、交互、响应式、组件复用和页面设计约束的长期事实源。当前项目尚无业务前端实现，因此本文记录的是用户已确认的目标设计契约；代码落地后，实际 token、组件和自动化测试应成为机器事实源，并与本文同步维护。
+> 本文是“我的账单”前端视觉、交互、响应式、组件复用和页面设计约束的长期事实源。当前正式工程已建立页面登记、路由、主题 token 与响应式空壳，业务页面和目标组件仍按任务阶段落地；实际代码和自动化测试是机器事实源，并与本文同步维护。
 
 事实源边界：
 
 - 业务与页面范围：[需求闭环](agent-works/personal-bill-pwa/requirement-closure.md)和后续正式需求文档。
 - 当前设计契约：本文件。
 - 原型：`agent-works/personal-bill-pwa/prototypes/`，只用于需求澄清，不能覆盖正式需求或本文件。
-- 后续代码事实源：全局 theme token、基础组件、页面路由和设计契约测试；前端技术基线已确认为 Vue 3 + Vite + TypeScript + Pinia + Vue Router，具体代码路径待正式工程落地后回填。
+- 代码事实源：主题 token 为 `web/src/styles/tokens.css`，页面登记为 `web/src/app/pageRegistry.ts`，路由为 `web/src/router/index.ts`，登记契约测试为 `web/src/app/pageRegistry.spec.ts`。前端技术基线为 Vue 3 + Vite + TypeScript + Pinia + Vue Router。
 - 本文件维护稳定规则、组件关系和页面索引；临时开发步骤、一次性迁移说明和历史流水不进入本文。
 
 ## 1. Visual Theme & Atmosphere
@@ -531,8 +531,8 @@ Key Characteristics：
 
 ## 10. Known Gaps
 
-- 前端技术基线已确认为 Vue 3 + Vite + TypeScript + Pinia + Vue Router，图表采用 ECharts；不引入覆盖本设计契约的整套通用 UI 框架，优先实现本文定义的项目语义组件。正式 SVG 图标库和各代码事实源路径在工程初始化时锁定并回填，不得据技术选型改变已确认视觉与交互契约。
-- 当前组件仍是原型而非正式业务前端；已提供原型视觉与响应式静态契约检查，正式实现后仍需将目标组件清单、浏览器多视口测试和代码事实源路径替换为真实工程能力。
+- 前端工程已锁定 Vue 3 + Vite + TypeScript + Pinia + Vue Router，图表采用 ECharts，SVG 图标采用 Lucide Vue Next；不引入覆盖本设计契约的整套通用 UI 框架，优先实现本文定义的项目语义组件，不得据技术选型改变已确认视觉与交互契约。
+- 正式工程当前只有共享响应式空壳和六页类型化登记，目标业务组件仍未实现；原型视觉与响应式静态契约继续有效，后续每个页面阶段必须以真实组件、浏览器多视口测试和对应代码路径逐步替换原型证明。
 - 尚无正式品牌名称、图标和启动图；第一期原型使用“我的账单”文字标识，不把临时图形固化为品牌资产。
 - 原型已承载 PWA 安装检测、真实浏览器安装事件、拒绝、分平台手动步骤和已安装状态；正式工程接入 Manifest 与 Service Worker 后，仍需在目标移动浏览器复验系统安装框和状态栏表现。
 - 管理后台是否需要独立桌面域名或路径属于技术与部署决策，不影响当前设计系统。
