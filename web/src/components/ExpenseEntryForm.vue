@@ -2,6 +2,7 @@
 import { computed, reactive, ref, watch } from 'vue'
 
 import { ApiClientError } from '../api/http'
+import type { DailyTemplateSelection } from '../api/dailyTemplates'
 import { createExpense, undoCreatedExpense, type ExpenseResponse, type ProductSuggestion } from '../api/expenses'
 import { listDictionaryCandidates } from '../api/dictionaries'
 import {
@@ -17,6 +18,7 @@ import { unicodeCodePointLength } from '../domain/text'
 import { useLedgerDraft } from '../composables/useLedgerDraft'
 import AppStateBlock from './AppStateBlock.vue'
 import AppToast from './AppToast.vue'
+import DailyTemplateFallbackNotice from './DailyTemplateFallbackNotice.vue'
 import DictionaryPicker from './DictionaryPicker.vue'
 import EntrySaveBar from './EntrySaveBar.vue'
 import FormField from './FormField.vue'
@@ -29,7 +31,10 @@ import ProductCombobox from './ProductCombobox.vue'
 const props = defineProps<{
   accountId?: string
   defaultFundingChannelId?: string | null
+  templateSelection?: DailyTemplateSelection
+  templateRevision?: number
 }>()
+const emit = defineEmits<{ 'templateConsumed': [] }>()
 
 interface ExpenseFormState {
   productId: string
@@ -85,6 +90,10 @@ const toastKind = ref<'success' | 'error'>('success')
 const paidOverridden = ref(false)
 const productCombobox = ref<{ reset: () => void }>()
 const idempotencyAttempt = createIdempotencyAttemptTracker()
+const appliedTemplateRevision = ref(props.templateRevision ?? 0)
+const templateUnavailableFields = ref<DailyTemplateSelection['unavailableFields']>(
+  props.templateSelection?.entryType === 'EXPENSE' ? props.templateSelection.unavailableFields : [],
+)
 
 const rootCategories = computed(() => optionItems.categories.filter((item) => !item.parentId))
 const secondaryCategories = computed(() => optionItems.categories
@@ -117,6 +126,33 @@ watch(() => draft.restored.value, (restored) => {
   const stored = draft.data.value
   Object.assign(form, emptyForm(), stored)
   paidOverridden.value = Boolean(stored.paidAmount)
+})
+
+watch([() => draft.restored.value, () => props.templateRevision], ([restored, revision]) => {
+  const selection = props.templateSelection
+  if (!restored || !revision || revision === appliedTemplateRevision.value || selection?.entryType !== 'EXPENSE') return
+  ensureOption('categories', selection.primaryCategoryId, selection.primaryCategoryName)
+  ensureOption('categories', selection.secondaryCategoryId, selection.secondaryCategoryName,
+    selection.primaryCategoryId ?? undefined)
+  ensureOption('units', selection.unitId, selection.unitName)
+  ensureOption('funding', selection.fundingChannelId, selection.fundingChannelName)
+  ensureOption('purchase', selection.purchaseChannelId, selection.purchaseChannelName)
+  ensureOption('locations', selection.locationLabelId, selection.locationLabelName)
+  Object.assign(form, emptyForm(), {
+    productId: selection.productId ?? '', productName: selection.productName ?? '',
+    primaryCategoryId: selection.primaryCategoryId ?? '', secondaryCategoryId: selection.secondaryCategoryId ?? '',
+    unitId: selection.unitId ?? '', unitPrice: selection.unitPrice ?? '', quantity: selection.quantity ?? '',
+    paidAmount: selection.paidAmount ?? '', fundingChannelId: selection.fundingChannelId ?? '',
+    purchaseChannelId: selection.purchaseChannelId ?? '', locationLabelId: selection.locationLabelId ?? '',
+    occurredAt: toShanghaiLocalDateTime(), note: '',
+  })
+  Object.keys(errors).forEach((key) => delete errors[key as FieldName])
+  paidOverridden.value = true
+  saved.value = undefined
+  templateUnavailableFields.value = selection.unavailableFields
+  appliedTemplateRevision.value = revision
+  idempotencyAttempt.reset()
+  persist()
 })
 
 watch(() => props.defaultFundingChannelId, (value) => {
@@ -258,6 +294,8 @@ async function submit(continueEntry: boolean): Promise<void> {
     productCombobox.value?.reset()
     if (continueEntry) form.quantity = ''
     paidOverridden.value = false
+    templateUnavailableFields.value = []
+    emit('templateConsumed')
     idempotencyAttempt.reset()
   } catch (error) {
     if (error instanceof ApiClientError && error.body?.fieldErrors) {
@@ -321,6 +359,7 @@ void loadOptions()
       title="草稿未保存到此设备"
       :message="draft.storageError.value"
     />
+    <DailyTemplateFallbackNotice :fields="templateUnavailableFields" />
 
     <form
       class="expense-form"

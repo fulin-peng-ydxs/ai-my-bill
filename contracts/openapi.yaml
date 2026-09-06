@@ -380,6 +380,79 @@ paths:
         "401": { $ref: "#/components/responses/AuthenticationError" }
         "403": { $ref: "#/components/responses/AuthorizationError" }
         "409": { $ref: "#/components/responses/ConflictError" }
+  /daily-templates:
+    get:
+      operationId: listDailyTemplates
+      summary: 按最近使用时间查询当前租户的日常模板
+      tags: [daily-templates]
+      parameters:
+        - name: type
+          in: query
+          required: true
+          schema: { $ref: "#/components/schemas/EntryType" }
+      responses:
+        "200":
+          description: 最多一百项当前类型模板
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DailyTemplateList" }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "401": { $ref: "#/components/responses/AuthenticationError" }
+        "403": { $ref: "#/components/responses/AuthorizationError" }
+  /ledger-entries/{ledgerId}/daily-template:
+    put:
+      operationId: upsertDailyTemplateFromLedger
+      summary: 从当前租户有效收支新增或更新日常模板
+      tags: [daily-templates]
+      parameters:
+        - name: ledgerId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: 按类型与规范化名称完成新增或更新
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DailyTemplateSummary" }
+        "401": { $ref: "#/components/responses/AuthenticationError" }
+        "403": { $ref: "#/components/responses/AuthorizationError" }
+        "404": { $ref: "#/components/responses/NotFoundError" }
+        "409": { $ref: "#/components/responses/ConflictError" }
+  /daily-templates/{templateId}/select:
+    post:
+      operationId: selectDailyTemplate
+      summary: 复核模板引用并更新最近使用时间
+      tags: [daily-templates]
+      parameters:
+        - name: templateId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: 仅返回表单可复用白名单；失效引用以空值和 unavailableFields 明示
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DailyTemplateSelection" }
+        "401": { $ref: "#/components/responses/AuthenticationError" }
+        "403": { $ref: "#/components/responses/AuthorizationError" }
+        "404": { $ref: "#/components/responses/NotFoundError" }
+  /daily-templates/{templateId}:
+    delete:
+      operationId: removeDailyTemplate
+      summary: 移除当前租户日常模板且不影响来源账目
+      tags: [daily-templates]
+      parameters:
+        - name: templateId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "204": { description: 已移除 }
+        "401": { $ref: "#/components/responses/AuthenticationError" }
+        "403": { $ref: "#/components/responses/AuthorizationError" }
+        "404": { $ref: "#/components/responses/NotFoundError" }
   /admin/users/{userId}/disable:
     post:
       operationId: disableAdminUser
@@ -1039,6 +1112,68 @@ components:
           type: array
           maxItems: 20
           items: { type: string, minLength: 1, maxLength: 200 }
+    DailyTemplateSummary:
+      type: object
+      additionalProperties: false
+      required: [id, entryType, displayName, amount, contextName, lastUsedAt]
+      properties:
+        id: { type: string, format: uuid }
+        entryType: { $ref: "#/components/schemas/EntryType" }
+        displayName: { type: string, minLength: 1, maxLength: 200 }
+        amount: { $ref: "#/components/schemas/Money" }
+        contextName: { type: string, minLength: 1, maxLength: 100 }
+        lastUsedAt: { type: string, format: date-time }
+    DailyTemplateList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          maxItems: 100
+          items: { $ref: "#/components/schemas/DailyTemplateSummary" }
+    DailyTemplateSelection:
+      type: object
+      additionalProperties: false
+      required: [id, entryType, displayName, unavailableFields]
+      properties:
+        id: { type: string, format: uuid }
+        entryType: { $ref: "#/components/schemas/EntryType" }
+        displayName: { type: string, minLength: 1, maxLength: 200 }
+        productId: { type: [string, "null"], format: uuid }
+        productName: { type: [string, "null"], maxLength: 200 }
+        primaryCategoryId: { type: [string, "null"], format: uuid }
+        primaryCategoryName: { type: [string, "null"], maxLength: 100 }
+        secondaryCategoryId: { type: [string, "null"], format: uuid }
+        secondaryCategoryName: { type: [string, "null"], maxLength: 100 }
+        unitId: { type: [string, "null"], format: uuid }
+        unitName: { type: [string, "null"], maxLength: 100 }
+        unitPrice:
+          oneOf: [{ $ref: "#/components/schemas/UnitPrice" }, { type: "null" }]
+        quantity:
+          oneOf: [{ $ref: "#/components/schemas/Quantity" }, { type: "null" }]
+        paidAmount:
+          oneOf: [{ $ref: "#/components/schemas/Money" }, { type: "null" }]
+        fundingChannelId: { type: [string, "null"], format: uuid }
+        fundingChannelName: { type: [string, "null"], maxLength: 100 }
+        purchaseChannelId: { type: [string, "null"], format: uuid }
+        purchaseChannelName: { type: [string, "null"], maxLength: 100 }
+        locationLabelId: { type: [string, "null"], format: uuid }
+        locationLabelName: { type: [string, "null"], maxLength: 100 }
+        incomeName: { type: [string, "null"], maxLength: 200 }
+        payerId: { type: [string, "null"], format: uuid }
+        payerName: { type: [string, "null"], maxLength: 100 }
+        incomeCategoryId: { type: [string, "null"], format: uuid }
+        incomeCategoryName: { type: [string, "null"], maxLength: 100 }
+        incomeAmount:
+          oneOf: [{ $ref: "#/components/schemas/Money" }, { type: "null" }]
+        unavailableFields:
+          type: array
+          uniqueItems: true
+          items:
+            type: string
+            enum: [productId, primaryCategoryId, secondaryCategoryId, unitId, fundingChannelId,
+              purchaseChannelId, locationLabelId, payerId, incomeCategoryId]
     ProductSuggestion:
       type: object
       additionalProperties: false

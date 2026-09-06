@@ -73,7 +73,9 @@ public class SecurityConfig {
                         .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
                         .requestMatchers("/api/v1/dictionaries/**").hasRole("USER")
                         .requestMatchers("/api/v1/preferences/**").hasRole("USER")
-                        .requestMatchers("/api/v1/expenses/**", "/api/v1/incomes/**").hasRole("USER")
+                        .requestMatchers("/api/v1/expenses/**", "/api/v1/incomes/**", "/api/v1/daily-templates/**")
+                                .hasRole("USER")
+                        .requestMatchers(HttpMethod.PUT, "/api/v1/ledger-entries/*/daily-template").hasRole("USER")
                         .requestMatchers("/api/v1/**").denyAll()
                         .anyRequest().permitAll())
                 .exceptionHandling(errors -> errors

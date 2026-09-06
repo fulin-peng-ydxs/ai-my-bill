@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue'
 
+import type { DailyTemplateSelection } from '../api/dailyTemplates'
 import { createDictionaryItem, listDictionaryCandidates, type DictionaryItem } from '../api/dictionaries'
 import { ApiClientError } from '../api/http'
 import { createIncome, listRecentIncomeNames, undoCreatedIncome, type IncomeResponse } from '../api/incomes'
@@ -12,6 +13,7 @@ import { normalizeDictionaryName } from '../domain/dictionaries'
 import { unicodeCodePointLength } from '../domain/text'
 import AppStateBlock from './AppStateBlock.vue'
 import AppToast from './AppToast.vue'
+import DailyTemplateFallbackNotice from './DailyTemplateFallbackNotice.vue'
 import DictionaryPicker from './DictionaryPicker.vue'
 import EntrySaveBar from './EntrySaveBar.vue'
 import FormField from './FormField.vue'
@@ -19,7 +21,9 @@ import FormSection from './FormSection.vue'
 import FundingChannelPicker from './FundingChannelPicker.vue'
 import MoneySummary from './MoneySummary.vue'
 
-const props = defineProps<{ accountId?: string, defaultFundingChannelId?: string | null }>()
+const props = defineProps<{ accountId?: string, defaultFundingChannelId?: string | null,
+  templateSelection?: DailyTemplateSelection, templateRevision?: number }>()
+const emit = defineEmits<{ 'templateConsumed': [] }>()
 type Field = 'incomeName' | 'payerId' | 'incomeCategoryId' | 'amount' | 'fundingChannelId' | 'occurredAt' | 'note'
 interface State { incomeName: string, payerId: string, payerName: string, incomeCategoryId: string,
   amount: string, fundingChannelId: string, occurredAt: string, note: string }
@@ -48,16 +52,43 @@ const toastOpen = ref(false)
 const toastMessage = ref('')
 const toastKind = ref<'success' | 'error'>('success')
 const attempt = createIdempotencyAttemptTracker()
+const appliedTemplateRevision = ref(props.templateRevision ?? 0)
+const templateUnavailableFields = ref<DailyTemplateSelection['unavailableFields']>(
+  props.templateSelection?.entryType === 'INCOME' ? props.templateSelection.unavailableFields : [],
+)
 const summary = computed(() => [{ key: 'income', label: '本次收入',
   amount: isDecimalInRange(form.amount, 2, MONEY_MAX, true)
     ? scaledIntegerToDecimal(decimalToScaledInteger(form.amount, 2), 2) : '0.00',
   tone: 'income' as const, sign: '+' as const }])
 
 watch(() => draft.restored.value, (ready) => { if (ready) Object.assign(form, empty(), draft.data.value) })
+watch([() => draft.restored.value, () => props.templateRevision], ([ready, revision]) => {
+  const selection = props.templateSelection
+  if (!ready || !revision || revision === appliedTemplateRevision.value || selection?.entryType !== 'INCOME') return
+  ensureItem(payers, 'payer', selection.payerId, selection.payerName)
+  ensureItem(categories, 'income-category', selection.incomeCategoryId, selection.incomeCategoryName)
+  ensureItem(funding, 'funding-channel', selection.fundingChannelId, selection.fundingChannelName)
+  Object.assign(form, empty(), {
+    incomeName: selection.incomeName ?? selection.displayName,
+    payerId: selection.payerId ?? '', payerName: selection.payerName ?? '',
+    incomeCategoryId: selection.incomeCategoryId ?? '', amount: selection.incomeAmount ?? '',
+    fundingChannelId: selection.fundingChannelId ?? '', occurredAt: toShanghaiLocalDateTime(), note: '',
+  })
+  Object.keys(errors).forEach((key) => delete errors[key as Field])
+  saved.value = undefined
+  templateUnavailableFields.value = selection.unavailableFields
+  appliedTemplateRevision.value = revision
+  attempt.reset()
+  persist()
+})
 watch(() => props.defaultFundingChannelId, (value) => { if (!form.fundingChannelId && value) form.fundingChannelId = value })
 
 function persist(): void { void draft.replace(Object.fromEntries(Object.entries(form).filter(([, value]) => value))) }
 function clear(field: Field): void { delete errors[field]; persist() }
+function ensureItem(target: typeof payers, itemType: DictionaryItem['type'], id?: string | null, name?: string | null): void {
+  if (!id || !name || target.value.some((item) => item.id === id)) return
+  target.value = [...target.value, { id, type: itemType, name, status: 'ACTIVE', sortOrder: 0, referenced: true }]
+}
 
 async function loadOptions(): Promise<void> {
   loading.value = true; loadError.value = ''
@@ -117,6 +148,7 @@ async function submit(continueEntry: boolean): Promise<void> {
     const retained = continueEntry ? { occurredAt: form.occurredAt, incomeCategoryId: form.incomeCategoryId,
       fundingChannelId: form.fundingChannelId } : {}
     await draft.clear(); Object.assign(form, empty(), retained); attempt.reset()
+    templateUnavailableFields.value = []; emit('templateConsumed')
     if (!recentNames.value.includes(saved.value.incomeName)) recentNames.value.unshift(saved.value.incomeName)
   } catch (error) {
     if (error instanceof ApiClientError && error.body?.fieldErrors) Object.entries(error.body.fieldErrors)
@@ -161,6 +193,7 @@ void loadOptions()
       title="草稿未保存到此设备"
       :message="draft.storageError.value"
     />
+    <DailyTemplateFallbackNotice :fields="templateUnavailableFields" />
     <form
       class="income-form"
       @submit.prevent="submit(false)"

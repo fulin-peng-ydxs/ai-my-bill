@@ -2,7 +2,10 @@
 import type { EntryType } from '../domain/preferences'
 import SegmentedControl from './SegmentedControl.vue'
 
-defineProps<{ modelValue: EntryType, disabled?: boolean }>()
+withDefaults(defineProps<{ modelValue: EntryType, disabled?: boolean, label?: string }>(), {
+  disabled: false,
+  label: '本次记账类型',
+})
 defineEmits<{ 'update:modelValue': [value: EntryType] }>()
 
 const options = [
@@ -14,7 +17,7 @@ const options = [
 <template>
   <SegmentedControl
     class="entry-type-switch"
-    label="本次记账类型"
+    :label="label"
     :model-value="modelValue"
     :options="options.map((option) => ({ ...option, disabled }))"
     @update:model-value="$emit('update:modelValue', $event as EntryType)"

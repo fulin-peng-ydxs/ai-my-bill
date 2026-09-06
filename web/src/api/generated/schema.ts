@@ -261,6 +261,74 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/daily-templates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 按最近使用时间查询当前租户的日常模板 */
+        get: operations["listDailyTemplates"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/ledger-entries/{ledgerId}/daily-template": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** 从当前租户有效收支新增或更新日常模板 */
+        put: operations["upsertDailyTemplateFromLedger"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/daily-templates/{templateId}/select": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 复核模板引用并更新最近使用时间 */
+        post: operations["selectDailyTemplate"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/daily-templates/{templateId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** 移除当前租户日常模板且不影响来源账目 */
+        delete: operations["removeDailyTemplate"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/users/{userId}/disable": {
         parameters: {
             query?: never;
@@ -692,6 +760,58 @@ export interface components {
         };
         IncomeNames: {
             items: string[];
+        };
+        DailyTemplateSummary: {
+            /** Format: uuid */
+            id: string;
+            entryType: components["schemas"]["EntryType"];
+            displayName: string;
+            amount: components["schemas"]["Money"];
+            contextName: string;
+            /** Format: date-time */
+            lastUsedAt: string;
+        };
+        DailyTemplateList: {
+            items: components["schemas"]["DailyTemplateSummary"][];
+        };
+        DailyTemplateSelection: {
+            /** Format: uuid */
+            id: string;
+            entryType: components["schemas"]["EntryType"];
+            displayName: string;
+            /** Format: uuid */
+            productId?: string | null;
+            productName?: string | null;
+            /** Format: uuid */
+            primaryCategoryId?: string | null;
+            primaryCategoryName?: string | null;
+            /** Format: uuid */
+            secondaryCategoryId?: string | null;
+            secondaryCategoryName?: string | null;
+            /** Format: uuid */
+            unitId?: string | null;
+            unitName?: string | null;
+            unitPrice?: components["schemas"]["UnitPrice"] | null;
+            quantity?: components["schemas"]["Quantity"] | null;
+            paidAmount?: components["schemas"]["Money"] | null;
+            /** Format: uuid */
+            fundingChannelId?: string | null;
+            fundingChannelName?: string | null;
+            /** Format: uuid */
+            purchaseChannelId?: string | null;
+            purchaseChannelName?: string | null;
+            /** Format: uuid */
+            locationLabelId?: string | null;
+            locationLabelName?: string | null;
+            incomeName?: string | null;
+            /** Format: uuid */
+            payerId?: string | null;
+            payerName?: string | null;
+            /** Format: uuid */
+            incomeCategoryId?: string | null;
+            incomeCategoryName?: string | null;
+            incomeAmount?: components["schemas"]["Money"] | null;
+            unavailableFields: ("productId" | "primaryCategoryId" | "secondaryCategoryId" | "unitId" | "fundingChannelId" | "purchaseChannelId" | "locationLabelId" | "payerId" | "incomeCategoryId")[];
         };
         ProductSuggestion: {
             /** Format: uuid */
@@ -1451,6 +1571,105 @@ export interface operations {
             401: components["responses"]["AuthenticationError"];
             403: components["responses"]["AuthorizationError"];
             409: components["responses"]["ConflictError"];
+        };
+    };
+    listDailyTemplates: {
+        parameters: {
+            query: {
+                type: components["schemas"]["EntryType"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 最多一百项当前类型模板 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DailyTemplateList"];
+                };
+            };
+            400: components["responses"]["ValidationError"];
+            401: components["responses"]["AuthenticationError"];
+            403: components["responses"]["AuthorizationError"];
+        };
+    };
+    upsertDailyTemplateFromLedger: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ledgerId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 按类型与规范化名称完成新增或更新 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DailyTemplateSummary"];
+                };
+            };
+            401: components["responses"]["AuthenticationError"];
+            403: components["responses"]["AuthorizationError"];
+            404: components["responses"]["NotFoundError"];
+            409: components["responses"]["ConflictError"];
+        };
+    };
+    selectDailyTemplate: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                templateId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 仅返回表单可复用白名单；失效引用以空值和 unavailableFields 明示 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DailyTemplateSelection"];
+                };
+            };
+            401: components["responses"]["AuthenticationError"];
+            403: components["responses"]["AuthorizationError"];
+            404: components["responses"]["NotFoundError"];
+        };
+    };
+    removeDailyTemplate: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                templateId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 已移除 */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["AuthenticationError"];
+            403: components["responses"]["AuthorizationError"];
+            404: components["responses"]["NotFoundError"];
         };
     };
     disableAdminUser: {
