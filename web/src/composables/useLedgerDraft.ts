@@ -12,7 +12,8 @@ const MAX_DRAFT_BYTES = 16 * 1024
 
 const FIELD_LIMITS = {
   EXPENSE: {
-    productId: 36, productName: 200, expenseCategoryId: 36, unitId: 36,
+    productId: 36, productName: 200, primaryCategoryId: 36,
+    secondaryCategoryId: 36, unitId: 36,
     unitPrice: 32, quantity: 32, paidAmount: 32, fundingChannelId: 36,
     purchaseChannelId: 36, locationLabelId: 36, occurredAt: 40, note: 500,
   },

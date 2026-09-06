@@ -159,6 +159,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/expenses/products": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 查询当前租户启用商品及仍有效的最近默认值 */
+        get: operations["listExpenseProductSuggestions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/expenses": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 幂等保存当前租户的一条商品支出 */
+        post: operations["createExpense"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/expenses/{expenseId}/undo": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** 撤销尚无下游关联的刚保存支出 */
+        delete: operations["undoCreatedExpense"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/users/{userId}/disable": {
         parameters: {
             query?: never;
@@ -495,6 +546,90 @@ export interface components {
          * @description 服务端以收到请求时的当前时间为权威，业务日期按 Asia/Shanghai 生成。
          */
         BusinessDateTime: string;
+        /** @description 单价十进制字符串，范围 0 至 99,999,999.9999。 */
+        UnitPrice: string;
+        /** @description 数量十进制字符串；服务端另行校验必须大于 0，且不超过 999,999.999。 */
+        Quantity: string;
+        CreateExpenseRequest: {
+            /** Format: uuid */
+            productId: string;
+            /** Format: uuid */
+            primaryCategoryId: string;
+            /** Format: uuid */
+            secondaryCategoryId?: string;
+            /** Format: uuid */
+            unitId: string;
+            unitPrice: components["schemas"]["UnitPrice"];
+            quantity: components["schemas"]["Quantity"];
+            paidAmount: components["schemas"]["Money"];
+            /** Format: uuid */
+            fundingChannelId: string;
+            /** Format: uuid */
+            purchaseChannelId?: string;
+            /** Format: uuid */
+            locationLabelId?: string;
+            occurredAt: components["schemas"]["BusinessDateTime"];
+            note?: components["schemas"]["Note"];
+        };
+        ExpenseResponse: {
+            /** Format: uuid */
+            id: string;
+            occurredAt: components["schemas"]["BusinessDateTime"];
+            /** Format: date */
+            businessDate: string;
+            /** Format: uuid */
+            productId: string;
+            productName: string;
+            /** Format: uuid */
+            primaryCategoryId: string;
+            primaryCategoryName: string;
+            /** Format: uuid */
+            secondaryCategoryId?: string;
+            secondaryCategoryName?: string;
+            /** Format: uuid */
+            unitId: string;
+            unitName: string;
+            unitPrice: components["schemas"]["UnitPrice"];
+            quantity: components["schemas"]["Quantity"];
+            calculatedAmount: components["schemas"]["Money"];
+            paidAmount: components["schemas"]["Money"];
+            /** Format: uuid */
+            fundingChannelId: string;
+            fundingChannelName: string;
+            /** Format: uuid */
+            purchaseChannelId?: string;
+            purchaseChannelName?: string;
+            /** Format: uuid */
+            locationLabelId?: string;
+            locationLabelName?: string;
+            note?: components["schemas"]["Note"];
+            /** Format: date-time */
+            createdAt: string;
+        };
+        ProductSuggestion: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+            /** Format: uuid */
+            primaryCategoryId?: string;
+            primaryCategoryName?: string;
+            /** Format: uuid */
+            secondaryCategoryId?: string;
+            secondaryCategoryName?: string;
+            /** Format: uuid */
+            unitId?: string;
+            unitName?: string;
+            lastUnitPrice?: components["schemas"]["UnitPrice"];
+            /** Format: uuid */
+            fundingChannelId?: string;
+            fundingChannelName?: string;
+            /** Format: uuid */
+            purchaseChannelId?: string;
+            purchaseChannelName?: string;
+        };
+        ProductSuggestions: {
+            items: components["schemas"]["ProductSuggestion"][];
+        };
         /** @enum {string} */
         AdminUserStatus: "ACTIVE" | "PENDING_FIRST_LOGIN" | "DISABLED" | "DELETION_PENDING";
         /** @enum {string} */
@@ -1044,6 +1179,100 @@ export interface operations {
             };
             401: components["responses"]["AuthenticationError"];
             403: components["responses"]["AuthorizationError"];
+            503: components["responses"]["ServiceUnavailableError"];
+        };
+    };
+    listExpenseProductSuggestions: {
+        parameters: {
+            query?: {
+                query?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 最多二十项商品候选；停用或失效默认引用不返回 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProductSuggestions"];
+                };
+            };
+            400: components["responses"]["ValidationError"];
+            401: components["responses"]["AuthenticationError"];
+            403: components["responses"]["AuthorizationError"];
+            503: components["responses"]["ServiceUnavailableError"];
+        };
+    };
+    createExpense: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateExpenseRequest"];
+            };
+        };
+        responses: {
+            /** @description 相同幂等标识和请求内容的既有成功结果 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExpenseResponse"];
+                };
+            };
+            /** @description 支出创建成功 */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExpenseResponse"];
+                };
+            };
+            400: components["responses"]["ValidationError"];
+            401: components["responses"]["AuthenticationError"];
+            403: components["responses"]["AuthorizationError"];
+            409: components["responses"]["ConflictError"];
+            503: components["responses"]["ServiceUnavailableError"];
+        };
+    };
+    undoCreatedExpense: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description 必须与创建该笔支出时使用的幂等标识一致，只允许撤销对应的刚保存记录。 */
+                "Idempotency-Key": string;
+            };
+            path: {
+                expenseId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 本次保存已撤销 */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["ValidationError"];
+            401: components["responses"]["AuthenticationError"];
+            403: components["responses"]["AuthorizationError"];
+            409: components["responses"]["ConflictError"];
             503: components["responses"]["ServiceUnavailableError"];
         };
     };

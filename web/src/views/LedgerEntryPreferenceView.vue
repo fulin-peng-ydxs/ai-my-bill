@@ -3,10 +3,13 @@ import { computed } from 'vue'
 
 import AppStateBlock from '../components/AppStateBlock.vue'
 import EntryTypeSwitch from '../components/EntryTypeSwitch.vue'
+import ExpenseEntryForm from '../components/ExpenseEntryForm.vue'
 import type { EntryType } from '../domain/preferences'
 import { usePreferencesStore } from '../stores/preferences'
+import { useSessionStore } from '../stores/session'
 
 const preferences = usePreferencesStore()
+const session = useSessionStore()
 const saveState = computed(() => preferences.fieldStates.recentEntryType)
 
 function selectType(type: EntryType): void {
@@ -25,7 +28,7 @@ function selectType(type: EntryType): void {
     <h1>记一笔</h1>
     <p>选择会作为当前账号下次进入时的默认类型。</p>
     <section
-      class="placeholder-panel entry-type-panel"
+      class="entry-type-panel"
       aria-labelledby="entry-type-title"
     >
       <div class="section-heading">
@@ -53,9 +56,17 @@ function selectType(type: EntryType): void {
         action-label="重试"
         @action="preferences.retry('recentEntryType').catch(() => undefined)"
       />
-      <p class="entry-stage-note">
-        填报字段与保存能力将在后续对应阶段开放；这里不展示模拟账目。
-      </p>
+      <ExpenseEntryForm
+        v-if="preferences.values.recentEntryType === 'EXPENSE'"
+        :account-id="session.session?.accountId"
+        :default-funding-channel-id="preferences.values.defaultFundingChannelId"
+      />
+      <AppStateBlock
+        v-else
+        kind="empty"
+        title="收入填报将在 T12 开放"
+        message="支出草稿会原样保留，切回支出即可继续。"
+      />
     </section>
   </article>
 </template>

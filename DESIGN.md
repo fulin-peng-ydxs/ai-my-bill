@@ -102,7 +102,7 @@ components:
 
 # 我的账单 Design System
 
-> 本文是“我的账单”前端视觉、交互、响应式、组件复用和页面设计约束的长期事实源。当前正式工程已建立页面登记、路由、主题与 PWA 基线、登录页和双角色响应式外壳；业务页面和其余目标组件仍按任务阶段落地。实际代码和自动化测试是机器事实源，并与本文同步维护。
+> 本文是“我的账单”前端视觉、交互、响应式、组件复用和页面设计约束的长期事实源。当前正式工程已建立页面登记、路由、主题与 PWA 基线、登录页和双角色响应式外壳，并已落地支出填报业务页面；其余业务页面和目标组件仍按任务阶段落地。实际代码和自动化测试是机器事实源，并与本文同步维护。
 
 事实源边界：
 
@@ -242,7 +242,7 @@ Key Characteristics：
 
 ## 4. Component Stylings
 
-以下清单是用户已确认的组件契约；`AppShell`、`ThemeModeControl`、`BottomNavigation`、`PwaInstallPrompt`、`AppStateBlock`、T5 通用表单/分段选择/金额/浮层/设置披露/搜索筛选/账目上下文动作基础、T7 `AppDataTable` 与 `AppToast`，T8/T9 字典治理页面，以及 T10 `EntryTypeSwitch`、账号隔离草稿和统一未保存内容守卫已实现。个人与默认字典维护共享 `DictionaryToolbar` 和 `DictionaryItemList`，并直接复用 `GlobalLedgerSearch`、`SegmentedControl`、`AppDrawer`、`AppDialog`、`AppStateBlock`、`AppToast` 和统一请求代次；个人字典成功变更通过统一字典事件通知后续候选组件刷新，取消不发出事件。候选选择、真实账目列表和图表等领域组件按对应业务任务落地。代码出现第二个同类消费场景时，必须抽取或消费复用单元，不允许页面继续复制结构和交互。
+以下清单是用户已确认的组件契约；`AppShell`、`ThemeModeControl`、`BottomNavigation`、`PwaInstallPrompt`、`AppStateBlock`、T5 通用表单/分段选择/金额/浮层/设置披露/搜索筛选/账目上下文动作基础、T7 `AppDataTable` 与 `AppToast`，T8/T9 字典治理页面，T10 `EntryTypeSwitch`、账号隔离草稿和统一未保存内容守卫，以及 T11 `ProductCombobox`、`FundingChannelPicker`、`LocationLabelPicker` 和支出表单已实现。个人与默认字典维护共享 `DictionaryToolbar` 和 `DictionaryItemList`，并直接复用 `GlobalLedgerSearch`、`SegmentedControl`、`AppDrawer`、`AppDialog`、`AppStateBlock`、`AppToast` 和统一请求代次；个人字典成功变更通过统一字典事件通知候选组件刷新，取消不发出事件。真实账目列表和图表等领域组件按对应业务任务落地。代码出现第二个同类消费场景时，必须抽取或消费复用单元，不允许页面继续复制结构和交互。
 
 ### 4.1 组件复用与事实源
 
@@ -288,7 +288,7 @@ Key Characteristics：
 | `Toast` | 短暂动作反馈和撤销 | 保存、删除成功等；失败若影响区域可用性，还必须保留页内错误态 |
 | `PwaInstallPrompt` | 登录页与“我的”的安装能力引导 | 复用同一检测状态源；只有浏览器提供安装事件时显示真实安装动作，否则显示分平台步骤或已安装状态 |
 
-T5/T7 代码事实：登录页真实消费 `FormField` 与 `AppDialog`，主题控件消费 `SegmentedControl`，“我的”页消费 `SettingsDisclosureList` 与 `AppDrawer`；T7 用户管理页真实消费 `FormField`、`AppStateBlock`、`AppDialog`、`AppDrawer`、`useLatestRequest`，并新增复用型 `AppDataTable` 与 `AppToast`。T8/T9 的个人字典和默认字典页面共享 `DictionaryToolbar`、`DictionaryItemList`、四态和浮层，默认字典在管理端桌面侧栏与窄屏页头均有入口，并明确“只影响后续新增用户”的作用域。T10 的“记一笔”入口真实消费 `EntryTypeSwitch` 和服务端最近类型偏好，“我的”页真实消费资金渠道、明细范围、报表范围与主题偏好；路由、刷新/关闭、退出和账号变化共享单一未保存内容守卫，账目草稿只通过不可逆账号命名空间和类型白名单读写。`MoneySummary`、`AppliedFilterBar`、`FilterSheet`、`LedgerContextActions` 等尚未有真实业务接口的能力不得挂载到占位页或展示模拟账单；它们仍须在 T11/T15/T20 等首次真实消费阶段完成页面级验收。
+T5/T7 代码事实：登录页真实消费 `FormField` 与 `AppDialog`，主题控件消费 `SegmentedControl`，“我的”页消费 `SettingsDisclosureList` 与 `AppDrawer`；T7 用户管理页真实消费 `FormField`、`AppStateBlock`、`AppDialog`、`AppDrawer`、`useLatestRequest`，并新增复用型 `AppDataTable` 与 `AppToast`。T8/T9 的个人字典和默认字典页面共享 `DictionaryToolbar`、`DictionaryItemList`、四态和浮层，默认字典在管理端桌面侧栏与窄屏页头均有入口，并明确“只影响后续新增用户”的作用域。T10 的“记一笔”入口真实消费 `EntryTypeSwitch` 和服务端最近类型偏好，“我的”页真实消费资金渠道、明细范围、报表范围与主题偏好；路由、刷新/关闭、退出和账号变化共享单一未保存内容守卫，账目草稿只通过不可逆账号命名空间和类型白名单读写。T11 支出表单复用 `FormField`、`FormSection`、`MoneySummary`、`ProductCombobox`、`FundingChannelPicker`、`LocationLabelPicker` 和带撤销动作的 `AppToast`；商品最近值只填充表单，连续录入按确认规则保留场景字段并清空商品字段。`AppliedFilterBar`、`FilterSheet`、`LedgerContextActions` 等尚未有真实业务接口的能力不得挂载到占位页或展示模拟账单；它们仍须在 T15/T20 等首次真实消费阶段完成页面级验收。
 
 ### 4.3 按钮与输入
 
@@ -539,7 +539,7 @@ T5/T7 代码事实：登录页真实消费 `FormField` 与 `AppDialog`，主题�
 ## 10. Known Gaps
 
 - 前端工程已锁定 Vue 3 + Vite + TypeScript + Pinia + Vue Router，图表采用 ECharts，SVG 图标采用 Lucide Vue Next；不引入覆盖本设计契约的整套通用 UI 框架，优先实现本文定义的项目语义组件，不得据技术选型改变已确认视觉与交互契约。
-- 正式工程当前已实现登录页、主题/PWA 共享状态、普通用户四项导航、管理员外壳、T5 共享基础、T7 已开放的管理员账号管理、T8 个人字典治理、T9 商品合并和五类默认字典管理，以及 T10 服务端偏好、类型切换、账号隔离草稿和统一未保存内容守卫。普通用户访问管理地址时在原地址显示 permission 状态且不挂载管理页面。个人字典在“我的”只保留一个入口，索引展示八类真实数量；商品合并通过目标搜索、影响预览和危险确认完成。默认字典从管理导航独立进入并明确修改只作用于后续新增用户。P6-F1 在桌面使用稳定数据表格，在 `≤833px` 使用带状态色轨的账号摘要卡和底部操作抽屉；账号注销 API 与页面入口均在 T19 完成前不登记。移动端 Toast 位于底部导航上方且不使用装饰阴影。账单、运行概况、审计日志查询和报表等真实页面仍未实现。
+- 正式工程当前已实现登录页、主题/PWA 共享状态、普通用户四项导航、管理员外壳、T5 共享基础、T7 已开放的管理员账号管理、T8 个人字典治理、T9 商品合并和五类默认字典管理、T10 服务端偏好/类型切换/账号隔离草稿/统一未保存内容守卫，以及 T11 支出填报与连续录入。普通用户访问管理地址时在原地址显示 permission 状态且不挂载管理页面。个人字典在“我的”只保留一个入口，索引展示八类真实数量；商品合并通过目标搜索、影响预览和危险确认完成。默认字典从管理导航独立进入并明确修改只作用于后续新增用户。支出页在手机视口使用分组表单和底部固定双保存动作，候选、失败、校验、金额差额与撤销均在原上下文反馈。P6-F1 在桌面使用稳定数据表格，在 `≤833px` 使用带状态色轨的账号摘要卡和底部操作抽屉；账号注销 API 与页面入口均在 T19 完成前不登记。移动端 Toast 位于底部导航上方且不使用装饰阴影。收入填报、明细、运行概况、审计日志查询和报表等真实页面仍未实现。
 - 尚无正式品牌名称、图标和启动图；第一期原型使用“我的账单”文字标识，不把临时图形固化为品牌资产。
 - 正式工程已接入 Manifest、Service Worker、真实浏览器安装事件、拒绝/不支持/已安装状态和分平台手动引导；正式图标、启动图、目标移动浏览器系统安装框、独立窗口与状态栏表现仍需在 T29 目标环境复验。
 - 管理后台是否需要独立桌面域名或路径属于技术与部署决策，不影响当前设计系统。

@@ -2,7 +2,7 @@ openapi: 3.1.0
 info:
   title: 我的账单 API
   version: 0.1.0
-  description: 同源 /api/v1 接口契约；T10 已开放认证、管理员用户生命周期、个人字典、商品合并、管理员默认字典、个人偏好与最小健康检查。
+  description: 同源 /api/v1 接口契约；T11 已开放认证、管理员用户生命周期、个人字典、商品合并、管理员默认字典、个人偏好、支出填报与最小健康检查。
 servers:
   - url: /api/v1
 security:
@@ -239,6 +239,78 @@ paths:
               schema: { $ref: "#/components/schemas/PreferenceResponse" }
         "401": { $ref: "#/components/responses/AuthenticationError" }
         "403": { $ref: "#/components/responses/AuthorizationError" }
+        "503": { $ref: "#/components/responses/ServiceUnavailableError" }
+  /expenses/products:
+    get:
+      operationId: listExpenseProductSuggestions
+      summary: 查询当前租户启用商品及仍有效的最近默认值
+      tags: [expenses]
+      parameters:
+        - name: query
+          in: query
+          schema: { type: string, maxLength: 200, default: "" }
+      responses:
+        "200":
+          description: 最多二十项商品候选；停用或失效默认引用不返回
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ProductSuggestions" }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "401": { $ref: "#/components/responses/AuthenticationError" }
+        "403": { $ref: "#/components/responses/AuthorizationError" }
+        "503": { $ref: "#/components/responses/ServiceUnavailableError" }
+  /expenses:
+    post:
+      operationId: createExpense
+      summary: 幂等保存当前租户的一条商品支出
+      tags: [expenses]
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateExpenseRequest" }
+      responses:
+        "201":
+          description: 支出创建成功
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ExpenseResponse" }
+        "200":
+          description: 相同幂等标识和请求内容的既有成功结果
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ExpenseResponse" }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "401": { $ref: "#/components/responses/AuthenticationError" }
+        "403": { $ref: "#/components/responses/AuthorizationError" }
+        "409": { $ref: "#/components/responses/ConflictError" }
+        "503": { $ref: "#/components/responses/ServiceUnavailableError" }
+  /expenses/{expenseId}/undo:
+    delete:
+      operationId: undoCreatedExpense
+      summary: 撤销尚无下游关联的刚保存支出
+      tags: [expenses]
+      parameters:
+        - name: expenseId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128 }
+          description: 必须与创建该笔支出时使用的幂等标识一致，只允许撤销对应的刚保存记录。
+      responses:
+        "204": { description: 本次保存已撤销 }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "401": { $ref: "#/components/responses/AuthenticationError" }
+        "403": { $ref: "#/components/responses/AuthorizationError" }
+        "409": { $ref: "#/components/responses/ConflictError" }
         "503": { $ref: "#/components/responses/ServiceUnavailableError" }
   /admin/users/{userId}/disable:
     post:
@@ -804,6 +876,88 @@ components:
       type: string
       format: date-time
       description: 服务端以收到请求时的当前时间为权威，业务日期按 Asia/Shanghai 生成。
+    UnitPrice:
+      type: string
+      pattern: "^(0|[1-9][0-9]{0,7})(\\.[0-9]{1,4})?$"
+      description: 单价十进制字符串，范围 0 至 99,999,999.9999。
+    Quantity:
+      type: string
+      pattern: "^(0|[1-9][0-9]{0,5})(\\.[0-9]{1,3})?$"
+      description: 数量十进制字符串；服务端另行校验必须大于 0，且不超过 999,999.999。
+    CreateExpenseRequest:
+      type: object
+      additionalProperties: false
+      required: [productId, primaryCategoryId, unitId, unitPrice, quantity, paidAmount, fundingChannelId, occurredAt]
+      properties:
+        productId: { type: string, format: uuid }
+        primaryCategoryId: { type: string, format: uuid }
+        secondaryCategoryId: { type: string, format: uuid }
+        unitId: { type: string, format: uuid }
+        unitPrice: { $ref: "#/components/schemas/UnitPrice" }
+        quantity: { $ref: "#/components/schemas/Quantity" }
+        paidAmount: { $ref: "#/components/schemas/Money" }
+        fundingChannelId: { type: string, format: uuid }
+        purchaseChannelId: { type: string, format: uuid }
+        locationLabelId: { type: string, format: uuid }
+        occurredAt: { $ref: "#/components/schemas/BusinessDateTime" }
+        note: { $ref: "#/components/schemas/Note" }
+    ExpenseResponse:
+      type: object
+      additionalProperties: false
+      required: [id, occurredAt, businessDate, productId, productName, primaryCategoryId,
+        primaryCategoryName, unitId, unitName, unitPrice, quantity, calculatedAmount, paidAmount,
+        fundingChannelId, fundingChannelName, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        occurredAt: { $ref: "#/components/schemas/BusinessDateTime" }
+        businessDate: { type: string, format: date }
+        productId: { type: string, format: uuid }
+        productName: { type: string, minLength: 1, maxLength: 200 }
+        primaryCategoryId: { type: string, format: uuid }
+        primaryCategoryName: { type: string, minLength: 1, maxLength: 100 }
+        secondaryCategoryId: { type: string, format: uuid }
+        secondaryCategoryName: { type: string, minLength: 1, maxLength: 100 }
+        unitId: { type: string, format: uuid }
+        unitName: { type: string, minLength: 1, maxLength: 100 }
+        unitPrice: { $ref: "#/components/schemas/UnitPrice" }
+        quantity: { $ref: "#/components/schemas/Quantity" }
+        calculatedAmount: { $ref: "#/components/schemas/Money" }
+        paidAmount: { $ref: "#/components/schemas/Money" }
+        fundingChannelId: { type: string, format: uuid }
+        fundingChannelName: { type: string, minLength: 1, maxLength: 100 }
+        purchaseChannelId: { type: string, format: uuid }
+        purchaseChannelName: { type: string, minLength: 1, maxLength: 100 }
+        locationLabelId: { type: string, format: uuid }
+        locationLabelName: { type: string, minLength: 1, maxLength: 100 }
+        note: { $ref: "#/components/schemas/Note" }
+        createdAt: { type: string, format: date-time }
+    ProductSuggestion:
+      type: object
+      additionalProperties: false
+      required: [id, name]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string, minLength: 1, maxLength: 200 }
+        primaryCategoryId: { type: string, format: uuid }
+        primaryCategoryName: { type: string, minLength: 1, maxLength: 100 }
+        secondaryCategoryId: { type: string, format: uuid }
+        secondaryCategoryName: { type: string, minLength: 1, maxLength: 100 }
+        unitId: { type: string, format: uuid }
+        unitName: { type: string, minLength: 1, maxLength: 100 }
+        lastUnitPrice: { $ref: "#/components/schemas/UnitPrice" }
+        fundingChannelId: { type: string, format: uuid }
+        fundingChannelName: { type: string, minLength: 1, maxLength: 100 }
+        purchaseChannelId: { type: string, format: uuid }
+        purchaseChannelName: { type: string, minLength: 1, maxLength: 100 }
+    ProductSuggestions:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          maxItems: 20
+          items: { $ref: "#/components/schemas/ProductSuggestion" }
     AdminUserStatus:
       type: string
       enum: [ACTIVE, PENDING_FIRST_LOGIN, DISABLED, DELETION_PENDING]

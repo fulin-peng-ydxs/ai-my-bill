@@ -5,9 +5,11 @@ withDefaults(defineProps<{
   open: boolean
   message: string
   kind?: 'success' | 'error'
-}>(), { kind: 'success' })
+  actionLabel?: string
+  actionDisabled?: boolean
+}>(), { kind: 'success', actionLabel: undefined, actionDisabled: false })
 
-defineEmits<{ 'update:open': [value: boolean] }>()
+defineEmits<{ 'update:open': [value: boolean], action: [] }>()
 </script>
 
 <template>
@@ -30,6 +32,15 @@ defineEmits<{ 'update:open': [value: boolean] }>()
         aria-hidden="true"
       />
       <span>{{ message }}</span>
+      <button
+        v-if="actionLabel"
+        type="button"
+        class="toast-action"
+        :disabled="actionDisabled"
+        @click="$emit('action')"
+      >
+        {{ actionLabel }}
+      </button>
       <button
         type="button"
         class="icon-button"

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { dictionaryDefinition, dictionaryDefinitions } from './dictionaries'
+import { dictionaryDefinition, dictionaryDefinitions, normalizeDictionaryName } from './dictionaries'
 
 describe('personal dictionary registry', () => {
   it('defines the eight stable and unique dictionary types', () => {
@@ -17,5 +17,9 @@ describe('personal dictionary registry', () => {
     expect(dictionaryDefinition('location')?.description).toContain('文本标签')
     expect(dictionaryDefinition('funding-channel')?.description).toContain('支付方式')
     expect(dictionaryDefinition('expense-category')?.hierarchical).toBe(true)
+  })
+
+  it('normalizes width, whitespace and case like the server uniqueness key', () => {
+    expect(normalizeDictionaryName('  Ｃoffee\t  LATTE  ')).toBe('coffee latte')
   })
 })

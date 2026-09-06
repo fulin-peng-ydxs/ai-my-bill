@@ -22,10 +22,14 @@ beforeEach(() => vi.unstubAllGlobals())
 describe('ledger draft storage', () => {
   it('round-trips expense and income independently and strips unknown fields', async () => {
     vi.stubGlobal('localStorage', memoryStorage())
-    await writeLedgerDraft(ACCOUNT, 'EXPENSE', { productName: '咖啡', amount: 'secret' }, 1_000)
+    await writeLedgerDraft(ACCOUNT, 'EXPENSE', {
+      productName: '咖啡', primaryCategoryId: 'primary', secondaryCategoryId: 'secondary', amount: 'secret',
+    }, 1_000)
     await writeLedgerDraft(ACCOUNT, 'INCOME', { incomeName: '稿费', productName: 'secret' }, 1_000)
 
-    expect(await readLedgerDraft(ACCOUNT, 'EXPENSE', 1_001)).toEqual({ productName: '咖啡' })
+    expect(await readLedgerDraft(ACCOUNT, 'EXPENSE', 1_001)).toEqual({
+      productName: '咖啡', primaryCategoryId: 'primary', secondaryCategoryId: 'secondary',
+    })
     expect(await readLedgerDraft(ACCOUNT, 'INCOME', 1_001)).toEqual({ incomeName: '稿费' })
   })
 

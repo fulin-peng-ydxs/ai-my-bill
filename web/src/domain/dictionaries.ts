@@ -25,3 +25,8 @@ export const dictionaryDefinitions = [
 export function dictionaryDefinition(type: unknown): DictionaryDefinition | undefined {
   return dictionaryDefinitions.find((item) => item.type === type)
 }
+
+/** 与服务端唯一键规则一致，用于在提交前识别等价字典名称。 */
+export function normalizeDictionaryName(value: string): string {
+  return value.normalize('NFKC').trim().replace(/[\p{Z}\s]+/gu, ' ').toLowerCase()
+}

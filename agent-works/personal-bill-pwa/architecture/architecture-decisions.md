@@ -9,8 +9,8 @@
 ## 2. 应用与模块边界
 
 - 采用单仓库、Vue 单页应用、Spring Boot 模块化单体和 PostgreSQL，同源接口前缀固定为 `/api/v1`。
-- 当前后端领域包为 `auth`、`admin`、`dictionary`、`preference`、`job`，公共持久化映射位于 `persistence`，公共契约位于 `shared`；后续收支与报表阶段分别新增 `ledger`、`report`。跨领域写操作只经应用服务，查询只能消费明确的只读接口或投影。
-- T1-T6 已建立工程、持久化/RLS、认证会话、PWA/主题/双角色外壳、共享前端基础、追加审计和 PostgreSQL 租约式任务基础；T7-T10 已实现已开放的管理员账号管理、个人字典、商品与默认字典治理、偏好及账号隔离草稿。账号注销处理、收支、报表、具体后台任务、运行概况和审计查询仍未实施；注销 API 与页面动作在 T19 的数据保留与清理策略确认前均不登记。
+- 当前后端领域包为 `auth`、`admin`、`dictionary`、`preference`、`job`、`ledger`，公共持久化映射位于 `persistence`，公共契约位于 `shared`；后续报表阶段新增 `report`。跨领域写操作只经应用服务，查询只能消费明确的只读接口或投影。
+- T1-T6 已建立工程、持久化/RLS、认证会话、PWA/主题/双角色外壳、共享前端基础、追加审计和 PostgreSQL 租约式任务基础；T7-T10 已实现已开放的管理员账号管理、个人字典、商品与默认字典治理、偏好及账号隔离草稿，T11 已实现真实支出创建、幂等重试、商品最近值与刚保存撤销。账号注销处理、收入、明细、报表、具体后台任务、运行概况和审计查询仍未实施；注销 API 与页面动作在 T19 的数据保留与清理策略确认前均不登记。
 
 ## 3. HTTP 与数据契约
 
@@ -19,6 +19,7 @@
 - 用户名固定为 3–64 位可见 ASCII；备注去除首尾空白后最多 500 个 Unicode code point。
 - 金额以十进制字符串传输，Java 使用 `BigDecimal`，PostgreSQL 使用 `numeric`。人民币金额上限为 `999,999,999.99`，通用金额最多两位小数。
 - 业务时间使用带偏移的 ISO 8601 时间；服务端以接收时间为权威，并按 `Asia/Shanghai` 生成业务日期。
+- 支出创建必须携带 1-128 字符幂等键；请求摘要使用规范化后的十进制值，相同键与等价内容返回既有结果，不同内容冲突。撤销刚保存支出必须回传同一幂等键，只能删除对应且尚无调整或模板关联的记录。
 
 ## 4. 前端页面登记与复用判断
 
@@ -30,7 +31,7 @@
 
 - `npm run dev` 使用仓库内 `.local/postgres` 数据目录启动隔离的本地 PostgreSQL，再并行启动后端和前端；脚本拒绝外部主机、非法连接参数、低于 16 的 PostgreSQL 以及被其他数据集群占用的端口，退出命令时仅停止本次启动的进程。
 - 本地开发由 bootstrap 账号 `my_bill_dev` 只负责建库/建角，非超级迁移所有者 `my_bill_migration` 执行 Flyway，后端连接非超级用户 `my_bill_app`；生产内嵌 Flyway 固定关闭，启动时只读核对 schema 版本 `010`。
-- `npm run check:database` 使用系统已有 PostgreSQL 16+ 可执行程序创建一次性隔离集群，不连接本项目开发库、`ai-stocks` 或其他项目数据库，也不探测/依赖 Docker 或 Testcontainers。同一临时集群先运行 30 项认证、管理、字典、治理与偏好 HTTP 集成测试，再重建空 schema 运行 7 项 migration、RLS、任务和回滚测试；退出时只清理 `mktemp` 生成的该集群。
+- `npm run check:database` 使用系统已有 PostgreSQL 16+ 可执行程序创建一次性隔离集群，不连接本项目开发库、`ai-stocks` 或其他项目数据库，也不探测/依赖 Docker 或 Testcontainers。同一临时集群先运行 36 项认证、管理、字典、治理、偏好与支出 HTTP 集成测试，再重建空 schema 运行 7 项 migration、RLS、任务和回滚测试；退出时只清理 `mktemp` 生成的该集群。
 - Compose 将长驻数据库、一次性角色 provision、一次性 migrate 和长驻 app 分开；数据库只挂 bootstrap secret，provision 短时挂三类 secret，migrate 只挂迁移 secret，app 只挂运行 secret。前端静态服务和反向代理仍属于 T29。
 - CI 分别执行前端 typecheck、lint、unit、OpenAPI 校验/类型漂移检查与后端 Maven verify；本地单独验证后端统一使用 `npm run check:server` 解析系统已有 Java 21。
 - 本地缺少目标工具链时立即失败并提示所需版本，不静默降级到 Node 18 或 Java 8。

@@ -114,6 +114,12 @@ describe('shared frontend foundations', () => {
     expect(toast).toContain('aria-live="polite"')
     expect(toast).toContain('账号状态已更新')
 
+    const actionableToast = await render(AppToast, {
+      open: true, message: '支出已保存', kind: 'success', actionLabel: '撤销', actionDisabled: true,
+    })
+    expect(actionableToast).toContain('撤销')
+    expect(actionableToast).toContain('disabled')
+
     const errorToast = await render(AppToast, { open: true, message: '操作失败', kind: 'error' })
     expect(errorToast).toContain('role="alert"')
     expect(errorToast).toContain('aria-live="assertive"')

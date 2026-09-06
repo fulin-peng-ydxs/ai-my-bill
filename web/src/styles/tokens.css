@@ -77,7 +77,9 @@ body {
 }
 
 button,
-input { font: inherit; }
+input,
+select,
+textarea { font: inherit; }
 
 button,
 a { -webkit-tap-highlight-color: transparent; }
@@ -87,7 +89,8 @@ a { color: var(--color-primary); }
 
 button:focus-visible,
 a:focus-visible,
-input:focus-visible {
+input:focus-visible,
+textarea:focus-visible {
   outline: 2px solid var(--color-focus);
   outline-offset: 2px;
 }
@@ -98,7 +101,9 @@ select:focus-visible {
 }
 
 button:disabled,
-input:disabled {
+input:disabled,
+select:disabled,
+textarea:disabled {
   cursor: not-allowed;
   opacity: 0.58;
 }
@@ -442,6 +447,17 @@ input:disabled {
   width: 100%;
   min-height: 48px;
   padding: var(--space-md) var(--space-lg);
+  color: var(--color-text);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+}
+
+.form-field textarea {
+  width: 100%;
+  min-height: 112px;
+  padding: var(--space-md) var(--space-lg);
+  resize: vertical;
   color: var(--color-text);
   background: var(--color-surface);
   border: 1px solid var(--color-border);
@@ -928,6 +944,17 @@ input:disabled {
 }
 
 .app-toast-error { border-left-color: var(--color-danger); }
+.app-toast:has(.toast-action) { grid-template-columns: auto minmax(0, 1fr) auto auto; }
+.toast-action {
+  min-height: 44px;
+  padding-inline: var(--space-sm);
+  color: var(--color-primary);
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-tool);
+  cursor: pointer;
+  font-weight: 600;
+}
 .toast-enter-active,
 .toast-leave-active { transition: opacity 160ms ease, transform 160ms ease; }
 .toast-enter-from,
@@ -1063,6 +1090,132 @@ input:disabled {
   font-size: 18px;
   line-height: 26px;
 }
+
+.expense-entry-form,
+.expense-form {
+  display: grid;
+  gap: var(--space-lg);
+}
+
+.expense-form {
+  padding: 0 var(--space-lg);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-panel);
+}
+
+.form-grid-two { display: grid; gap: var(--space-lg); }
+
+.product-combobox {
+  display: grid;
+  gap: var(--space-sm);
+  font-size: 14px;
+}
+
+.product-combobox > label { font-weight: 600; }
+
+.product-combobox > input {
+  width: 100%;
+  min-height: 48px;
+  padding: var(--space-md) var(--space-lg);
+  color: var(--color-text);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+}
+
+.product-combobox small,
+.field-help { color: var(--color-muted); font-size: 12px; line-height: 18px; }
+
+.product-options {
+  display: grid;
+  max-height: 240px;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  list-style: none;
+}
+
+.product-options li + li { border-top: 1px solid var(--color-border); }
+.product-options button {
+  display: grid;
+  width: 100%;
+  min-height: 52px;
+  gap: var(--space-xs);
+  padding: var(--space-sm) var(--space-md);
+  color: var(--color-text);
+  text-align: left;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+.product-options button[aria-selected="true"] { background: var(--color-surface-secondary); }
+.product-options span { color: var(--color-muted); font-size: 12px; }
+.product-create-button { justify-self: start; max-width: 100%; overflow-wrap: anywhere; white-space: normal; }
+
+.dictionary-picker {
+  display: grid;
+  min-width: 0;
+  gap: var(--space-sm);
+  padding: 0;
+  border: 0;
+}
+.dictionary-picker legend { padding: 0; font-size: 14px; font-weight: 600; }
+.dictionary-picker-options { display: flex; flex-wrap: wrap; gap: var(--space-sm); }
+.dictionary-picker-options button {
+  min-height: 44px;
+  padding: var(--space-sm) var(--space-md);
+  color: var(--color-text);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+}
+.dictionary-picker-options button[aria-pressed="true"] {
+  color: var(--color-primary);
+  border-color: var(--color-primary);
+  font-weight: 600;
+}
+
+.field-heading-action {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-md);
+  font-size: 14px;
+  font-weight: 600;
+}
+.field-heading-action a { min-height: 44px; padding: var(--space-sm); text-decoration: none; white-space: nowrap; }
+
+.expense-savebar {
+  position: sticky;
+  z-index: 5;
+  bottom: calc(var(--bottom-navigation-height) + env(safe-area-inset-bottom));
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: var(--space-sm);
+  padding: var(--space-md) 0 max(var(--space-md), env(safe-area-inset-bottom));
+  background: color-mix(in srgb, var(--color-surface) 92%, transparent);
+  backdrop-filter: blur(16px);
+}
+.expense-savebar button { width: 100%; }
+
+.saved-expense {
+  display: grid;
+  gap: var(--space-md);
+  padding: var(--space-lg);
+  background: var(--color-surface);
+  border: 1px solid var(--color-expense-accent);
+  border-radius: var(--radius-panel);
+}
+.saved-expense h2 { margin: var(--space-xs) 0 0; font-size: 20px; line-height: 28px; }
+.saved-expense p { margin: var(--space-xs) 0 0; color: var(--color-muted); }
+.saved-expense .text-action { justify-self: start; }
+.saved-expense-details { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: var(--space-sm) var(--space-md); margin: 0; }
+.saved-expense-details dt { color: var(--color-muted); }
+.saved-expense-details dd { min-width: 0; margin: 0; overflow-wrap: anywhere; text-align: right; }
 .dictionary-index-page { width: min(100%, 720px); }
 
 .dictionary-detail-page {
@@ -1227,6 +1380,8 @@ input:disabled {
   }
 
   .dictionary-toolbar .global-search { grid-column: auto; }
+  .form-grid-two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .expense-savebar { bottom: 0; }
 }
 
 @media (min-width: 1024px) {
