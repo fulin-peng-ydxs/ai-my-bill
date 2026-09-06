@@ -124,6 +124,41 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/preferences": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 查询当前用户偏好；非法或停用引用按安全默认返回 */
+        get: operations["getPreferences"];
+        /** 原子保存当前用户的完整偏好 */
+        put: operations["savePreferences"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/preferences/reset": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 删除当前用户自定义偏好并恢复默认 */
+        post: operations["resetPreferences"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/users/{userId}/disable": {
         parameters: {
             query?: never;
@@ -438,6 +473,33 @@ export interface components {
             /** @enum {string} */
             role: "ADMIN" | "USER";
             passwordChangeRequired: boolean;
+        };
+        /** @enum {string} */
+        LedgerDefaultRange: "TODAY" | "THIS_WEEK" | "THIS_MONTH";
+        /** @enum {string} */
+        ReportDefaultRange: "THIS_WEEK" | "THIS_MONTH" | "LAST_MONTH" | "THIS_YEAR";
+        /** @enum {string} */
+        ThemeMode: "SYSTEM" | "LIGHT" | "DARK";
+        /** @enum {string} */
+        EntryType: "EXPENSE" | "INCOME";
+        PreferenceRequest: {
+            /** Format: uuid */
+            defaultFundingChannelId?: string | null;
+            ledgerDefaultRange: components["schemas"]["LedgerDefaultRange"];
+            reportDefaultRange: components["schemas"]["ReportDefaultRange"];
+            themeMode: components["schemas"]["ThemeMode"];
+            recentEntryType: components["schemas"]["EntryType"];
+        };
+        PreferenceResponse: {
+            /** Format: uuid */
+            defaultFundingChannelId?: string | null;
+            defaultFundingChannelName?: string;
+            ledgerDefaultRange: components["schemas"]["LedgerDefaultRange"];
+            reportDefaultRange: components["schemas"]["ReportDefaultRange"];
+            themeMode: components["schemas"]["ThemeMode"];
+            recentEntryType: components["schemas"]["EntryType"];
+            /** Format: date-time */
+            updatedAt: string;
         };
         /** @description 仅允许可见 ASCII 字符；租户间也保持全局唯一。 */
         Username: string;
@@ -925,6 +987,80 @@ export interface operations {
             401: components["responses"]["AuthenticationError"];
             403: components["responses"]["AuthorizationError"];
             409: components["responses"]["ConflictError"];
+            503: components["responses"]["ServiceUnavailableError"];
+        };
+    };
+    getPreferences: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 当前用户偏好；未保存时返回默认值 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PreferenceResponse"];
+                };
+            };
+            401: components["responses"]["AuthenticationError"];
+            403: components["responses"]["AuthorizationError"];
+            503: components["responses"]["ServiceUnavailableError"];
+        };
+    };
+    savePreferences: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PreferenceRequest"];
+            };
+        };
+        responses: {
+            /** @description 已保存偏好 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PreferenceResponse"];
+                };
+            };
+            400: components["responses"]["ValidationError"];
+            401: components["responses"]["AuthenticationError"];
+            403: components["responses"]["AuthorizationError"];
+            503: components["responses"]["ServiceUnavailableError"];
+        };
+    };
+    resetPreferences: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 默认偏好 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PreferenceResponse"];
+                };
+            };
+            401: components["responses"]["AuthenticationError"];
+            403: components["responses"]["AuthorizationError"];
             503: components["responses"]["ServiceUnavailableError"];
         };
     };

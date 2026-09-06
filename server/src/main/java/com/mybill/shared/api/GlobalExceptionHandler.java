@@ -9,6 +9,7 @@ import org.springframework.dao.DataAccessException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
@@ -76,6 +77,18 @@ public class GlobalExceptionHandler {
                 "VALIDATION_FAILED",
                 "请检查查询参数。",
                 Map.of(field, List.of("参数无效")),
+                traceId(),
+                false
+        );
+        return ResponseEntity.badRequest().body(error);
+    }
+
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    ResponseEntity<ApiError> handleUnreadableRequest(HttpMessageNotReadableException exception) {
+        ApiError error = new ApiError(
+                "INVALID_REQUEST",
+                "请求内容格式无效。",
+                Map.of(),
                 traceId(),
                 false
         );

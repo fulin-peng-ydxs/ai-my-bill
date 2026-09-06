@@ -1,16 +1,34 @@
 <script setup lang="ts">
 import { LogOut } from 'lucide-vue-next'
-import { computed } from 'vue'
+import { computed, onUnmounted, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 
 import { useLogout } from '../composables/useLogout'
+import { clearAccountMemory } from '../composables/accountMemory'
+import { registerUnsavedChanges } from '../composables/unsavedChanges'
 import { useSessionStore } from '../stores/session'
+import { usePreferencesStore } from '../stores/preferences'
 import AppStateBlock from './AppStateBlock.vue'
 import BottomNavigation from './BottomNavigation.vue'
 
 const sessionStore = useSessionStore()
+const preferencesStore = usePreferencesStore()
 const isAdmin = computed(() => sessionStore.session?.role === 'ADMIN')
 const { loggingOut, logoutError, logout } = useLogout()
+const hasUnsavedPreferences = computed(() => Object.values(preferencesStore.fieldStates).includes('error'))
+const unregisterPreferenceGuard = registerUnsavedChanges(
+  hasUnsavedPreferences,
+  () => preferencesStore.discardPending(),
+)
+onUnmounted(unregisterPreferenceGuard)
+
+watch(() => sessionStore.session?.accountId, (accountId, previousAccountId) => {
+  if (previousAccountId && previousAccountId !== accountId) {
+    clearAccountMemory(previousAccountId)
+    preferencesStore.clearMemory()
+  }
+  if (accountId && !isAdmin.value) void preferencesStore.initialize(accountId)
+}, { immediate: true })
 </script>
 
 <template>

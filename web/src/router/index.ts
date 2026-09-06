@@ -1,8 +1,10 @@
 import { createMemoryHistory, createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
 
 import { pageRegistry } from '../app/pageRegistry'
+import { requestDiscardChanges } from '../composables/unsavedChanges'
 import { useSessionStore } from '../stores/session'
 import LoginView from '../views/LoginView.vue'
+import LedgerEntryPreferenceView from '../views/LedgerEntryPreferenceView.vue'
 import PlaceholderView from '../views/PlaceholderView.vue'
 import ProfileView from '../views/ProfileView.vue'
 import UserManagementView from '../views/admin/UserManagementView.vue'
@@ -15,6 +17,8 @@ const registeredRoutes: RouteRecordRaw[] = pageRegistry.map((page) => ({
   name: page.pageKey,
   component: page.pageKey === 'login'
     ? LoginView
+    : page.pageKey === 'ledger-entry'
+      ? LedgerEntryPreferenceView
     : page.pageKey === 'admin-console'
       ? UserManagementView
     : page.pageKey === 'admin-default-dictionaries'
@@ -45,6 +49,7 @@ const router = createRouter({
 })
 
 router.beforeEach(async (to) => {
+  if (!await requestDiscardChanges()) return false
   const sessionStore = useSessionStore()
   await sessionStore.initialize()
   const session = sessionStore.session

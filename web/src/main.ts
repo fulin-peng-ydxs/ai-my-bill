@@ -2,6 +2,7 @@ import { createPinia } from 'pinia'
 import { createApp } from 'vue'
 
 import App from './App.vue'
+import { installBeforeUnloadGuard } from './composables/unsavedChanges'
 import { usePwaInstallStore } from './pwa/install'
 import { registerServiceWorker } from './pwa/register'
 import router from './router'
@@ -11,5 +12,6 @@ import { useThemeStore } from './stores/theme'
 const pinia = createPinia()
 useThemeStore(pinia).initialize()
 usePwaInstallStore(pinia).initialize()
+installBeforeUnloadGuard()
 createApp(App).use(pinia).use(router).mount('#app')
 void registerServiceWorker()

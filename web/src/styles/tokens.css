@@ -608,6 +608,8 @@ input:disabled {
 
 .settings-disclosure-list {
   display: grid;
+  width: 100%;
+  grid-template-columns: minmax(0, 1fr);
   margin: 0;
   padding: 0;
   border-block: 1px solid var(--color-border);
@@ -618,6 +620,7 @@ input:disabled {
 
 .settings-disclosure-list button {
   display: grid;
+  width: 100%;
   grid-template-columns: minmax(0, 1fr) auto auto;
   align-items: center;
   gap: var(--space-sm);
@@ -640,6 +643,10 @@ input:disabled {
 
 .drawer-setting-content { display: grid; gap: var(--space-lg); }
 .drawer-setting-content .theme-control { width: 100%; }
+.entry-type-switch {
+  width: min(100%, 360px);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
 
 .money-summary {
   display: grid;
@@ -1025,6 +1032,33 @@ input:disabled {
 
 .account-section { text-align: center; }
 .logout-action { justify-self: center; }
+.preference-caption,
+.entry-stage-note {
+  margin: 0;
+  color: var(--color-muted);
+  font-size: 12px;
+  line-height: 18px;
+}
+.reset-preferences-action {
+  min-height: 36px;
+  padding-block: var(--space-xs);
+  justify-self: center;
+  font-size: 14px;
+}
+.entry-preference-page {
+  display: grid;
+  gap: var(--space-sm);
+}
+.entry-preference-page > p:not(.eyebrow) { margin-bottom: var(--space-lg); }
+.entry-type-panel {
+  display: grid;
+  gap: var(--space-lg);
+}
+.entry-type-panel h2 {
+  margin: 0;
+  font-size: 18px;
+  line-height: 26px;
+}
 .dictionary-index-page { width: min(100%, 720px); }
 
 .dictionary-detail-page {

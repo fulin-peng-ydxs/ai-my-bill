@@ -3,6 +3,7 @@ import { computed } from 'vue'
 import { RouterView, useRoute } from 'vue-router'
 
 import AppShell from './components/AppShell.vue'
+import UnsavedChangesDialog from './components/UnsavedChangesDialog.vue'
 
 const route = useRoute()
 const isAnonymous = computed(() => route.meta.role === 'anonymous')
@@ -13,4 +14,5 @@ const isAnonymous = computed(() => route.meta.role === 'anonymous')
   <AppShell v-else>
     <RouterView />
   </AppShell>
+  <UnsavedChangesDialog />
 </template>

@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 
 import { ApiClientError, apiRequest } from '../api/http'
 import type { components } from '../api/generated/schema'
+import { clearAccountMemory } from '../composables/accountMemory'
 
 export type Session = components['schemas']['SessionResponse']
 export type SessionStatus = 'unknown' | 'loading' | 'authenticated' | 'guest' | 'error'
@@ -79,15 +80,18 @@ export const useSessionStore = defineStore('session', {
       return session
     },
     async logout(): Promise<void> {
+      const accountId = this.session?.accountId
       try {
         await apiRequest<void>('/auth/logout', { method: 'POST' })
       } catch (error) {
         if (error instanceof ApiClientError && error.status === 401) {
+          if (accountId) clearAccountMemory(accountId)
           this.clear()
           return
         }
         throw error
       }
+      if (accountId) clearAccountMemory(accountId)
       this.clear()
       // 退出后主动请求匿名端点，确保浏览器即使清理过 Cookie 也能继续切换账号。
       await this.initialize(true)

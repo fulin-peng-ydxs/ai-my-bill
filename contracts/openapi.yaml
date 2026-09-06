@@ -2,7 +2,7 @@ openapi: 3.1.0
 info:
   title: 我的账单 API
   version: 0.1.0
-  description: 同源 /api/v1 接口契约；T9 已开放认证、管理员用户生命周期、个人字典、商品合并、管理员默认字典与最小健康检查。
+  description: 同源 /api/v1 接口契约；T10 已开放认证、管理员用户生命周期、个人字典、商品合并、管理员默认字典、个人偏好与最小健康检查。
 servers:
   - url: /api/v1
 security:
@@ -192,6 +192,53 @@ paths:
         "401": { $ref: "#/components/responses/AuthenticationError" }
         "403": { $ref: "#/components/responses/AuthorizationError" }
         "409": { $ref: "#/components/responses/ConflictError" }
+        "503": { $ref: "#/components/responses/ServiceUnavailableError" }
+  /preferences:
+    get:
+      operationId: getPreferences
+      summary: 查询当前用户偏好；非法或停用引用按安全默认返回
+      tags: [preferences]
+      responses:
+        "200":
+          description: 当前用户偏好；未保存时返回默认值
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PreferenceResponse" }
+        "401": { $ref: "#/components/responses/AuthenticationError" }
+        "403": { $ref: "#/components/responses/AuthorizationError" }
+        "503": { $ref: "#/components/responses/ServiceUnavailableError" }
+    put:
+      operationId: savePreferences
+      summary: 原子保存当前用户的完整偏好
+      tags: [preferences]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PreferenceRequest" }
+      responses:
+        "200":
+          description: 已保存偏好
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PreferenceResponse" }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "401": { $ref: "#/components/responses/AuthenticationError" }
+        "403": { $ref: "#/components/responses/AuthorizationError" }
+        "503": { $ref: "#/components/responses/ServiceUnavailableError" }
+  /preferences/reset:
+    post:
+      operationId: resetPreferences
+      summary: 删除当前用户自定义偏好并恢复默认
+      tags: [preferences]
+      responses:
+        "200":
+          description: 默认偏好
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PreferenceResponse" }
+        "401": { $ref: "#/components/responses/AuthenticationError" }
+        "403": { $ref: "#/components/responses/AuthorizationError" }
         "503": { $ref: "#/components/responses/ServiceUnavailableError" }
   /admin/users/{userId}/disable:
     post:
@@ -706,6 +753,47 @@ components:
           enum: [ADMIN, USER]
         passwordChangeRequired:
           type: boolean
+    LedgerDefaultRange:
+      type: string
+      enum: [TODAY, THIS_WEEK, THIS_MONTH]
+    ReportDefaultRange:
+      type: string
+      enum: [THIS_WEEK, THIS_MONTH, LAST_MONTH, THIS_YEAR]
+    ThemeMode:
+      type: string
+      enum: [SYSTEM, LIGHT, DARK]
+    EntryType:
+      type: string
+      enum: [EXPENSE, INCOME]
+    PreferenceRequest:
+      type: object
+      additionalProperties: false
+      required: [ledgerDefaultRange, reportDefaultRange, themeMode, recentEntryType]
+      properties:
+        defaultFundingChannelId:
+          type: [string, "null"]
+          format: uuid
+        ledgerDefaultRange: { $ref: "#/components/schemas/LedgerDefaultRange" }
+        reportDefaultRange: { $ref: "#/components/schemas/ReportDefaultRange" }
+        themeMode: { $ref: "#/components/schemas/ThemeMode" }
+        recentEntryType: { $ref: "#/components/schemas/EntryType" }
+    PreferenceResponse:
+      type: object
+      additionalProperties: false
+      required: [ledgerDefaultRange, reportDefaultRange, themeMode, recentEntryType, updatedAt]
+      properties:
+        defaultFundingChannelId:
+          type: [string, "null"]
+          format: uuid
+        defaultFundingChannelName:
+          type: string
+          minLength: 1
+          maxLength: 100
+        ledgerDefaultRange: { $ref: "#/components/schemas/LedgerDefaultRange" }
+        reportDefaultRange: { $ref: "#/components/schemas/ReportDefaultRange" }
+        themeMode: { $ref: "#/components/schemas/ThemeMode" }
+        recentEntryType: { $ref: "#/components/schemas/EntryType" }
+        updatedAt: { type: string, format: date-time }
     Username:
       type: string
       minLength: 3

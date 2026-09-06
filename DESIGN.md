@@ -242,7 +242,7 @@ Key Characteristics：
 
 ## 4. Component Stylings
 
-以下清单是用户已确认的组件契约；`AppShell`、`ThemeModeControl`、`BottomNavigation`、`PwaInstallPrompt`、`AppStateBlock`、T5 通用表单/分段选择/金额/浮层/设置披露/搜索筛选/账目上下文动作基础、T7 `AppDataTable` 与 `AppToast`，以及 T8/T9 字典治理页面已实现。个人与默认字典维护共享 `DictionaryToolbar` 和 `DictionaryItemList`，并直接复用 `GlobalLedgerSearch`、`SegmentedControl`、`AppDrawer`、`AppDialog`、`AppStateBlock`、`AppToast` 和统一请求代次；个人字典成功变更通过统一字典事件通知后续候选组件刷新，取消不发出事件。候选选择、真实账目列表和图表等领域组件按对应业务任务落地。代码出现第二个同类消费场景时，必须抽取或消费复用单元，不允许页面继续复制结构和交互。
+以下清单是用户已确认的组件契约；`AppShell`、`ThemeModeControl`、`BottomNavigation`、`PwaInstallPrompt`、`AppStateBlock`、T5 通用表单/分段选择/金额/浮层/设置披露/搜索筛选/账目上下文动作基础、T7 `AppDataTable` 与 `AppToast`，T8/T9 字典治理页面，以及 T10 `EntryTypeSwitch`、账号隔离草稿和统一未保存内容守卫已实现。个人与默认字典维护共享 `DictionaryToolbar` 和 `DictionaryItemList`，并直接复用 `GlobalLedgerSearch`、`SegmentedControl`、`AppDrawer`、`AppDialog`、`AppStateBlock`、`AppToast` 和统一请求代次；个人字典成功变更通过统一字典事件通知后续候选组件刷新，取消不发出事件。候选选择、真实账目列表和图表等领域组件按对应业务任务落地。代码出现第二个同类消费场景时，必须抽取或消费复用单元，不允许页面继续复制结构和交互。
 
 ### 4.1 组件复用与事实源
 
@@ -288,7 +288,7 @@ Key Characteristics：
 | `Toast` | 短暂动作反馈和撤销 | 保存、删除成功等；失败若影响区域可用性，还必须保留页内错误态 |
 | `PwaInstallPrompt` | 登录页与“我的”的安装能力引导 | 复用同一检测状态源；只有浏览器提供安装事件时显示真实安装动作，否则显示分平台步骤或已安装状态 |
 
-T5/T7 代码事实：登录页真实消费 `FormField` 与 `AppDialog`，主题控件消费 `SegmentedControl`，“我的”页消费 `SettingsDisclosureList` 与 `AppDrawer`；T7 用户管理页真实消费 `FormField`、`AppStateBlock`、`AppDialog`、`AppDrawer`、`useLatestRequest`，并新增复用型 `AppDataTable` 与 `AppToast`。T8/T9 的个人字典和默认字典页面共享 `DictionaryToolbar`、`DictionaryItemList`、四态和浮层，默认字典在管理端桌面侧栏与窄屏页头均有入口，并明确“只影响后续新增用户”的作用域。`MoneySummary`、`AppliedFilterBar`、`FilterSheet`、`LedgerContextActions` 等尚未有真实业务接口的能力不得挂载到占位页或展示模拟账单；它们仍须在 T11/T15/T20 等首次真实消费阶段完成页面级验收。未保存草稿守卫及其真实消费尚未实现。
+T5/T7 代码事实：登录页真实消费 `FormField` 与 `AppDialog`，主题控件消费 `SegmentedControl`，“我的”页消费 `SettingsDisclosureList` 与 `AppDrawer`；T7 用户管理页真实消费 `FormField`、`AppStateBlock`、`AppDialog`、`AppDrawer`、`useLatestRequest`，并新增复用型 `AppDataTable` 与 `AppToast`。T8/T9 的个人字典和默认字典页面共享 `DictionaryToolbar`、`DictionaryItemList`、四态和浮层，默认字典在管理端桌面侧栏与窄屏页头均有入口，并明确“只影响后续新增用户”的作用域。T10 的“记一笔”入口真实消费 `EntryTypeSwitch` 和服务端最近类型偏好，“我的”页真实消费资金渠道、明细范围、报表范围与主题偏好；路由、刷新/关闭、退出和账号变化共享单一未保存内容守卫，账目草稿只通过不可逆账号命名空间和类型白名单读写。`MoneySummary`、`AppliedFilterBar`、`FilterSheet`、`LedgerContextActions` 等尚未有真实业务接口的能力不得挂载到占位页或展示模拟账单；它们仍须在 T11/T15/T20 等首次真实消费阶段完成页面级验收。
 
 ### 4.3 按钮与输入
 
