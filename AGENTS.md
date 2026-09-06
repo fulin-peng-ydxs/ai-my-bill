@@ -20,7 +20,7 @@
 - 全量工程基线：`npm run check`
 - 前端开发：`npm --prefix web run dev`
 - 前端检查：`npm --prefix web run check`
-- 后端检查：`./mvnw -B verify`
+- 后端检查：`npm run check:server`（通过项目脚本解析 Java 21，不依赖当前 shell 的默认 Java）
 - 数据库迁移与隔离：`npm run check:database`（复用系统 PostgreSQL 16+ 可执行程序创建并销毁一次性测试集群）
 - 本地联调：`npm run dev`
 

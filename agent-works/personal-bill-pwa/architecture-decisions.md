@@ -4,13 +4,13 @@
 
 - 前端锁定 Node.js 24.11.1 与 npm 11.6.2，使用 Vue 3、Vite、TypeScript、Pinia、Vue Router、ECharts 和 Lucide Vue Next。依赖由 `web/package-lock.json` 固化，CI 使用 `npm ci`。
 - 后端锁定 Java 21 LTS、Spring Boot 3.5.16 与 Maven Wrapper。选择仍受维护的 Spring Boot 3.x 基线，避免在首期业务开发前引入 Spring Framework 7 的迁移面。
-- PostgreSQL 开发基线为 16 或更高受支持版本，生产镜像固定为 PostgreSQL 16.14。T2 已固化 Flyway 11.7.2、独立 bootstrap/迁移/应用角色、15 张租户表的强制 RLS 与生产应用只读版本门禁；T6 把预期 schema 版本推进到 `008`，为 `job_run` 增加有限重试、租约、合作式取消和批次幂等约束。
+- PostgreSQL 开发基线为 16 或更高受支持版本，生产镜像固定为 PostgreSQL 16.14。当前已固化 Flyway 11.7.2、独立 bootstrap/迁移/应用角色、16 张租户表的强制 RLS 与生产应用只读版本门禁；预期 schema 版本为 `010`，其中 `job_run` 支持有限重试、租约、合作式取消和批次幂等，商品具备显式排序、合并留痕和默认字典规范化约束。
 
 ## 2. 应用与模块边界
 
 - 采用单仓库、Vue 单页应用、Spring Boot 模块化单体和 PostgreSQL，同源接口前缀固定为 `/api/v1`。
-- 后端领域包固定为 `auth`、`admin`、`dict`、`ledger`、`report`、`job`，公共契约位于 `shared`。跨领域写操作只经应用服务，查询只能消费明确的只读接口或投影。
-- T1 建立工程空壳，T2 建立持久化结构、JPA 映射与数据库约束，T3 建立认证、会话、角色路由和租户事务上下文，T4 建立登录页、PWA/主题和双角色应用外壳，T5 建立共享前端组件、精确金额、请求状态和 API 错误基础，T6 建立追加审计及 PostgreSQL 租约式小批次任务执行基础。字典、收支业务 API、具体后台任务和审计查询仍未实施。
+- 当前后端领域包为 `auth`、`admin`、`dictionary`、`preference`、`job`，公共持久化映射位于 `persistence`，公共契约位于 `shared`；后续收支与报表阶段分别新增 `ledger`、`report`。跨领域写操作只经应用服务，查询只能消费明确的只读接口或投影。
+- T1-T6 已建立工程、持久化/RLS、认证会话、PWA/主题/双角色外壳、共享前端基础、追加审计和 PostgreSQL 租约式任务基础；T7-T10 已实现已开放的管理员账号管理、个人字典、商品与默认字典治理、偏好及账号隔离草稿。账号注销处理、收支、报表、具体后台任务、运行概况和审计查询仍未实施；注销 API 与页面动作在 T19 的数据保留与清理策略确认前均不登记。
 
 ## 3. HTTP 与数据契约
 
@@ -29,10 +29,10 @@
 ## 5. 本地启动与持续集成
 
 - `npm run dev` 使用仓库内 `.local/postgres` 数据目录启动隔离的本地 PostgreSQL，再并行启动后端和前端；脚本拒绝外部主机、非法连接参数、低于 16 的 PostgreSQL 以及被其他数据集群占用的端口，退出命令时仅停止本次启动的进程。
-- 本地开发由 bootstrap 账号 `my_bill_dev` 只负责建库/建角，非超级迁移所有者 `my_bill_migration` 执行 Flyway，后端连接非超级用户 `my_bill_app`；生产内嵌 Flyway固定关闭，启动时只读核对 schema 版本 `008`。
-- `npm run check:database` 使用系统已有 PostgreSQL 16+ 可执行程序创建一次性隔离集群，不连接本项目开发库、`ai-stocks` 或其他项目数据库，也不探测/依赖 Docker 或 Testcontainers。同一临时集群先验证 T3 真实认证链，再重建空 schema 验证 T2 migration/RLS/回滚；退出时只清理 `mktemp` 生成的该集群。
+- 本地开发由 bootstrap 账号 `my_bill_dev` 只负责建库/建角，非超级迁移所有者 `my_bill_migration` 执行 Flyway，后端连接非超级用户 `my_bill_app`；生产内嵌 Flyway 固定关闭，启动时只读核对 schema 版本 `010`。
+- `npm run check:database` 使用系统已有 PostgreSQL 16+ 可执行程序创建一次性隔离集群，不连接本项目开发库、`ai-stocks` 或其他项目数据库，也不探测/依赖 Docker 或 Testcontainers。同一临时集群先运行 30 项认证、管理、字典、治理与偏好 HTTP 集成测试，再重建空 schema 运行 7 项 migration、RLS、任务和回滚测试；退出时只清理 `mktemp` 生成的该集群。
 - Compose 将长驻数据库、一次性角色 provision、一次性 migrate 和长驻 app 分开；数据库只挂 bootstrap secret，provision 短时挂三类 secret，migrate 只挂迁移 secret，app 只挂运行 secret。前端静态服务和反向代理仍属于 T29。
-- CI 分别执行前端 typecheck、lint、unit、OpenAPI 校验/类型漂移检查与后端 Maven verify。
+- CI 分别执行前端 typecheck、lint、unit、OpenAPI 校验/类型漂移检查与后端 Maven verify；本地单独验证后端统一使用 `npm run check:server` 解析系统已有 Java 21。
 - 本地缺少目标工具链时立即失败并提示所需版本，不静默降级到 Node 18 或 Java 8。
 
 ## 6. 认证、会话与租户上下文

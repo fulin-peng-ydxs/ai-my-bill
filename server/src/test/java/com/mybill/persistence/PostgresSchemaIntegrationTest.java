@@ -262,7 +262,8 @@ class PostgresSchemaIntegrationTest {
         jobs.claimNext(java.util.List.of("T6_TEST"), "dead-worker", now, now.plusSeconds(30)).orElseThrow();
         executeAdmin("UPDATE job_run SET lease_expires_at='2026-09-05T11:59:59Z' WHERE id='" + expiredId + "'");
         assertThat(jobs.findExpired(now)).extracting(run -> run.id()).contains(expiredId);
-        jobs.recoverExpired(expiredId, true, "LEASE_EXPIRED", now);
+        assertThat(jobs.recoverExpired(expiredId, true, "LEASE_EXPIRED", now)).isTrue();
+        assertThat(jobs.recoverExpired(expiredId, true, "LEASE_EXPIRED", now)).isFalse();
         assertThat(jobs.find(expiredId).orElseThrow().status()).isEqualTo("PENDING");
 
         String administrator = "60000000-0000-0000-0000-000000000001";

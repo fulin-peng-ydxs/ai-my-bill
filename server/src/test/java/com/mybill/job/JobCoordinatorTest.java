@@ -23,8 +23,10 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.doThrow;
 
 class JobCoordinatorTest {
     private static final Instant NOW = Instant.parse("2026-09-05T12:00:00Z");
@@ -52,9 +54,44 @@ class JobCoordinatorTest {
         JobRun run = new JobRun(UUID.randomUUID(), null, "TEST_JOB", "batch-1", "RUNNING",
                 0, 3, 3, "dead-owner", NOW.minusSeconds(1), false);
         when(repository.findExpired(NOW)).thenReturn(List.of(run));
+        when(repository.recoverExpired(run.id(), false, "LEASE_EXPIRED", NOW)).thenReturn(true);
 
         assertThat(coordinator(repository, definition).recoverExpired()).isEqualTo(1);
         verify(repository).recoverExpired(run.id(), false, "LEASE_EXPIRED", NOW);
+    }
+
+    @Test
+    void expiredLeaseIsCountedOnlyByTheInstanceThatChangesItsState() {
+        JobRunRepository repository = mock(JobRunRepository.class);
+        JobDefinition definition = definition(true, true, context -> JobBatchResult.completed(0));
+        JobRun run = new JobRun(UUID.randomUUID(), null, "TEST_JOB", "batch-1", "RUNNING",
+                0, 1, 3, "dead-owner", NOW.minusSeconds(1), false);
+        when(repository.findExpired(NOW)).thenReturn(List.of(run));
+        when(repository.recoverExpired(run.id(), true, "LEASE_EXPIRED", NOW)).thenReturn(true, false);
+        SimpleMeterRegistry meters = new SimpleMeterRegistry();
+        JobCoordinator coordinator = coordinator(repository, definition, meters);
+
+        assertThat(coordinator.recoverExpired()).isEqualTo(1);
+        assertThat(coordinator.recoverExpired()).isZero();
+        assertThat(meters.counter("my_bill.jobs.recovered", "job_type", "TEST_JOB", "outcome", "retry").count())
+                .isEqualTo(1);
+    }
+
+    @Test
+    void leaseLossDuringCompletionDoesNotRetryOrEscapeTheRunner() {
+        JobRunRepository repository = mock(JobRunRepository.class);
+        JobDefinition definition = definition(true, true, context -> JobBatchResult.completed(1));
+        JobRun run = new JobRun(UUID.randomUUID(), null, "TEST_JOB", "batch-1", "RUNNING",
+                0, 1, 3, "owner", NOW.plusSeconds(30), false);
+        when(repository.findExpired(NOW)).thenReturn(List.of());
+        when(repository.claimNext(any(), anyString(), any(), any())).thenReturn(Optional.of(run));
+        doThrow(new JobLeaseLostException()).when(repository).complete(run.id(), "owner", 1, NOW);
+        SimpleMeterRegistry meters = new SimpleMeterRegistry();
+
+        assertThat(coordinator(repository, definition, meters).runNext()).isTrue();
+        verify(repository, never()).failOrRetry(any(), anyString(), eq(true), anyString(), any());
+        assertThat(meters.counter("my_bill.jobs.executed", "job_type", "TEST_JOB", "outcome", "lease_lost").count())
+                .isEqualTo(1);
     }
 
     @Test
@@ -68,13 +105,19 @@ class JobCoordinatorTest {
 
     @SuppressWarnings("unchecked")
     private static JobCoordinator coordinator(JobRunRepository repository, JobDefinition definition) {
+        return coordinator(repository, definition, new SimpleMeterRegistry());
+    }
+
+    @SuppressWarnings("unchecked")
+    private static JobCoordinator coordinator(JobRunRepository repository, JobDefinition definition,
+                                               SimpleMeterRegistry meters) {
         TransactionTemplate transactions = mock(TransactionTemplate.class);
         when(transactions.execute(any())).thenAnswer(invocation -> {
             TransactionCallback<Object> callback = invocation.getArgument(0);
             return callback.doInTransaction(mock(TransactionStatus.class));
         });
         return new JobCoordinator(repository, new JobDefinitionRegistry(List.of(definition)),
-                mock(TenantDatabaseExecutor.class), transactions, new SimpleMeterRegistry(),
+                mock(TenantDatabaseExecutor.class), transactions, meters,
                 new JobRunnerProperties(Duration.ofSeconds(30)), Clock.fixed(NOW, ZoneOffset.UTC), "owner");
     }
 

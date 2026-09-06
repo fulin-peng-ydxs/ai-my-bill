@@ -67,6 +67,17 @@ describe('ledger draft storage', () => {
     expect(serialized).not.toContain('response')
   })
 
+  it('enforces field limits by Unicode code points', async () => {
+    vi.stubGlobal('localStorage', memoryStorage())
+    const fiveHundredEmoji = '🥤'.repeat(500)
+
+    await writeLedgerDraft(ACCOUNT, 'EXPENSE', { note: fiveHundredEmoji })
+    expect(await readLedgerDraft(ACCOUNT, 'EXPENSE')).toEqual({ note: fiveHundredEmoji })
+
+    await writeLedgerDraft(ACCOUNT, 'EXPENSE', { note: `${fiveHundredEmoji}🥤` })
+    expect(await readLedgerDraft(ACCOUNT, 'EXPENSE')).toBeUndefined()
+  })
+
   it('clears memory but keeps the device draft after confirmed logout', async () => {
     vi.stubGlobal('localStorage', memoryStorage())
     const scope = effectScope()

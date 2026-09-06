@@ -109,13 +109,13 @@ public class JdbcJobRunRepository implements JobRunRepository {
     }
 
     @Override
-    public void recoverExpired(UUID id, boolean retry, String error, Instant now) {
-        jdbc.sql("""
+    public boolean recoverExpired(UUID id, boolean retry, String error, Instant now) {
+        return jdbc.sql("""
                 UPDATE job_run SET status=CASE WHEN :retry THEN 'PENDING' ELSE 'FAILED' END,
                     finished_at=CASE WHEN :retry THEN NULL::timestamptz ELSE :now END, error_summary=:error,
                     lease_owner=NULL, lease_expires_at=NULL, cancel_requested=false, updated_at=:now
                 WHERE id=:id AND status='RUNNING' AND lease_expires_at <= :now
-                """).param("retry", retry).param("now", ts(now)).param("error", error).param("id", id).update();
+                """).param("retry", retry).param("now", ts(now)).param("error", error).param("id", id).update() == 1;
     }
 
     @Override
@@ -161,6 +161,6 @@ public class JdbcJobRunRepository implements JobRunRepository {
         if (type == null || !type.matches("[A-Z][A-Z0-9_]{0,63}") || key == null || key.isBlank()
                 || key.length() > 128 || attempts < 1 || attempts > 20) throw new IllegalArgumentException("invalid job schedule");
     }
-    private static void requireOne(int count) { if (count != 1) throw new IllegalStateException("任务租约已失效"); }
+    private static void requireOne(int count) { if (count != 1) throw new JobLeaseLostException(); }
     private static Timestamp ts(Instant value) { return Timestamp.from(value); }
 }

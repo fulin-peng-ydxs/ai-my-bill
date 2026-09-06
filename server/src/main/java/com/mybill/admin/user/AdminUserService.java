@@ -32,7 +32,6 @@ class AdminUserService {
     private static final AuditPolicy CREATE_POLICY = new AuditPolicy("CREATE_USER", "USER", Set.of("username", "status"));
     private static final AuditPolicy STATUS_POLICY = new AuditPolicy("CHANGE_USER_STATUS", "USER", Set.of("status"));
     private static final AuditPolicy RESET_POLICY = new AuditPolicy("RESET_USER_PASSWORD", "USER", Set.of("status"));
-    private static final AuditPolicy DELETE_POLICY = new AuditPolicy("REQUEST_USER_DELETION", "USER", Set.of("status"));
 
     private final AdminUserRepository repository;
     private final TemporaryPasswordGenerator passwordGenerator;
@@ -116,26 +115,6 @@ class AdminUserService {
         auditService.append(administrator, RESET_POLICY, new AuditEvent(userId.toString(), AuditResult.SUCCEEDED,
                 Map.of("status", visibleStatus(before).name()), Map.of("status", user.status().name())));
         return new TemporaryCredential(user, temporaryPassword, expiresAt);
-    }
-
-    @Transactional
-    AdminUserResponse requestDeletion(CurrentPrincipal administrator, UUID userId, long version) {
-        AdminUserRepository.AdminUserRow before = lockAndCheckVersion(userId, version);
-        if (!Set.of("ACTIVE", "DISABLED").contains(before.status())) {
-            throw invalidState("当前账号状态不能申请注销。");
-        }
-        Instant now = clock.instant();
-        requireSingleRow(repository.updateStatus(userId, version, "DELETION_PENDING", now));
-        requireSingleRow(repository.updateTenantStatus(before.tenantId(), "SUSPENDED", now));
-        authenticationService.revokeAllSessionsForAdministration(userId, now, "ADMIN_DELETION_REQUESTED");
-        tenantDatabase.execute(before.tenantId(), () -> {
-            repository.createDeletionJob(before.tenantId(), userId, now);
-            return null;
-        });
-        AdminUserResponse user = AdminUserResponse.from(repository.findUser(userId));
-        auditService.append(administrator, DELETE_POLICY, new AuditEvent(userId.toString(), AuditResult.SUCCEEDED,
-                Map.of("status", visibleStatus(before).name()), Map.of("status", user.status().name())));
-        return user;
     }
 
     private AdminUserResponse changeStatus(CurrentPrincipal administrator, UUID userId, long version,

@@ -63,7 +63,8 @@ router.beforeEach(async (to) => {
     }
     const requiredRole = to.meta.role?.toUpperCase()
     if (requiredRole && session.role !== requiredRole) {
-      return session.role === 'ADMIN' ? '/admin' : '/entry'
+      // 普通用户访问管理地址时保留目标 URL，由应用壳呈现明确的权限状态。
+      return session.role === 'ADMIN' ? '/admin' : true
     }
   }
 

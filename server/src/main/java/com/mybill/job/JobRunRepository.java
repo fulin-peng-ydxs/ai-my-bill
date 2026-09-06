@@ -17,6 +17,6 @@ public interface JobRunRepository {
     void cancel(UUID runId, String owner, long processed, Instant now);
     void failOrRetry(UUID runId, String owner, boolean retry, String safeError, Instant now);
     List<JobRun> findExpired(Instant now);
-    void recoverExpired(UUID runId, boolean retry, String safeError, Instant now);
+    boolean recoverExpired(UUID runId, boolean retry, String safeError, Instant now);
     String requestCancellation(UUID runId, boolean cancellable, Instant now);
 }

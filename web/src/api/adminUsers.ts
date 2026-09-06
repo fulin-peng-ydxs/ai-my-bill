@@ -25,7 +25,7 @@ export function createAdminUser(username: string): Promise<TemporaryCredential> 
 
 export function mutateAdminUser(
   user: AdminUser,
-  action: 'disable' | 'restore' | 'reset-password' | 'deletion',
+  action: 'disable' | 'restore' | 'reset-password',
 ): Promise<AdminUser | TemporaryCredential> {
   return apiRequest(`/admin/users/${encodeURIComponent(user.accountId)}/${action}`, {
     method: 'POST',

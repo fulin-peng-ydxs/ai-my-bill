@@ -1,6 +1,7 @@
 import { computed, onScopeDispose, ref, watch, type Ref } from 'vue'
 
 import type { EntryType } from '../domain/preferences'
+import { unicodeCodePointLength } from '../domain/text'
 import { readAccountStorage, removeAccountStorage, writeAccountStorage } from '../storage/accountStorage'
 import { registerAccountMemoryCleanup } from './accountMemory'
 import { notifyUnsavedChangesChanged, registerUnsavedChanges } from './unsavedChanges'
@@ -40,7 +41,9 @@ function sanitize(type: EntryType, value: unknown): LedgerDraftData {
   const source = value as Record<string, unknown>
   return Object.fromEntries(Object.entries(FIELD_LIMITS[type]).flatMap(([field, limit]) => {
     const candidate = source[field]
-    return typeof candidate === 'string' && candidate.length <= limit && candidate.length > 0
+    return typeof candidate === 'string'
+      && unicodeCodePointLength(candidate) <= limit
+      && unicodeCodePointLength(candidate) > 0
       ? [[field, candidate]]
       : []
   }))

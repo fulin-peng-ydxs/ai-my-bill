@@ -39,4 +39,17 @@ describe('session route guard', () => {
 
     expect(router.currentRoute.value.path).toBe('/admin')
   })
+
+  it('keeps an ordinary user on an admin URL so the shell can show permission denied', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({
+      accountId: '10000000-0000-0000-0000-000000000002',
+      username: 'ordinary-user',
+      role: 'USER',
+      passwordChangeRequired: false,
+    })))
+
+    await router.push('/admin')
+
+    expect(router.currentRoute.value.path).toBe('/admin')
+  })
 })

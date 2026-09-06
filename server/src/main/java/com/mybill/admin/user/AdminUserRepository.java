@@ -152,15 +152,6 @@ class AdminUserRepository {
                 .param("id", userId).param("version", version).update();
     }
 
-    void createDeletionJob(UUID tenantId, UUID userId, Instant now) {
-        jdbc.sql("""
-                        INSERT INTO account_deletion_job(tenant_id, id, user_id, status, requested_at, created_at, updated_at)
-                        VALUES (:tenantId, :id, :userId, 'PENDING', :now, :now, :now)
-                        """)
-                .param("tenantId", tenantId).param("id", UUID.randomUUID()).param("userId", userId)
-                .param("now", Timestamp.from(now)).update();
-    }
-
     private static AdminUserRow mapRow(java.sql.ResultSet rs, int rowNumber) throws java.sql.SQLException {
         return new AdminUserRow(rs.getObject("id", UUID.class), rs.getString("username"), rs.getString("status"),
                 instant(rs.getTimestamp("temporary_password_expires_at")), rs.getLong("credential_version"),

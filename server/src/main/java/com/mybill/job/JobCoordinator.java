@@ -63,10 +63,12 @@ public final class JobCoordinator {
         for (JobRun run : repository.findExpired(now)) {
             JobDefinition definition = registry.find(run.jobType());
             boolean retry = definition != null && definition.retryable() && run.attemptCount() < run.maxAttempts();
-            repository.recoverExpired(run.id(), retry, definition == null ? "UNKNOWN_JOB_TYPE" : "LEASE_EXPIRED", now);
-            meters.counter("my_bill.jobs.recovered", "job_type", run.jobType(),
-                    "outcome", retry ? "retry" : "failed").increment();
-            recovered++;
+            if (repository.recoverExpired(run.id(), retry,
+                    definition == null ? "UNKNOWN_JOB_TYPE" : "LEASE_EXPIRED", now)) {
+                meters.counter("my_bill.jobs.recovered", "job_type", run.jobType(),
+                        "outcome", retry ? "retry" : "failed").increment();
+                recovered++;
+            }
         }
         return recovered;
     }
@@ -83,12 +85,23 @@ public final class JobCoordinator {
             else repository.releaseForMore(run.id(), owner, result.processedCount(), now);
             meters.counter("my_bill.jobs.executed", "job_type", run.jobType(), "outcome",
                     cancelled ? "cancelled" : result.completed() ? "succeeded" : "continued").increment();
+        } catch (JobLeaseLostException leaseLost) {
+            recordLeaseLost(run);
         } catch (Exception failure) {
             boolean retry = definition.retryable() && run.attemptCount() < run.maxAttempts();
-            repository.failOrRetry(run.id(), owner, retry, safeError(failure), Instant.now(clock));
+            try {
+                repository.failOrRetry(run.id(), owner, retry, safeError(failure), Instant.now(clock));
+            } catch (JobLeaseLostException leaseLost) {
+                recordLeaseLost(run);
+                return;
+            }
             meters.counter("my_bill.jobs.executed", "job_type", run.jobType(),
                     "outcome", retry ? "retry" : "failed").increment();
         }
+    }
+
+    private void recordLeaseLost(JobRun run) {
+        meters.counter("my_bill.jobs.executed", "job_type", run.jobType(), "outcome", "lease_lost").increment();
     }
 
     private JobExecutionContext context(JobRun run) {

@@ -264,14 +264,6 @@ paths:
       parameters: [{ $ref: "#/components/parameters/UserId" }]
       requestBody: { $ref: "#/components/requestBodies/UserVersion" }
       responses: { "200": { description: 新临时密码仅本次展示, content: { application/json: { schema: { $ref: "#/components/schemas/TemporaryCredentialResponse" } } } }, "401": { $ref: "#/components/responses/AuthenticationError" }, "403": { $ref: "#/components/responses/AuthorizationError" }, "404": { $ref: "#/components/responses/NotFoundError" }, "409": { $ref: "#/components/responses/ConflictError" }, "503": { $ref: "#/components/responses/ServiceUnavailableError" } }
-  /admin/users/{userId}/deletion:
-    post:
-      operationId: requestAdminUserDeletion
-      summary: 停用账号、撤销会话并登记注销任务
-      tags: [admin-users]
-      parameters: [{ $ref: "#/components/parameters/UserId" }]
-      requestBody: { $ref: "#/components/requestBodies/UserVersion" }
-      responses: { "200": { $ref: "#/components/responses/AdminUser" }, "401": { $ref: "#/components/responses/AuthenticationError" }, "403": { $ref: "#/components/responses/AuthorizationError" }, "404": { $ref: "#/components/responses/NotFoundError" }, "409": { $ref: "#/components/responses/ConflictError" }, "503": { $ref: "#/components/responses/ServiceUnavailableError" } }
   /admin/default-dictionaries:
     get:
       operationId: listDefaultDictionarySummaries

@@ -64,9 +64,4 @@ public class AdminUserController {
         return service.resetPassword(administrator, userId, request.version());
     }
 
-    @PostMapping("/{userId}/deletion")
-    AdminUserResponse requestDeletion(@AuthenticationPrincipal CurrentPrincipal administrator,
-                                      @PathVariable UUID userId, @Valid @RequestBody VersionRequest request) {
-        return service.requestDeletion(administrator, userId, request.version());
-    }
 }

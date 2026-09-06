@@ -210,23 +210,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/admin/users/{userId}/deletion": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** 停用账号、撤销会话并登记注销任务 */
-        post: operations["requestAdminUserDeletion"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/admin/default-dictionaries": {
         parameters: {
             query?: never;
@@ -1122,25 +1105,6 @@ export interface operations {
                     "application/json": components["schemas"]["TemporaryCredentialResponse"];
                 };
             };
-            401: components["responses"]["AuthenticationError"];
-            403: components["responses"]["AuthorizationError"];
-            404: components["responses"]["NotFoundError"];
-            409: components["responses"]["ConflictError"];
-            503: components["responses"]["ServiceUnavailableError"];
-        };
-    };
-    requestAdminUserDeletion: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                userId: components["parameters"]["UserId"];
-            };
-            cookie?: never;
-        };
-        requestBody: components["requestBodies"]["UserVersion"];
-        responses: {
-            200: components["responses"]["AdminUser"];
             401: components["responses"]["AuthenticationError"];
             403: components["responses"]["AuthorizationError"];
             404: components["responses"]["NotFoundError"];
