@@ -43,7 +43,7 @@ management:
 my-bill:
   schema:
     validation-enabled: false
-    expected-version: "009"
+    expected-version: "010"
   auth:
     session-cookie-name: MY_BILL_SESSION
     session-duration: PT12H

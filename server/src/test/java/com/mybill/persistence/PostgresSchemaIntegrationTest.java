@@ -62,7 +62,7 @@ class PostgresSchemaIntegrationTest {
                 + "('09000000-0000-0000-0000-000000000001','09000000-0000-0000-0000-000000000002','旧商品','旧商品','2026-01-01T00:00:00Z'),"
                 + "('09000000-0000-0000-0000-000000000001','09000000-0000-0000-0000-000000000003','新商品','新商品','2026-02-01T00:00:00Z')");
         flyway = Flyway.configure().dataSource(jdbcUrl, "my_bill_migration", "migration_test").load();
-        assertThat(flyway.migrate().migrationsExecuted).isOne();
+        assertThat(flyway.migrate().migrationsExecuted).isEqualTo(2);
         assertThat(queryAdminString("SELECT string_agg(display_name || ':' || sort_order, ',' ORDER BY sort_order) "
                 + "FROM product WHERE tenant_id='09000000-0000-0000-0000-000000000001'"))
                 .isEqualTo("新商品:0,旧商品:10");
@@ -109,8 +109,9 @@ class PostgresSchemaIntegrationTest {
                 .isEqualTo("true:false:false");
         assertThat(queryAdminLong("SELECT count(*) FROM pg_class WHERE relrowsecurity AND relforcerowsecurity AND relname IN "
                 + "('expense_category','unit','funding_channel','purchase_channel','location_label','income_category','payer','product',"
-                + "'ledger_entry','expense_adjustment','daily_entry_template','user_preference','idempotency_record','export_job','account_deletion_job')"))
-                .isEqualTo(15);
+                + "'ledger_entry','expense_adjustment','daily_entry_template','user_preference','idempotency_record','export_job','account_deletion_job',"
+                + "'product_merge_event')"))
+                .isEqualTo(16);
 
         String tenantA = "10000000-0000-0000-0000-000000000001";
         String tenantB = "10000000-0000-0000-0000-000000000002";
@@ -286,12 +287,12 @@ class PostgresSchemaIntegrationTest {
         DriverManagerDataSource appDataSource = new DriverManagerDataSource(jdbcUrl, "my_bill_app", "app_test");
         JdbcClient appJdbc = JdbcClient.create(appDataSource);
 
-        new SchemaVersionGuard(appJdbc, new SchemaVersionProperties(true, "009")).run(null);
+        new SchemaVersionGuard(appJdbc, new SchemaVersionProperties(true, "010")).run(null);
         assertThatThrownBy(() -> new SchemaVersionGuard(
                 appJdbc, new SchemaVersionProperties(true, "8")).run(null))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("期望 8")
-                .hasMessageContaining("实际 009");
+                .hasMessageContaining("实际 010");
     }
 
     @Test
@@ -299,7 +300,7 @@ class PostgresSchemaIntegrationTest {
     void documentedRollbackScriptsAreExecutableInAnEmptyEnvironment() throws Exception {
         executeAdmin("TRUNCATE tenant CASCADE");
         executeAdmin("UPDATE default_dictionary_item SET display_name='工资' WHERE stable_key='salary'");
-        for (int version = 9; version >= 1; version--) {
+        for (int version = 10; version >= 1; version--) {
             executeAdmin(readResource(String.format("db/rollback/U%03d__%s.sql", version, rollbackName(version))));
         }
         assertThat(queryAdminLong("SELECT count(*) FROM information_schema.tables WHERE table_schema='public' "
@@ -355,6 +356,7 @@ class PostgresSchemaIntegrationTest {
             case 7 -> "tenant_rls_policies";
             case 8 -> "job_execution_contract";
             case 9 -> "product_sort_order";
+            case 10 -> "product_merge_and_default_dictionary_normalization";
             default -> throw new IllegalArgumentException("unsupported rollback version " + version);
         };
     }

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ArrowDown, ArrowLeft, ArrowUp, ChevronLeft, ChevronRight, MoreHorizontal, Plus, RefreshCw } from 'lucide-vue-next'
+import { ArrowDown, ArrowLeft, ArrowUp, ChevronLeft, ChevronRight, Plus } from 'lucide-vue-next'
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
@@ -7,19 +7,24 @@ import {
   changeDictionaryItemStatus,
   createDictionaryItem,
   listDictionaryItems,
+  listDictionaryCandidates,
+  mergeProduct,
   moveDictionaryItem,
+  previewProductMerge,
   renameDictionaryItem,
   type DictionaryItem,
   type DictionaryStatus,
+  type ProductMergePreview,
 } from '../../../api/dictionaries'
 import { normalizeRequestError } from '../../../api/errors'
 import AppDialog from '../../../components/AppDialog.vue'
 import AppDrawer from '../../../components/AppDrawer.vue'
 import AppStateBlock from '../../../components/AppStateBlock.vue'
 import AppToast from '../../../components/AppToast.vue'
+import DictionaryItemList, { type DictionaryListItem } from '../../../components/DictionaryItemList.vue'
+import DictionaryToolbar from '../../../components/DictionaryToolbar.vue'
 import FormField from '../../../components/FormField.vue'
 import GlobalLedgerSearch from '../../../components/GlobalLedgerSearch.vue'
-import SegmentedControl from '../../../components/SegmentedControl.vue'
 import { useLatestRequest } from '../../../composables/useLatestRequest'
 import { dictionaryDefinition } from '../../../domain/dictionaries'
 
@@ -46,6 +51,15 @@ const busy = ref(false)
 const toastOpen = ref(false)
 const toastMessage = ref('')
 const toastKind = ref<'success' | 'error'>('success')
+const mergeOpen = ref(false)
+const mergeQuery = ref('')
+const mergeCandidates = ref<DictionaryItem[]>([])
+const mergeCandidateStatus = ref<'idle' | 'loading' | 'ready' | 'error'>('idle')
+const mergeTargetId = ref('')
+const mergePreview = ref<ProductMergePreview>()
+const mergeError = ref('')
+const mergeBusy = ref(false)
+const mergeConfirmOpen = ref(false)
 const { data, status, error, staleWarning, refreshing, execute, cancel } = useLatestRequest<Awaited<ReturnType<typeof listDictionaryItems>>>()
 
 const items = computed(() => data.value?.items ?? [])
@@ -57,11 +71,6 @@ const editorTitle = computed(() => editorMode.value === 'create'
 const editorDescription = computed(() => definition.value?.hierarchical && editorMode.value === 'create'
   ? '可留空创建一级分类，或选择一级分类创建二级分类。'
   : '名称会用于之后的新记录，历史账目中的名称快照保持不变。')
-const statusOptions = [
-  { value: '', label: '全部' },
-  { value: 'ACTIVE', label: '启用' },
-  { value: 'INACTIVE', label: '停用' },
-] as const
 
 async function load(intent: 'replace' | 'refresh' = 'replace'): Promise<void> {
   if (!definition.value) return
@@ -147,8 +156,8 @@ async function submitEditor(): Promise<void> {
   }
 }
 
-function openActions(item: DictionaryItem): void {
-  selected.value = item
+function openActions(item: DictionaryListItem): void {
+  selected.value = items.value.find((candidate) => candidate.id === item.id)
   actionsOpen.value = true
 }
 
@@ -159,6 +168,68 @@ function openRename(): void {
   editorName.value = selected.value.name
   editorError.value = ''
   editorOpen.value = true
+}
+
+async function openMerge(): Promise<void> {
+  actionsOpen.value = false
+  mergeQuery.value = ''
+  mergeTargetId.value = ''
+  mergePreview.value = undefined
+  mergeError.value = ''
+  mergeOpen.value = true
+  await loadMergeCandidates('')
+}
+
+async function loadMergeCandidates(query: string): Promise<void> {
+  if (!selected.value) return
+  mergeCandidateStatus.value = 'loading'
+  mergeError.value = ''
+  mergeTargetId.value = ''
+  mergePreview.value = undefined
+  try {
+    const page = await listDictionaryCandidates('product', query)
+    mergeCandidates.value = page.items.filter((item) => item.id !== selected.value?.id)
+    mergeCandidateStatus.value = 'ready'
+  } catch (cause) {
+    mergeCandidateStatus.value = 'error'
+    mergeError.value = normalizeRequestError(cause).message
+  }
+}
+
+async function loadMergePreview(): Promise<void> {
+  if (!selected.value || !mergeTargetId.value) {
+    mergeError.value = '请选择要保留的商品。'
+    return
+  }
+  mergeBusy.value = true
+  mergeError.value = ''
+  try {
+    mergePreview.value = await previewProductMerge(selected.value.id, mergeTargetId.value)
+  } catch (cause) {
+    mergePreview.value = undefined
+    mergeError.value = normalizeRequestError(cause).message
+  } finally {
+    mergeBusy.value = false
+  }
+}
+
+async function confirmMerge(): Promise<void> {
+  if (!selected.value || !mergeTargetId.value || !mergePreview.value) return
+  mergeBusy.value = true
+  try {
+    await mergeProduct(selected.value.id, mergeTargetId.value)
+    mergeConfirmOpen.value = false
+    mergeOpen.value = false
+    selected.value = undefined
+    showToast('商品已合并，历史名称快照保持不变')
+    await load('refresh')
+  } catch (cause) {
+    mergeConfirmOpen.value = false
+    mergeError.value = normalizeRequestError(cause).message
+    showToast(mergeError.value, 'error')
+  } finally {
+    mergeBusy.value = false
+  }
 }
 
 
@@ -263,33 +334,15 @@ onMounted(() => {
       </button>
     </header>
 
-    <div class="dictionary-toolbar">
-      <GlobalLedgerSearch
-        id="dictionary-search"
-        v-model="queryDraft"
-        :label="`搜索${definition.label}`"
-        :placeholder="`搜索${definition.label}名称`"
-        @search="search"
-      />
-      <SegmentedControl
-        v-model="statusFilter"
-        :options="statusOptions"
-        label="字典项状态"
-      />
-      <button
-        type="button"
-        class="icon-button"
-        :disabled="refreshing"
-        :aria-label="`刷新${definition.label}`"
-        @click="load('refresh')"
-      >
-        <RefreshCw
-          :size="18"
-          aria-hidden="true"
-        />
-      </button>
-      <span class="dictionary-result-count">{{ data?.total ?? 0 }} 项</span>
-    </div>
+    <DictionaryToolbar
+      v-model:query="queryDraft"
+      v-model:status="statusFilter"
+      :label="definition.label"
+      :total="data?.total ?? 0"
+      :refreshing="refreshing"
+      @search="search"
+      @refresh="load('refresh')"
+    />
 
     <AppStateBlock
       v-if="staleWarning"
@@ -322,38 +375,13 @@ onMounted(() => {
       @action="handleEmptyAction"
     />
 
-    <ul
+    <DictionaryItemList
       v-else-if="status === 'ready'"
-      class="dictionary-item-list"
-      :aria-label="definition.label"
-    >
-      <li
-        v-for="item in items"
-        :key="item.id"
-        :data-status="item.status"
-      >
-        <div class="dictionary-item-copy">
-          <strong>{{ item.name }}</strong>
-          <span v-if="item.parentName">归属 {{ item.parentName }}</span>
-          <span v-else>{{ item.status === 'ACTIVE' ? '启用中' : '已停用' }}{{ item.referenced ? ' · 已被历史记录引用' : '' }}</span>
-        </div>
-        <span
-          class="status-badge"
-          :data-status="item.status"
-        >{{ item.status === 'ACTIVE' ? '启用' : '停用' }}</span>
-        <button
-          type="button"
-          class="icon-button"
-          :aria-label="`管理${item.name}`"
-          @click="openActions(item)"
-        >
-          <MoreHorizontal
-            :size="20"
-            aria-hidden="true"
-          />
-        </button>
-      </li>
-    </ul>
+      :items="items"
+      :label="definition.label"
+      history-hint
+      @select="openActions"
+    />
 
     <nav
       v-if="status === 'ready' && totalPages > 1"
@@ -435,8 +463,118 @@ onMounted(() => {
         >
           {{ selected.status === 'ACTIVE' ? '停用（保留历史引用）' : '恢复为候选项' }}
         </button>
+        <button
+          v-if="definition.type === 'product'"
+          type="button"
+          class="danger-text"
+          :disabled="busy"
+          @click="openMerge"
+        >
+          合并到其他商品
+        </button>
       </div>
     </AppDrawer>
+
+    <AppDrawer
+      id="product-merge"
+      v-model:open="mergeOpen"
+      title="合并商品"
+      :description="`选择保留商品后，${selected?.name ?? '当前商品'}将不再作为候选；历史账目名称仍保留。`"
+    >
+      <div class="product-merge-flow">
+        <GlobalLedgerSearch
+          id="product-merge-search"
+          v-model="mergeQuery"
+          label="搜索保留商品"
+          placeholder="输入商品名称缩小范围"
+          @search="loadMergeCandidates"
+        />
+        <AppStateBlock
+          v-if="mergeCandidateStatus === 'loading'"
+          kind="loading"
+          title="正在读取可合并商品"
+        />
+        <AppStateBlock
+          v-else-if="mergeCandidateStatus === 'error'"
+          kind="error"
+          title="可合并商品暂不可用"
+          :message="mergeError"
+          action-label="重试"
+          @action="loadMergeCandidates(mergeQuery)"
+        />
+        <AppStateBlock
+          v-else-if="mergeCandidateStatus === 'ready' && mergeCandidates.length === 0"
+          kind="empty"
+          title="没有可保留的启用商品"
+          message="调整搜索词，或先新增另一个商品。"
+        />
+        <FormField
+          v-else-if="mergeCandidateStatus === 'ready'"
+          field-id="merge-target"
+          label="保留商品"
+          help="合并后，账目和日常模板都归入这个商品。"
+          :error="mergeError"
+        >
+          <template #default="{ describedBy }">
+            <select
+              id="merge-target"
+              v-model="mergeTargetId"
+              :aria-describedby="describedBy"
+              @change="mergePreview = undefined; mergeError = ''"
+            >
+              <option value="">
+                请选择
+              </option>
+              <option
+                v-for="candidate in mergeCandidates"
+                :key="candidate.id"
+                :value="candidate.id"
+              >
+                {{ candidate.name }}
+              </option>
+            </select>
+          </template>
+        </FormField>
+        <button
+          v-if="mergeCandidateStatus === 'ready' && mergeCandidates.length > 0"
+          type="button"
+          class="secondary-button"
+          :disabled="mergeBusy || !mergeTargetId"
+          @click="loadMergePreview"
+        >
+          {{ mergeBusy ? '正在计算影响…' : '预览合并影响' }}
+        </button>
+        <dl
+          v-if="mergePreview"
+          class="merge-impact"
+        >
+          <dt>合并方向</dt><dd>{{ mergePreview.source.name }} → {{ mergePreview.target.name }}</dd>
+          <dt>账目引用</dt><dd>{{ mergePreview.affectedLedgerEntries }} 条</dd>
+          <dt>日常模板</dt><dd>{{ mergePreview.affectedTemplates }} 项</dd>
+          <dt>模板冲突</dt><dd>{{ mergePreview.templateConflict ? '保留最近使用内容并收敛为一项' : '无冲突' }}</dd>
+        </dl>
+        <button
+          v-if="mergePreview"
+          type="button"
+          class="danger-button"
+          :disabled="mergeBusy"
+          @click="mergeConfirmOpen = true"
+        >
+          继续合并
+        </button>
+      </div>
+    </AppDrawer>
+
+    <AppDialog
+      id="confirm-product-merge"
+      v-model:open="mergeConfirmOpen"
+      title="确认合并商品？"
+      :description="mergePreview ? `${mergePreview.source.name}会合并到${mergePreview.target.name}。此操作不能在页面中撤销。` : ''"
+      confirm-label="确认合并"
+      danger
+      :busy="mergeBusy"
+      @confirm="confirmMerge"
+    />
 
     <AppDialog
       id="dictionary-editor"

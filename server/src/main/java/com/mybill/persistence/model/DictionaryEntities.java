@@ -21,6 +21,7 @@ class DefaultDictionaryItemEntity {
     @Column(name = "stable_key", nullable = false) String stableKey;
     @Column(name = "parent_id") UUID parentId;
     @Column(name = "display_name", nullable = false) String displayName;
+    @Column(name = "normalized_name", nullable = false) String normalizedName;
     @Column(name = "sort_order", nullable = false) int sortOrder;
     @Column(nullable = false) String status;
     @Column(name = "created_at", nullable = false) Instant createdAt;
@@ -85,4 +86,16 @@ class ProductEntity extends TenantScopedEntity {
     @Column(name = "created_at", nullable = false) Instant createdAt;
     @Column(name = "updated_at", nullable = false) Instant updatedAt;
     protected ProductEntity() { }
+}
+
+@Entity @Table(name = "product_merge_event")
+class ProductMergeEventEntity extends TenantScopedEntity {
+    @Column(name = "source_product_id", nullable = false) UUID sourceProductId;
+    @Column(name = "target_product_id", nullable = false) UUID targetProductId;
+    @Column(name = "initiated_by_user_id", nullable = false) UUID initiatedByUserId;
+    @Column(name = "affected_ledger_entries", nullable = false) long affectedLedgerEntries;
+    @Column(name = "affected_templates", nullable = false) int affectedTemplates;
+    @Column(name = "template_conflict", nullable = false) boolean templateConflict;
+    @Column(name = "occurred_at", nullable = false) Instant occurredAt;
+    protected ProductMergeEventEntity() { }
 }

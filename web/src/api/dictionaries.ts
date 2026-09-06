@@ -6,6 +6,8 @@ export type DictionaryItem = components['schemas']['DictionaryItem']
 export type DictionaryPage = components['schemas']['DictionaryPage']
 export type DictionaryStatus = components['schemas']['DictionaryStatus']
 export type DictionarySummaries = components['schemas']['DictionarySummaries']
+export type ProductMergePreview = components['schemas']['ProductMergePreview']
+export type ProductMergeResult = components['schemas']['ProductMergeResult']
 
 export const DICTIONARY_CHANGED_EVENT = 'my-bill:dictionary-changed'
 
@@ -77,4 +79,18 @@ export function moveDictionaryItem(type: DictionaryType, id: string, direction: 
     method: 'POST',
     body: JSON.stringify({ direction }),
   })
+}
+
+export function previewProductMerge(sourceProductId: string, targetProductId: string): Promise<ProductMergePreview> {
+  const params = new URLSearchParams({ targetProductId })
+  return apiRequest(`/dictionaries/product/${encodeURIComponent(sourceProductId)}/merge-preview?${params}`)
+}
+
+export async function mergeProduct(sourceProductId: string, targetProductId: string): Promise<ProductMergeResult> {
+  const result = await apiRequest<ProductMergeResult>(
+    `/dictionaries/product/${encodeURIComponent(sourceProductId)}/merge`,
+    { method: 'POST', body: JSON.stringify({ targetProductId }) },
+  )
+  notifyChanged('product')
+  return result
 }

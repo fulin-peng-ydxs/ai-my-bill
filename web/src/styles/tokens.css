@@ -300,6 +300,30 @@ input:disabled {
 
 .admin-sidebar { display: none; }
 
+.admin-mobile-navigation {
+  display: flex;
+  order: 3;
+  width: 100%;
+  gap: var(--space-xs);
+}
+
+.admin-shell-header { flex-wrap: wrap; }
+
+.admin-mobile-navigation a {
+  min-height: 40px;
+  padding: var(--space-sm) var(--space-md);
+  color: var(--color-muted);
+  text-decoration: none;
+  border-radius: var(--radius-pill);
+  font-size: 14px;
+}
+
+.admin-mobile-navigation a.router-link-active {
+  color: var(--color-primary);
+  background: var(--color-surface-secondary);
+  font-weight: 600;
+}
+
 .admin-mobile-title,
 .header-action {
   display: inline-flex;
@@ -722,12 +746,36 @@ input:disabled {
 .context-action-list button:last-child { border-bottom: 0; }
 .filter-form { display: grid; gap: var(--space-lg); }
 
-.admin-users-page {
+.admin-users-page,
+.admin-default-dictionaries-page {
   display: grid;
   width: min(100%, 1120px);
   gap: var(--space-lg);
   margin: 0 auto;
 }
+
+.default-scope-note {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: var(--space-sm) var(--space-md);
+  padding: var(--space-md);
+  color: var(--color-text);
+  background: color-mix(in srgb, var(--color-primary) 7%, var(--color-surface));
+  border-left: 3px solid var(--color-primary);
+  font-size: 14px;
+}
+
+.default-scope-note span { color: var(--color-muted); }
+
+.default-type-picker {
+  display: grid;
+  grid-template-columns: max-content minmax(220px, 360px);
+  align-items: center;
+  gap: var(--space-md);
+}
+
+.default-type-picker label { color: var(--color-muted); font-size: 14px; }
+.default-type-picker select { width: 100%; }
 
 .admin-page-heading {
   display: flex;
@@ -1063,6 +1111,23 @@ input:disabled {
 .dictionary-item-identity code { overflow-wrap: anywhere; font-family: var(--font-data); font-size: 12px; }
 .dictionary-editor-form { display: grid; gap: var(--space-lg); }
 
+.product-merge-flow { display: grid; gap: var(--space-lg); }
+.product-merge-flow .secondary-button,
+.product-merge-flow .danger-button { justify-self: start; }
+
+.merge-impact {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: var(--space-sm) var(--space-lg);
+  margin: 0;
+  padding: var(--space-md);
+  background: var(--color-surface-secondary);
+  border-radius: var(--radius-control);
+}
+
+.merge-impact dt { color: var(--color-muted); }
+.merge-impact dd { min-width: 0; margin: 0; overflow-wrap: anywhere; text-align: right; }
+
 .dictionary-pagination {
   display: flex;
   align-items: center;
@@ -1152,6 +1217,9 @@ input:disabled {
     border-right: 1px solid var(--color-border);
     background: var(--color-surface);
   }
+
+  .admin-mobile-navigation { display: none; }
+  .admin-shell-header { flex-wrap: nowrap; }
 
   .admin-sidebar nav { display: grid; }
 

@@ -242,7 +242,7 @@ Key Characteristics：
 
 ## 4. Component Stylings
 
-以下清单是用户已确认的组件契约；`AppShell`、`ThemeModeControl`、`BottomNavigation`、`PwaInstallPrompt`、`AppStateBlock`、T5 通用表单/分段选择/金额/浮层/设置披露/搜索筛选/账目上下文动作基础、T7 `AppDataTable` 与 `AppToast`，以及 T8 类型化个人字典页面已实现。字典维护直接复用 `GlobalLedgerSearch`、`SegmentedControl`、`SettingsDisclosureList`、`AppDrawer`、`AppDialog`、`AppStateBlock`、`AppToast` 和统一请求代次；成功变更通过统一字典事件通知后续候选组件刷新，取消不发出事件。候选选择、真实账目列表和图表等领域组件按对应业务任务落地。代码出现第二个同类消费场景时，必须抽取或消费复用单元，不允许页面继续复制结构和交互。
+以下清单是用户已确认的组件契约；`AppShell`、`ThemeModeControl`、`BottomNavigation`、`PwaInstallPrompt`、`AppStateBlock`、T5 通用表单/分段选择/金额/浮层/设置披露/搜索筛选/账目上下文动作基础、T7 `AppDataTable` 与 `AppToast`，以及 T8/T9 字典治理页面已实现。个人与默认字典维护共享 `DictionaryToolbar` 和 `DictionaryItemList`，并直接复用 `GlobalLedgerSearch`、`SegmentedControl`、`AppDrawer`、`AppDialog`、`AppStateBlock`、`AppToast` 和统一请求代次；个人字典成功变更通过统一字典事件通知后续候选组件刷新，取消不发出事件。候选选择、真实账目列表和图表等领域组件按对应业务任务落地。代码出现第二个同类消费场景时，必须抽取或消费复用单元，不允许页面继续复制结构和交互。
 
 ### 4.1 组件复用与事实源
 
@@ -278,6 +278,8 @@ Key Characteristics：
 | `FilterSheet` | 手机高级组合筛选 | 使用底部抽屉；支持今天/本周/本月/上月/今年和合法指定日期，应用后明确展示已生效条件和清除入口 |
 | `IncrementalLedgerList` | 大范围明细列表 | 默认今天；按业务日期分组，组内倒序，每批最多 20 笔并显示累计进度，避免一次渲染月/年全部数据 |
 | `SettingsDisclosureList` | 设置分类、当前值和下级入口 | 首页只展示分类和值；同域多项先进入索引抽屉，再进入具体维护视图 |
+| `DictionaryToolbar` | 字典搜索、生命周期筛选和新增入口 | 个人与默认字典共享；搜索提交和清空语义统一，类型选择仍由页面承载 |
+| `DictionaryItemList` | 字典项、层级、状态和管理入口 | 同时承载桌面与窄屏，分类缩进和状态文字不可只靠颜色表达 |
 | `AppDataTable` | 桌面管理表格 | 表头稳定、表体滚动、分页和操作列稳定；不用于手机核心账单流 |
 | `ChartPanel` | 图表、口径、加载和下钻 | 标题附近显示统计口径；点击后带筛选上下文进入明细 |
 | `AppStateBlock` | loading/empty/error/permission | 四态视觉和文案单一事实源；无权是 error 变体，不是假空态 |
@@ -286,7 +288,7 @@ Key Characteristics：
 | `Toast` | 短暂动作反馈和撤销 | 保存、删除成功等；失败若影响区域可用性，还必须保留页内错误态 |
 | `PwaInstallPrompt` | 登录页与“我的”的安装能力引导 | 复用同一检测状态源；只有浏览器提供安装事件时显示真实安装动作，否则显示分平台步骤或已安装状态 |
 
-T5/T7 代码事实：登录页真实消费 `FormField` 与 `AppDialog`，主题控件消费 `SegmentedControl`，“我的”页消费 `SettingsDisclosureList` 与 `AppDrawer`；T7 用户管理页真实消费 `FormField`、`AppStateBlock`、`AppDialog`、`AppDrawer`、`useLatestRequest`，并新增复用型 `AppDataTable` 与 `AppToast`。`MoneySummary`、`GlobalLedgerSearch`、`AppliedFilterBar`、`FilterSheet`、`LedgerContextActions`、防抖和最新请求状态已通过基础契约测试，但在没有真实业务接口前不得挂载到占位页或展示模拟账单；它们仍须在 T11/T15/T20 等首次真实消费阶段完成页面级验收。未保存草稿守卫及其真实消费尚未实现。
+T5/T7 代码事实：登录页真实消费 `FormField` 与 `AppDialog`，主题控件消费 `SegmentedControl`，“我的”页消费 `SettingsDisclosureList` 与 `AppDrawer`；T7 用户管理页真实消费 `FormField`、`AppStateBlock`、`AppDialog`、`AppDrawer`、`useLatestRequest`，并新增复用型 `AppDataTable` 与 `AppToast`。T8/T9 的个人字典和默认字典页面共享 `DictionaryToolbar`、`DictionaryItemList`、四态和浮层，默认字典在管理端桌面侧栏与窄屏页头均有入口，并明确“只影响后续新增用户”的作用域。`MoneySummary`、`AppliedFilterBar`、`FilterSheet`、`LedgerContextActions` 等尚未有真实业务接口的能力不得挂载到占位页或展示模拟账单；它们仍须在 T11/T15/T20 等首次真实消费阶段完成页面级验收。未保存草稿守卫及其真实消费尚未实现。
 
 ### 4.3 按钮与输入
 
@@ -531,12 +533,13 @@ T5/T7 代码事实：登录页真实消费 `FormField` 与 `AppDialog`，主题�
 | `personal-dictionaries` | 个人字典 | `settings` | 查看八类真实启用数与总数并进入对应维护页 | `SettingsDisclosureList` / `AppStateBlock` |
 | `personal-dictionary-detail` | 字典维护 | `settings` | 按类型新增、改名、排序、停用和恢复；分类最多两级 | `GlobalLedgerSearch` / `SegmentedControl` / `AppDrawer` / `AppDialog` / `AppToast` |
 | `admin-console` | 系统管理 | `admin` | 管理用户、默认字典、运行概况和操作日志 | `AppDataTable` / `AppDrawer` / `AppDialog` |
+| `admin-default-dictionaries` | 默认字典管理 | `admin` | 维护五类新用户默认项并明确不回写既有用户 | `DictionaryToolbar` / `DictionaryItemList` / `AppDrawer` / `AppDialog` / `AppToast` |
 <!-- page-registry:end -->
 
 ## 10. Known Gaps
 
 - 前端工程已锁定 Vue 3 + Vite + TypeScript + Pinia + Vue Router，图表采用 ECharts，SVG 图标采用 Lucide Vue Next；不引入覆盖本设计契约的整套通用 UI 框架，优先实现本文定义的项目语义组件，不得据技术选型改变已确认视觉与交互契约。
-- 正式工程当前已实现登录页、主题/PWA 共享状态、普通用户四项导航、管理员外壳、T5 共享基础、T7 真实管理员用户面板，以及 T8 个人字典索引和类型化维护页。个人字典在“我的”只保留一个入口，索引展示八类真实数量，维护页复用搜索、状态分段、四态、抽屉、对话框和 Toast；手机按带状态色轨的列表呈现，稳定 ID 只在管理抽屉中辅助辨识，停用文案明确历史引用不受影响。P6-F1 在桌面使用稳定数据表格，在 `≤833px` 使用带状态色轨的账号摘要卡和底部操作抽屉，高影响动作关闭抽屉后再进入单一二次确认框；页面明确显示“仅账号信息”的隐私边界。账单、默认字典、运行概况、审计日志查询和报表等真实页面仍未实现。原型视觉与响应式静态契约继续有效，后续每个页面阶段必须以真实组件、浏览器多视口测试和对应代码路径逐步替换原型证明。
+- 正式工程当前已实现登录页、主题/PWA 共享状态、普通用户四项导航、管理员外壳、T5 共享基础、T7 真实管理员用户面板、T8 个人字典治理，以及 T9 商品合并和五类默认字典管理。个人字典在“我的”只保留一个入口，索引展示八类真实数量；商品合并通过目标搜索、影响预览和危险确认完成。默认字典从管理导航独立进入，复用字典工具栏、响应式列表、四态、抽屉、对话框和 Toast，并明确修改只作用于后续新增用户。P6-F1 在桌面使用稳定数据表格，在 `≤833px` 使用带状态色轨的账号摘要卡和底部操作抽屉，高影响动作关闭抽屉后再进入单一二次确认框；页面明确显示“仅账号信息”的隐私边界。账单、运行概况、审计日志查询和报表等真实页面仍未实现。原型视觉与响应式静态契约继续有效，后续每个页面阶段必须以真实组件、浏览器多视口测试和对应代码路径逐步替换原型证明。
 - 尚无正式品牌名称、图标和启动图；第一期原型使用“我的账单”文字标识，不把临时图形固化为品牌资产。
 - 正式工程已接入 Manifest、Service Worker、真实浏览器安装事件、拒绝/不支持/已安装状态和分平台手动引导；正式图标、启动图、目标移动浏览器系统安装框、独立窗口与状态栏表现仍需在 T29 目标环境复验。
 - 管理后台是否需要独立桌面域名或路径属于技术与部署决策，不影响当前设计系统。

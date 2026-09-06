@@ -18,6 +18,7 @@ describe('post-login navigation', () => {
     expect(postLoginPath(user, '/me/dictionaries/unit')).toBe('/me/dictionaries/unit')
     expect(postLoginPath(user, '/admin')).toBe('/entry')
     expect(postLoginPath(admin, '/entry')).toBe('/admin')
+    expect(postLoginPath(admin, '/admin/default-dictionaries')).toBe('/admin/default-dictionaries')
   })
 
   it('rejects external and unknown redirect targets', () => {

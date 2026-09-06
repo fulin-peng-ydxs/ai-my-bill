@@ -2,7 +2,7 @@ openapi: 3.1.0
 info:
   title: 我的账单 API
   version: 0.1.0
-  description: 同源 /api/v1 接口契约；T8 已开放认证、管理员用户生命周期、个人字典与最小健康检查。
+  description: 同源 /api/v1 接口契约；T9 已开放认证、管理员用户生命周期、个人字典、商品合并、管理员默认字典与最小健康检查。
 servers:
   - url: /api/v1
 security:
@@ -225,6 +225,109 @@ paths:
       parameters: [{ $ref: "#/components/parameters/UserId" }]
       requestBody: { $ref: "#/components/requestBodies/UserVersion" }
       responses: { "200": { $ref: "#/components/responses/AdminUser" }, "401": { $ref: "#/components/responses/AuthenticationError" }, "403": { $ref: "#/components/responses/AuthorizationError" }, "404": { $ref: "#/components/responses/NotFoundError" }, "409": { $ref: "#/components/responses/ConflictError" }, "503": { $ref: "#/components/responses/ServiceUnavailableError" } }
+  /admin/default-dictionaries:
+    get:
+      operationId: listDefaultDictionarySummaries
+      summary: 查询五类新用户默认字典数量
+      tags: [admin-default-dictionaries]
+      responses:
+        "200":
+          description: 五类默认字典的总数和启用数；不含任何租户数据
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DefaultDictionarySummaries" }
+        "401": { $ref: "#/components/responses/AuthenticationError" }
+        "403": { $ref: "#/components/responses/AuthorizationError" }
+        "503": { $ref: "#/components/responses/ServiceUnavailableError" }
+  /admin/default-dictionaries/{type}:
+    get:
+      operationId: listDefaultDictionaryItems
+      summary: 分页查询一类新用户默认字典
+      tags: [admin-default-dictionaries]
+      parameters:
+        - { $ref: "#/components/parameters/DefaultDictionaryType" }
+        - name: query
+          in: query
+          schema: { type: string, maxLength: 64, default: "" }
+        - name: status
+          in: query
+          schema: { $ref: "#/components/schemas/DictionaryStatus" }
+        - name: page
+          in: query
+          schema: { type: integer, minimum: 0, maximum: 1000000, default: 0 }
+        - name: size
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 50 }
+      responses:
+        "200":
+          description: 默认字典项分页；只影响之后创建用户
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DefaultDictionaryPage" }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "401": { $ref: "#/components/responses/AuthenticationError" }
+        "403": { $ref: "#/components/responses/AuthorizationError" }
+        "404": { $ref: "#/components/responses/NotFoundError" }
+        "503": { $ref: "#/components/responses/ServiceUnavailableError" }
+    post:
+      operationId: createDefaultDictionaryItem
+      summary: 新增只供以后新用户复制的默认字典项
+      tags: [admin-default-dictionaries]
+      parameters: [{ $ref: "#/components/parameters/DefaultDictionaryType" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateDefaultDictionaryItemRequest" }
+      responses:
+        "200": { $ref: "#/components/responses/DefaultDictionaryItem" }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "401": { $ref: "#/components/responses/AuthenticationError" }
+        "403": { $ref: "#/components/responses/AuthorizationError" }
+        "404": { $ref: "#/components/responses/NotFoundError" }
+        "409": { $ref: "#/components/responses/ConflictError" }
+        "503": { $ref: "#/components/responses/ServiceUnavailableError" }
+  /admin/default-dictionaries/{type}/{itemId}/status:
+    post:
+      operationId: changeDefaultDictionaryItemStatus
+      summary: 停用或恢复新用户默认字典项
+      tags: [admin-default-dictionaries]
+      parameters:
+        - { $ref: "#/components/parameters/DefaultDictionaryType" }
+        - { $ref: "#/components/parameters/DefaultDictionaryItemId" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/DictionaryStatusRequest" }
+      responses:
+        "200": { $ref: "#/components/responses/DefaultDictionaryItem" }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "401": { $ref: "#/components/responses/AuthenticationError" }
+        "403": { $ref: "#/components/responses/AuthorizationError" }
+        "404": { $ref: "#/components/responses/NotFoundError" }
+        "409": { $ref: "#/components/responses/ConflictError" }
+        "503": { $ref: "#/components/responses/ServiceUnavailableError" }
+  /admin/default-dictionaries/{type}/{itemId}/move:
+    post:
+      operationId: moveDefaultDictionaryItem
+      summary: 在同级范围内调整新用户默认字典顺序
+      tags: [admin-default-dictionaries]
+      parameters:
+        - { $ref: "#/components/parameters/DefaultDictionaryType" }
+        - { $ref: "#/components/parameters/DefaultDictionaryItemId" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/DictionaryMoveRequest" }
+      responses:
+        "200": { $ref: "#/components/responses/DefaultDictionaryItem" }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "401": { $ref: "#/components/responses/AuthenticationError" }
+        "403": { $ref: "#/components/responses/AuthorizationError" }
+        "404": { $ref: "#/components/responses/NotFoundError" }
+        "503": { $ref: "#/components/responses/ServiceUnavailableError" }
   /dictionaries:
     get:
       operationId: listDictionarySummaries
@@ -373,6 +476,52 @@ paths:
         "403": { $ref: "#/components/responses/AuthorizationError" }
         "404": { $ref: "#/components/responses/NotFoundError" }
         "503": { $ref: "#/components/responses/ServiceUnavailableError" }
+  /dictionaries/product/{sourceProductId}/merge-preview:
+    get:
+      operationId: previewProductMerge
+      summary: 预览商品合并对账目和日常模板的影响
+      tags: [personal-dictionaries]
+      parameters:
+        - { $ref: "#/components/parameters/SourceProductId" }
+        - name: targetProductId
+          in: query
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: 当前事务快照下的影响；确认合并时会重新计算
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ProductMergePreview" }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "401": { $ref: "#/components/responses/AuthenticationError" }
+        "403": { $ref: "#/components/responses/AuthorizationError" }
+        "404": { $ref: "#/components/responses/NotFoundError" }
+        "409": { $ref: "#/components/responses/ConflictError" }
+        "503": { $ref: "#/components/responses/ServiceUnavailableError" }
+  /dictionaries/product/{sourceProductId}/merge:
+    post:
+      operationId: mergeProduct
+      summary: 原子合并商品引用、模板和归属并追加不可变留痕
+      tags: [personal-dictionaries]
+      parameters: [{ $ref: "#/components/parameters/SourceProductId" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ProductMergeRequest" }
+      responses:
+        "200":
+          description: 合并完成；账目名称快照保持不变
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ProductMergeResult" }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "401": { $ref: "#/components/responses/AuthenticationError" }
+        "403": { $ref: "#/components/responses/AuthorizationError" }
+        "404": { $ref: "#/components/responses/NotFoundError" }
+        "409": { $ref: "#/components/responses/ConflictError" }
+        "503": { $ref: "#/components/responses/ServiceUnavailableError" }
 components:
   parameters:
     UserId:
@@ -387,6 +536,21 @@ components:
       schema: { $ref: "#/components/schemas/DictionaryType" }
     DictionaryItemId:
       name: itemId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    DefaultDictionaryType:
+      name: type
+      in: path
+      required: true
+      schema: { $ref: "#/components/schemas/DefaultDictionaryType" }
+    DefaultDictionaryItemId:
+      name: itemId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    SourceProductId:
+      name: sourceProductId
       in: path
       required: true
       schema: { type: string, format: uuid }
@@ -407,6 +571,11 @@ components:
       content:
         application/json:
           schema: { $ref: "#/components/schemas/DictionaryItem" }
+    DefaultDictionaryItem:
+      description: 新用户默认字典项已更新
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/DefaultDictionaryItem" }
     NotFoundError:
       description: 指定资源不存在或对当前身份不可见
       content:
@@ -631,6 +800,85 @@ components:
       required: [direction]
       properties:
         direction: { type: string, enum: [UP, DOWN] }
+    ProductIdentity:
+      type: object
+      additionalProperties: false
+      required: [id, name]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string, minLength: 1, maxLength: 200 }
+    ProductMergePreview:
+      type: object
+      additionalProperties: false
+      required: [source, target, affectedLedgerEntries, affectedTemplates, templateConflict]
+      properties:
+        source: { $ref: "#/components/schemas/ProductIdentity" }
+        target: { $ref: "#/components/schemas/ProductIdentity" }
+        affectedLedgerEntries: { type: integer, format: int64, minimum: 0 }
+        affectedTemplates: { type: integer, minimum: 0, maximum: 1 }
+        templateConflict: { type: boolean }
+    ProductMergeRequest:
+      type: object
+      additionalProperties: false
+      required: [targetProductId]
+      properties:
+        targetProductId: { type: string, format: uuid }
+    ProductMergeResult:
+      type: object
+      additionalProperties: false
+      required: [mergeEventId, impact]
+      properties:
+        mergeEventId: { type: string, format: uuid }
+        impact: { $ref: "#/components/schemas/ProductMergePreview" }
+    DefaultDictionaryType:
+      type: string
+      enum: [expense-category, income-category, unit, funding-channel, purchase-channel]
+    DefaultDictionaryItem:
+      type: object
+      additionalProperties: false
+      required: [id, type, name, status, sortOrder]
+      properties:
+        id: { type: string, format: uuid }
+        type: { $ref: "#/components/schemas/DefaultDictionaryType" }
+        name: { type: string, minLength: 1, maxLength: 100 }
+        status: { $ref: "#/components/schemas/DictionaryStatus" }
+        sortOrder: { type: integer, minimum: 0 }
+        parentId: { type: string, format: uuid }
+        parentName: { type: string, minLength: 1, maxLength: 100 }
+    DefaultDictionaryPage:
+      type: object
+      additionalProperties: false
+      required: [items, total, page, size]
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/DefaultDictionaryItem" } }
+        total: { type: integer, format: int64, minimum: 0 }
+        page: { type: integer, minimum: 0 }
+        size: { type: integer, minimum: 1, maximum: 100 }
+    DefaultDictionarySummary:
+      type: object
+      additionalProperties: false
+      required: [type, total, active]
+      properties:
+        type: { $ref: "#/components/schemas/DefaultDictionaryType" }
+        total: { type: integer, format: int64, minimum: 0 }
+        active: { type: integer, format: int64, minimum: 0 }
+    DefaultDictionarySummaries:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          minItems: 5
+          maxItems: 5
+          items: { $ref: "#/components/schemas/DefaultDictionarySummary" }
+    CreateDefaultDictionaryItemRequest:
+      type: object
+      additionalProperties: false
+      required: [name]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 100 }
+        parentId: { type: string, format: uuid }
     CreateAdminUserRequest:
       type: object
       additionalProperties: false

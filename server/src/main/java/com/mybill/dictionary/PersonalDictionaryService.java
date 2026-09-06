@@ -24,12 +24,14 @@ import static com.mybill.dictionary.DictionaryContracts.MoveDirection;
 @Service
 class PersonalDictionaryService {
     private final PersonalDictionaryRepository repository;
+    private final ProductMergeRepository productMergeRepository;
     private final TenantTransactionExecutor tenantTransactions;
     private final Clock clock;
 
-    PersonalDictionaryService(PersonalDictionaryRepository repository,
+    PersonalDictionaryService(PersonalDictionaryRepository repository, ProductMergeRepository productMergeRepository,
                               TenantTransactionExecutor tenantTransactions, Clock clock) {
         this.repository = repository;
+        this.productMergeRepository = productMergeRepository;
         this.tenantTransactions = tenantTransactions;
         this.clock = clock;
     }
@@ -76,8 +78,12 @@ class PersonalDictionaryService {
         return tenantTransactions.execute(principal, () -> {
             requireItem(type, id);
             Name name = validateName(type, requestedName);
+            Instant now = clock.instant();
             try {
-                requireSingleRow(repository.rename(type, id, name.display(), name.normalized(), clock.instant()));
+                requireSingleRow(repository.rename(type, id, name.display(), name.normalized(), now));
+                if (type == DictionaryType.PRODUCT) {
+                    productMergeRepository.renameTemplate(id, name.display(), name.normalized(), now);
+                }
             } catch (DuplicateKeyException exception) {
                 throw duplicateName();
             }

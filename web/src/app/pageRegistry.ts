@@ -7,7 +7,7 @@ export type PageArchetype = 'auth' | 'quick-entry' | 'dashboard' | 'list' | 'set
 
 export interface PageRegistration {
   readonly pageKey: 'login' | 'ledger-entry' | 'reports' | 'bill-details' | 'profile-settings'
-    | 'personal-dictionaries' | 'personal-dictionary-detail' | 'admin-console'
+    | 'personal-dictionaries' | 'personal-dictionary-detail' | 'admin-console' | 'admin-default-dictionaries'
   readonly title: string
   readonly path: string
   readonly role: PageRole
@@ -92,6 +92,16 @@ export const pageRegistry = [
     pageKey: 'admin-console',
     title: '系统管理',
     path: '/admin',
+    role: 'admin',
+    navigation: 'admin',
+    archetype: 'admin',
+    prototype: 'admin-console.html',
+    states: pageStates,
+  },
+  {
+    pageKey: 'admin-default-dictionaries',
+    title: '默认字典',
+    path: '/admin/default-dictionaries',
     role: 'admin',
     navigation: 'admin',
     archetype: 'admin',

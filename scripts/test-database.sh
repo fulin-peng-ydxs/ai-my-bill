@@ -72,7 +72,7 @@ fi
 cd "${PROJECT_ROOT}"
 # 先在真实 Spring Security + PostgreSQL 上验证认证、T7 管理用户和 T8 个人字典闭环；测试库属于本次一次性集群。
 ./mvnw -B -pl server \
-  -Dtest=AuthHttpIntegrationTest,AdminUserHttpIntegrationTest,PersonalDictionaryHttpIntegrationTest \
+  -Dtest=AuthHttpIntegrationTest,AdminUserHttpIntegrationTest,PersonalDictionaryHttpIntegrationTest,GovernanceHttpIntegrationTest \
   -Dmybill.test.jdbc-url="jdbc:postgresql://127.0.0.1:${TEST_PORT}/${TEST_DATABASE}" \
   test
 

@@ -33,9 +33,15 @@ const { loggingOut, logoutError, logout } = useLogout()
         <RouterLink to="/admin">
           用户管理
         </RouterLink>
+        <RouterLink to="/admin/default-dictionaries">
+          默认字典
+        </RouterLink>
       </nav>
     </aside>
-    <header class="shell-header">
+    <header
+      class="shell-header"
+      :class="{ 'admin-shell-header': isAdmin }"
+    >
       <RouterLink
         v-if="!isAdmin"
         class="shell-brand"
@@ -63,6 +69,18 @@ const { loggingOut, logoutError, logout } = useLogout()
         />
         <span>{{ loggingOut ? '正在退出…' : '退出' }}</span>
       </button>
+      <nav
+        v-if="isAdmin"
+        class="admin-mobile-navigation"
+        aria-label="移动端管理导航"
+      >
+        <RouterLink to="/admin">
+          用户管理
+        </RouterLink>
+        <RouterLink to="/admin/default-dictionaries">
+          默认字典
+        </RouterLink>
+      </nav>
     </header>
     <main class="shell-content">
       <AppStateBlock

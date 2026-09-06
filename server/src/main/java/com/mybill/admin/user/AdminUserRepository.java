@@ -12,6 +12,7 @@ import java.util.UUID;
 /** 账号管理只访问身份、默认字典和注销任务表，查询中不接触账目领域。 */
 @Repository
 class AdminUserRepository {
+    private static final long DEFAULT_DICTIONARY_LOCK = 7_204_918_330_117L;
     private final JdbcClient jdbc;
 
     AdminUserRepository(JdbcClient jdbc) {
@@ -72,6 +73,8 @@ class AdminUserRepository {
     }
 
     void copyDefaultDictionaries(UUID tenantId, Instant now) {
+        jdbc.sql("SELECT pg_advisory_xact_lock_shared(:lockId)")
+                .param("lockId", DEFAULT_DICTIONARY_LOCK).query((rs, row) -> true).single();
         copySimple("unit", "UNIT", tenantId, now);
         copySimple("funding_channel", "FUNDING_CHANNEL", tenantId, now);
         copySimple("purchase_channel", "PURCHASE_CHANNEL", tenantId, now);
@@ -82,8 +85,8 @@ class AdminUserRepository {
 
     private void copySimple(String table, String type, UUID tenantId, Instant now) {
         String sql = "INSERT INTO " + table + "(tenant_id, id, display_name, normalized_name, sort_order, status, created_at, updated_at) "
-                + "SELECT :tenantId, id, display_name, lower(btrim(display_name)), sort_order, status, :now, :now "
-                + "FROM default_dictionary_item WHERE dictionary_type = :type ORDER BY sort_order, id";
+                + "SELECT :tenantId, id, display_name, normalized_name, sort_order, status, :now, :now "
+                + "FROM default_dictionary_item WHERE dictionary_type = :type AND status = 'ACTIVE' ORDER BY sort_order, id";
         jdbc.sql(sql).param("tenantId", tenantId).param("type", type).param("now", Timestamp.from(now)).update();
     }
 
@@ -91,10 +94,15 @@ class AdminUserRepository {
         jdbc.sql("""
                         INSERT INTO expense_category(tenant_id, id, parent_id, display_name, normalized_name,
                                                      sort_order, status, created_at, updated_at)
-                        SELECT :tenantId, id, parent_id, display_name, lower(btrim(display_name)),
+                        SELECT :tenantId, id, parent_id, display_name, normalized_name,
                                sort_order, status, :now, :now
                         FROM default_dictionary_item
                         WHERE dictionary_type = 'EXPENSE_CATEGORY'
+                          AND status = 'ACTIVE'
+                          AND (parent_id IS NULL OR parent_id IN (
+                              SELECT id FROM default_dictionary_item
+                              WHERE dictionary_type = 'EXPENSE_CATEGORY' AND status = 'ACTIVE'
+                          ))
                           AND ((:roots AND parent_id IS NULL) OR (NOT :roots AND parent_id IS NOT NULL))
                         ORDER BY sort_order, id
                         """)

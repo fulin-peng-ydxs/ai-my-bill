@@ -6,6 +6,7 @@ import LoginView from '../views/LoginView.vue'
 import PlaceholderView from '../views/PlaceholderView.vue'
 import ProfileView from '../views/ProfileView.vue'
 import UserManagementView from '../views/admin/UserManagementView.vue'
+import DefaultDictionaryManagementView from '../views/admin/DefaultDictionaryManagementView.vue'
 import DictionaryDetailView from '../views/me/dictionaries/DictionaryDetailView.vue'
 import DictionaryIndexView from '../views/me/dictionaries/DictionaryIndexView.vue'
 
@@ -16,6 +17,8 @@ const registeredRoutes: RouteRecordRaw[] = pageRegistry.map((page) => ({
     ? LoginView
     : page.pageKey === 'admin-console'
       ? UserManagementView
+    : page.pageKey === 'admin-default-dictionaries'
+      ? DefaultDictionaryManagementView
     : page.pageKey === 'profile-settings'
       ? ProfileView
     : page.pageKey === 'personal-dictionaries'

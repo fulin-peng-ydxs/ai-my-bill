@@ -192,6 +192,75 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/default-dictionaries": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 查询五类新用户默认字典数量 */
+        get: operations["listDefaultDictionarySummaries"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/default-dictionaries/{type}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 分页查询一类新用户默认字典 */
+        get: operations["listDefaultDictionaryItems"];
+        put?: never;
+        /** 新增只供以后新用户复制的默认字典项 */
+        post: operations["createDefaultDictionaryItem"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/default-dictionaries/{type}/{itemId}/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 停用或恢复新用户默认字典项 */
+        post: operations["changeDefaultDictionaryItemStatus"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/default-dictionaries/{type}/{itemId}/move": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 在同级范围内调整新用户默认字典顺序 */
+        post: operations["moveDefaultDictionaryItem"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/dictionaries": {
         parameters: {
             query?: never;
@@ -289,6 +358,40 @@ export interface paths {
         put?: never;
         /** 在同级范围内上移或下移个人字典项 */
         post: operations["moveDictionaryItem"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/dictionaries/product/{sourceProductId}/merge-preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 预览商品合并对账目和日常模板的影响 */
+        get: operations["previewProductMerge"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/dictionaries/product/{sourceProductId}/merge": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 原子合并商品引用、模板和归属并追加不可变留痕 */
+        post: operations["mergeProduct"];
         delete?: never;
         options?: never;
         head?: never;
@@ -397,6 +500,63 @@ export interface components {
             /** @enum {string} */
             direction: "UP" | "DOWN";
         };
+        ProductIdentity: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+        };
+        ProductMergePreview: {
+            source: components["schemas"]["ProductIdentity"];
+            target: components["schemas"]["ProductIdentity"];
+            /** Format: int64 */
+            affectedLedgerEntries: number;
+            affectedTemplates: number;
+            templateConflict: boolean;
+        };
+        ProductMergeRequest: {
+            /** Format: uuid */
+            targetProductId: string;
+        };
+        ProductMergeResult: {
+            /** Format: uuid */
+            mergeEventId: string;
+            impact: components["schemas"]["ProductMergePreview"];
+        };
+        /** @enum {string} */
+        DefaultDictionaryType: "expense-category" | "income-category" | "unit" | "funding-channel" | "purchase-channel";
+        DefaultDictionaryItem: {
+            /** Format: uuid */
+            id: string;
+            type: components["schemas"]["DefaultDictionaryType"];
+            name: string;
+            status: components["schemas"]["DictionaryStatus"];
+            sortOrder: number;
+            /** Format: uuid */
+            parentId?: string;
+            parentName?: string;
+        };
+        DefaultDictionaryPage: {
+            items: components["schemas"]["DefaultDictionaryItem"][];
+            /** Format: int64 */
+            total: number;
+            page: number;
+            size: number;
+        };
+        DefaultDictionarySummary: {
+            type: components["schemas"]["DefaultDictionaryType"];
+            /** Format: int64 */
+            total: number;
+            /** Format: int64 */
+            active: number;
+        };
+        DefaultDictionarySummaries: {
+            items: components["schemas"]["DefaultDictionarySummary"][];
+        };
+        CreateDefaultDictionaryItemRequest: {
+            name: string;
+            /** Format: uuid */
+            parentId?: string;
+        };
         CreateAdminUserRequest: {
             username: components["schemas"]["Username"];
         };
@@ -456,6 +616,15 @@ export interface components {
             };
             content: {
                 "application/json": components["schemas"]["DictionaryItem"];
+            };
+        };
+        /** @description 新用户默认字典项已更新 */
+        DefaultDictionaryItem: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["DefaultDictionaryItem"];
             };
         };
         /** @description 指定资源不存在或对当前身份不可见 */
@@ -526,6 +695,9 @@ export interface components {
         UserId: string;
         DictionaryType: components["schemas"]["DictionaryType"];
         DictionaryItemId: string;
+        DefaultDictionaryType: components["schemas"]["DefaultDictionaryType"];
+        DefaultDictionaryItemId: string;
+        SourceProductId: string;
     };
     requestBodies: {
         UserVersion: {
@@ -840,6 +1012,134 @@ export interface operations {
             503: components["responses"]["ServiceUnavailableError"];
         };
     };
+    listDefaultDictionarySummaries: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 五类默认字典的总数和启用数；不含任何租户数据 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DefaultDictionarySummaries"];
+                };
+            };
+            401: components["responses"]["AuthenticationError"];
+            403: components["responses"]["AuthorizationError"];
+            503: components["responses"]["ServiceUnavailableError"];
+        };
+    };
+    listDefaultDictionaryItems: {
+        parameters: {
+            query?: {
+                query?: string;
+                status?: components["schemas"]["DictionaryStatus"];
+                page?: number;
+                size?: number;
+            };
+            header?: never;
+            path: {
+                type: components["parameters"]["DefaultDictionaryType"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 默认字典项分页；只影响之后创建用户 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DefaultDictionaryPage"];
+                };
+            };
+            400: components["responses"]["ValidationError"];
+            401: components["responses"]["AuthenticationError"];
+            403: components["responses"]["AuthorizationError"];
+            404: components["responses"]["NotFoundError"];
+            503: components["responses"]["ServiceUnavailableError"];
+        };
+    };
+    createDefaultDictionaryItem: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                type: components["parameters"]["DefaultDictionaryType"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateDefaultDictionaryItemRequest"];
+            };
+        };
+        responses: {
+            200: components["responses"]["DefaultDictionaryItem"];
+            400: components["responses"]["ValidationError"];
+            401: components["responses"]["AuthenticationError"];
+            403: components["responses"]["AuthorizationError"];
+            404: components["responses"]["NotFoundError"];
+            409: components["responses"]["ConflictError"];
+            503: components["responses"]["ServiceUnavailableError"];
+        };
+    };
+    changeDefaultDictionaryItemStatus: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                type: components["parameters"]["DefaultDictionaryType"];
+                itemId: components["parameters"]["DefaultDictionaryItemId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DictionaryStatusRequest"];
+            };
+        };
+        responses: {
+            200: components["responses"]["DefaultDictionaryItem"];
+            400: components["responses"]["ValidationError"];
+            401: components["responses"]["AuthenticationError"];
+            403: components["responses"]["AuthorizationError"];
+            404: components["responses"]["NotFoundError"];
+            409: components["responses"]["ConflictError"];
+            503: components["responses"]["ServiceUnavailableError"];
+        };
+    };
+    moveDefaultDictionaryItem: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                type: components["parameters"]["DefaultDictionaryType"];
+                itemId: components["parameters"]["DefaultDictionaryItemId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DictionaryMoveRequest"];
+            };
+        };
+        responses: {
+            200: components["responses"]["DefaultDictionaryItem"];
+            400: components["responses"]["ValidationError"];
+            401: components["responses"]["AuthenticationError"];
+            403: components["responses"]["AuthorizationError"];
+            404: components["responses"]["NotFoundError"];
+            503: components["responses"]["ServiceUnavailableError"];
+        };
+    };
     listDictionarySummaries: {
         parameters: {
             query?: never;
@@ -1020,6 +1320,68 @@ export interface operations {
             401: components["responses"]["AuthenticationError"];
             403: components["responses"]["AuthorizationError"];
             404: components["responses"]["NotFoundError"];
+            503: components["responses"]["ServiceUnavailableError"];
+        };
+    };
+    previewProductMerge: {
+        parameters: {
+            query: {
+                targetProductId: string;
+            };
+            header?: never;
+            path: {
+                sourceProductId: components["parameters"]["SourceProductId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 当前事务快照下的影响；确认合并时会重新计算 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProductMergePreview"];
+                };
+            };
+            400: components["responses"]["ValidationError"];
+            401: components["responses"]["AuthenticationError"];
+            403: components["responses"]["AuthorizationError"];
+            404: components["responses"]["NotFoundError"];
+            409: components["responses"]["ConflictError"];
+            503: components["responses"]["ServiceUnavailableError"];
+        };
+    };
+    mergeProduct: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sourceProductId: components["parameters"]["SourceProductId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProductMergeRequest"];
+            };
+        };
+        responses: {
+            /** @description 合并完成；账目名称快照保持不变 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProductMergeResult"];
+                };
+            };
+            400: components["responses"]["ValidationError"];
+            401: components["responses"]["AuthenticationError"];
+            403: components["responses"]["AuthorizationError"];
+            404: components["responses"]["NotFoundError"];
+            409: components["responses"]["ConflictError"];
             503: components["responses"]["ServiceUnavailableError"];
         };
     };
