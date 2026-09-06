@@ -3,6 +3,7 @@ import DictionaryPicker, { type DictionaryPickerItem } from './DictionaryPicker.
 
 defineProps<{
   items: DictionaryPickerItem[]
+  label?: string
   modelValue?: string
   disabled?: boolean
   error?: string
@@ -12,7 +13,7 @@ defineEmits<{ 'update:modelValue': [value: string] }>()
 
 <template>
   <DictionaryPicker
-    label="支付方式"
+    :label="label ?? '支付方式'"
     :items="items"
     :model-value="modelValue"
     :disabled="disabled"

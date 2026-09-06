@@ -312,6 +312,74 @@ paths:
         "403": { $ref: "#/components/responses/AuthorizationError" }
         "409": { $ref: "#/components/responses/ConflictError" }
         "503": { $ref: "#/components/responses/ServiceUnavailableError" }
+  /incomes/names:
+    get:
+      operationId: listRecentIncomeNames
+      summary: 查询当前租户最近使用的收入名称
+      tags: [incomes]
+      parameters:
+        - name: query
+          in: query
+          schema: { type: string, maxLength: 200, default: "" }
+      responses:
+        "200":
+          description: 按最近使用时间排序的最多二十个非唯一名称
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/IncomeNames" }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "401": { $ref: "#/components/responses/AuthenticationError" }
+        "403": { $ref: "#/components/responses/AuthorizationError" }
+  /incomes:
+    post:
+      operationId: createIncome
+      summary: 幂等保存当前租户的一条收入
+      tags: [incomes]
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateIncomeRequest" }
+      responses:
+        "201":
+          description: 收入创建成功
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/IncomeResponse" }
+        "200":
+          description: 相同幂等标识和请求内容的既有成功结果
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/IncomeResponse" }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "401": { $ref: "#/components/responses/AuthenticationError" }
+        "403": { $ref: "#/components/responses/AuthorizationError" }
+        "409": { $ref: "#/components/responses/ConflictError" }
+  /incomes/{incomeId}/undo:
+    delete:
+      operationId: undoCreatedIncome
+      summary: 撤销尚无模板关联的刚保存收入
+      tags: [incomes]
+      parameters:
+        - name: incomeId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128 }
+      responses:
+        "204": { description: 本次保存已撤销 }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "401": { $ref: "#/components/responses/AuthenticationError" }
+        "403": { $ref: "#/components/responses/AuthorizationError" }
+        "409": { $ref: "#/components/responses/ConflictError" }
   /admin/users/{userId}/disable:
     post:
       operationId: disableAdminUser
@@ -931,6 +999,46 @@ components:
         locationLabelName: { type: string, minLength: 1, maxLength: 100 }
         note: { $ref: "#/components/schemas/Note" }
         createdAt: { type: string, format: date-time }
+    CreateIncomeRequest:
+      type: object
+      additionalProperties: false
+      required: [incomeName, payerId, incomeCategoryId, amount, fundingChannelId, occurredAt]
+      properties:
+        incomeName: { type: string, minLength: 1, maxLength: 200 }
+        payerId: { type: string, format: uuid }
+        incomeCategoryId: { type: string, format: uuid }
+        amount: { $ref: "#/components/schemas/Money" }
+        fundingChannelId: { type: string, format: uuid }
+        occurredAt: { $ref: "#/components/schemas/BusinessDateTime" }
+        note: { $ref: "#/components/schemas/Note" }
+    IncomeResponse:
+      type: object
+      additionalProperties: false
+      required: [id, occurredAt, businessDate, incomeName, payerId, payerName, incomeCategoryId,
+        incomeCategoryName, amount, fundingChannelId, fundingChannelName, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        occurredAt: { $ref: "#/components/schemas/BusinessDateTime" }
+        businessDate: { type: string, format: date }
+        incomeName: { type: string, minLength: 1, maxLength: 200 }
+        payerId: { type: string, format: uuid }
+        payerName: { type: string, minLength: 1, maxLength: 100 }
+        incomeCategoryId: { type: string, format: uuid }
+        incomeCategoryName: { type: string, minLength: 1, maxLength: 100 }
+        amount: { $ref: "#/components/schemas/Money" }
+        fundingChannelId: { type: string, format: uuid }
+        fundingChannelName: { type: string, minLength: 1, maxLength: 100 }
+        note: { $ref: "#/components/schemas/Note" }
+        createdAt: { type: string, format: date-time }
+    IncomeNames:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          maxItems: 20
+          items: { type: string, minLength: 1, maxLength: 200 }
     ProductSuggestion:
       type: object
       additionalProperties: false

@@ -9,11 +9,16 @@ import {
   scaledIntegerToDecimal, UNIT_PRICE_MAX,
 } from '../domain/money'
 import { expenseContinuationFields } from '../domain/expense'
+import { createIdempotencyAttemptTracker } from '../domain/idempotency'
+import {
+  formatShanghaiDateTime, isShanghaiLocalDateTime, shanghaiLocalDateTimeToIso, toShanghaiLocalDateTime,
+} from '../domain/businessTime'
 import { unicodeCodePointLength } from '../domain/text'
 import { useLedgerDraft } from '../composables/useLedgerDraft'
 import AppStateBlock from './AppStateBlock.vue'
 import AppToast from './AppToast.vue'
 import DictionaryPicker from './DictionaryPicker.vue'
+import EntrySaveBar from './EntrySaveBar.vue'
 import FormField from './FormField.vue'
 import FormSection from './FormSection.vue'
 import FundingChannelPicker from './FundingChannelPicker.vue'
@@ -51,17 +56,11 @@ interface ExpenseOption {
   parentId?: string
 }
 
-function currentLocalDateTime(): string {
-  const now = new Date()
-  const local = new Date(now.getTime() - now.getTimezoneOffset() * 60_000)
-  return local.toISOString().slice(0, 16)
-}
-
 function emptyForm(): ExpenseFormState {
   return {
     productId: '', productName: '', primaryCategoryId: '', secondaryCategoryId: '', unitId: '',
     unitPrice: '', quantity: '1', paidAmount: '', fundingChannelId: props.defaultFundingChannelId ?? '',
-    purchaseChannelId: '', locationLabelId: '', occurredAt: currentLocalDateTime(), note: '',
+    purchaseChannelId: '', locationLabelId: '', occurredAt: toShanghaiLocalDateTime(), note: '',
   }
 }
 
@@ -85,8 +84,7 @@ const toastMessage = ref('')
 const toastKind = ref<'success' | 'error'>('success')
 const paidOverridden = ref(false)
 const productCombobox = ref<{ reset: () => void }>()
-let lastAttemptFingerprint = ''
-let idempotencyKey = ''
+const idempotencyAttempt = createIdempotencyAttemptTracker()
 
 const rootCategories = computed(() => optionItems.categories.filter((item) => !item.parentId))
 const secondaryCategories = computed(() => optionItems.categories
@@ -215,7 +213,7 @@ function validate(): boolean {
   if (!isDecimalInRange(form.quantity, 3, QUANTITY_MAX, true)) errors.quantity = '数量须大于 0，最多 3 位小数。'
   if (!isDecimalInRange(form.paidAmount, 2, MONEY_MAX)) errors.paidAmount = '实付金额为 0 至 999,999,999.99，最多 2 位小数。'
   if (!form.fundingChannelId) errors.fundingChannelId = '请选择支付方式。'
-  if (!form.occurredAt || !Number.isFinite(new Date(form.occurredAt).getTime())) errors.occurredAt = '请选择有效消费时间。'
+  if (!isShanghaiLocalDateTime(form.occurredAt)) errors.occurredAt = '请选择有效消费时间。'
   if (unicodeCodePointLength(form.note.trim()) > 500) errors.note = '备注最多 500 个字符。'
   try {
     calculateExpenseTotal(form.unitPrice, form.quantity)
@@ -237,7 +235,7 @@ function requestBody() {
     fundingChannelId: form.fundingChannelId,
     ...(form.purchaseChannelId ? { purchaseChannelId: form.purchaseChannelId } : {}),
     ...(form.locationLabelId ? { locationLabelId: form.locationLabelId } : {}),
-    occurredAt: new Date(form.occurredAt).toISOString(),
+    occurredAt: shanghaiLocalDateTimeToIso(form.occurredAt),
     ...(form.note.trim() ? { note: form.note.trim() } : {}),
   }
 }
@@ -245,9 +243,7 @@ function requestBody() {
 async function submit(continueEntry: boolean): Promise<void> {
   if (submitting.value || !validate()) return
   const body = requestBody()
-  const fingerprint = JSON.stringify(body)
-  if (!idempotencyKey || fingerprint !== lastAttemptFingerprint) idempotencyKey = globalThis.crypto.randomUUID()
-  lastAttemptFingerprint = fingerprint
+  const idempotencyKey = idempotencyAttempt.keyFor(body)
   submitting.value = true
   try {
     saved.value = await createExpense(body, idempotencyKey)
@@ -262,8 +258,7 @@ async function submit(continueEntry: boolean): Promise<void> {
     productCombobox.value?.reset()
     if (continueEntry) form.quantity = ''
     paidOverridden.value = false
-    idempotencyKey = ''
-    lastAttemptFingerprint = ''
+    idempotencyAttempt.reset()
   } catch (error) {
     if (error instanceof ApiClientError && error.body?.fieldErrors) {
       Object.entries(error.body.fieldErrors).forEach(([field, messages]) => {
@@ -570,23 +565,11 @@ void loadOptions()
         </FormField>
       </FormSection>
 
-      <div class="expense-savebar">
-        <button
-          type="button"
-          class="secondary-button"
-          :disabled="submitting"
-          @click="submit(true)"
-        >
-          {{ submitting ? '保存中…' : '保存并继续' }}
-        </button>
-        <button
-          type="submit"
-          class="primary-button"
-          :disabled="submitting"
-        >
-          {{ submitting ? '保存中…' : '保存支出' }}
-        </button>
-      </div>
+      <EntrySaveBar
+        :submitting="submitting"
+        primary-label="保存支出"
+        @continue="submit(true)"
+      />
     </form>
 
     <section
@@ -618,7 +601,7 @@ void loadOptions()
         <div><dt>计算金额</dt><dd>¥{{ saved.calculatedAmount }}</dd></div>
         <div><dt>购买渠道</dt><dd>{{ saved.purchaseChannelName || '未指定' }}</dd></div>
         <div><dt>地点</dt><dd>{{ saved.locationLabelName || '未指定' }}</dd></div>
-        <div><dt>消费时间</dt><dd>{{ new Date(saved.occurredAt).toLocaleString('zh-CN') }}</dd></div>
+        <div><dt>消费时间</dt><dd>{{ formatShanghaiDateTime(saved.occurredAt) }}</dd></div>
         <div><dt>备注</dt><dd>{{ saved.note || '无' }}</dd></div>
       </dl>
     </section>

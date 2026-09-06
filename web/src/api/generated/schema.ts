@@ -210,6 +210,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/incomes/names": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 查询当前租户最近使用的收入名称 */
+        get: operations["listRecentIncomeNames"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/incomes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 幂等保存当前租户的一条收入 */
+        post: operations["createIncome"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/incomes/{incomeId}/undo": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** 撤销尚无模板关联的刚保存收入 */
+        delete: operations["undoCreatedIncome"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/users/{userId}/disable": {
         parameters: {
             query?: never;
@@ -605,6 +656,42 @@ export interface components {
             note?: components["schemas"]["Note"];
             /** Format: date-time */
             createdAt: string;
+        };
+        CreateIncomeRequest: {
+            incomeName: string;
+            /** Format: uuid */
+            payerId: string;
+            /** Format: uuid */
+            incomeCategoryId: string;
+            amount: components["schemas"]["Money"];
+            /** Format: uuid */
+            fundingChannelId: string;
+            occurredAt: components["schemas"]["BusinessDateTime"];
+            note?: components["schemas"]["Note"];
+        };
+        IncomeResponse: {
+            /** Format: uuid */
+            id: string;
+            occurredAt: components["schemas"]["BusinessDateTime"];
+            /** Format: date */
+            businessDate: string;
+            incomeName: string;
+            /** Format: uuid */
+            payerId: string;
+            payerName: string;
+            /** Format: uuid */
+            incomeCategoryId: string;
+            incomeCategoryName: string;
+            amount: components["schemas"]["Money"];
+            /** Format: uuid */
+            fundingChannelId: string;
+            fundingChannelName: string;
+            note?: components["schemas"]["Note"];
+            /** Format: date-time */
+            createdAt: string;
+        };
+        IncomeNames: {
+            items: string[];
         };
         ProductSuggestion: {
             /** Format: uuid */
@@ -1274,6 +1361,96 @@ export interface operations {
             403: components["responses"]["AuthorizationError"];
             409: components["responses"]["ConflictError"];
             503: components["responses"]["ServiceUnavailableError"];
+        };
+    };
+    listRecentIncomeNames: {
+        parameters: {
+            query?: {
+                query?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 按最近使用时间排序的最多二十个非唯一名称 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IncomeNames"];
+                };
+            };
+            400: components["responses"]["ValidationError"];
+            401: components["responses"]["AuthenticationError"];
+            403: components["responses"]["AuthorizationError"];
+        };
+    };
+    createIncome: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateIncomeRequest"];
+            };
+        };
+        responses: {
+            /** @description 相同幂等标识和请求内容的既有成功结果 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IncomeResponse"];
+                };
+            };
+            /** @description 收入创建成功 */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IncomeResponse"];
+                };
+            };
+            400: components["responses"]["ValidationError"];
+            401: components["responses"]["AuthenticationError"];
+            403: components["responses"]["AuthorizationError"];
+            409: components["responses"]["ConflictError"];
+        };
+    };
+    undoCreatedIncome: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path: {
+                incomeId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 本次保存已撤销 */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["ValidationError"];
+            401: components["responses"]["AuthenticationError"];
+            403: components["responses"]["AuthorizationError"];
+            409: components["responses"]["ConflictError"];
         };
     };
     disableAdminUser: {

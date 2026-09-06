@@ -4,6 +4,7 @@ import { computed } from 'vue'
 import AppStateBlock from '../components/AppStateBlock.vue'
 import EntryTypeSwitch from '../components/EntryTypeSwitch.vue'
 import ExpenseEntryForm from '../components/ExpenseEntryForm.vue'
+import IncomeEntryForm from '../components/IncomeEntryForm.vue'
 import type { EntryType } from '../domain/preferences'
 import { usePreferencesStore } from '../stores/preferences'
 import { useSessionStore } from '../stores/session'
@@ -61,11 +62,10 @@ function selectType(type: EntryType): void {
         :account-id="session.session?.accountId"
         :default-funding-channel-id="preferences.values.defaultFundingChannelId"
       />
-      <AppStateBlock
+      <IncomeEntryForm
         v-else
-        kind="empty"
-        title="收入填报将在 T12 开放"
-        message="支出草稿会原样保留，切回支出即可继续。"
+        :account-id="session.session?.accountId"
+        :default-funding-channel-id="preferences.values.defaultFundingChannelId"
       />
     </section>
   </article>

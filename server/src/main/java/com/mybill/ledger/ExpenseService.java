@@ -11,19 +11,17 @@ import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
-import java.nio.ByteBuffer;
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.time.Clock;
-import java.time.Duration;
 import java.time.Instant;
-import java.time.ZoneId;
-import java.util.HexFormat;
-import java.util.Arrays;
-import java.util.List;
-import java.util.Map;
 import java.util.UUID;
+
+import static com.mybill.ledger.LedgerWritePolicy.BUSINESS_ZONE;
+import static com.mybill.ledger.LedgerWritePolicy.decimal;
+import static com.mybill.ledger.LedgerWritePolicy.decimalField;
+import static com.mybill.ledger.LedgerWritePolicy.fieldError;
+import static com.mybill.ledger.LedgerWritePolicy.normalizeNote;
+import static com.mybill.ledger.LedgerWritePolicy.validateIdempotencyKey;
+import static com.mybill.ledger.LedgerWritePolicy.validateOccurredAt;
 
 import static com.mybill.ledger.ExpenseContracts.CreationResult;
 import static com.mybill.ledger.ExpenseContracts.CreateExpenseRequest;
@@ -33,19 +31,19 @@ import static com.mybill.ledger.ExpenseContracts.ProductSuggestions;
 /** 支出填报应用服务；引用校验、幂等、账目和商品最近值在一个租户事务内提交。 */
 @Service
 class ExpenseService {
-    private static final ZoneId BUSINESS_ZONE = ZoneId.of("Asia/Shanghai");
-    private static final Duration FUTURE_TOLERANCE = Duration.ofMinutes(5);
-    private static final Duration IDEMPOTENCY_TTL = Duration.ofHours(24);
+    private static final String CREATE_OPERATION = "CREATE_EXPENSE";
     private final ExpenseRepository repository;
     private final ExpenseDictionaryService dictionaries;
     private final TenantTransactionExecutor tenantTransactions;
+    private final LedgerIdempotencyStore idempotency;
     private final Clock clock;
 
     ExpenseService(ExpenseRepository repository, ExpenseDictionaryService dictionaries,
-                   TenantTransactionExecutor tenantTransactions, Clock clock) {
+                   TenantTransactionExecutor tenantTransactions, LedgerIdempotencyStore idempotency, Clock clock) {
         this.repository = repository;
         this.dictionaries = dictionaries;
         this.tenantTransactions = tenantTransactions;
+        this.idempotency = idempotency;
         this.clock = clock;
     }
 
@@ -63,7 +61,7 @@ class ExpenseService {
     CreationResult create(CurrentPrincipal principal, String requestedKey, CreateExpenseRequest request) {
         String key = validateIdempotencyKey(requestedKey);
         Instant now = clock.instant();
-        validateOccurredAt(request.occurredAt(), now);
+        validateOccurredAt(request.occurredAt(), now, "消费时间");
         String note = normalizeNote(request.note());
         BigDecimal unitPrice = decimalField("unitPrice", request.unitPrice(), 4,
                 new BigDecimal("99999999.9999"), false);
@@ -77,23 +75,9 @@ class ExpenseService {
         }
         String digest = requestDigest(request, unitPrice, quantity, paidAmount, note);
         return tenantTransactions.execute(principal, () -> {
-            repository.deleteExpiredIdempotency(key, now);
-            if (!repository.insertIdempotency(key, digest, now, now.plus(IDEMPOTENCY_TTL))) {
-                ExpenseRepository.IdempotencyRow existing = repository.lockIdempotency(key)
-                        .orElseThrow(() -> new IllegalStateException("幂等键冲突后记录不存在"));
-                if (!existing.digest().equals(digest)) {
-                    throw new ApiException(HttpStatus.CONFLICT, "IDEMPOTENCY_KEY_REUSED",
-                            "该幂等标识已用于不同内容。", false,
-                            Map.of("idempotencyKey", List.of("请为新的填报生成新的幂等标识。")));
-                }
-                if ("SUCCEEDED".equals(existing.status()) && existing.resultReference() != null) {
-                    UUID resultId = UUID.fromString(existing.resultReference());
-                    return new CreationResult(repository.findExpense(resultId)
-                            .orElseThrow(() -> new IllegalStateException("幂等结果账目不存在")), true);
-                }
-                throw new ApiException(HttpStatus.CONFLICT, "IDEMPOTENCY_IN_PROGRESS",
-                        "相同填报正在处理中，请稍后重试。", true);
-            }
+            LedgerIdempotencyStore.Reservation reservation = idempotency.reserve(CREATE_OPERATION, key, digest, now);
+            if (reservation.replayed()) return new CreationResult(repository.findExpense(reservation.resultId())
+                    .orElseThrow(() -> new IllegalStateException("幂等结果账目不存在")), true);
 
             ExpenseReferences references = dictionaries.lockActiveReferences(request.productId(),
                     request.primaryCategoryId(), request.secondaryCategoryId(), request.unitId(),
@@ -105,7 +89,7 @@ class ExpenseService {
             dictionaries.updateProductRecentValues(request.productId(), request.primaryCategoryId(),
                     request.secondaryCategoryId(), request.unitId(), unitPrice, quantity,
                     request.fundingChannelId(), request.purchaseChannelId(), now);
-            repository.completeIdempotency(key, id, now);
+            idempotency.complete(CREATE_OPERATION, key, id, now);
             return new CreationResult(repository.findExpense(id).orElseThrow(), false);
         });
     }
@@ -116,7 +100,7 @@ class ExpenseService {
             UUID productId = repository.deleteUndoableExpense(expenseId, key)
                     .orElseThrow(() -> new ApiException(HttpStatus.CONFLICT, "EXPENSE_NOT_UNDOABLE",
                             "该支出不存在或已有后续关联，无法撤销本次保存。", false));
-            repository.deleteResultIdempotency(expenseId);
+            idempotency.deleteResult(CREATE_OPERATION, expenseId);
             dictionaries.refreshProductRecentValues(productId, clock.instant());
             return null;
         });
@@ -138,70 +122,11 @@ class ExpenseService {
         }
     }
 
-    private void validateOccurredAt(Instant occurredAt, Instant now) {
-        if (occurredAt != null && occurredAt.isAfter(now.plus(FUTURE_TOLERANCE))) {
-            throw fieldError("occurredAt", "消费时间不能超过服务端当前时间 5 分钟。");
-        }
-    }
-
-    private String normalizeNote(String value) {
-        String note = value == null ? null : value.strip();
-        if (note == null || note.isEmpty()) return null;
-        if (note.codePointCount(0, note.length()) > 500) throw fieldError("note", "备注最多 500 个字符。");
-        return note;
-    }
-
-    private String validateIdempotencyKey(String value) {
-        String key = value == null ? "" : value.strip();
-        if (key.isEmpty() || key.length() > 128) {
-            throw fieldError("idempotencyKey", "幂等标识长度必须为 1-128 个字符。");
-        }
-        return key;
-    }
-
     private String requestDigest(CreateExpenseRequest request, BigDecimal unitPrice, BigDecimal quantity,
                                  BigDecimal paidAmount, String note) {
-        try {
-            MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            Arrays.asList(request.productId(), request.primaryCategoryId(), request.secondaryCategoryId(), request.unitId(),
-                    decimal(unitPrice), decimal(quantity), decimal(paidAmount),
-                    request.fundingChannelId(), request.purchaseChannelId(), request.locationLabelId(),
-                    request.occurredAt(), note).forEach(value -> appendDigest(digest, value));
-            return HexFormat.of().formatHex(digest.digest());
-        } catch (NoSuchAlgorithmException exception) {
-            throw new IllegalStateException("运行环境缺少 SHA-256", exception);
-        }
-    }
-
-    private void appendDigest(MessageDigest digest, Object value) {
-        byte[] bytes = String.valueOf(value == null ? "<null>" : value).getBytes(StandardCharsets.UTF_8);
-        digest.update(ByteBuffer.allocate(Integer.BYTES).putInt(bytes.length).array());
-        digest.update(bytes);
-    }
-
-    private String decimal(BigDecimal value) {
-        return value.stripTrailingZeros().toPlainString();
-    }
-
-    private BigDecimal decimalField(String field, String value, int scale, BigDecimal maximum, boolean positive) {
-        if (value == null || !value.matches("^(0|[1-9]\\d*)(?:\\.\\d+)?$")) {
-            throw fieldError(field, "请输入规范的非负十进制数。");
-        }
-        try {
-            BigDecimal decimal = new BigDecimal(value);
-            if (decimal.scale() > scale || decimal.compareTo(maximum) > 0
-                    || (positive ? decimal.signum() <= 0 : decimal.signum() < 0)) {
-                throw fieldError(field, "数值精度或范围无效。");
-            }
-            return decimal;
-        } catch (NumberFormatException exception) {
-            throw fieldError(field, "请输入规范的非负十进制数。");
-        }
-    }
-
-    private ApiException fieldError(String field, String message) {
-        return new ApiException(HttpStatus.BAD_REQUEST, "VALIDATION_FAILED", message, false,
-                Map.of(field, List.of(message)));
+        return LedgerWritePolicy.digest(request.productId(), request.primaryCategoryId(), request.secondaryCategoryId(), request.unitId(),
+                unitPrice, quantity, paidAmount, request.fundingChannelId(), request.purchaseChannelId(),
+                request.locationLabelId(), request.occurredAt(), note);
     }
 
     private String escapeLike(String value) {

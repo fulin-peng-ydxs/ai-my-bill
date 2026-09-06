@@ -1189,7 +1189,7 @@ textarea:disabled {
 }
 .field-heading-action a { min-height: 44px; padding: var(--space-sm); text-decoration: none; white-space: nowrap; }
 
-.expense-savebar {
+.entry-savebar {
   position: sticky;
   z-index: 5;
   bottom: calc(var(--bottom-navigation-height) + env(safe-area-inset-bottom));
@@ -1200,7 +1200,7 @@ textarea:disabled {
   background: color-mix(in srgb, var(--color-surface) 92%, transparent);
   backdrop-filter: blur(16px);
 }
-.expense-savebar button { width: 100%; }
+.entry-savebar button { width: 100%; }
 
 .saved-expense {
   display: grid;
@@ -1381,7 +1381,7 @@ textarea:disabled {
 
   .dictionary-toolbar .global-search { grid-column: auto; }
   .form-grid-two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .expense-savebar { bottom: 0; }
+  .entry-savebar { bottom: 0; }
 }
 
 @media (min-width: 1024px) {

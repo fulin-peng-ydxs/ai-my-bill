@@ -25,45 +25,6 @@ class ExpenseRepository {
         this.jdbc = jdbc;
     }
 
-    void deleteExpiredIdempotency(String key, Instant now) {
-        jdbc.sql("DELETE FROM idempotency_record WHERE operation = :operation AND idempotency_key = :key "
-                        + "AND expires_at <= :now")
-                .param("operation", CREATE_OPERATION).param("key", key).param("now", Timestamp.from(now)).update();
-    }
-
-    boolean insertIdempotency(String key, String digest, Instant now, Instant expiresAt) {
-        return jdbc.sql("""
-                INSERT INTO idempotency_record(
-                    tenant_id, id, operation, idempotency_key, request_digest, status, expires_at, created_at, updated_at)
-                VALUES (current_setting('app.tenant_id')::uuid, :id, :operation, :key, :digest,
-                        'IN_PROGRESS', :expiresAt, :now, :now)
-                ON CONFLICT (tenant_id, operation, idempotency_key) DO NOTHING
-                """).param("id", UUID.randomUUID()).param("operation", CREATE_OPERATION).param("key", key)
-                .param("digest", digest).param("expiresAt", Timestamp.from(expiresAt))
-                .param("now", Timestamp.from(now)).update() == 1;
-    }
-
-    Optional<IdempotencyRow> lockIdempotency(String key) {
-        return jdbc.sql("""
-                SELECT request_digest, result_reference, status
-                  FROM idempotency_record
-                 WHERE operation = :operation AND idempotency_key = :key
-                   FOR UPDATE
-                """).param("operation", CREATE_OPERATION).param("key", key)
-                .query((rs, row) -> new IdempotencyRow(rs.getString("request_digest"),
-                        rs.getString("result_reference"), rs.getString("status"))).optional();
-    }
-
-    void completeIdempotency(String key, UUID resultId, Instant now) {
-        int affected = jdbc.sql("""
-                UPDATE idempotency_record
-                   SET status = 'SUCCEEDED', result_reference = :result, updated_at = :now
-                 WHERE operation = :operation AND idempotency_key = :key AND status = 'IN_PROGRESS'
-                """).param("result", resultId.toString()).param("now", Timestamp.from(now))
-                .param("operation", CREATE_OPERATION).param("key", key).update();
-        if (affected != 1) throw new IllegalStateException("支出幂等记录完成写入未命中唯一记录");
-    }
-
     void insertExpense(UUID id, ExpenseContracts.CreateExpenseRequest request, ExpenseReferences references,
                        BigDecimal unitPrice, BigDecimal quantity, BigDecimal paidAmount,
                        BigDecimal calculatedAmount, LocalDate businessDate, String note, Instant now) {
@@ -131,11 +92,6 @@ class ExpenseRepository {
         return affected == 1 ? productId : Optional.empty();
     }
 
-    void deleteResultIdempotency(UUID resultId) {
-        jdbc.sql("DELETE FROM idempotency_record WHERE operation = :operation AND result_reference = :result")
-                .param("operation", CREATE_OPERATION).param("result", resultId.toString()).update();
-    }
-
     private static String name(com.mybill.dictionary.ExpenseDictionaryService.NamedReference reference) {
         return reference == null ? null : reference.name();
     }
@@ -163,5 +119,4 @@ class ExpenseRepository {
         return value.setScale(2).toPlainString();
     }
 
-    record IdempotencyRow(String digest, String resultReference, String status) { }
 }
