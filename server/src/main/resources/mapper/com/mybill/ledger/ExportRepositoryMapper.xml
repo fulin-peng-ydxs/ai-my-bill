@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.mybill.ledger.ExportRepositoryMapper">
+  <update id="create">
+    <![CDATA[
+                INSERT INTO export_job(tenant_id,id,user_id,filter_snapshot,status,expires_at,created_at,updated_at)
+                VALUES(current_setting('app.tenant_id')::uuid,#{p.id},#{p.userId},CAST(#{p.snapshot} AS jsonb),'PENDING',#{p.expiresAt},#{p.now},#{p.now})
+                ]]>
+  </update>
+
+  <select id="findOwned" resultType="map">
+    <![CDATA[
+                SELECT e.*,e.filter_snapshot->>'scope' AS export_scope,
+                       j.id AS run_id,j.status AS run_status,j.processed_count
+                  FROM export_job e
+                  LEFT JOIN job_run j ON j.tenant_id=e.tenant_id AND j.job_type='GENERATE_PERSONAL_EXPORT'
+                    AND j.batch_key=e.id::text
+                 WHERE e.id=#{p.id} AND e.user_id=#{p.userId}
+                ]]>
+  </select>
+
+  <select id="findForJob" resultType="map">
+    <![CDATA[SELECT user_id,filter_snapshot::text,expires_at,status,file_location FROM export_job WHERE id=#{p.id} FOR UPDATE]]>
+  </select>
+
+  <update id="markRunning">
+    <![CDATA[UPDATE export_job SET status='RUNNING',error_summary=NULL,updated_at=#{p.now} WHERE id=#{p.id} AND status='PENDING' AND expires_at>#{p.now}]]>
+  </update>
+
+  <update id="markSucceeded">
+    <![CDATA[UPDATE export_job SET status='SUCCEEDED',file_location=#{p.location},error_summary=NULL,updated_at=#{p.now} WHERE id=#{p.id} AND status='RUNNING' AND expires_at>#{p.now}]]>
+  </update>
+
+  <update id="markFailed">
+    <![CDATA[UPDATE export_job SET status='FAILED',file_location=NULL,error_summary=#{p.summary},updated_at=#{p.now} WHERE id=#{p.id} AND status='RUNNING']]>
+  </update>
+
+  <update id="markCancelled">
+    <![CDATA[UPDATE export_job SET status='CANCELLED',file_location=NULL,error_summary=NULL,updated_at=#{p.now} WHERE id=#{p.id} AND status IN ('PENDING','RUNNING')]]>
+  </update>
+
+  <update id="markExpired">
+    <![CDATA[UPDATE export_job SET status='EXPIRED',file_location=NULL,error_summary=NULL,updated_at=#{p.now} WHERE id=#{p.id} AND status<>'EXPIRED' AND expires_at<=#{p.now}]]>
+  </update>
+</mapper>

@@ -6,6 +6,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.time.Clock;
 import java.time.Instant;
@@ -14,6 +16,7 @@ import java.util.UUID;
 /** 单进程或多进程均可安全调用的小批次任务协调器；调度触发由后续业务阶段接入。 */
 @Service
 public final class JobCoordinator {
+    private static final Logger LOG = LoggerFactory.getLogger(JobCoordinator.class);
     private final JobRunRepository repository;
     private final JobDefinitionRegistry registry;
     private final TenantDatabaseExecutor tenantTransactions;
@@ -94,6 +97,8 @@ public final class JobCoordinator {
             recordLeaseLost(run);
         } catch (Exception failure) {
             boolean retry = definition.retryable() && run.attemptCount() < run.maxAttempts();
+            LOG.warn("后台任务执行失败 jobType={} runId={} error={}",
+                    run.jobType(), run.id(), safeError(failure));
             try {
                 repository.failOrRetry(run.id(), owner, retry, safeError(failure), Instant.now(clock));
             } catch (JobLeaseLostException leaseLost) {

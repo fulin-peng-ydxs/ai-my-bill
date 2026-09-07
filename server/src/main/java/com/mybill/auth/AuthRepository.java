@@ -1,6 +1,6 @@
 package com.mybill.auth;
 
-import org.springframework.jdbc.core.simple.JdbcClient;
+import com.mybill.shared.persistence.MybatisOperations;
 import org.springframework.stereotype.Repository;
 
 import java.sql.Timestamp;
@@ -12,51 +12,31 @@ import java.util.UUID;
 @Repository
 public class AuthRepository {
 
-    private final JdbcClient jdbc;
+    private final MybatisOperations operations;
+    private final AuthRepositoryMapper mapper;
 
-    public AuthRepository(JdbcClient jdbc) {
-        this.jdbc = jdbc;
+    public AuthRepository(MybatisOperations operations, AuthRepositoryMapper mapper) {
+        this.operations = operations; this.mapper = mapper;
     }
 
     Optional<AuthUser> findUserByUsername(String username) {
-        return jdbc.sql("""
-                        SELECT u.id, u.username, u.password_digest, u.temporary_password_expires_at,
-                               u.role, u.status, u.tenant_id, u.credential_version, t.status AS tenant_status
-                        FROM app_user u
-                        LEFT JOIN tenant t ON t.id = u.tenant_id
-                        WHERE u.username = :username
-                        """)
+        return operations.select(mapper::findUserByUsername)
                 .param("username", username)
-                .query(AuthRepository::mapUser)
+                .map(AuthRepository::mapUser)
                 .optional();
     }
 
     Optional<AuthUser> findUserById(UUID userId) {
-        return jdbc.sql("""
-                        SELECT u.id, u.username, u.password_digest, u.temporary_password_expires_at,
-                               u.role, u.status, u.tenant_id, u.credential_version, t.status AS tenant_status
-                        FROM app_user u
-                        LEFT JOIN tenant t ON t.id = u.tenant_id
-                        WHERE u.id = :userId
-                        """)
+        return operations.select(mapper::findUserById)
                 .param("userId", userId)
-                .query(AuthRepository::mapUser)
+                .map(AuthRepository::mapUser)
                 .optional();
     }
 
     Optional<SessionIdentity> findSession(String tokenDigest) {
-        return jdbc.sql("""
-                        SELECT s.id AS session_id, s.user_id, s.credential_version AS session_credential_version,
-                               s.expires_at, s.revoked_at, u.username, u.role, u.status,
-                               u.tenant_id, u.credential_version AS user_credential_version,
-                               u.temporary_password_expires_at, t.status AS tenant_status
-                        FROM user_session s
-                        JOIN app_user u ON u.id = s.user_id
-                        LEFT JOIN tenant t ON t.id = u.tenant_id
-                        WHERE s.token_digest = :tokenDigest
-                        """)
+        return operations.select(mapper::findSession)
                 .param("tokenDigest", tokenDigest)
-                .query((rs, rowNum) -> new SessionIdentity(
+                .map((rs, rowNum) -> new SessionIdentity(
                         rs.getObject("session_id", UUID.class),
                         rs.getObject("user_id", UUID.class),
                         rs.getLong("session_credential_version"),
@@ -74,147 +54,99 @@ public class AuthRepository {
 
     void createSession(UUID sessionId, UUID userId, String tokenDigest, long credentialVersion,
                        Instant expiresAt, Instant now) {
-        jdbc.sql("""
-                        INSERT INTO user_session(
-                            id, user_id, token_digest, credential_version, expires_at, last_used_at, created_at
-                        ) VALUES (:id, :userId, :tokenDigest, :credentialVersion, :expiresAt, :now, :now)
-                        """)
+        operations.update(mapper::createSession)
                 .param("id", sessionId)
                 .param("userId", userId)
                 .param("tokenDigest", tokenDigest)
                 .param("credentialVersion", credentialVersion)
                 .param("expiresAt", sqlTimestamp(expiresAt))
                 .param("now", sqlTimestamp(now))
-                .update();
+                .execute();
     }
 
     void touchSession(UUID sessionId, UUID userId, Instant now) {
-        jdbc.sql("""
-                        UPDATE user_session SET last_used_at = :now
-                        WHERE id = :sessionId AND last_used_at < :touchBefore
-                        """)
+        operations.update(mapper::touchSession)
                 .param("now", sqlTimestamp(now))
                 .param("sessionId", sessionId)
                 .param("touchBefore", sqlTimestamp(now.minusSeconds(300)))
-                .update();
-        jdbc.sql("""
-                        UPDATE app_user SET last_active_at = :now
-                        WHERE id = :userId AND (last_active_at IS NULL OR last_active_at < :touchBefore)
-                        """)
+                .execute();
+        operations.update(mapper::touchUserActivity)
                 .param("now", sqlTimestamp(now))
                 .param("userId", userId)
                 .param("touchBefore", sqlTimestamp(now.minusSeconds(300)))
-                .update();
+                .execute();
     }
 
     void revokeSession(UUID sessionId, Instant now, String reason) {
-        jdbc.sql("""
-                        UPDATE user_session
-                        SET revoked_at = :now, revoked_reason = :reason
-                        WHERE id = :sessionId AND revoked_at IS NULL
-                        """)
+        operations.update(mapper::revokeSession)
                 .param("now", sqlTimestamp(now))
                 .param("reason", reason)
                 .param("sessionId", sessionId)
-                .update();
+                .execute();
     }
 
     void revokeAllSessions(UUID userId, Instant now, String reason) {
-        jdbc.sql("""
-                        UPDATE user_session
-                        SET revoked_at = :now, revoked_reason = :reason
-                        WHERE user_id = :userId AND revoked_at IS NULL
-                        """)
+        operations.update(mapper::revokeAllSessions)
                 .param("now", sqlTimestamp(now))
                 .param("reason", reason)
                 .param("userId", userId)
-                .update();
+                .execute();
     }
 
     long replacePassword(UUID userId, long expectedVersion, String passwordDigest, Instant now) {
-        return jdbc.sql("""
-                        UPDATE app_user
-                        SET password_digest = :passwordDigest,
-                            temporary_password_expires_at = NULL,
-                            credential_version = credential_version + 1,
-                            updated_at = :now
-                        WHERE id = :userId AND credential_version = :expectedVersion
-                        RETURNING credential_version
-                        """)
+        return operations.select(mapper::replacePassword)
                 .param("passwordDigest", passwordDigest)
                 .param("now", sqlTimestamp(now))
                 .param("userId", userId)
                 .param("expectedVersion", expectedVersion)
-                .query(Long.class)
+                .map(Long.class)
                 .optional()
                 .orElse(0L);
     }
 
     void ensureRateLimitRow(String subjectDigest, Instant windowStart, Instant now) {
-        jdbc.sql("""
-                        INSERT INTO auth_rate_limit(id, entry_point, subject_digest, window_started_at, updated_at)
-                        VALUES (:id, 'LOGIN', :subjectDigest, :windowStart, :now)
-                        ON CONFLICT (entry_point, subject_digest, window_started_at) DO NOTHING
-                        """)
+        operations.update(mapper::ensureRateLimitRow)
                 .param("id", UUID.randomUUID())
                 .param("subjectDigest", subjectDigest)
                 .param("windowStart", sqlTimestamp(windowStart))
                 .param("now", sqlTimestamp(now))
-                .update();
+                .execute();
     }
 
     boolean hasActiveLoginLock(String subjectDigest, Instant now) {
-        return jdbc.sql("""
-                        SELECT EXISTS (
-                            SELECT 1
-                            FROM auth_rate_limit
-                            WHERE entry_point = 'LOGIN' AND subject_digest = :subjectDigest
-                              AND locked_until > :now
-                        )
-                        """)
+        return operations.select(mapper::hasActiveLoginLock)
                 .param("subjectDigest", subjectDigest)
                 .param("now", sqlTimestamp(now))
-                .query(Boolean.class)
+                .map(Boolean.class)
                 .single();
     }
 
     RateLimitState lockRateLimit(String subjectDigest, Instant windowStart) {
-        return jdbc.sql("""
-                        SELECT failure_count, locked_until
-                        FROM auth_rate_limit
-                        WHERE entry_point = 'LOGIN' AND subject_digest = :subjectDigest
-                          AND window_started_at = :windowStart
-                        FOR UPDATE
-                        """)
+        return operations.select(mapper::lockRateLimit)
                 .param("subjectDigest", subjectDigest)
                 .param("windowStart", sqlTimestamp(windowStart))
-                .query((rs, rowNum) -> new RateLimitState(
+                .map((rs, rowNum) -> new RateLimitState(
                         rs.getInt("failure_count"), timestamp(rs.getTimestamp("locked_until"))))
                 .single();
     }
 
     void recordFailure(String subjectDigest, Instant windowStart, int failures, Instant lockedUntil, Instant now) {
-        jdbc.sql("""
-                        UPDATE auth_rate_limit
-                        SET failure_count = :failures, locked_until = :lockedUntil, updated_at = :now
-                        WHERE entry_point = 'LOGIN' AND subject_digest = :subjectDigest
-                          AND window_started_at = :windowStart
-                        """)
+        operations.update(mapper::recordFailure)
                 .param("failures", failures)
                 .param("lockedUntil", sqlTimestamp(lockedUntil))
                 .param("now", sqlTimestamp(now))
                 .param("subjectDigest", subjectDigest)
                 .param("windowStart", sqlTimestamp(windowStart))
-                .update();
+                .execute();
     }
 
     void clearLoginFailures(String subjectDigest) {
-        jdbc.sql("DELETE FROM auth_rate_limit WHERE entry_point = 'LOGIN' AND subject_digest = :subjectDigest")
+        operations.update(mapper::clearLoginFailures)
                 .param("subjectDigest", subjectDigest)
-                .update();
+                .execute();
     }
 
-    private static AuthUser mapUser(java.sql.ResultSet rs, int rowNum) throws java.sql.SQLException {
+    private static AuthUser mapUser(com.mybill.shared.persistence.DatabaseRow rs, int rowNum) throws java.sql.SQLException {
         return new AuthUser(
                 rs.getObject("id", UUID.class),
                 rs.getString("username"),

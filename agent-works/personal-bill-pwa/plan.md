@@ -102,7 +102,7 @@ agent-works/personal-bill-pwa/  需求、计划、后续 SQL/测试/开发留痕
 
 - 前端通过同源 `/api/v1` 访问后端，避免跨域 Cookie 和额外 CORS 暴露面。
 - 后端按领域包分层为 controller、application/service、domain、repository；跨模块只通过应用服务或只读查询接口，不直接跨包修改表。
-- CRUD 使用 Spring Data JPA 的显式实体图/投影；报表和批量查询使用参数化原生 SQL/`JdbcClient`，避免为复杂聚合强行加载实体图。
+- 数据库访问统一使用 MyBatis-Plus：Java 仓储只依赖 Mapper 方法，参数化 SQL、动态条件、锁和批量语句统一维护在 `server/src/main/resources/mapper/**/*.xml`；禁止生产代码直接使用 Spring JDBC/JPA 或内嵌 SQL。
 - 所有金额、数量、规范化名称、筛选参数、报表口径分别形成共享领域 helper；前后端都执行输入校验，但服务端为权威。
 - REST 错误统一返回 `code`、`message`、`fieldErrors`、`traceId`、`retryable`；不得回传堆栈、账号是否存在、租户 ID 或敏感字段。
 - 前端 API 客户端统一解析标准 HTTP 状态、字段错误、超时、断网和取消；Cookie 会话失效只执行一次全局跳转/清理，页面主动查询可关闭全局 toast 并使用区域错误态。列表和图表使用请求取消或请求代次，晚响应不得覆盖新筛选。
@@ -408,14 +408,14 @@ Flyway 高权限凭据边界：
 - 状态：已完成
 - 依赖：T1。
 - 输入：T1 字段/接口合同、需求 §6-§7、B2-B9 与已确认默认收入分类。
-- 涉及文件：`deploy/postgres/001_roles.sql`、`deploy/compose.yaml`、`deploy/env/production.env.example`、`deploy/scripts/run-roles.sh`、`run-flyway.sh`、`run-app.sh`、`server/Dockerfile`、`server/src/main/resources/application-prod.yml`、`server/src/main/resources/db/migration/V001__identity_and_sessions.sql` 至 `V007__tenant_rls_policies.sql`、`server/src/main/resources/db/rollback/U001__identity_and_sessions.sql` 至 `U007__tenant_rls_policies.sql`、JPA 实体和数据库集成测试。
+- 涉及文件：`deploy/postgres/001_roles.sql`、`deploy/compose.yaml`、`deploy/env/production.env.example`、`deploy/scripts/run-roles.sh`、`run-flyway.sh`、`run-app.sh`、`server/Dockerfile`、`server/src/main/resources/application-prod.yml`、`server/src/main/resources/db/migration/V001__identity_and_sessions.sql` 至 `V007__tenant_rls_policies.sql`、`server/src/main/resources/db/rollback/U001__identity_and_sessions.sql` 至 `U007__tenant_rls_policies.sql`、MyBatis-Plus 映射和数据库集成测试。
 - 目标：落实 §4.2 全部表、精度、状态、唯一、复合归属、检查约束、索引、角色隔离和 RLS policy。
 - 操作：实现 migration；建立金额/时间/租户约束；适用主键、唯一约束和跨表外键以 `tenant_id` 为前导归属；为全部租户业务表启用并强制 RLS，补齐 `USING`/`WITH CHECK` policy；迁移角色与应用运行角色分离，运行角色没有表所有权、超级用户或 `BYPASSRLS`，仅可读 Flyway 历史版本；实现只包含 Flyway 和 migration 的一次性 `migrate` 镜像/Compose 服务及分离的 app 启动脚本，生产应用 profile 强制关闭内嵌 Flyway并校验 schema 版本；默认项 seed 使用稳定键和 `ON CONFLICT DO NOTHING`，只补缺不覆盖；创建幂等、任务、审计表；准备受环境保护的测试 fixture。
 - 产出：可从空库迁移的 schema、人工回滚说明，以及复用系统 PostgreSQL 可执行程序创建和销毁一次性集群的隔离数据库测试。
 - 影响范围与边界异常：影响全部持久化模型和后续任务；不从原型示例推断生产默认字典，重复启动/升级不得覆盖管理员修改，生产 migration 采用 forward-only。
 - 验证：空库和升级库迁移、重复 migrate、migration 失败后的应用版本门禁、管理员修改默认项后升级保持不变；复合租户外键负例、运行角色权限快照、RLS 上下文缺失/跨租户读写/伪造租户/直接 SQL 负例、并发唯一/调整累计/模板 upsert、索引定义与预定访问路径覆盖；静态检查 Compose 服务、镜像内容和 secret 声明，并以入口脚本进程测试证明常驻应用拒绝 migration 环境变量及空 secret。镜像构建、容器挂载和 `docker compose run --rm migrate` 的运行证据归 T29；代表性业务查询的 `EXPLAIN` 在对应 repository SQL 落地后的 T14/T20/T26 验证，不在 T2 构造尚不存在的查询。
 - 完成标准：所有实体和 B2/B3/B4/B6-B9 可由数据库或事务测试证明；运行角色不能关闭或绕过 RLS；应用制品、入口脚本和 Compose 声明不向常驻应用提供迁移凭据。真实容器的环境与挂载检查属于 T29 部署验收。
-- 实际落地情况：已落地 24 张业务/身份/任务表；T2 建立的 7 个 migration/rollback 基线在 T6、T8、T9、T17 追加 V008-U011 后现为 11 个。金额采用无损 `numeric` + `scale`/范围 CHECK 拒绝超精度或缺失必填金额，字段形状约束要求引用与名称快照成对，分类触发器限制最多两级，租户对象使用复合主键/外键，账目按上海时区校验业务日期，账目与调整的 `version` 字段启用乐观锁，调整触发器锁定原支出并原子校验累计额且联动冻结/恢复，模板以 `(tenant_id,type,normalized_name)` 唯一。16 张租户业务表已 `ENABLE/FORCE RLS`，provision 每次强制把已有同名迁移/运行角色收敛为最小权限；默认收入分类以 8 个稳定键 `DO NOTHING` seed。生产 profile 关闭内嵌 Flyway并只读核对当前版本 `011`；V011 只扩展任务延迟领取，不修改业务 seed 或权限。`npm run check:database` 复用系统 PostgreSQL 16.14 创建一次性集群，覆盖空库/升级/重复迁移、seed 不覆盖、角色降权、RLS、复合归属、业务约束、任务租约/延迟领取、启动版本门禁及 U011→U001 回滚；脚本退出后临时集群与端口均清理。完整容器运行证据仍归 T29，不要求额外安装容器运行时。
+- 实际落地情况：已落地 24 张业务/身份/任务表；T2 建立的 7 个 migration/rollback 基线在 T6、T8、T9、T17 追加 V008-U011 后现为 11 个。金额采用无损 `numeric` + `scale`/范围 CHECK 拒绝超精度或缺失必填金额，字段形状约束要求引用与名称快照成对，分类触发器限制最多两级，租户对象使用复合主键/外键，账目按上海时区校验业务日期，账目与调整的 `version` 字段声明 MyBatis-Plus 乐观锁映射，调整触发器锁定原支出并原子校验累计额且联动冻结/恢复，模板以 `(tenant_id,type,normalized_name)` 唯一。生产数据库访问现统一为 MyBatis-Plus 3.5.17 Mapper/XML，包含动态白名单表选择、`FOR SHARE/FOR UPDATE`、游标导出和 UUID 批量参数处理；架构测试禁止 Spring JDBC/JPA 与 Java 内嵌 SQL 回流。16 张租户业务表已 `ENABLE/FORCE RLS`，provision 每次强制把已有同名迁移/运行角色收敛为最小权限；默认收入分类以 8 个稳定键 `DO NOTHING` seed。生产 profile 关闭内嵌 Flyway并只读核对当前版本 `011`；V011 只扩展任务延迟领取，不修改业务 seed 或权限。迁移整改后 `npm run check` 全量通过，`npm run check:database` 复用系统 PostgreSQL 16.14 创建一次性集群并以 70 项 HTTP/业务集成测试和 7 项 schema/RLS/任务测试零失败通过，覆盖空库/升级/重复迁移、seed 不覆盖、角色降权、RLS、复合归属、业务约束、任务租约/延迟领取、启动版本门禁及 U011→U001 回滚；脚本退出后临时集群与端口均清理。完整容器运行证据仍归 T29，不要求额外安装容器运行时。
 
 ### T3：认证、会话与租户安全上下文
 

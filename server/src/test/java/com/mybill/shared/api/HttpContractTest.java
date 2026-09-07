@@ -7,6 +7,11 @@ import com.mybill.auth.TenantTransactionExecutor;
 import com.mybill.job.JobCoordinator;
 import com.mybill.job.JobRunRepository;
 import com.mybill.shared.persistence.TenantDatabaseExecutor;
+import com.mybill.admin.dictionary.DefaultDictionaryRepositoryMapper;
+import com.mybill.admin.user.AdminUserRepositoryMapper;
+import com.mybill.dictionary.*;
+import com.mybill.ledger.*;
+import com.mybill.preference.PreferenceRepositoryMapper;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -14,7 +19,6 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.dao.DataAccessResourceFailureException;
-import org.springframework.jdbc.core.simple.JdbcClient;
 
 import jakarta.servlet.http.Cookie;
 
@@ -30,6 +34,16 @@ import static org.mockito.Mockito.when;
         "spring.flyway.enabled=false"
 })
 @AutoConfigureMockMvc
+@MockitoBean(types = {
+        DefaultDictionaryRepositoryMapper.class, AdminUserRepositoryMapper.class,
+        ExpenseDictionaryServiceMapper.class, IncomeDictionaryServiceMapper.class,
+        PersonalDictionaryRepositoryMapper.class, ProductMergeRepositoryMapper.class,
+        DailyTemplateRepositoryMapper.class, ExpenseAdjustmentRepositoryMapper.class,
+        ExpenseRepositoryMapper.class, ExpiredLedgerPurgeJobMapper.class, ExportCsvWriterMapper.class,
+        ExportRepositoryMapper.class, IncomeRepositoryMapper.class, LedgerIdempotencyStoreMapper.class,
+        LedgerLifecycleRepositoryMapper.class, LedgerQueryRepositoryMapper.class,
+        PreferenceRepositoryMapper.class
+})
 class HttpContractTest {
 
     @Autowired
@@ -48,7 +62,6 @@ class HttpContractTest {
     @MockitoBean private AdminAuditRepository adminAuditRepository;
     @MockitoBean private JobRunRepository jobRunRepository;
     @MockitoBean private JobCoordinator jobCoordinator;
-    @MockitoBean private JdbcClient jdbcClient;
 
     @Test
     void exposesTheMinimalHealthEndpointWithATraceId() throws Exception {

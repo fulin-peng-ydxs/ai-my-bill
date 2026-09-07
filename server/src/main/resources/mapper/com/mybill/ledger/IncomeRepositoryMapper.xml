@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.mybill.ledger.IncomeRepositoryMapper">
+  <update id="insert">
+    <![CDATA[
+                INSERT INTO ledger_entry(tenant_id,id,entry_type,business_time,business_date,income_name,
+                  payer_id,payer_name_snapshot,income_category_id,income_category_name_snapshot,income_amount,
+                  funding_channel_id,funding_channel_name_snapshot,note,created_at,updated_at)
+                VALUES(current_setting('app.tenant_id')::uuid,#{p.id},'INCOME',#{p.businessTime},#{p.businessDate},#{p.incomeName},
+                  #{p.payerId},#{p.payerName},#{p.categoryId},#{p.categoryName},#{p.amount},#{p.fundingId},#{p.fundingName},#{p.note},#{p.now},#{p.now})
+                ]]>
+  </update>
+
+  <select id="find" resultType="map">
+    <![CDATA[
+                SELECT id,business_time,business_date,income_name,payer_id,payer_name_snapshot,
+                  income_category_id,income_category_name_snapshot,income_amount,funding_channel_id,
+                  funding_channel_name_snapshot,note,created_at,updated_at,version FROM ledger_entry
+                 WHERE id=#{p.id} AND entry_type='INCOME' AND lifecycle_status='ACTIVE'
+                ]]>
+  </select>
+
+  <update id="update">
+    <![CDATA[
+                UPDATE ledger_entry SET business_time=#{p.businessTime},business_date=#{p.businessDate},income_name=#{p.incomeName},
+                  payer_id=#{p.payerId},payer_name_snapshot=#{p.payerName},income_category_id=#{p.categoryId},
+                  income_category_name_snapshot=#{p.categoryName},income_amount=#{p.amount},funding_channel_id=#{p.fundingId},
+                  funding_channel_name_snapshot=#{p.fundingName},note=#{p.note},updated_at=#{p.now},version=version+1
+                WHERE id=#{p.id} AND entry_type='INCOME' AND lifecycle_status='ACTIVE' AND version=#{p.version}
+                ]]>
+  </update>
+
+  <select id="names" resultType="map">
+    <![CDATA[
+                SELECT income_name FROM ledger_entry WHERE entry_type='INCOME' AND lifecycle_status='ACTIVE'
+                  AND (#{p.query}='' OR lower(income_name) LIKE ('%' || lower(#{p.query}) || '%') ESCAPE '\')
+                GROUP BY income_name ORDER BY max(updated_at) DESC, income_name LIMIT 20
+                ]]>
+  </select>
+
+  <update id="deleteUndoable">
+    <![CDATA[
+                DELETE FROM ledger_entry l WHERE l.id=#{p.id} AND l.entry_type='INCOME' AND l.lifecycle_status='ACTIVE'
+                 AND EXISTS (SELECT 1 FROM idempotency_record i WHERE i.operation='CREATE_INCOME'
+                   AND i.idempotency_key=#{p.key} AND i.status='SUCCEEDED' AND i.result_reference=#{p.result})
+                 AND NOT EXISTS (SELECT 1 FROM daily_entry_template t WHERE t.source_record_id=l.id)
+                ]]>
+  </update>
+</mapper>

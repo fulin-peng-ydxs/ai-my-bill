@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.mybill.ledger.ExpiredLedgerPurgeJobMapper">
+  <select id="executeBatch" resultType="map">
+    <![CDATA[SELECT current_setting('app.tenant_id')]]>
+  </select>
+
+  <select id="lockExpiredLedgers" resultType="map">
+    <![CDATA[
+                SELECT id FROM ledger_entry
+                 WHERE lifecycle_status='TRASHED' AND purge_after<=#{p.now}
+                 ORDER BY purge_after,id FOR UPDATE SKIP LOCKED LIMIT #{p.limit}
+                ]]>
+  </select>
+
+  <delete id="deleteLinkedAdjustments">
+    DELETE FROM expense_adjustment WHERE original_expense_id IN
+    <foreach collection="p.ids" item="id" open="(" separator="," close=")">#{id,typeHandler=com.mybill.shared.persistence.UuidTypeHandler}</foreach>
+  </delete>
+
+  <delete id="deleteLedgers">
+    DELETE FROM ledger_entry WHERE id IN
+    <foreach collection="p.ids" item="id" open="(" separator="," close=")">#{id,typeHandler=com.mybill.shared.persistence.UuidTypeHandler}</foreach>
+    AND lifecycle_status='TRASHED' AND purge_after&lt;=#{p.now}
+  </delete>
+
+  <select id="lockExpiredAdjustments" resultType="map">
+    <![CDATA[
+                SELECT id FROM expense_adjustment
+                 WHERE status='TRASHED' AND purge_after<=#{p.now}
+                 ORDER BY purge_after,id FOR UPDATE SKIP LOCKED LIMIT #{p.limit}
+                ]]>
+  </select>
+
+  <delete id="deleteAdjustments">
+    DELETE FROM expense_adjustment WHERE id IN
+    <foreach collection="p.ids" item="id" open="(" separator="," close=")">#{id,typeHandler=com.mybill.shared.persistence.UuidTypeHandler}</foreach>
+    AND status='TRASHED' AND purge_after&lt;=#{p.now}
+  </delete>
+</mapper>

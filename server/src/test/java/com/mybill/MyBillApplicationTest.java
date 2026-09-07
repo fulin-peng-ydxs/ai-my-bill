@@ -6,14 +6,28 @@ import com.mybill.auth.TenantTransactionExecutor;
 import com.mybill.job.JobCoordinator;
 import com.mybill.job.JobRunRepository;
 import com.mybill.shared.persistence.TenantDatabaseExecutor;
+import com.mybill.admin.dictionary.DefaultDictionaryRepositoryMapper;
+import com.mybill.admin.user.AdminUserRepositoryMapper;
+import com.mybill.dictionary.*;
+import com.mybill.ledger.*;
+import com.mybill.preference.PreferenceRepositoryMapper;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 @SpringBootTest(properties = {
         "spring.autoconfigure.exclude=org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration",
         "spring.flyway.enabled=false"
+})
+@MockitoBean(types = {
+        DefaultDictionaryRepositoryMapper.class, AdminUserRepositoryMapper.class,
+        ExpenseDictionaryServiceMapper.class, IncomeDictionaryServiceMapper.class,
+        PersonalDictionaryRepositoryMapper.class, ProductMergeRepositoryMapper.class,
+        DailyTemplateRepositoryMapper.class, ExpenseAdjustmentRepositoryMapper.class,
+        ExpenseRepositoryMapper.class, ExpiredLedgerPurgeJobMapper.class, ExportCsvWriterMapper.class,
+        ExportRepositoryMapper.class, IncomeRepositoryMapper.class, LedgerIdempotencyStoreMapper.class,
+        LedgerLifecycleRepositoryMapper.class, LedgerQueryRepositoryMapper.class,
+        PreferenceRepositoryMapper.class
 })
 class MyBillApplicationTest {
 
@@ -27,7 +41,6 @@ class MyBillApplicationTest {
     @MockitoBean private AdminAuditRepository adminAuditRepository;
     @MockitoBean private JobRunRepository jobRunRepository;
     @MockitoBean private JobCoordinator jobCoordinator;
-    @MockitoBean private JdbcClient jdbcClient;
 
     @Test
     void contextLoads() {

@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.mybill.ledger.ExportCsvWriterMapper">
+  <select id="stream" resultType="map" fetchSize="200">
+    WITH export_rows AS (
+      SELECT l.id::text AS record_id,l.entry_type AS record_type,NULL::text AS adjustment_type,
+        NULL::text AS related_ledger_id,NULL::text AS related_ledger_title,l.lifecycle_status AS record_status,
+        to_char(l.business_time AT TIME ZONE 'Asia/Shanghai','YYYY-MM-DD"T"HH24:MI:SS.US') || '+08:00' AS business_time,
+        l.business_date::text,l.product_name_snapshot,l.income_name,l.payer_name_snapshot,
+        l.primary_category_name_snapshot,l.secondary_category_name_snapshot,l.income_category_name_snapshot,
+        l.unit_name_snapshot,l.unit_price::text,l.quantity::text,l.calculated_amount::text,l.paid_amount::text,
+        l.income_amount::text,NULL::text AS adjustment_amount,l.funding_channel_name_snapshot,
+        l.purchase_channel_name_snapshot,l.location_label_name_snapshot,l.note,l.product_id::text,l.payer_id::text,
+        l.primary_category_id::text,l.secondary_category_id::text,l.income_category_id::text,l.unit_id::text,
+        l.funding_channel_id::text AS funding_channel_reference,l.purchase_channel_id::text,l.location_label_id::text,
+        l.version::text,to_char(l.created_at AT TIME ZONE 'Asia/Shanghai','YYYY-MM-DD"T"HH24:MI:SS.US') || '+08:00' AS created_at,
+        to_char(l.updated_at AT TIME ZONE 'Asia/Shanghai','YYYY-MM-DD"T"HH24:MI:SS.US') || '+08:00' AS updated_at,
+        to_char(l.deleted_at AT TIME ZONE 'Asia/Shanghai','YYYY-MM-DD"T"HH24:MI:SS.US') || '+08:00' AS deleted_at,
+        to_char(l.purge_after AT TIME ZONE 'Asia/Shanghai','YYYY-MM-DD"T"HH24:MI:SS.US') || '+08:00' AS purge_after,
+        l.funding_channel_id AS filter_funding_channel_id,
+        concat_ws(' ',l.product_name_snapshot,l.primary_category_name_snapshot,l.secondary_category_name_snapshot,
+          l.income_name,l.payer_name_snapshot,l.income_category_name_snapshot,l.funding_channel_name_snapshot,
+          l.purchase_channel_name_snapshot,l.location_label_name_snapshot,l.note) AS search_text
+      FROM ledger_entry l WHERE l.tenant_id=current_setting('app.tenant_id')::uuid
+      UNION ALL
+      SELECT a.id::text,'ADJUSTMENT',a.adjustment_type,a.original_expense_id::text,
+        CASE WHEN l.entry_type='EXPENSE' THEN l.product_name_snapshot ELSE l.income_name END,a.status,
+        to_char(a.business_time AT TIME ZONE 'Asia/Shanghai','YYYY-MM-DD"T"HH24:MI:SS.US') || '+08:00',
+        a.business_date::text,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,
+        a.amount::text,NULL,NULL,NULL,a.note,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,a.version::text,
+        to_char(a.created_at AT TIME ZONE 'Asia/Shanghai','YYYY-MM-DD"T"HH24:MI:SS.US') || '+08:00',
+        to_char(a.updated_at AT TIME ZONE 'Asia/Shanghai','YYYY-MM-DD"T"HH24:MI:SS.US') || '+08:00',
+        to_char(a.deleted_at AT TIME ZONE 'Asia/Shanghai','YYYY-MM-DD"T"HH24:MI:SS.US') || '+08:00',
+        to_char(a.purge_after AT TIME ZONE 'Asia/Shanghai','YYYY-MM-DD"T"HH24:MI:SS.US') || '+08:00',
+        l.funding_channel_id AS filter_funding_channel_id,
+        concat_ws(' ',l.product_name_snapshot,l.primary_category_name_snapshot,l.secondary_category_name_snapshot,
+          l.funding_channel_name_snapshot,a.note,CASE a.adjustment_type WHEN 'REFUND' THEN '退款' ELSE '报销' END) AS search_text
+      FROM expense_adjustment a JOIN ledger_entry l
+        ON l.tenant_id=a.tenant_id AND l.id=a.original_expense_id
+      WHERE a.tenant_id=current_setting('app.tenant_id')::uuid
+    )
+    SELECT record_id,record_type,adjustment_type,related_ledger_id,related_ledger_title,record_status,
+      business_time,business_date,product_name_snapshot,income_name,payer_name_snapshot,
+      primary_category_name_snapshot,secondary_category_name_snapshot,income_category_name_snapshot,
+      unit_name_snapshot,unit_price,quantity,calculated_amount,paid_amount,income_amount,adjustment_amount,
+      funding_channel_name_snapshot,purchase_channel_name_snapshot,location_label_name_snapshot,note,
+      product_id,payer_id,primary_category_id,secondary_category_id,income_category_id,unit_id,
+      funding_channel_reference,purchase_channel_id,location_label_id,version,created_at,updated_at,deleted_at,purge_after
+    FROM export_rows WHERE true
+    <if test="p.filtered">
+      AND business_date::date BETWEEN #{p.startDate} AND #{p.endDate}
+      <choose>
+        <when test="p.active">
+          AND ((record_type IN ('EXPENSE','INCOME') AND record_status='ACTIVE')
+            OR (record_type='ADJUSTMENT' AND record_status='EFFECTIVE'))
+        </when>
+        <otherwise>
+          AND ((record_type IN ('EXPENSE','INCOME') AND record_status='TRASHED')
+            OR (record_type='ADJUSTMENT' AND record_status='TRASHED'))
+        </otherwise>
+      </choose>
+      <if test="p.entryType != null">AND record_type=#{p.entryType}</if>
+      <if test="p.fundingId != null">AND filter_funding_channel_id=#{p.fundingId}</if>
+      <if test="p.keyword != null">AND search_text ILIKE #{p.keyword} ESCAPE '\'</if>
+    </if>
+    ORDER BY business_date DESC,business_time DESC,created_at DESC,record_id DESC
+  </select>
+</mapper>

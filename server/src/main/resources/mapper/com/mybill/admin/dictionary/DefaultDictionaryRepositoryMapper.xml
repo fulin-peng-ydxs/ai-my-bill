@@ -1,0 +1,94 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.mybill.admin.dictionary.DefaultDictionaryRepositoryMapper">
+  <select id="lockCatalog" resultType="map">
+    <![CDATA[SELECT pg_advisory_xact_lock(#{p.lockId})]]>
+  </select>
+
+  <select id="countAll" resultType="map">
+    <![CDATA[
+                        SELECT count(*) AS total_count, count(*) FILTER (WHERE status = 'ACTIVE') AS active_count
+                        FROM default_dictionary_item WHERE dictionary_type = #{p.type}
+                        ]]>
+  </select>
+
+  <select id="find" resultType="map">
+    SELECT d.id, d.display_name, d.sort_order, d.status, d.parent_id, p.display_name AS parent_name
+      FROM default_dictionary_item d
+      LEFT JOIN default_dictionary_item p
+        ON p.dictionary_type = d.dictionary_type AND p.id = d.parent_id
+     WHERE d.dictionary_type = #{p.type} AND d.id = #{p.id}
+    <if test="p.forUpdate">FOR UPDATE OF d</if>
+  </select>
+
+  <select id="list" resultType="map">
+    <![CDATA[
+                        SELECT d.id, d.display_name, d.sort_order, d.status, d.parent_id, p.display_name AS parent_name
+                        FROM default_dictionary_item d
+                        LEFT JOIN default_dictionary_item p
+                          ON p.dictionary_type = d.dictionary_type AND p.id = d.parent_id
+                        WHERE d.dictionary_type = #{p.type}
+                          AND (#{p.query} = '' OR lower(d.display_name) LIKE ('%' || lower(#{p.query}) || '%') ESCAPE '\')
+                          AND (CAST(#{p.status} AS varchar) IS NULL OR d.status = CAST(#{p.status} AS varchar))
+                        ORDER BY COALESCE(p.sort_order, d.sort_order), COALESCE(p.created_at, d.created_at),
+                                 COALESCE(p.id, d.id), CASE WHEN d.parent_id IS NULL THEN 0 ELSE 1 END,
+                                 d.sort_order, d.created_at, d.id
+                        LIMIT #{p.limit} OFFSET #{p.offset}
+                        ]]>
+  </select>
+
+  <select id="count" resultType="map">
+    <![CDATA[
+                        SELECT count(*) FROM default_dictionary_item
+                        WHERE dictionary_type = #{p.type}
+                          AND (#{p.query} = '' OR lower(display_name) LIKE ('%' || lower(#{p.query}) || '%') ESCAPE '\')
+                          AND (CAST(#{p.status} AS varchar) IS NULL OR status = CAST(#{p.status} AS varchar))
+                        ]]>
+  </select>
+
+  <select id="maxSortOrder" resultType="map">
+    <![CDATA[
+                        SELECT COALESCE(max(sort_order), -10) FROM default_dictionary_item
+                        WHERE dictionary_type = #{p.type} AND parent_id IS NOT DISTINCT FROM #{p.parentId}
+                        ]]>
+  </select>
+
+  <update id="insert">
+    <![CDATA[
+                        INSERT INTO default_dictionary_item(
+                            id, dictionary_type, stable_key, parent_id, display_name, normalized_name,
+                            sort_order, status, created_at, updated_at)
+                        VALUES (#{p.id}, #{p.type}, #{p.stableKey}, #{p.parentId}, #{p.displayName}, #{p.normalizedName},
+                                #{p.sortOrder}, 'ACTIVE', #{p.now}, #{p.now})
+                        ]]>
+  </update>
+
+  <update id="updateStatus">
+    <![CDATA[
+                        UPDATE default_dictionary_item SET status = #{p.status}, updated_at = #{p.now}
+                        WHERE dictionary_type = #{p.type} AND id = #{p.id}
+                        ]]>
+  </update>
+
+  <select id="activeChildren" resultType="map">
+    <![CDATA[
+                        SELECT count(*) FROM default_dictionary_item
+                        WHERE dictionary_type = 'EXPENSE_CATEGORY' AND parent_id = #{p.id} AND status = 'ACTIVE'
+                        ]]>
+  </select>
+
+  <select id="lockSiblingIds" resultType="map">
+    <![CDATA[
+                        SELECT id FROM default_dictionary_item
+                        WHERE dictionary_type = #{p.type} AND parent_id IS NOT DISTINCT FROM #{p.parentId}
+                        ORDER BY sort_order, created_at, id FOR UPDATE
+                        ]]>
+  </select>
+
+  <update id="updateSortOrder">
+    <![CDATA[
+                        UPDATE default_dictionary_item SET sort_order = #{p.sortOrder}, updated_at = #{p.now}
+                        WHERE dictionary_type = #{p.type} AND id = #{p.id}
+                        ]]>
+  </update>
+</mapper>

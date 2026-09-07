@@ -10,7 +10,7 @@
 ## 工程基线
 
 - 前端使用 Node.js 24 LTS、Vue 3、Vite、TypeScript、Pinia 与 Vue Router；页面不得复制共享状态、交互或样式能力。
-- 后端使用 Java 21 LTS、Spring Boot 模块化单体与 Maven Wrapper；跨领域修改通过应用服务或只读查询接口完成。
+- 后端使用 Java 21 LTS、Spring Boot 模块化单体、MyBatis-Plus 与 Maven Wrapper；生产 SQL 只能位于 `server/src/main/resources/mapper/**/*.xml`，Java 通过 Mapper 方法访问数据库，禁止直接使用 Spring JDBC 或 JPA；跨领域修改通过应用服务或只读查询接口完成。
 - 浏览器只通过同源 `/api/v1` 访问服务端；身份和租户只能来自服务端认证上下文。
 - 时间统一使用 `Asia/Shanghai`，金额与数量使用十进制精确类型，禁止用二进制浮点处理业务金额。
 - API 错误统一为 `code`、`message`、`fieldErrors`、`traceId`、`retryable`；不得返回堆栈、凭据或租户标识。

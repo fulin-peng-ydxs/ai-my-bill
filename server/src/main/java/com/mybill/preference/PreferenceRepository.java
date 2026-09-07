@@ -1,9 +1,9 @@
 package com.mybill.preference;
 
-import org.springframework.jdbc.core.simple.JdbcClient;
+import com.mybill.shared.persistence.MybatisOperations;
 import org.springframework.stereotype.Repository;
 
-import java.sql.ResultSet;
+import com.mybill.shared.persistence.DatabaseRow;
 import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.time.Instant;
@@ -12,60 +12,37 @@ import java.util.UUID;
 
 @Repository
 class PreferenceRepository {
-    private final JdbcClient jdbc;
+    private final MybatisOperations operations;
+    private final PreferenceRepositoryMapper mapper;
 
-    PreferenceRepository(JdbcClient jdbc) {
-        this.jdbc = jdbc;
+    PreferenceRepository(MybatisOperations operations, PreferenceRepositoryMapper mapper) {
+        this.operations = operations; this.mapper = mapper;
     }
 
     Optional<PreferenceRow> find(UUID userId) {
-        return jdbc.sql("""
-                SELECT p.default_funding_channel_id, f.display_name AS funding_channel_name,
-                       p.ledger_default_range, p.report_default_range,
-                       p.theme_mode, p.recent_entry_type, p.updated_at,
-                       COALESCE(f.status = 'ACTIVE', false) AS funding_channel_active
-                FROM user_preference p
-                LEFT JOIN funding_channel f
-                  ON f.tenant_id = p.tenant_id AND f.id = p.default_funding_channel_id
-                WHERE p.user_id = :userId
-                """).param("userId", userId).query(PreferenceRepository::mapRow).optional();
+        return operations.select(mapper::find).param("userId", userId).map(PreferenceRepository::mapRow).optional();
     }
 
     boolean isActiveFundingChannel(UUID id) {
-        return jdbc.sql("SELECT EXISTS (SELECT 1 FROM funding_channel WHERE id = :id AND status = 'ACTIVE')")
-                .param("id", id).query(Boolean.class).single();
+        return operations.select(mapper::isActiveFundingChannel)
+                .param("id", id).map(Boolean.class).single();
     }
 
     int upsert(UUID userId, UUID fundingChannelId, String ledgerRange, String reportRange,
                String themeMode, String entryType, Instant now) {
-        return jdbc.sql("""
-                INSERT INTO user_preference(
-                    tenant_id, user_id, default_funding_channel_id, ledger_default_range,
-                    report_default_range, theme_mode, recent_entry_type, created_at, updated_at
-                ) VALUES (
-                    current_setting('app.tenant_id')::uuid, :userId, :fundingChannelId, :ledgerRange,
-                    :reportRange, :themeMode, :entryType, :now, :now
-                )
-                ON CONFLICT (tenant_id, user_id) DO UPDATE SET
-                    default_funding_channel_id = EXCLUDED.default_funding_channel_id,
-                    ledger_default_range = EXCLUDED.ledger_default_range,
-                    report_default_range = EXCLUDED.report_default_range,
-                    theme_mode = EXCLUDED.theme_mode,
-                    recent_entry_type = EXCLUDED.recent_entry_type,
-                    updated_at = EXCLUDED.updated_at
-                """)
+        return operations.update(mapper::upsert)
                 .param("userId", userId).param("fundingChannelId", fundingChannelId)
                 .param("ledgerRange", ledgerRange).param("reportRange", reportRange)
                 .param("themeMode", themeMode).param("entryType", entryType)
-                .param("now", Timestamp.from(now)).update();
+                .param("now", Timestamp.from(now)).execute();
     }
 
     int delete(UUID userId) {
-        return jdbc.sql("DELETE FROM user_preference WHERE user_id = :userId")
-                .param("userId", userId).update();
+        return operations.update(mapper::delete)
+                .param("userId", userId).execute();
     }
 
-    private static PreferenceRow mapRow(ResultSet rs, int rowNumber) throws SQLException {
+    private static PreferenceRow mapRow(DatabaseRow rs, int rowNumber) throws SQLException {
         return new PreferenceRow(
                 rs.getObject("default_funding_channel_id", UUID.class),
                 rs.getString("funding_channel_name"),

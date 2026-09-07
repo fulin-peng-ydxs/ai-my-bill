@@ -96,7 +96,7 @@ class JobCoordinatorTest {
 
     @Test
     void leaseHeartbeatCommitsOutsideTheBusinessBatchTransaction() throws Exception {
-        Transactional annotation = JdbcJobRunRepository.class
+        Transactional annotation = MybatisJobRunRepository.class
                 .getMethod("renew", UUID.class, String.class, Instant.class, Instant.class)
                 .getAnnotation(Transactional.class);
         assertThat(annotation).isNotNull();

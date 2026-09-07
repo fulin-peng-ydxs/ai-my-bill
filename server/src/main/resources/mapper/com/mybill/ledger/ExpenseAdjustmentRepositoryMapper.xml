@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.mybill.ledger.ExpenseAdjustmentRepositoryMapper">
+  <select id="lockActiveExpense" resultType="map">
+    <![CDATA[
+                SELECT id,product_name_snapshot,paid_amount
+                  FROM ledger_entry
+                 WHERE id=#{p.id} AND entry_type='EXPENSE' AND lifecycle_status='ACTIVE'
+                 FOR UPDATE
+                ]]>
+  </select>
+
+  <select id="effectiveTotal" resultType="map">
+    <![CDATA[
+                SELECT COALESCE(sum(amount),0) FROM expense_adjustment
+                 WHERE original_expense_id=#{p.id} AND status='EFFECTIVE'
+                ]]>
+  </select>
+
+  <update id="insert">
+    <![CDATA[
+                INSERT INTO expense_adjustment(tenant_id,id,original_expense_id,adjustment_type,amount,
+                  business_time,business_date,status,note,created_at,updated_at)
+                VALUES(current_setting('app.tenant_id')::uuid,#{p.id},#{p.expenseId},#{p.type},#{p.amount},
+                  #{p.businessTime},#{p.businessDate},'EFFECTIVE',#{p.note},#{p.now},#{p.now})
+                ]]>
+  </update>
+
+  <select id="find" resultType="map">
+    <![CDATA[
+                SELECT a.id,a.original_expense_id,l.product_name_snapshot,a.adjustment_type,a.amount,
+                       a.business_time,a.business_date,a.status,a.note,l.paid_amount,
+                       (SELECT COALESCE(sum(active.amount),0) FROM expense_adjustment active
+                         WHERE active.original_expense_id=a.original_expense_id AND active.status='EFFECTIVE') AS effective_total,
+                       a.created_at,a.updated_at,a.version
+                  FROM expense_adjustment a
+                  JOIN ledger_entry l ON l.tenant_id=a.tenant_id AND l.id=a.original_expense_id
+                 WHERE a.id=#{p.id}
+                ]]>
+  </select>
+
+  <update id="revoke">
+    <![CDATA[
+                UPDATE expense_adjustment
+                   SET status='REVOKED',updated_at=#{p.now},version=version+1
+                 WHERE id=#{p.id} AND status='EFFECTIVE' AND version=#{p.version}
+                ]]>
+  </update>
+</mapper>

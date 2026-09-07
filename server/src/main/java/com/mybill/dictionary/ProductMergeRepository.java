@@ -1,9 +1,9 @@
 package com.mybill.dictionary;
 
-import org.springframework.jdbc.core.simple.JdbcClient;
+import com.mybill.shared.persistence.MybatisOperations;
 import org.springframework.stereotype.Repository;
 
-import java.sql.ResultSet;
+import com.mybill.shared.persistence.DatabaseRow;
 import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.time.Instant;
@@ -14,93 +14,55 @@ import java.util.UUID;
 /** 商品合并只在已建立 RLS 上下文的事务内迁移稳定引用，并保留账目名称快照。 */
 @Repository
 class ProductMergeRepository {
-    private final JdbcClient jdbc;
+    private final MybatisOperations operations;
+    private final ProductMergeRepositoryMapper mapper;
 
-    ProductMergeRepository(JdbcClient jdbc) {
-        this.jdbc = jdbc;
+    ProductMergeRepository(MybatisOperations operations, ProductMergeRepositoryMapper mapper) {
+        this.operations = operations; this.mapper = mapper;
     }
 
     Optional<ProductRow> findProduct(UUID id) {
-        return jdbc.sql("SELECT id, display_name, normalized_name, status FROM product WHERE id = :id")
-                .param("id", id).query(ProductMergeRepository::mapProduct).optional();
+        return operations.select(mapper::findProduct)
+                .param("id", id).map(ProductMergeRepository::mapProduct).optional();
     }
 
     List<ProductRow> lockProducts(UUID firstId, UUID secondId) {
-        return jdbc.sql("""
-                        SELECT id, display_name, normalized_name, status
-                        FROM product
-                        WHERE id = :firstId OR id = :secondId
-                        ORDER BY id
-                        FOR UPDATE
-                        """)
+        return operations.select(mapper::lockProducts)
                 .param("firstId", firstId).param("secondId", secondId)
-                .query(ProductMergeRepository::mapProduct).list();
+                .map(ProductMergeRepository::mapProduct).list();
     }
 
     long countLedgerEntries(UUID productId) {
-        return jdbc.sql("SELECT count(*) FROM ledger_entry WHERE product_id = :id")
-                .param("id", productId).query(Long.class).single();
+        return operations.select(mapper::countLedgerEntries)
+                .param("id", productId).map(Long.class).single();
     }
 
     Optional<TemplateRow> findTemplate(UUID productId) {
-        return jdbc.sql("""
-                        SELECT id, last_used_at, updated_at
-                        FROM daily_entry_template
-                        WHERE entry_type = 'EXPENSE' AND product_id = :id
-                        ORDER BY last_used_at DESC, updated_at DESC, id DESC
-                        LIMIT 1
-                        """)
+        return operations.select(mapper::findTemplate)
                 .param("id", productId)
-                .query((rs, row) -> new TemplateRow(rs.getObject("id", UUID.class),
+                .map((rs, row) -> new TemplateRow(rs.getObject("id", UUID.class),
                         rs.getTimestamp("last_used_at").toInstant(), rs.getTimestamp("updated_at").toInstant()))
                 .optional();
     }
 
     int updateLedgerProduct(UUID sourceId, UUID targetId) {
-        return jdbc.sql("UPDATE ledger_entry SET product_id = :targetId WHERE product_id = :sourceId")
-                .param("sourceId", sourceId).param("targetId", targetId).update();
+        return operations.update(mapper::updateLedgerProduct)
+                .param("sourceId", sourceId).param("targetId", targetId).execute();
     }
 
     void moveTemplate(UUID templateId, ProductRow target, Instant now) {
-        int affected = jdbc.sql("""
-                        UPDATE daily_entry_template
-                        SET product_id = :targetId, display_name = :targetName,
-                            normalized_name = :targetNormalized, product_name_snapshot = :targetName,
-                            updated_at = :now
-                        WHERE id = :templateId
-                        """)
+        int affected = operations.update(mapper::moveTemplate)
                 .param("targetId", target.id()).param("targetName", target.displayName())
                 .param("targetNormalized", target.normalizedName()).param("now", Timestamp.from(now))
-                .param("templateId", templateId).update();
+                .param("templateId", templateId).execute();
         requireSingleRow(affected, "模板迁移");
     }
 
     void copyTemplatePayload(UUID sourceTemplateId, UUID targetTemplateId, ProductRow target, Instant now) {
-        int affected = jdbc.sql("""
-                        UPDATE daily_entry_template retained
-                        SET source_record_id = source.source_record_id,
-                            display_name = :targetName, normalized_name = :targetNormalized,
-                            product_id = :targetId, product_name_snapshot = :targetName,
-                            primary_category_id = source.primary_category_id,
-                            primary_category_name_snapshot = source.primary_category_name_snapshot,
-                            secondary_category_id = source.secondary_category_id,
-                            secondary_category_name_snapshot = source.secondary_category_name_snapshot,
-                            unit_id = source.unit_id, unit_name_snapshot = source.unit_name_snapshot,
-                            unit_price = source.unit_price, quantity = source.quantity,
-                            paid_amount = source.paid_amount,
-                            purchase_channel_id = source.purchase_channel_id,
-                            purchase_channel_name_snapshot = source.purchase_channel_name_snapshot,
-                            location_label_id = source.location_label_id,
-                            location_label_name_snapshot = source.location_label_name_snapshot,
-                            funding_channel_id = source.funding_channel_id,
-                            funding_channel_name_snapshot = source.funding_channel_name_snapshot,
-                            last_used_at = source.last_used_at, updated_at = :now
-                        FROM daily_entry_template source
-                        WHERE retained.id = :targetTemplateId AND source.id = :sourceTemplateId
-                        """)
+        int affected = operations.update(mapper::copyTemplatePayload)
                 .param("targetName", target.displayName()).param("targetNormalized", target.normalizedName())
                 .param("targetId", target.id()).param("now", Timestamp.from(now))
-                .param("targetTemplateId", targetTemplateId).param("sourceTemplateId", sourceTemplateId).update();
+                .param("targetTemplateId", targetTemplateId).param("sourceTemplateId", sourceTemplateId).execute();
         requireSingleRow(affected, "冲突模板收敛");
     }
 
@@ -109,52 +71,37 @@ class ProductMergeRepository {
     }
 
     void deleteTemplate(UUID templateId) {
-        requireSingleRow(jdbc.sql("DELETE FROM daily_entry_template WHERE id = :id")
-                .param("id", templateId).update(), "冲突模板删除");
+        requireSingleRow(operations.update(mapper::deleteTemplate)
+                .param("id", templateId).execute(), "冲突模板删除");
     }
 
     void repointPreviousMerges(UUID sourceId, UUID targetId, Instant now) {
-        jdbc.sql("UPDATE product SET merged_into_id = :targetId, updated_at = :now WHERE merged_into_id = :sourceId")
-                .param("sourceId", sourceId).param("targetId", targetId).param("now", Timestamp.from(now)).update();
+        operations.update(mapper::repointPreviousMerges)
+                .param("sourceId", sourceId).param("targetId", targetId).param("now", Timestamp.from(now)).execute();
     }
 
     void markMerged(UUID sourceId, UUID targetId, Instant now) {
-        requireSingleRow(jdbc.sql("""
-                        UPDATE product
-                        SET status = 'MERGED', merged_into_id = :targetId, updated_at = :now
-                        WHERE id = :sourceId AND status <> 'MERGED'
-                        """)
-                .param("sourceId", sourceId).param("targetId", targetId).param("now", Timestamp.from(now)).update(),
+        requireSingleRow(operations.update(mapper::markMerged)
+                .param("sourceId", sourceId).param("targetId", targetId).param("now", Timestamp.from(now)).execute(),
                 "商品合并状态");
     }
 
     void insertEvent(UUID eventId, UUID sourceId, UUID targetId, UUID userId, long ledgerCount,
                      int templateCount, boolean templateConflict, Instant now) {
-        requireSingleRow(jdbc.sql("""
-                        INSERT INTO product_merge_event(
-                            tenant_id, id, source_product_id, target_product_id, initiated_by_user_id,
-                            affected_ledger_entries, affected_templates, template_conflict, occurred_at)
-                        VALUES (current_setting('app.tenant_id')::uuid, :id, :sourceId, :targetId, :userId,
-                                :ledgerCount, :templateCount, :templateConflict, :now)
-                        """)
+        requireSingleRow(operations.update(mapper::insertEvent)
                 .param("id", eventId).param("sourceId", sourceId).param("targetId", targetId)
                 .param("userId", userId).param("ledgerCount", ledgerCount).param("templateCount", templateCount)
-                .param("templateConflict", templateConflict).param("now", Timestamp.from(now)).update(),
+                .param("templateConflict", templateConflict).param("now", Timestamp.from(now)).execute(),
                 "商品合并留痕");
     }
 
     void renameTemplate(UUID productId, String displayName, String normalizedName, Instant now) {
-        jdbc.sql("""
-                        UPDATE daily_entry_template
-                        SET display_name = :displayName, normalized_name = :normalizedName,
-                            product_name_snapshot = :displayName, updated_at = :now
-                        WHERE entry_type = 'EXPENSE' AND product_id = :productId
-                        """)
+        operations.update(mapper::renameTemplate)
                 .param("displayName", displayName).param("normalizedName", normalizedName)
-                .param("now", Timestamp.from(now)).param("productId", productId).update();
+                .param("now", Timestamp.from(now)).param("productId", productId).execute();
     }
 
-    private static ProductRow mapProduct(ResultSet rs, int rowNumber) throws SQLException {
+    private static ProductRow mapProduct(DatabaseRow rs, int rowNumber) throws SQLException {
         return new ProductRow(rs.getObject("id", UUID.class), rs.getString("display_name"),
                 rs.getString("normalized_name"), rs.getString("status"));
     }

@@ -1,8 +1,11 @@
 package com.mybill.persistence;
 
-import com.mybill.job.JdbcJobRunRepository;
+import com.mybill.job.MybatisJobRunRepository;
+import com.mybill.job.JobRunRepositoryMapper;
 import com.mybill.persistence.config.SchemaVersionGuard;
+import com.mybill.persistence.config.SchemaVersionGuardMapper;
 import com.mybill.persistence.config.SchemaVersionProperties;
+import com.mybill.shared.persistence.MybatisOperations;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.MethodOrderer;
@@ -10,8 +13,10 @@ import org.junit.jupiter.api.Order;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestMethodOrder;
 import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
-import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
+import org.mybatis.spring.SqlSessionFactoryBean;
+import org.mybatis.spring.SqlSessionTemplate;
+import org.springframework.core.io.support.PathMatchingResourcePatternResolver;
 
 import java.sql.Connection;
 import java.sql.DriverManager;
@@ -241,7 +246,8 @@ class PostgresSchemaIntegrationTest {
     @Order(5)
     void jobLeaseIsClaimedOnceRecoveredAndAuditIsAppendOnly() throws Exception {
         DriverManagerDataSource appDataSource = new DriverManagerDataSource(jdbcUrl, "my_bill_app", "app_test");
-        JdbcJobRunRepository jobs = new JdbcJobRunRepository(JdbcClient.create(appDataSource));
+        MybatisJobRunRepository jobs = new MybatisJobRunRepository(new MybatisOperations(),
+                mapper(appDataSource, JobRunRepositoryMapper.class));
         var now = java.time.Instant.parse("2026-09-05T12:00:00Z");
         UUID runId = jobs.schedule("T6_TEST", null, "same-batch", 3, now, now);
         assertThat(jobs.schedule("T6_TEST", null, "same-batch", 3, now, now)).isEqualTo(runId);
@@ -284,13 +290,12 @@ class PostgresSchemaIntegrationTest {
 
     @Test
     @Order(6)
-    void runtimeSchemaGuardAcceptsOnlyTheExpectedVersion() {
+    void runtimeSchemaGuardAcceptsOnlyTheExpectedVersion() throws Exception {
         DriverManagerDataSource appDataSource = new DriverManagerDataSource(jdbcUrl, "my_bill_app", "app_test");
-        JdbcClient appJdbc = JdbcClient.create(appDataSource);
-
-        new SchemaVersionGuard(appJdbc, new SchemaVersionProperties(true, "011")).run(null);
+        SchemaVersionGuardMapper mapper = mapper(appDataSource, SchemaVersionGuardMapper.class);
+        new SchemaVersionGuard(new MybatisOperations(), mapper, new SchemaVersionProperties(true, "011")).run(null);
         assertThatThrownBy(() -> new SchemaVersionGuard(
-                appJdbc, new SchemaVersionProperties(true, "8")).run(null))
+                new MybatisOperations(), mapper, new SchemaVersionProperties(true, "8")).run(null))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("期望 8")
                 .hasMessageContaining("实际 011");
@@ -325,6 +330,15 @@ class PostgresSchemaIntegrationTest {
 
     private static Connection adminConnection() throws SQLException {
         return DriverManager.getConnection(jdbcUrl, adminUsername, adminPassword);
+    }
+
+    private static <T> T mapper(DriverManagerDataSource dataSource, Class<T> mapperType) throws Exception {
+        SqlSessionFactoryBean factory = new SqlSessionFactoryBean();
+        factory.setDataSource(dataSource);
+        factory.setMapperLocations(new PathMatchingResourcePatternResolver()
+                .getResources("classpath*:/mapper/**/*.xml"));
+        factory.afterPropertiesSet();
+        return new SqlSessionTemplate(java.util.Objects.requireNonNull(factory.getObject())).getMapper(mapperType);
     }
 
     private static Connection appConnection() throws SQLException {

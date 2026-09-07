@@ -1,11 +1,11 @@
 package com.mybill.persistence.model;
 
-import jakarta.persistence.Version;
+import com.baomidou.mybatisplus.annotation.Version;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/** T2 持久化语义契约：可编辑的收支记录必须由 JPA 执行版本校验。 */
+/** T2 持久化语义契约：可编辑的收支记录必须声明 MyBatis-Plus 乐观锁字段。 */
 class PersistenceMappingContractTest {
 
     @Test

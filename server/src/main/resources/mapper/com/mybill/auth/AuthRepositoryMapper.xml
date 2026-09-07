@@ -1,0 +1,128 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.mybill.auth.AuthRepositoryMapper">
+  <select id="findUserByUsername" resultType="map">
+    <![CDATA[
+                        SELECT u.id, u.username, u.password_digest, u.temporary_password_expires_at,
+                               u.role, u.status, u.tenant_id, u.credential_version, t.status AS tenant_status
+                        FROM app_user u
+                        LEFT JOIN tenant t ON t.id = u.tenant_id
+                        WHERE u.username = #{p.username}
+                        ]]>
+  </select>
+
+  <select id="findUserById" resultType="map">
+    <![CDATA[
+                        SELECT u.id, u.username, u.password_digest, u.temporary_password_expires_at,
+                               u.role, u.status, u.tenant_id, u.credential_version, t.status AS tenant_status
+                        FROM app_user u
+                        LEFT JOIN tenant t ON t.id = u.tenant_id
+                        WHERE u.id = #{p.userId}
+                        ]]>
+  </select>
+
+  <select id="findSession" resultType="map">
+    <![CDATA[
+                        SELECT s.id AS session_id, s.user_id, s.credential_version AS session_credential_version,
+                               s.expires_at, s.revoked_at, u.username, u.role, u.status,
+                               u.tenant_id, u.credential_version AS user_credential_version,
+                               u.temporary_password_expires_at, t.status AS tenant_status
+                        FROM user_session s
+                        JOIN app_user u ON u.id = s.user_id
+                        LEFT JOIN tenant t ON t.id = u.tenant_id
+                        WHERE s.token_digest = #{p.tokenDigest}
+                        ]]>
+  </select>
+
+  <update id="createSession">
+    <![CDATA[
+                        INSERT INTO user_session(
+                            id, user_id, token_digest, credential_version, expires_at, last_used_at, created_at
+                        ) VALUES (#{p.id}, #{p.userId}, #{p.tokenDigest}, #{p.credentialVersion}, #{p.expiresAt}, #{p.now}, #{p.now})
+                        ]]>
+  </update>
+
+  <update id="touchSession">
+    <![CDATA[
+                        UPDATE user_session SET last_used_at = #{p.now}
+                        WHERE id = #{p.sessionId} AND last_used_at < #{p.touchBefore}
+                        ]]>
+  </update>
+
+  <update id="touchUserActivity">
+    <![CDATA[
+                        UPDATE app_user SET last_active_at = #{p.now}
+                        WHERE id = #{p.userId} AND (last_active_at IS NULL OR last_active_at < #{p.touchBefore})
+                        ]]>
+  </update>
+
+  <update id="revokeSession">
+    <![CDATA[
+                        UPDATE user_session
+                        SET revoked_at = #{p.now}, revoked_reason = #{p.reason}
+                        WHERE id = #{p.sessionId} AND revoked_at IS NULL
+                        ]]>
+  </update>
+
+  <update id="revokeAllSessions">
+    <![CDATA[
+                        UPDATE user_session
+                        SET revoked_at = #{p.now}, revoked_reason = #{p.reason}
+                        WHERE user_id = #{p.userId} AND revoked_at IS NULL
+                        ]]>
+  </update>
+
+  <select id="replacePassword" resultType="map">
+    <![CDATA[
+                        UPDATE app_user
+                        SET password_digest = #{p.passwordDigest},
+                            temporary_password_expires_at = NULL,
+                            credential_version = credential_version + 1,
+                            updated_at = #{p.now}
+                        WHERE id = #{p.userId} AND credential_version = #{p.expectedVersion}
+                        RETURNING credential_version
+                        ]]>
+  </select>
+
+  <update id="ensureRateLimitRow">
+    <![CDATA[
+                        INSERT INTO auth_rate_limit(id, entry_point, subject_digest, window_started_at, updated_at)
+                        VALUES (#{p.id}, 'LOGIN', #{p.subjectDigest}, #{p.windowStart}, #{p.now})
+                        ON CONFLICT (entry_point, subject_digest, window_started_at) DO NOTHING
+                        ]]>
+  </update>
+
+  <select id="hasActiveLoginLock" resultType="map">
+    <![CDATA[
+                        SELECT EXISTS (
+                            SELECT 1
+                            FROM auth_rate_limit
+                            WHERE entry_point = 'LOGIN' AND subject_digest = #{p.subjectDigest}
+                              AND locked_until > #{p.now}
+                        )
+                        ]]>
+  </select>
+
+  <select id="lockRateLimit" resultType="map">
+    <![CDATA[
+                        SELECT failure_count, locked_until
+                        FROM auth_rate_limit
+                        WHERE entry_point = 'LOGIN' AND subject_digest = #{p.subjectDigest}
+                          AND window_started_at = #{p.windowStart}
+                        FOR UPDATE
+                        ]]>
+  </select>
+
+  <update id="recordFailure">
+    <![CDATA[
+                        UPDATE auth_rate_limit
+                        SET failure_count = #{p.failures}, locked_until = #{p.lockedUntil}, updated_at = #{p.now}
+                        WHERE entry_point = 'LOGIN' AND subject_digest = #{p.subjectDigest}
+                          AND window_started_at = #{p.windowStart}
+                        ]]>
+  </update>
+
+  <update id="clearLoginFailures">
+    <![CDATA[DELETE FROM auth_rate_limit WHERE entry_point = 'LOGIN' AND subject_digest = #{p.subjectDigest}]]>
+  </update>
+</mapper>

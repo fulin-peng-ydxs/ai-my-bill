@@ -1,0 +1,90 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.mybill.job.JobRunRepositoryMapper">
+  <update id="schedule">
+    <![CDATA[
+                INSERT INTO job_run(id, tenant_id, job_type, batch_key, status, max_attempts, available_at, created_at, updated_at)
+                VALUES (#{p.id}, #{p.tenantId}, #{p.type}, #{p.batchKey}, 'PENDING', #{p.maxAttempts}, #{p.availableAt}, #{p.now}, #{p.now})
+                ON CONFLICT DO NOTHING
+                ]]>
+  </update>
+
+  <select id="findScheduledId" resultType="map">
+    <![CDATA[SELECT id FROM job_run WHERE job_type=#{p.type} AND tenant_id IS NOT DISTINCT FROM #{p.tenantId} AND batch_key=#{p.batchKey}]]>
+  </select>
+
+  <select id="find" resultType="map">
+    <![CDATA[SELECT * FROM job_run WHERE id=#{p.id}]]>
+  </select>
+
+  <select id="claimNext" resultType="map">
+    WITH candidate AS (
+      SELECT id FROM job_run
+       WHERE status='PENDING' AND batch_key IS NOT NULL AND available_at&lt;=#{p.now}
+         AND attempt_count &lt; max_attempts AND job_type IN
+         <foreach collection="p.types" item="type" open="(" separator="," close=")">#{type}</foreach>
+       ORDER BY available_at,created_at,id FOR UPDATE SKIP LOCKED LIMIT 1
+    )
+    UPDATE job_run j SET status='RUNNING',started_at=COALESCE(started_at,#{p.now}),
+      attempt_count=attempt_count+1,lease_owner=#{p.owner},lease_expires_at=#{p.leaseUntil},
+      cancel_requested=false,updated_at=#{p.now}
+    FROM candidate WHERE j.id=candidate.id RETURNING j.*
+  </select>
+
+  <update id="renew">
+    <![CDATA[UPDATE job_run SET lease_expires_at=#{p.until}, updated_at=#{p.now} WHERE id=#{p.id} AND status='RUNNING' AND lease_owner=#{p.owner}]]>
+  </update>
+
+  <select id="isCancellationRequested" resultType="map">
+    <![CDATA[SELECT cancel_requested FROM job_run WHERE id=#{p.id} AND status='RUNNING' AND lease_owner=#{p.owner}]]>
+  </select>
+
+  <update id="releaseForMore">
+    <![CDATA[
+                UPDATE job_run SET status='PENDING', processed_count=processed_count+#{p.count}, attempt_count=0,
+                    lease_owner=NULL, lease_expires_at=NULL, cancel_requested=false, error_summary=NULL, updated_at=#{p.now}
+                WHERE id=#{p.id} AND status='RUNNING' AND lease_owner=#{p.owner}
+                ]]>
+  </update>
+
+  <update id="failOrRetry">
+    <![CDATA[
+                UPDATE job_run SET status=#{p.status}, finished_at=CASE WHEN #{p.retry} THEN NULL::timestamptz ELSE #{p.now} END,
+                    error_summary=#{p.error}, lease_owner=NULL, lease_expires_at=NULL, cancel_requested=false, updated_at=#{p.now}
+                WHERE id=#{p.id} AND status='RUNNING' AND lease_owner=#{p.owner}
+                ]]>
+  </update>
+
+  <select id="findExpired" resultType="map">
+    <![CDATA[SELECT * FROM job_run WHERE status='RUNNING' AND lease_expires_at <= #{p.now} ORDER BY created_at, id LIMIT 100]]>
+  </select>
+
+  <update id="recoverExpired">
+    <![CDATA[
+                UPDATE job_run SET status=CASE WHEN #{p.retry} THEN 'PENDING' ELSE 'FAILED' END,
+                    finished_at=CASE WHEN #{p.retry} THEN NULL::timestamptz ELSE #{p.now} END, error_summary=#{p.error},
+                    lease_owner=NULL, lease_expires_at=NULL, cancel_requested=false, updated_at=#{p.now}
+                WHERE id=#{p.id} AND status='RUNNING' AND lease_expires_at <= #{p.now}
+                ]]>
+  </update>
+
+  <select id="requestCancellation" resultType="map">
+    <![CDATA[SELECT status FROM job_run WHERE id=#{p.id} FOR UPDATE]]>
+  </select>
+
+  <update id="cancelPending">
+    <![CDATA[UPDATE job_run SET status='CANCELLED', started_at=#{p.now}, finished_at=#{p.now}, updated_at=#{p.now} WHERE id=#{p.id}]]>
+  </update>
+
+  <update id="requestRunningCancellation">
+    <![CDATA[UPDATE job_run SET cancel_requested=true, updated_at=#{p.now} WHERE id=#{p.id}]]>
+  </update>
+
+  <update id="terminal">
+    <![CDATA[
+                UPDATE job_run SET status=#{p.status}, processed_count=processed_count+#{p.count}, finished_at=#{p.now},
+                    error_summary=#{p.error}, lease_owner=NULL, lease_expires_at=NULL, cancel_requested=false, updated_at=#{p.now}
+                WHERE id=#{p.id} AND status='RUNNING' AND lease_owner=#{p.owner}
+                ]]>
+  </update>
+</mapper>

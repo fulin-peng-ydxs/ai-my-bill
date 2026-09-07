@@ -1,72 +1,70 @@
 package com.mybill.persistence.model;
 
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.Table;
-import jakarta.persistence.Version;
-
+import com.baomidou.mybatisplus.annotation.TableField;
+import com.baomidou.mybatisplus.annotation.TableName;
+import com.baomidou.mybatisplus.annotation.Version;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.UUID;
 
-/** JPA 对收支与调整核心字段的结构映射；金额始终使用 BigDecimal。 */
+/** MyBatis-Plus 对收支与调整核心字段的结构映射；金额始终使用 BigDecimal。 */
 final class LedgerEntities {
     private LedgerEntities() { }
 }
 
-@Entity @Table(name = "ledger_entry")
+@TableName("ledger_entry")
 class LedgerEntryEntity extends TenantScopedEntity {
-    @Column(name = "entry_type", nullable = false) String entryType;
-    @Column(name = "business_time", nullable = false) Instant businessTime;
-    @Column(name = "business_date", nullable = false) LocalDate businessDate;
-    @Version @Column(nullable = false) long version;
-    @Column(name = "lifecycle_status", nullable = false) String lifecycleStatus;
-    @Column(name = "deleted_at") Instant deletedAt;
-    @Column(name = "purge_after") Instant purgeAfter;
-    @Column(name = "product_id") UUID productId;
-    @Column(name = "product_name_snapshot") String productNameSnapshot;
-    @Column(name = "primary_category_id") UUID primaryCategoryId;
-    @Column(name = "primary_category_name_snapshot") String primaryCategoryNameSnapshot;
-    @Column(name = "secondary_category_id") UUID secondaryCategoryId;
-    @Column(name = "secondary_category_name_snapshot") String secondaryCategoryNameSnapshot;
-    @Column(name = "unit_id") UUID unitId;
-    @Column(name = "unit_name_snapshot") String unitNameSnapshot;
-    @Column(name = "unit_price") BigDecimal unitPrice;
-    @Column BigDecimal quantity;
-    @Column(name = "calculated_amount") BigDecimal calculatedAmount;
-    @Column(name = "paid_amount") BigDecimal paidAmount;
-    @Column(name = "purchase_channel_id") UUID purchaseChannelId;
-    @Column(name = "purchase_channel_name_snapshot") String purchaseChannelNameSnapshot;
-    @Column(name = "location_label_id") UUID locationLabelId;
-    @Column(name = "location_label_name_snapshot") String locationLabelNameSnapshot;
-    @Column(name = "income_name") String incomeName;
-    @Column(name = "payer_id") UUID payerId;
-    @Column(name = "payer_name_snapshot") String payerNameSnapshot;
-    @Column(name = "income_category_id") UUID incomeCategoryId;
-    @Column(name = "income_category_name_snapshot") String incomeCategoryNameSnapshot;
-    @Column(name = "income_amount") BigDecimal incomeAmount;
-    @Column(name = "funding_channel_id", nullable = false) UUID fundingChannelId;
-    @Column(name = "funding_channel_name_snapshot", nullable = false) String fundingChannelNameSnapshot;
-    @Column(length = 500) String note;
-    @Column(name = "created_at", nullable = false) Instant createdAt;
-    @Column(name = "updated_at", nullable = false) Instant updatedAt;
+    @TableField("entry_type") String entryType;
+    @TableField("business_time") Instant businessTime;
+    @TableField("business_date") LocalDate businessDate;
+    @Version @TableField long version;
+    @TableField("lifecycle_status") String lifecycleStatus;
+    @TableField("deleted_at") Instant deletedAt;
+    @TableField("purge_after") Instant purgeAfter;
+    @TableField("product_id") UUID productId;
+    @TableField("product_name_snapshot") String productNameSnapshot;
+    @TableField("primary_category_id") UUID primaryCategoryId;
+    @TableField("primary_category_name_snapshot") String primaryCategoryNameSnapshot;
+    @TableField("secondary_category_id") UUID secondaryCategoryId;
+    @TableField("secondary_category_name_snapshot") String secondaryCategoryNameSnapshot;
+    @TableField("unit_id") UUID unitId;
+    @TableField("unit_name_snapshot") String unitNameSnapshot;
+    @TableField("unit_price") BigDecimal unitPrice;
+    @TableField BigDecimal quantity;
+    @TableField("calculated_amount") BigDecimal calculatedAmount;
+    @TableField("paid_amount") BigDecimal paidAmount;
+    @TableField("purchase_channel_id") UUID purchaseChannelId;
+    @TableField("purchase_channel_name_snapshot") String purchaseChannelNameSnapshot;
+    @TableField("location_label_id") UUID locationLabelId;
+    @TableField("location_label_name_snapshot") String locationLabelNameSnapshot;
+    @TableField("income_name") String incomeName;
+    @TableField("payer_id") UUID payerId;
+    @TableField("payer_name_snapshot") String payerNameSnapshot;
+    @TableField("income_category_id") UUID incomeCategoryId;
+    @TableField("income_category_name_snapshot") String incomeCategoryNameSnapshot;
+    @TableField("income_amount") BigDecimal incomeAmount;
+    @TableField("funding_channel_id") UUID fundingChannelId;
+    @TableField("funding_channel_name_snapshot") String fundingChannelNameSnapshot;
+    @TableField String note;
+    @TableField("created_at") Instant createdAt;
+    @TableField("updated_at") Instant updatedAt;
     protected LedgerEntryEntity() { }
 }
 
-@Entity @Table(name = "expense_adjustment")
+@TableName("expense_adjustment")
 class ExpenseAdjustmentEntity extends TenantScopedEntity {
-    @Column(name = "original_expense_id", nullable = false) UUID originalExpenseId;
-    @Column(name = "adjustment_type", nullable = false) String adjustmentType;
-    @Column(nullable = false) BigDecimal amount;
-    @Column(name = "business_time", nullable = false) Instant businessTime;
-    @Column(name = "business_date", nullable = false) LocalDate businessDate;
-    @Column(nullable = false) String status;
-    @Column(name = "deleted_at") Instant deletedAt;
-    @Column(name = "purge_after") Instant purgeAfter;
-    @Version @Column(nullable = false) long version;
-    @Column(length = 500) String note;
-    @Column(name = "created_at", nullable = false) Instant createdAt;
-    @Column(name = "updated_at", nullable = false) Instant updatedAt;
+    @TableField("original_expense_id") UUID originalExpenseId;
+    @TableField("adjustment_type") String adjustmentType;
+    @TableField BigDecimal amount;
+    @TableField("business_time") Instant businessTime;
+    @TableField("business_date") LocalDate businessDate;
+    @TableField String status;
+    @TableField("deleted_at") Instant deletedAt;
+    @TableField("purge_after") Instant purgeAfter;
+    @Version @TableField long version;
+    @TableField String note;
+    @TableField("created_at") Instant createdAt;
+    @TableField("updated_at") Instant updatedAt;
     protected ExpenseAdjustmentEntity() { }
 }

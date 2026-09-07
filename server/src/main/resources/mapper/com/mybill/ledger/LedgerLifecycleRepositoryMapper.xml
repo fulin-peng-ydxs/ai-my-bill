@@ -1,0 +1,89 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.mybill.ledger.LedgerLifecycleRepositoryMapper">
+  <select id="findLedger" resultType="map">
+    <![CDATA[
+                SELECT l.id,l.entry_type,l.lifecycle_status,l.deleted_at,l.purge_after,l.version,
+                       (SELECT count(*) FROM expense_adjustment a WHERE a.original_expense_id=l.id) AS linked_count
+                  FROM ledger_entry l WHERE l.id=#{p.id}
+                ]]>
+  </select>
+
+  <select id="findAdjustment" resultType="map">
+    <![CDATA[
+                SELECT a.id,'ADJUSTMENT' AS entry_type,a.status AS lifecycle_status,a.deleted_at,a.purge_after,a.version,
+                       0 AS linked_count
+                  FROM expense_adjustment a WHERE a.id=#{p.id}
+                ]]>
+  </select>
+
+  <update id="trashLedger">
+    <![CDATA[
+                UPDATE ledger_entry SET lifecycle_status='TRASHED',deleted_at=#{p.now},
+                       purge_after=#{p.purgeAfter},updated_at=#{p.now},version=version+1
+                 WHERE id=#{p.id} AND lifecycle_status='ACTIVE' AND version=#{p.version}
+                ]]>
+  </update>
+
+  <update id="restoreLedger">
+    <![CDATA[
+                UPDATE ledger_entry SET lifecycle_status='ACTIVE',deleted_at=NULL,purge_after=NULL,
+                       updated_at=#{p.now},version=version+1
+                 WHERE id=#{p.id} AND lifecycle_status='TRASHED' AND purge_after>#{p.now} AND version=#{p.version}
+                ]]>
+  </update>
+
+  <update id="trashAdjustment">
+    <![CDATA[
+                UPDATE expense_adjustment SET status='TRASHED',deleted_at=#{p.now},
+                       purge_after=#{p.purgeAfter},updated_at=#{p.now},version=version+1
+                 WHERE id=#{p.id} AND status='EFFECTIVE' AND version=#{p.version}
+                ]]>
+  </update>
+
+  <select id="restoreAdjustment" resultType="map">
+    <![CDATA[
+                SELECT a.amount,l.paid_amount
+                  FROM expense_adjustment a JOIN ledger_entry l ON l.id=a.original_expense_id
+                 WHERE a.id=#{p.id} AND a.status='TRASHED' AND a.purge_after>#{p.now} AND a.version=#{p.version}
+                   AND l.entry_type='EXPENSE' AND l.lifecycle_status='ACTIVE'
+                 FOR UPDATE OF a,l
+                ]]>
+  </select>
+
+  <select id="effectiveAdjustmentTotal" resultType="map">
+    <![CDATA[
+                SELECT COALESCE(sum(active.amount),0) FROM expense_adjustment active
+                 WHERE active.original_expense_id=(SELECT original_expense_id FROM expense_adjustment WHERE id=#{p.id})
+                   AND active.status='EFFECTIVE'
+                ]]>
+  </select>
+
+  <update id="reactivateAdjustment">
+    <![CDATA[
+                UPDATE expense_adjustment a SET status='EFFECTIVE',deleted_at=NULL,purge_after=NULL,
+                       updated_at=#{p.now},version=version+1
+                 WHERE a.id=#{p.id} AND a.status='TRASHED' AND a.purge_after>#{p.now} AND a.version=#{p.version}
+                   AND EXISTS (SELECT 1 FROM ledger_entry l WHERE l.id=a.original_expense_id
+                               AND l.entry_type='EXPENSE' AND l.lifecycle_status='ACTIVE')
+                ]]>
+  </update>
+
+  <select id="purgeLedger" resultType="map">
+    <![CDATA[
+                SELECT id FROM ledger_entry WHERE id=#{p.id} AND lifecycle_status='TRASHED' AND version=#{p.version} FOR UPDATE
+                ]]>
+  </select>
+
+  <delete id="deleteLedgerAdjustments">
+    <![CDATA[DELETE FROM expense_adjustment WHERE original_expense_id=#{p.id}]]>
+  </delete>
+
+  <delete id="deleteLedger">
+    <![CDATA[DELETE FROM ledger_entry WHERE id=#{p.id} AND lifecycle_status='TRASHED' AND version=#{p.version}]]>
+  </delete>
+
+  <update id="purgeAdjustment">
+    <![CDATA[DELETE FROM expense_adjustment WHERE id=#{p.id} AND status='TRASHED' AND version=#{p.version}]]>
+  </update>
+</mapper>

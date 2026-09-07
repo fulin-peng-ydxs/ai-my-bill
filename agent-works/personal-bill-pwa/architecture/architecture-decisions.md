@@ -3,13 +3,13 @@
 ## 1. 运行时与依赖基线
 
 - 前端锁定 Node.js 24.11.1 与 npm 11.6.2，使用 Vue 3、Vite、TypeScript、Pinia、Vue Router、ECharts 和 Lucide Vue Next。依赖由 `web/package-lock.json` 固化，CI 使用 `npm ci`。
-- 后端锁定 Java 21 LTS、Spring Boot 3.5.16 与 Maven Wrapper。选择仍受维护的 Spring Boot 3.x 基线，避免在首期业务开发前引入 Spring Framework 7 的迁移面。
+- 后端锁定 Java 21 LTS、Spring Boot 3.5.16、MyBatis-Plus 3.5.17 与 Maven Wrapper。生产 Java 只调用 Mapper 方法，参数化 SQL、动态条件、锁和批量语句集中在 XML；架构测试禁止 Spring JDBC/JPA 与 Java 内嵌 SQL 回流。
 - PostgreSQL 开发基线为 16 或更高受支持版本，生产镜像固定为 PostgreSQL 16.14。当前已固化 Flyway 11.7.2、独立 bootstrap/迁移/应用角色、16 张租户表的强制 RLS 与生产应用只读版本门禁；预期 schema 版本为 `011`。`job_run` 支持有限重试、租约、合作式取消、批次幂等和到时可领取，商品具备显式排序、合并留痕和默认字典规范化约束。
 
 ## 2. 应用与模块边界
 
 - 采用单仓库、Vue 单页应用、Spring Boot 模块化单体和 PostgreSQL，同源接口前缀固定为 `/api/v1`。
-- 当前后端领域包为 `auth`、`admin`、`dictionary`、`preference`、`job`、`ledger`，公共持久化映射位于 `persistence`，公共契约位于 `shared`；后续报表阶段新增 `report`。跨领域写操作只经应用服务，查询只能消费明确的只读接口或投影。
+- 当前后端领域包为 `auth`、`admin`、`dictionary`、`preference`、`job`、`ledger`，公共 MyBatis-Plus 字段映射位于 `persistence`，Mapper XML 位于 `server/src/main/resources/mapper`，公共契约位于 `shared`；后续报表阶段新增 `report`。跨领域写操作只经应用服务，查询只能消费明确的只读接口或投影。
 - T1-T10 已建立工程、安全、应用外壳、共享组件、管理员与字典治理、偏好和账号隔离草稿；T11-T16 已实现收支填报、日常模板、统一明细、编辑及退款/报销。T17 接入有效/回收站完整生命周期与 30 天到期任务；T18 接入当前筛选/完整数据导出。注销、报表、运行概况和审计查询仍未实施；注销 API 与页面动作在 T19 的数据保留与清理策略确认前均不登记。
 
 ## 3. HTTP 与数据契约
@@ -50,7 +50,7 @@
 - 管理审计只能通过 `AdminAuditService` 追加：策略显式声明稳定动作、对象类型和最多 32 个顶层白名单字段，仅保存真正变化的 before/after；嵌套密码、令牌、凭据、会话、精确地址和坐标递归剔除，并限制摘要深度、集合规模和文本长度。运行角色对 `admin_audit_log` 没有 `UPDATE/DELETE` 权限。
 - 具体业务的成功审计应加入同一业务事务；拒绝或失败结果在业务回滚后调用同一入口独立落库。T6 不开放审计查询 HTTP API，管理员只读筛选与详情属于 T24。
 - 后台任务实现 `JobDefinition`，必须声明租户/全局作用域、可取消、可重试和最大尝试次数，并以幂等、有界小批次执行。租户任务每批通过共享 `TenantDatabaseExecutor` 在独立事务设置 RLS 上下文；全局任务不得读取租户业务数据。
-- `job_run` 是任务协调事实源：非空批次键幂等，任务只在 `available_at` 到达后由 `FOR UPDATE SKIP LOCKED` 原子领取，默认 30 秒有限租约；长批次主动续租使用独立新事务立即提交，不能被业务批次长事务遮蔽。每次领取前收敛过期租约，未耗尽且允许重试则回到 `PENDING`，否则进入 `FAILED`。`PURGE_EXPIRED_LEDGER` 每租户每批最多处理 100 条；`GENERATE_PERSONAL_EXPORT` 以 200 行 JDBC fetch size 流式写入同租户临时文件，完成后原子替换，`PURGE_EXPIRED_EXPORT` 到期删除文件并收敛状态。导出 API 不暴露文件路径，下载重新校验当前用户与租户；CSV 使用 UTF-8 BOM、统一引号转义和公式防护。不引入 Redis、消息队列或独立任务服务。
+- `job_run` 是任务协调事实源：非空批次键幂等，任务只在 `available_at` 到达后由 `FOR UPDATE SKIP LOCKED` 原子领取，默认 30 秒有限租约；长批次主动续租使用独立新事务立即提交，不能被业务批次长事务遮蔽。每次领取前收敛过期租约，未耗尽且允许重试则回到 `PENDING`，否则进入 `FAILED`。`PURGE_EXPIRED_LEDGER` 每租户每批最多处理 100 条；`GENERATE_PERSONAL_EXPORT` 使用 MyBatis Cursor 与 200 行 fetch size 流式写入同租户临时文件，完成后原子替换，`PURGE_EXPIRED_EXPORT` 到期删除文件并收敛状态。导出 API 不暴露文件路径，下载重新校验当前用户与租户；CSV 使用 UTF-8 BOM、统一引号转义和公式防护。不引入 Redis、消息队列或独立任务服务。
 
 ## 8. PWA 与主题边界
 

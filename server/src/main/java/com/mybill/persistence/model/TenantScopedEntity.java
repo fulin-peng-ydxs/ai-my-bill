@@ -1,17 +1,12 @@
 package com.mybill.persistence.model;
 
-import jakarta.persistence.EmbeddedId;
-import jakarta.persistence.MappedSuperclass;
+import com.baomidou.mybatisplus.annotation.TableField;
+import com.baomidou.mybatisplus.annotation.TableId;
 
-/**
- * 仅承载复合主键映射；业务实体不得另建可绕过 tenant_id 的单列身份。
- */
-@MappedSuperclass
+import java.util.UUID;
+
+/** 租户表通用映射；复合主键与隔离边界由数据库约束及 RLS 强制执行。 */
 abstract class TenantScopedEntity {
-
-    @EmbeddedId
-    protected TenantScopedId id;
-
-    protected TenantScopedEntity() {
-    }
+    @TableField("tenant_id") protected UUID tenantId;
+    @TableId("id") protected UUID id;
 }

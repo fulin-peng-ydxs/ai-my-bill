@@ -1,0 +1,150 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.mybill.dictionary.PersonalDictionaryRepositoryMapper">
+  <sql id="table">
+    <choose>
+      <when test="p.type == 'PRODUCT'">product</when>
+      <when test="p.type == 'EXPENSE_CATEGORY'">expense_category</when>
+      <when test="p.type == 'UNIT'">unit</when>
+      <when test="p.type == 'FUNDING_CHANNEL'">funding_channel</when>
+      <when test="p.type == 'PURCHASE_CHANNEL'">purchase_channel</when>
+      <when test="p.type == 'LOCATION'">location_label</when>
+      <when test="p.type == 'INCOME_CATEGORY'">income_category</when>
+      <when test="p.type == 'PAYER'">payer</when>
+      <otherwise>unsupported_dictionary_type</otherwise>
+    </choose>
+  </sql>
+
+  <sql id="referenced">
+    <choose>
+      <when test="p.type == 'PRODUCT'">
+        EXISTS (SELECT 1 FROM ledger_entry l WHERE l.tenant_id=d.tenant_id AND l.product_id=d.id)
+        OR EXISTS (SELECT 1 FROM daily_entry_template t WHERE t.tenant_id=d.tenant_id AND t.product_id=d.id)
+      </when>
+      <when test="p.type == 'EXPENSE_CATEGORY'">
+        EXISTS (SELECT 1 FROM ledger_entry l WHERE l.tenant_id=d.tenant_id AND (l.primary_category_id=d.id OR l.secondary_category_id=d.id))
+        OR EXISTS (SELECT 1 FROM product x WHERE x.tenant_id=d.tenant_id AND (x.default_primary_category_id=d.id OR x.default_secondary_category_id=d.id))
+        OR EXISTS (SELECT 1 FROM daily_entry_template t WHERE t.tenant_id=d.tenant_id AND (t.primary_category_id=d.id OR t.secondary_category_id=d.id))
+      </when>
+      <when test="p.type == 'UNIT'">
+        EXISTS (SELECT 1 FROM ledger_entry l WHERE l.tenant_id=d.tenant_id AND l.unit_id=d.id)
+        OR EXISTS (SELECT 1 FROM product x WHERE x.tenant_id=d.tenant_id AND x.default_unit_id=d.id)
+        OR EXISTS (SELECT 1 FROM daily_entry_template t WHERE t.tenant_id=d.tenant_id AND t.unit_id=d.id)
+      </when>
+      <when test="p.type == 'FUNDING_CHANNEL'">
+        EXISTS (SELECT 1 FROM ledger_entry l WHERE l.tenant_id=d.tenant_id AND l.funding_channel_id=d.id)
+        OR EXISTS (SELECT 1 FROM product x WHERE x.tenant_id=d.tenant_id AND x.last_funding_channel_id=d.id)
+        OR EXISTS (SELECT 1 FROM daily_entry_template t WHERE t.tenant_id=d.tenant_id AND t.funding_channel_id=d.id)
+        OR EXISTS (SELECT 1 FROM user_preference u WHERE u.tenant_id=d.tenant_id AND u.default_funding_channel_id=d.id)
+      </when>
+      <when test="p.type == 'PURCHASE_CHANNEL'">
+        EXISTS (SELECT 1 FROM ledger_entry l WHERE l.tenant_id=d.tenant_id AND l.purchase_channel_id=d.id)
+        OR EXISTS (SELECT 1 FROM product x WHERE x.tenant_id=d.tenant_id AND x.last_purchase_channel_id=d.id)
+        OR EXISTS (SELECT 1 FROM daily_entry_template t WHERE t.tenant_id=d.tenant_id AND t.purchase_channel_id=d.id)
+      </when>
+      <when test="p.type == 'LOCATION'">
+        EXISTS (SELECT 1 FROM ledger_entry l WHERE l.tenant_id=d.tenant_id AND l.location_label_id=d.id)
+        OR EXISTS (SELECT 1 FROM daily_entry_template t WHERE t.tenant_id=d.tenant_id AND t.location_label_id=d.id)
+      </when>
+      <when test="p.type == 'INCOME_CATEGORY'">
+        EXISTS (SELECT 1 FROM ledger_entry l WHERE l.tenant_id=d.tenant_id AND l.income_category_id=d.id)
+        OR EXISTS (SELECT 1 FROM daily_entry_template t WHERE t.tenant_id=d.tenant_id AND t.income_category_id=d.id)
+      </when>
+      <when test="p.type == 'PAYER'">
+        EXISTS (SELECT 1 FROM ledger_entry l WHERE l.tenant_id=d.tenant_id AND l.payer_id=d.id)
+        OR EXISTS (SELECT 1 FROM daily_entry_template t WHERE t.tenant_id=d.tenant_id AND t.payer_id=d.id)
+      </when>
+      <otherwise>false</otherwise>
+    </choose>
+  </sql>
+
+  <sql id="parentProjection">
+    <choose><when test="p.type == 'EXPENSE_CATEGORY'">parent.display_name</when><otherwise>NULL::varchar</otherwise></choose> AS parent_name,
+    <include refid="referenced"/> AS referenced,
+    <choose><when test="p.type == 'EXPENSE_CATEGORY'">d.parent_id</when><otherwise>NULL::uuid</otherwise></choose> AS parent_id
+  </sql>
+
+  <sql id="parentJoin">
+    <if test="p.type == 'EXPENSE_CATEGORY'">
+      LEFT JOIN expense_category parent ON parent.tenant_id=d.tenant_id AND parent.id=d.parent_id
+    </if>
+  </sql>
+
+  <sql id="filters">
+    AND (#{p.query}='' OR lower(d.display_name) LIKE ('%' || lower(#{p.query}) || '%') ESCAPE '\')
+    AND (CAST(#{p.status} AS varchar) IS NULL OR d.status=CAST(#{p.status} AS varchar))
+    <if test="p.type == 'PRODUCT'">AND d.status &lt;&gt; 'MERGED'</if>
+    <if test="p.candidatesOnly">AND d.status='ACTIVE'</if>
+    <if test="p.candidatesOnly and p.type == 'EXPENSE_CATEGORY'">AND (d.parent_id IS NULL OR parent.status='ACTIVE')</if>
+  </sql>
+
+  <select id="list" resultType="map">
+    SELECT d.id,d.display_name,d.sort_order,d.status,<include refid="parentProjection"/>
+      FROM <include refid="table"/> d <include refid="parentJoin"/>
+     WHERE true <include refid="filters"/>
+    <choose>
+      <when test="p.type == 'EXPENSE_CATEGORY'">
+        ORDER BY COALESCE(parent.sort_order,d.sort_order),COALESCE(parent.created_at,d.created_at),
+                 COALESCE(parent.id,d.id),CASE WHEN d.parent_id IS NULL THEN 0 ELSE 1 END,d.sort_order,d.created_at,d.id
+      </when>
+      <otherwise>ORDER BY d.sort_order,d.created_at,d.id</otherwise>
+    </choose>
+    LIMIT #{p.limit} OFFSET #{p.offset}
+  </select>
+
+  <select id="count" resultType="map">
+    SELECT count(*) FROM <include refid="table"/> d <include refid="parentJoin"/>
+     WHERE true <include refid="filters"/>
+  </select>
+
+  <select id="countAll" resultType="map">
+    SELECT count(*) AS total_count,count(*) FILTER (WHERE status='ACTIVE') AS active_count
+      FROM <include refid="table"/>
+    <if test="p.type == 'PRODUCT'">WHERE status &lt;&gt; 'MERGED'</if>
+  </select>
+
+  <select id="find" resultType="map">
+    SELECT d.id,d.display_name,d.sort_order,d.status,<include refid="parentProjection"/>
+      FROM <include refid="table"/> d <include refid="parentJoin"/> WHERE d.id=#{p.id}
+    <if test="p.type == 'PRODUCT'">AND d.status &lt;&gt; 'MERGED'</if>
+    <if test="p.forUpdate">FOR UPDATE OF d</if>
+  </select>
+
+  <select id="maxSortOrder" resultType="map">
+    SELECT COALESCE(max(sort_order),-10) FROM <include refid="table"/> WHERE true
+    <if test="p.type == 'EXPENSE_CATEGORY'">AND parent_id IS NOT DISTINCT FROM #{p.parentId}</if>
+  </select>
+
+  <insert id="insert">
+    INSERT INTO <include refid="table"/>
+      (id,tenant_id,display_name,normalized_name,sort_order,status,created_at,updated_at
+       <if test="p.type == 'EXPENSE_CATEGORY'">,parent_id</if>)
+    VALUES (#{p.id},current_setting('app.tenant_id')::uuid,#{p.name},#{p.normalized},#{p.sortOrder},'ACTIVE',#{p.now},#{p.now}
+       <if test="p.type == 'EXPENSE_CATEGORY'">,#{p.parentId}</if>)
+  </insert>
+
+  <update id="rename">
+    UPDATE <include refid="table"/> SET display_name=#{p.name},normalized_name=#{p.normalized},updated_at=#{p.now} WHERE id=#{p.id}
+  </update>
+
+  <update id="updateStatus">
+    UPDATE <include refid="table"/> SET status=#{p.status},updated_at=#{p.now} WHERE id=#{p.id}
+  </update>
+
+  <select id="activeChildren" resultType="map">
+    SELECT count(*) FROM expense_category WHERE parent_id=#{p.id} AND status='ACTIVE'
+  </select>
+
+  <select id="lockSiblingIds" resultType="map">
+    SELECT id FROM <include refid="table"/>
+    <where>
+      <if test="p.type == 'EXPENSE_CATEGORY'">parent_id IS NOT DISTINCT FROM #{p.parentId}</if>
+      <if test="p.type == 'PRODUCT'">AND status &lt;&gt; 'MERGED'</if>
+    </where>
+    ORDER BY sort_order,created_at,id FOR UPDATE
+  </select>
+
+  <update id="updateSortOrder">
+    UPDATE <include refid="table"/> SET sort_order=#{p.sortOrder},updated_at=#{p.now} WHERE id=#{p.id}
+  </update>
+</mapper>

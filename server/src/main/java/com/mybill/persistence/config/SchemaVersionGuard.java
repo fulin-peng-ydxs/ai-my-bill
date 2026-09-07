@@ -4,7 +4,7 @@ import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
-import org.springframework.jdbc.core.simple.JdbcClient;
+import com.mybill.shared.persistence.MybatisOperations;
 import org.springframework.stereotype.Component;
 import org.springframework.core.annotation.Order;
 
@@ -17,11 +17,14 @@ import org.springframework.core.annotation.Order;
 @EnableConfigurationProperties(SchemaVersionProperties.class)
 public class SchemaVersionGuard implements ApplicationRunner {
 
-    private final JdbcClient jdbcClient;
+    private final MybatisOperations operations;
+    private final SchemaVersionGuardMapper mapper;
     private final SchemaVersionProperties properties;
 
-    public SchemaVersionGuard(JdbcClient jdbcClient, SchemaVersionProperties properties) {
-        this.jdbcClient = jdbcClient;
+    public SchemaVersionGuard(MybatisOperations operations, SchemaVersionGuardMapper mapper,
+                              SchemaVersionProperties properties) {
+        this.operations = operations;
+        this.mapper = mapper;
         this.properties = properties;
     }
 
@@ -30,14 +33,7 @@ public class SchemaVersionGuard implements ApplicationRunner {
         if (!properties.validationEnabled()) {
             return;
         }
-        String actualVersion = jdbcClient.sql("""
-                        SELECT version
-                          FROM flyway_schema_history
-                         WHERE success = true AND version IS NOT NULL
-                         ORDER BY installed_rank DESC
-                         LIMIT 1
-                        """)
-                .query(String.class)
+        String actualVersion = operations.select(mapper::latestVersion).map(String.class)
                 .optional()
                 .orElseThrow(() -> new IllegalStateException("数据库尚未完成版本化迁移"));
         if (!properties.expectedVersion().equals(actualVersion)) {

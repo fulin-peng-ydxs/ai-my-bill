@@ -1,101 +1,98 @@
 package com.mybill.persistence.model;
 
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.Id;
-import jakarta.persistence.Table;
-
+import com.baomidou.mybatisplus.annotation.TableField;
+import com.baomidou.mybatisplus.annotation.TableId;
+import com.baomidou.mybatisplus.annotation.TableName;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.UUID;
 
-/** JPA 对默认字典、七类个人字典及商品的结构映射；维护行为由后续业务阶段实现。 */
+/** MyBatis-Plus 对默认字典、七类个人字典及商品的结构映射。 */
 final class DictionaryEntities {
     private DictionaryEntities() { }
 }
 
-@Entity @Table(name = "default_dictionary_item")
+@TableName("default_dictionary_item")
 class DefaultDictionaryItemEntity {
-    @Id UUID id;
-    @Column(name = "dictionary_type", nullable = false) String dictionaryType;
-    @Column(name = "stable_key", nullable = false) String stableKey;
-    @Column(name = "parent_id") UUID parentId;
-    @Column(name = "display_name", nullable = false) String displayName;
-    @Column(name = "normalized_name", nullable = false) String normalizedName;
-    @Column(name = "sort_order", nullable = false) int sortOrder;
-    @Column(nullable = false) String status;
-    @Column(name = "created_at", nullable = false) Instant createdAt;
-    @Column(name = "updated_at", nullable = false) Instant updatedAt;
+    @TableId UUID id;
+    @TableField("dictionary_type") String dictionaryType;
+    @TableField("stable_key") String stableKey;
+    @TableField("parent_id") UUID parentId;
+    @TableField("display_name") String displayName;
+    @TableField("normalized_name") String normalizedName;
+    @TableField("sort_order") int sortOrder;
+    @TableField String status;
+    @TableField("created_at") Instant createdAt;
+    @TableField("updated_at") Instant updatedAt;
     protected DefaultDictionaryItemEntity() { }
 }
 
-@Entity @Table(name = "expense_category")
+@TableName("expense_category")
 class ExpenseCategoryEntity extends TenantScopedEntity {
-    @Column(name = "parent_id") UUID parentId;
-    @Column(name = "display_name", nullable = false) String displayName;
-    @Column(name = "normalized_name", nullable = false) String normalizedName;
-    @Column(name = "sort_order", nullable = false) int sortOrder;
-    @Column(nullable = false) String status;
-    @Column(name = "created_at", nullable = false) Instant createdAt;
-    @Column(name = "updated_at", nullable = false) Instant updatedAt;
+    @TableField("parent_id") UUID parentId;
+    @TableField("display_name") String displayName;
+    @TableField("normalized_name") String normalizedName;
+    @TableField("sort_order") int sortOrder;
+    @TableField String status;
+    @TableField("created_at") Instant createdAt;
+    @TableField("updated_at") Instant updatedAt;
     protected ExpenseCategoryEntity() { }
 }
 
-@Entity @Table(name = "unit")
+@TableName("unit")
 class UnitEntity extends NamedTenantEntity { protected UnitEntity() { } }
 
-@Entity @Table(name = "funding_channel")
+@TableName("funding_channel")
 class FundingChannelEntity extends NamedTenantEntity { protected FundingChannelEntity() { } }
 
-@Entity @Table(name = "purchase_channel")
+@TableName("purchase_channel")
 class PurchaseChannelEntity extends NamedTenantEntity { protected PurchaseChannelEntity() { } }
 
-@Entity @Table(name = "location_label")
+@TableName("location_label")
 class LocationLabelEntity extends NamedTenantEntity { protected LocationLabelEntity() { } }
 
-@Entity @Table(name = "income_category")
+@TableName("income_category")
 class IncomeCategoryEntity extends NamedTenantEntity { protected IncomeCategoryEntity() { } }
 
-@Entity @Table(name = "payer")
+@TableName("payer")
 class PayerEntity extends NamedTenantEntity { protected PayerEntity() { } }
 
-@jakarta.persistence.MappedSuperclass
 abstract class NamedTenantEntity extends TenantScopedEntity {
-    @Column(name = "display_name", nullable = false) String displayName;
-    @Column(name = "normalized_name", nullable = false) String normalizedName;
-    @Column(name = "sort_order", nullable = false) int sortOrder;
-    @Column(nullable = false) String status;
-    @Column(name = "created_at", nullable = false) Instant createdAt;
-    @Column(name = "updated_at", nullable = false) Instant updatedAt;
+    @TableField("display_name") String displayName;
+    @TableField("normalized_name") String normalizedName;
+    @TableField("sort_order") int sortOrder;
+    @TableField String status;
+    @TableField("created_at") Instant createdAt;
+    @TableField("updated_at") Instant updatedAt;
     protected NamedTenantEntity() { }
 }
 
-@Entity @Table(name = "product")
+@TableName("product")
 class ProductEntity extends TenantScopedEntity {
-    @Column(name = "display_name", nullable = false) String displayName;
-    @Column(name = "normalized_name", nullable = false) String normalizedName;
-    @Column(name = "default_primary_category_id") UUID defaultPrimaryCategoryId;
-    @Column(name = "default_secondary_category_id") UUID defaultSecondaryCategoryId;
-    @Column(name = "default_unit_id") UUID defaultUnitId;
-    @Column(name = "last_unit_price") BigDecimal lastUnitPrice;
-    @Column(name = "last_quantity") BigDecimal lastQuantity;
-    @Column(name = "last_funding_channel_id") UUID lastFundingChannelId;
-    @Column(name = "last_purchase_channel_id") UUID lastPurchaseChannelId;
-    @Column(nullable = false) String status;
-    @Column(name = "merged_into_id") UUID mergedIntoId;
-    @Column(name = "created_at", nullable = false) Instant createdAt;
-    @Column(name = "updated_at", nullable = false) Instant updatedAt;
+    @TableField("display_name") String displayName;
+    @TableField("normalized_name") String normalizedName;
+    @TableField("default_primary_category_id") UUID defaultPrimaryCategoryId;
+    @TableField("default_secondary_category_id") UUID defaultSecondaryCategoryId;
+    @TableField("default_unit_id") UUID defaultUnitId;
+    @TableField("last_unit_price") BigDecimal lastUnitPrice;
+    @TableField("last_quantity") BigDecimal lastQuantity;
+    @TableField("last_funding_channel_id") UUID lastFundingChannelId;
+    @TableField("last_purchase_channel_id") UUID lastPurchaseChannelId;
+    @TableField String status;
+    @TableField("merged_into_id") UUID mergedIntoId;
+    @TableField("created_at") Instant createdAt;
+    @TableField("updated_at") Instant updatedAt;
     protected ProductEntity() { }
 }
 
-@Entity @Table(name = "product_merge_event")
+@TableName("product_merge_event")
 class ProductMergeEventEntity extends TenantScopedEntity {
-    @Column(name = "source_product_id", nullable = false) UUID sourceProductId;
-    @Column(name = "target_product_id", nullable = false) UUID targetProductId;
-    @Column(name = "initiated_by_user_id", nullable = false) UUID initiatedByUserId;
-    @Column(name = "affected_ledger_entries", nullable = false) long affectedLedgerEntries;
-    @Column(name = "affected_templates", nullable = false) int affectedTemplates;
-    @Column(name = "template_conflict", nullable = false) boolean templateConflict;
-    @Column(name = "occurred_at", nullable = false) Instant occurredAt;
+    @TableField("source_product_id") UUID sourceProductId;
+    @TableField("target_product_id") UUID targetProductId;
+    @TableField("initiated_by_user_id") UUID initiatedByUserId;
+    @TableField("affected_ledger_entries") long affectedLedgerEntries;
+    @TableField("affected_templates") int affectedTemplates;
+    @TableField("template_conflict") boolean templateConflict;
+    @TableField("occurred_at") Instant occurredAt;
     protected ProductMergeEventEntity() { }
 }
