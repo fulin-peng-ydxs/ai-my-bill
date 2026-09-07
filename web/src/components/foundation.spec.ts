@@ -10,6 +10,7 @@ import AppliedFilterBar from './AppliedFilterBar.vue'
 import FilterSheet from './FilterSheet.vue'
 import FormField from './FormField.vue'
 import GlobalLedgerSearch from './GlobalLedgerSearch.vue'
+import IncrementalLedgerList from './IncrementalLedgerList.vue'
 import MoneySummary from './MoneySummary.vue'
 import SegmentedControl from './SegmentedControl.vue'
 import SettingsDisclosureList from './SettingsDisclosureList.vue'
@@ -123,5 +124,20 @@ describe('shared frontend foundations', () => {
     const errorToast = await render(AppToast, { open: true, message: '操作失败', kind: 'error' })
     expect(errorToast).toContain('role="alert"')
     expect(errorToast).toContain('aria-live="assertive"')
+  })
+
+  it('renders grouped ledger items with explicit mixed-type and pagination semantics', async () => {
+    const html = await render(IncrementalLedgerList, {
+      type: 'ALL', hasMore: true, loadingMore: false,
+      items: [{ id: '10000000-0000-4000-8000-000000000001', entryType: 'INCOME',
+        occurredAt: '2026-09-07T01:00:00Z', businessDate: '2026-09-07', title: '项目奖金',
+        categoryName: '奖金', counterpartyName: '客户甲', fundingChannelName: '银行卡',
+        amount: '88.80', note: '需要完整显示并自然换行的长备注内容', createdAt: '2026-09-07T01:00:00Z' }],
+    })
+    expect(html).toContain('收入')
+    expect(html).toContain('+¥88.80')
+    expect(html).toContain('加载更多')
+    expect(html).toContain('Shift+F10')
+    expect(html).toContain('需要完整显示并自然换行的长备注内容')
   })
 })

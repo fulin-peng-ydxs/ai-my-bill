@@ -75,6 +75,7 @@ public class SecurityConfig {
                         .requestMatchers("/api/v1/preferences/**").hasRole("USER")
                         .requestMatchers("/api/v1/expenses/**", "/api/v1/incomes/**", "/api/v1/daily-templates/**")
                                 .hasRole("USER")
+                        .requestMatchers(HttpMethod.GET, "/api/v1/ledger-entries").hasRole("USER")
                         .requestMatchers(HttpMethod.PUT, "/api/v1/ledger-entries/*/daily-template").hasRole("USER")
                         .requestMatchers("/api/v1/**").denyAll()
                         .anyRequest().permitAll())

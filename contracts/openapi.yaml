@@ -2,7 +2,7 @@ openapi: 3.1.0
 info:
   title: 我的账单 API
   version: 0.1.0
-  description: 同源 /api/v1 接口契约；T11 已开放认证、管理员用户生命周期、个人字典、商品合并、管理员默认字典、个人偏好、支出填报与最小健康检查。
+  description: 同源 /api/v1 接口契约；T14 已开放认证、用户与字典治理、个人偏好、收支填报、日常模板及有效收支明细查询。
 servers:
   - url: /api/v1
 security:
@@ -399,6 +399,46 @@ paths:
         "400": { $ref: "#/components/responses/ValidationError" }
         "401": { $ref: "#/components/responses/AuthenticationError" }
         "403": { $ref: "#/components/responses/AuthorizationError" }
+  /ledger-entries:
+    get:
+      operationId: listLedgerEntries
+      summary: 按稳定游标查询当前租户的有效支出与收入
+      tags: [ledger]
+      parameters:
+        - name: type
+          in: query
+          schema: { $ref: "#/components/schemas/LedgerEntryTypeFilter" }
+        - name: fundingChannelId
+          in: query
+          schema: { type: string, format: uuid }
+        - name: range
+          in: query
+          schema: { $ref: "#/components/schemas/LedgerDateRange" }
+        - name: startDate
+          in: query
+          description: range=CUSTOM 时必填。
+          schema: { type: string, format: date }
+        - name: endDate
+          in: query
+          description: range=CUSTOM 时必填，且不得早于 startDate。
+          schema: { type: string, format: date }
+        - name: query
+          in: query
+          schema: { type: string, maxLength: 200, default: "" }
+        - name: cursor
+          in: query
+          description: 服务端签发的不透明稳定游标；筛选变化后不得复用。
+          schema: { type: string, maxLength: 500 }
+      responses:
+        "200":
+          description: 每批最多 20 笔，按业务日期、业务时间、创建时间和 ID 倒序。
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LedgerPage" }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "401": { $ref: "#/components/responses/AuthenticationError" }
+        "403": { $ref: "#/components/responses/AuthorizationError" }
+        "503": { $ref: "#/components/responses/ServiceUnavailableError" }
   /ledger-entries/{ledgerId}/daily-template:
     put:
       operationId: upsertDailyTemplateFromLedger
@@ -1174,6 +1214,45 @@ components:
             type: string
             enum: [productId, primaryCategoryId, secondaryCategoryId, unitId, fundingChannelId,
               purchaseChannelId, locationLabelId, payerId, incomeCategoryId]
+    LedgerEntryTypeFilter:
+      type: string
+      enum: [ALL, EXPENSE, INCOME]
+      default: ALL
+    LedgerDateRange:
+      type: string
+      enum: [TODAY, THIS_WEEK, THIS_MONTH, LAST_MONTH, THIS_YEAR, CUSTOM]
+      default: TODAY
+    LedgerItem:
+      type: object
+      additionalProperties: false
+      required: [id, entryType, occurredAt, businessDate, title, categoryName, counterpartyName,
+        fundingChannelName, amount, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        entryType: { $ref: "#/components/schemas/EntryType" }
+        occurredAt: { type: string, format: date-time }
+        businessDate: { type: string, format: date }
+        title: { type: string, minLength: 1, maxLength: 200 }
+        categoryName: { type: string, minLength: 1, maxLength: 203 }
+        counterpartyName: { type: string, minLength: 1, maxLength: 306 }
+        fundingChannelName: { type: string, minLength: 1, maxLength: 100 }
+        amount: { $ref: "#/components/schemas/Money" }
+        note: { $ref: "#/components/schemas/Note" }
+        createdAt: { type: string, format: date-time }
+    LedgerPage:
+      type: object
+      additionalProperties: false
+      required: [items, hasMore]
+      properties:
+        items:
+          type: array
+          maxItems: 20
+          items: { $ref: "#/components/schemas/LedgerItem" }
+        nextCursor:
+          type: string
+          maxLength: 500
+          description: hasMore=true 时返回。
+        hasMore: { type: boolean }
     ProductSuggestion:
       type: object
       additionalProperties: false

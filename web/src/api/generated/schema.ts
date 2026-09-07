@@ -278,6 +278,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/ledger-entries": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 按稳定游标查询当前租户的有效支出与收入 */
+        get: operations["listLedgerEntries"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/ledger-entries/{ledgerId}/daily-template": {
         parameters: {
             query?: never;
@@ -812,6 +829,39 @@ export interface components {
             incomeCategoryName?: string | null;
             incomeAmount?: components["schemas"]["Money"] | null;
             unavailableFields: ("productId" | "primaryCategoryId" | "secondaryCategoryId" | "unitId" | "fundingChannelId" | "purchaseChannelId" | "locationLabelId" | "payerId" | "incomeCategoryId")[];
+        };
+        /**
+         * @default ALL
+         * @enum {string}
+         */
+        LedgerEntryTypeFilter: "ALL" | "EXPENSE" | "INCOME";
+        /**
+         * @default TODAY
+         * @enum {string}
+         */
+        LedgerDateRange: "TODAY" | "THIS_WEEK" | "THIS_MONTH" | "LAST_MONTH" | "THIS_YEAR" | "CUSTOM";
+        LedgerItem: {
+            /** Format: uuid */
+            id: string;
+            entryType: components["schemas"]["EntryType"];
+            /** Format: date-time */
+            occurredAt: string;
+            /** Format: date */
+            businessDate: string;
+            title: string;
+            categoryName: string;
+            counterpartyName: string;
+            fundingChannelName: string;
+            amount: components["schemas"]["Money"];
+            note?: components["schemas"]["Note"];
+            /** Format: date-time */
+            createdAt: string;
+        };
+        LedgerPage: {
+            items: components["schemas"]["LedgerItem"][];
+            /** @description hasMore=true 时返回。 */
+            nextCursor?: string;
+            hasMore: boolean;
         };
         ProductSuggestion: {
             /** Format: uuid */
@@ -1596,6 +1646,41 @@ export interface operations {
             400: components["responses"]["ValidationError"];
             401: components["responses"]["AuthenticationError"];
             403: components["responses"]["AuthorizationError"];
+        };
+    };
+    listLedgerEntries: {
+        parameters: {
+            query?: {
+                type?: components["schemas"]["LedgerEntryTypeFilter"];
+                fundingChannelId?: string;
+                range?: components["schemas"]["LedgerDateRange"];
+                /** @description range=CUSTOM 时必填。 */
+                startDate?: string;
+                /** @description range=CUSTOM 时必填，且不得早于 startDate。 */
+                endDate?: string;
+                query?: string;
+                /** @description 服务端签发的不透明稳定游标；筛选变化后不得复用。 */
+                cursor?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 每批最多 20 笔，按业务日期、业务时间、创建时间和 ID 倒序。 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LedgerPage"];
+                };
+            };
+            400: components["responses"]["ValidationError"];
+            401: components["responses"]["AuthenticationError"];
+            403: components["responses"]["AuthorizationError"];
+            503: components["responses"]["ServiceUnavailableError"];
         };
     };
     upsertDailyTemplateFromLedger: {

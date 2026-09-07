@@ -5,6 +5,7 @@ import { requestDiscardChanges } from '../composables/unsavedChanges'
 import { useSessionStore } from '../stores/session'
 import LoginView from '../views/LoginView.vue'
 import LedgerEntryPreferenceView from '../views/LedgerEntryPreferenceView.vue'
+import LedgerView from '../views/LedgerView.vue'
 import PlaceholderView from '../views/PlaceholderView.vue'
 import ProfileView from '../views/ProfileView.vue'
 import UserManagementView from '../views/admin/UserManagementView.vue'
@@ -19,6 +20,8 @@ const registeredRoutes: RouteRecordRaw[] = pageRegistry.map((page) => ({
     ? LoginView
     : page.pageKey === 'ledger-entry'
       ? LedgerEntryPreferenceView
+    : page.pageKey === 'bill-details'
+      ? LedgerView
     : page.pageKey === 'admin-console'
       ? UserManagementView
     : page.pageKey === 'admin-default-dictionaries'
