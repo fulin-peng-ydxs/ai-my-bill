@@ -77,9 +77,13 @@ services:
       MY_BILL_APP_DB_PASSWORD_FILE: /run/secrets/app_db_password
       MY_BILL_AUTH_RATE_LIMIT_PEPPER_FILE: /run/secrets/auth_rate_limit_pepper
       MY_BILL_SERVER_PORT: ${MY_BILL_SERVER_PORT:-8080}
+      MY_BILL_EXPORT_DIRECTORY: ${MY_BILL_EXPORT_DIRECTORY:-/var/lib/my-bill/exports}
+      MY_BILL_EXPORT_RETENTION: ${MY_BILL_EXPORT_RETENTION:-PT24H}
     secrets:
       - app_db_password
       - auth_rate_limit_pepper
+    volumes:
+      - export_data:/var/lib/my-bill/exports
     networks:
       - database
       - application
@@ -96,6 +100,7 @@ networks:
 
 volumes:
   postgres_data:
+  export_data:
 
 secrets:
   postgres_admin_password:

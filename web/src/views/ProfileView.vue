@@ -5,6 +5,8 @@ import { useRouter } from 'vue-router'
 import AppDrawer from '../components/AppDrawer.vue'
 import AppDialog from '../components/AppDialog.vue'
 import AppStateBlock from '../components/AppStateBlock.vue'
+import AppToast from '../components/AppToast.vue'
+import DataExportAction from '../components/DataExportAction.vue'
 import FormField from '../components/FormField.vue'
 import PwaInstallPrompt from '../components/PwaInstallPrompt.vue'
 import SettingsDisclosureList, { type SettingsDisclosureItem } from '../components/SettingsDisclosureList.vue'
@@ -35,6 +37,10 @@ const resetOpen = ref(false)
 const fundingChannels = ref<DictionaryItem[]>([])
 const fundingLoading = ref(true)
 const fundingError = ref<string>()
+const toastOpen = ref(false)
+const toastMessage = ref('')
+const toastKind = ref<'success' | 'error'>('success')
+const fullExportRequest = { scope: 'ALL_DATA' as const }
 const drawerOpen = computed({
   get: () => activeSetting.value !== undefined,
   set: (open: boolean) => { if (!open) activeSetting.value = undefined },
@@ -125,6 +131,12 @@ async function confirmReset(): Promise<void> {
   }
 }
 
+function showExportNotice(message: string, kind: 'success' | 'error'): void {
+  toastMessage.value = message
+  toastKind.value = kind
+  toastOpen.value = true
+}
+
 onMounted(loadFundingChannels)
 </script>
 
@@ -190,14 +202,20 @@ onMounted(loadFundingChannels)
           <h2 id="data-security-title">
             数据与安全
           </h2>
-          <p>管理当前账号的记账候选项。</p>
+          <p>管理当前账号的记账候选项与个人数据副本。</p>
         </div>
       </div>
       <SettingsDisclosureList
         label="数据与安全"
         :items="[{ key: 'dictionaries', label: '管理个人字典', value: '8 类' }]"
         @select="router.push({ name: 'personal-dictionaries' })"
-      />
+      >
+        <DataExportAction
+          :request="fullExportRequest"
+          presentation="setting"
+          @notify="showExportNotice"
+        />
+      </SettingsDisclosureList>
     </section>
 
     <section
@@ -368,5 +386,10 @@ onMounted(loadFundingChannels)
         :message="preferencesStore.errorMessage"
       />
     </AppDialog>
+    <AppToast
+      v-model:open="toastOpen"
+      :message="toastMessage"
+      :kind="toastKind"
+    />
   </article>
 </template>

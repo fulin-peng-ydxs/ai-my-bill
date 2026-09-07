@@ -40,5 +40,6 @@ defineEmits<{
         />
       </button>
     </li>
+    <slot />
   </ul>
 </template>

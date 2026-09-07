@@ -6,6 +6,7 @@ import AppDialog from './AppDialog.vue'
 import AppDataTable from './AppDataTable.vue'
 import AppStateBlock from './AppStateBlock.vue'
 import AppToast from './AppToast.vue'
+import DataExportAction from './DataExportAction.vue'
 import AppliedFilterBar from './AppliedFilterBar.vue'
 import FilterSheet from './FilterSheet.vue'
 import FormField from './FormField.vue'
@@ -124,6 +125,19 @@ describe('shared frontend foundations', () => {
     const errorToast = await render(AppToast, { open: true, message: '操作失败', kind: 'error' })
     expect(errorToast).toContain('role="alert"')
     expect(errorToast).toContain('aria-live="assertive"')
+  })
+
+  it('renders the same export state component for the ledger icon and settings row', async () => {
+    const icon = await render(DataExportAction, { request: { scope: 'CURRENT_FILTERS', query: '', type: 'ALL',
+      lifecycle: 'ACTIVE', range: 'TODAY' } })
+    expect(icon).toContain('class="data-export-icon"')
+    expect(icon).toContain('aria-label="导出数据"')
+
+    const settings = await render(SettingsDisclosureList, { label: '数据与安全', items: [] })
+    const settingAction = await render(DataExportAction, { request: { scope: 'ALL_DATA' }, presentation: 'setting' })
+    expect(settings).toContain('数据与安全')
+    expect(settingAction).toContain('导出全部数据')
+    expect(settingAction).toContain('CSV · 24 小时有效')
   })
 
   it('renders grouped ledger items with explicit mixed-type and pagination semantics', async () => {

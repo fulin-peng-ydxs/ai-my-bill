@@ -15,6 +15,7 @@ import AppDialog from '../components/AppDialog.vue'
 import AppDrawer from '../components/AppDrawer.vue'
 import AppStateBlock from '../components/AppStateBlock.vue'
 import AppToast from '../components/AppToast.vue'
+import DataExportAction from '../components/DataExportAction.vue'
 import FilterSheet from '../components/FilterSheet.vue'
 import ExpenseEntryForm from '../components/ExpenseEntryForm.vue'
 import ExpenseAdjustmentDetail from '../components/ExpenseAdjustmentDetail.vue'
@@ -84,6 +85,14 @@ const filterSummaries = computed(() => [
   ...(filters.value.fundingChannelId ? [fundingItems.value.find((item) => item.id === filters.value.fundingChannelId)?.name ?? '指定资金渠道'] : []),
 ])
 const currentScrollKey = computed(() => ledgerScrollKey(session.session?.accountId ?? '', route.fullPath))
+const exportRequest = computed(() => ({ scope: 'CURRENT_FILTERS' as const, ...filters.value }))
+
+function showExportNotice(message: string, kind: 'success' | 'error'): void {
+  pendingUndo.value = undefined
+  toastMessage.value = message
+  toastKind.value = kind
+  toastOpen.value = true
+}
 
 watch([() => route.fullPath, () => preferences.status], async () => {
   if (preferences.status === 'idle' || preferences.status === 'loading') return
@@ -338,6 +347,10 @@ onBeforeUnmount(() => { fundingRequest.cancel(); editRequest.cancel(); adjustmen
         <h1>收支明细</h1>
         <p>{{ filters.lifecycle === 'ACTIVE' ? '按上海业务日期分组，稳定加载每一笔收支与退款/报销调整。' : '删除后 30 天内可恢复，也可经确认永久删除。' }}</p>
       </div>
+      <DataExportAction
+        :request="exportRequest"
+        @notify="showExportNotice"
+      />
     </header>
 
     <section

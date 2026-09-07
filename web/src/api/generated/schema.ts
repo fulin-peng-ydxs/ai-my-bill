@@ -314,6 +314,74 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/exports": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 按当前筛选快照或全部个人数据创建异步 CSV 导出 */
+        post: operations["createPersonalExport"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/exports/{exportId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 查询本人导出任务状态与安全下载入口 */
+        get: operations["getPersonalExport"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/exports/{exportId}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 取消本人尚未完成的导出任务 */
+        post: operations["cancelPersonalExport"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/exports/{exportId}/download": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 下载本人尚未过期的 CSV 导出文件 */
+        get: operations["downloadPersonalExport"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/ledger-entries": {
         parameters: {
             query?: never;
@@ -1054,6 +1122,38 @@ export interface components {
          * @enum {string}
          */
         LedgerDateRange: "TODAY" | "THIS_WEEK" | "THIS_MONTH" | "LAST_MONTH" | "THIS_YEAR" | "CUSTOM";
+        /** @enum {string} */
+        ExportScope: "CURRENT_FILTERS" | "ALL_DATA";
+        /** @enum {string} */
+        ExportStatus: "PENDING" | "RUNNING" | "SUCCEEDED" | "FAILED" | "CANCELLED" | "EXPIRED";
+        CreateExportRequest: {
+            scope: components["schemas"]["ExportScope"];
+            type?: components["schemas"]["LedgerEntryTypeFilter"];
+            lifecycle?: components["schemas"]["LedgerLifecycleFilter"];
+            /** Format: uuid */
+            fundingChannelId?: string;
+            range?: components["schemas"]["LedgerDateRange"];
+            /** Format: date */
+            startDate?: string;
+            /** Format: date */
+            endDate?: string;
+            /** @default  */
+            query: string;
+        };
+        ExportResponse: {
+            /** Format: uuid */
+            id: string;
+            scope: components["schemas"]["ExportScope"];
+            status: components["schemas"]["ExportStatus"];
+            /** Format: int64 */
+            rowCount: number;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            expiresAt: string;
+            errorMessage?: string;
+            downloadUrl?: string;
+        };
         LedgerItem: {
             /** Format: uuid */
             id: string;
@@ -2048,6 +2148,122 @@ export interface operations {
             400: components["responses"]["ValidationError"];
             401: components["responses"]["AuthenticationError"];
             403: components["responses"]["AuthorizationError"];
+        };
+    };
+    createPersonalExport: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateExportRequest"];
+            };
+        };
+        responses: {
+            /** @description 已创建或幂等返回本人导出任务 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExportResponse"];
+                };
+            };
+            400: components["responses"]["ValidationError"];
+            401: components["responses"]["AuthenticationError"];
+            403: components["responses"]["AuthorizationError"];
+            409: components["responses"]["ConflictError"];
+        };
+    };
+    getPersonalExport: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                exportId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 导出任务状态 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExportResponse"];
+                };
+            };
+            401: components["responses"]["AuthenticationError"];
+            403: components["responses"]["AuthorizationError"];
+            404: components["responses"]["NotFoundError"];
+        };
+    };
+    cancelPersonalExport: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                exportId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 取消结果或当前终态 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExportResponse"];
+                };
+            };
+            401: components["responses"]["AuthenticationError"];
+            403: components["responses"]["AuthorizationError"];
+            404: components["responses"]["NotFoundError"];
+        };
+    };
+    downloadPersonalExport: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                exportId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description UTF-8 BOM CSV；文本字段已进行电子表格公式防护 */
+            200: {
+                headers: {
+                    "Content-Disposition"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/csv": string;
+                };
+            };
+            401: components["responses"]["AuthenticationError"];
+            403: components["responses"]["AuthorizationError"];
+            404: components["responses"]["NotFoundError"];
+            409: components["responses"]["ConflictError"];
+            /** @description 文件已过期或已清理 */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
         };
     };
     listLedgerEntries: {

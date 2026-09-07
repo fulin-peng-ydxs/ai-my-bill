@@ -2,7 +2,7 @@ openapi: 3.1.0
 info:
   title: 我的账单 API
   version: 0.1.0
-  description: 同源 /api/v1 接口契约；T14 已开放认证、用户与字典治理、个人偏好、收支填报、日常模板及有效收支明细查询。
+  description: 同源 /api/v1 接口契约；T18 已开放认证、用户与字典治理、个人偏好、收支填报、统一明细生命周期及个人数据导出。
 servers:
   - url: /api/v1
 security:
@@ -495,6 +495,72 @@ paths:
         "400": { $ref: "#/components/responses/ValidationError" }
         "401": { $ref: "#/components/responses/AuthenticationError" }
         "403": { $ref: "#/components/responses/AuthorizationError" }
+  /exports:
+    post:
+      operationId: createPersonalExport
+      summary: 按当前筛选快照或全部个人数据创建异步 CSV 导出
+      tags: [exports]
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateExportRequest" }
+      responses:
+        "200":
+          description: 已创建或幂等返回本人导出任务
+          content: { application/json: { schema: { $ref: "#/components/schemas/ExportResponse" } } }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "401": { $ref: "#/components/responses/AuthenticationError" }
+        "403": { $ref: "#/components/responses/AuthorizationError" }
+        "409": { $ref: "#/components/responses/ConflictError" }
+  /exports/{exportId}:
+    get:
+      operationId: getPersonalExport
+      summary: 查询本人导出任务状态与安全下载入口
+      tags: [exports]
+      parameters:
+        - { name: exportId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200": { description: 导出任务状态, content: { application/json: { schema: { $ref: "#/components/schemas/ExportResponse" } } } }
+        "401": { $ref: "#/components/responses/AuthenticationError" }
+        "403": { $ref: "#/components/responses/AuthorizationError" }
+        "404": { $ref: "#/components/responses/NotFoundError" }
+  /exports/{exportId}/cancel:
+    post:
+      operationId: cancelPersonalExport
+      summary: 取消本人尚未完成的导出任务
+      tags: [exports]
+      parameters:
+        - { name: exportId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200": { description: 取消结果或当前终态, content: { application/json: { schema: { $ref: "#/components/schemas/ExportResponse" } } } }
+        "401": { $ref: "#/components/responses/AuthenticationError" }
+        "403": { $ref: "#/components/responses/AuthorizationError" }
+        "404": { $ref: "#/components/responses/NotFoundError" }
+  /exports/{exportId}/download:
+    get:
+      operationId: downloadPersonalExport
+      summary: 下载本人尚未过期的 CSV 导出文件
+      tags: [exports]
+      parameters:
+        - { name: exportId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: UTF-8 BOM CSV；文本字段已进行电子表格公式防护
+          headers:
+            Content-Disposition: { schema: { type: string } }
+          content:
+            text/csv: { schema: { type: string, format: binary } }
+        "401": { $ref: "#/components/responses/AuthenticationError" }
+        "403": { $ref: "#/components/responses/AuthorizationError" }
+        "404": { $ref: "#/components/responses/NotFoundError" }
+        "409": { $ref: "#/components/responses/ConflictError" }
+        "410": { description: 文件已过期或已清理, content: { application/json: { schema: { $ref: "#/components/schemas/ApiError" } } } }
   /ledger-entries:
     get:
       operationId: listLedgerEntries
@@ -1527,6 +1593,38 @@ components:
       type: string
       enum: [TODAY, THIS_WEEK, THIS_MONTH, LAST_MONTH, THIS_YEAR, CUSTOM]
       default: TODAY
+    ExportScope:
+      type: string
+      enum: [CURRENT_FILTERS, ALL_DATA]
+    ExportStatus:
+      type: string
+      enum: [PENDING, RUNNING, SUCCEEDED, FAILED, CANCELLED, EXPIRED]
+    CreateExportRequest:
+      type: object
+      additionalProperties: false
+      required: [scope]
+      properties:
+        scope: { $ref: "#/components/schemas/ExportScope" }
+        type: { $ref: "#/components/schemas/LedgerEntryTypeFilter" }
+        lifecycle: { $ref: "#/components/schemas/LedgerLifecycleFilter" }
+        fundingChannelId: { type: string, format: uuid }
+        range: { $ref: "#/components/schemas/LedgerDateRange" }
+        startDate: { type: string, format: date }
+        endDate: { type: string, format: date }
+        query: { type: string, maxLength: 200, default: "" }
+    ExportResponse:
+      type: object
+      additionalProperties: false
+      required: [id, scope, status, rowCount, createdAt, expiresAt]
+      properties:
+        id: { type: string, format: uuid }
+        scope: { $ref: "#/components/schemas/ExportScope" }
+        status: { $ref: "#/components/schemas/ExportStatus" }
+        rowCount: { type: integer, format: int64, minimum: 0 }
+        createdAt: { type: string, format: date-time }
+        expiresAt: { type: string, format: date-time }
+        errorMessage: { type: string, minLength: 1, maxLength: 500 }
+        downloadUrl: { type: string, pattern: "^/api/v1/exports/[0-9a-f-]+/download$" }
     LedgerItem:
       type: object
       additionalProperties: false

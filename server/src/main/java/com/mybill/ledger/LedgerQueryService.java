@@ -49,7 +49,7 @@ class LedgerQueryService {
         });
     }
 
-    private DateBounds bounds(DateRange range, LocalDate customStart, LocalDate customEnd) {
+    DateBounds bounds(DateRange range, LocalDate customStart, LocalDate customEnd) {
         LocalDate today = LocalDate.now(clock.withZone(BUSINESS_ZONE));
         return switch (range) {
             case TODAY -> new DateBounds(today, today);
@@ -96,5 +96,5 @@ class LedgerQueryService {
                 java.util.Map.of(field, List.of(message)));
     }
 
-    private record DateBounds(LocalDate start, LocalDate end) { }
+    record DateBounds(LocalDate start, LocalDate end) { }
 }

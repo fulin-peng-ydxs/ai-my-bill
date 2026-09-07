@@ -26,9 +26,9 @@ public final class JobCoordinator {
     @Autowired
     public JobCoordinator(JobRunRepository repository, JobDefinitionRegistry registry,
                           TenantDatabaseExecutor tenantTransactions, PlatformTransactionManager manager,
-                          MeterRegistry meters, JobRunnerProperties properties) {
+                          MeterRegistry meters, JobRunnerProperties properties, Clock clock) {
         this(repository, registry, tenantTransactions, new TransactionTemplate(manager), meters, properties,
-                Clock.systemUTC(), UUID.randomUUID().toString());
+                clock, UUID.randomUUID().toString());
     }
 
     JobCoordinator(JobRunRepository repository, JobDefinitionRegistry registry,
