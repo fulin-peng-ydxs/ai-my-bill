@@ -7,7 +7,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 public interface JobRunRepository {
-    UUID schedule(String jobType, UUID tenantId, String batchKey, int maxAttempts, Instant now);
+    UUID schedule(String jobType, UUID tenantId, String batchKey, int maxAttempts, Instant availableAt, Instant now);
     Optional<JobRun> find(UUID runId);
     Optional<JobRun> claimNext(Collection<String> jobTypes, String owner, Instant now, Instant leaseUntil);
     boolean renew(UUID runId, String owner, Instant now, Instant leaseUntil);

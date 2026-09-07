@@ -62,7 +62,7 @@ class PostgresSchemaIntegrationTest {
                 + "('09000000-0000-0000-0000-000000000001','09000000-0000-0000-0000-000000000002','旧商品','旧商品','2026-01-01T00:00:00Z'),"
                 + "('09000000-0000-0000-0000-000000000001','09000000-0000-0000-0000-000000000003','新商品','新商品','2026-02-01T00:00:00Z')");
         flyway = Flyway.configure().dataSource(jdbcUrl, "my_bill_migration", "migration_test").load();
-        assertThat(flyway.migrate().migrationsExecuted).isEqualTo(2);
+        assertThat(flyway.migrate().migrationsExecuted).isEqualTo(3);
         assertThat(queryAdminString("SELECT string_agg(display_name || ':' || sort_order, ',' ORDER BY sort_order) "
                 + "FROM product WHERE tenant_id='09000000-0000-0000-0000-000000000001'"))
                 .isEqualTo("新商品:0,旧商品:10");
@@ -243,8 +243,8 @@ class PostgresSchemaIntegrationTest {
         DriverManagerDataSource appDataSource = new DriverManagerDataSource(jdbcUrl, "my_bill_app", "app_test");
         JdbcJobRunRepository jobs = new JdbcJobRunRepository(JdbcClient.create(appDataSource));
         var now = java.time.Instant.parse("2026-09-05T12:00:00Z");
-        UUID runId = jobs.schedule("T6_TEST", null, "same-batch", 3, now);
-        assertThat(jobs.schedule("T6_TEST", null, "same-batch", 3, now)).isEqualTo(runId);
+        UUID runId = jobs.schedule("T6_TEST", null, "same-batch", 3, now, now);
+        assertThat(jobs.schedule("T6_TEST", null, "same-batch", 3, now, now)).isEqualTo(runId);
 
         try (var executor = Executors.newFixedThreadPool(2)) {
             var first = executor.submit(() -> jobs.claimNext(java.util.List.of("T6_TEST"), "worker-a", now, now.plusSeconds(30)));
@@ -258,7 +258,7 @@ class PostgresSchemaIntegrationTest {
             jobs.cancel(runId, claimed.leaseOwner(), 0, now.plusSeconds(2));
         }
 
-        UUID expiredId = jobs.schedule("T6_TEST", null, "expired-batch", 3, now);
+        UUID expiredId = jobs.schedule("T6_TEST", null, "expired-batch", 3, now, now);
         jobs.claimNext(java.util.List.of("T6_TEST"), "dead-worker", now, now.plusSeconds(30)).orElseThrow();
         executeAdmin("UPDATE job_run SET lease_expires_at='2026-09-05T11:59:59Z' WHERE id='" + expiredId + "'");
         assertThat(jobs.findExpired(now)).extracting(run -> run.id()).contains(expiredId);
@@ -288,12 +288,12 @@ class PostgresSchemaIntegrationTest {
         DriverManagerDataSource appDataSource = new DriverManagerDataSource(jdbcUrl, "my_bill_app", "app_test");
         JdbcClient appJdbc = JdbcClient.create(appDataSource);
 
-        new SchemaVersionGuard(appJdbc, new SchemaVersionProperties(true, "010")).run(null);
+        new SchemaVersionGuard(appJdbc, new SchemaVersionProperties(true, "011")).run(null);
         assertThatThrownBy(() -> new SchemaVersionGuard(
                 appJdbc, new SchemaVersionProperties(true, "8")).run(null))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("期望 8")
-                .hasMessageContaining("实际 010");
+                .hasMessageContaining("实际 011");
     }
 
     @Test
@@ -301,7 +301,7 @@ class PostgresSchemaIntegrationTest {
     void documentedRollbackScriptsAreExecutableInAnEmptyEnvironment() throws Exception {
         executeAdmin("TRUNCATE tenant CASCADE");
         executeAdmin("UPDATE default_dictionary_item SET display_name='工资' WHERE stable_key='salary'");
-        for (int version = 10; version >= 1; version--) {
+        for (int version = 11; version >= 1; version--) {
             executeAdmin(readResource(String.format("db/rollback/U%03d__%s.sql", version, rollbackName(version))));
         }
         assertThat(queryAdminLong("SELECT count(*) FROM information_schema.tables WHERE table_schema='public' "
@@ -358,6 +358,7 @@ class PostgresSchemaIntegrationTest {
             case 8 -> "job_execution_contract";
             case 9 -> "product_sort_order";
             case 10 -> "product_merge_and_default_dictionary_normalization";
+            case 11 -> "delayed_job_schedule";
             default -> throw new IllegalArgumentException("unsupported rollback version " + version);
         };
     }

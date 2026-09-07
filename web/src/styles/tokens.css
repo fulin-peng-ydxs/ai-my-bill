@@ -862,6 +862,7 @@ textarea:disabled {
 .ledger-type-income { color: var(--color-income-text); }
 .ledger-type-adjustment { color: var(--color-income-text); border-style: dashed; }
 .ledger-item-amount { align-self: start; font-family: var(--font-data); font-size: 17px; white-space: nowrap; }
+.ledger-row-busy { justify-self: end; color: var(--color-muted); font-size: 12px; }
 .money-expense { color: var(--color-expense-text); }
 .money-income { color: var(--color-income-text); }
 .money-adjustment { color: var(--color-income-text); }

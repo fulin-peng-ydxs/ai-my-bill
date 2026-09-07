@@ -40,9 +40,14 @@ public final class JobCoordinator {
     }
 
     public UUID schedule(String type, UUID tenantId, String batchKey) {
+        return scheduleAt(type, tenantId, batchKey, Instant.now(clock));
+    }
+
+    /** 注册一个到指定时刻才可领取的任务，业务键保证重复调度返回同一任务。 */
+    public UUID scheduleAt(String type, UUID tenantId, String batchKey, Instant availableAt) {
         JobDefinition definition = registry.require(type);
         enforceScope(definition, tenantId);
-        return repository.schedule(type, tenantId, batchKey, definition.maxAttempts(), Instant.now(clock));
+        return repository.schedule(type, tenantId, batchKey, definition.maxAttempts(), availableAt, Instant.now(clock));
     }
 
     public boolean runNext() {

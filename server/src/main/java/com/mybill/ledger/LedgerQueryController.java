@@ -23,12 +23,13 @@ public class LedgerQueryController {
     @GetMapping
     LedgerPage query(@AuthenticationPrincipal CurrentPrincipal principal,
                      @RequestParam(defaultValue = "ALL") EntryTypeFilter type,
+                     @RequestParam(defaultValue = "ACTIVE") LifecycleFilter lifecycle,
                      @RequestParam(required = false) UUID fundingChannelId,
                      @RequestParam(defaultValue = "TODAY") DateRange range,
                      @RequestParam(required = false) LocalDate startDate,
                      @RequestParam(required = false) LocalDate endDate,
                      @RequestParam(defaultValue = "") @Size(max = 200) String query,
                      @RequestParam(required = false) @Size(max = 500) String cursor) {
-        return service.query(principal, type, fundingChannelId, range, startDate, endDate, query, cursor);
+        return service.query(principal, type, lifecycle, fundingChannelId, range, startDate, endDate, query, cursor);
     }
 }

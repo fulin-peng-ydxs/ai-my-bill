@@ -43,7 +43,7 @@ management:
 my-bill:
   schema:
     validation-enabled: false
-    expected-version: "010"
+    expected-version: "011"
   auth:
     session-cookie-name: MY_BILL_SESSION
     session-duration: PT12H
@@ -55,3 +55,4 @@ my-bill:
     rate-limit-pepper: ${MY_BILL_AUTH_RATE_LIMIT_PEPPER:my-bill-local-rate-limit-pepper}
   jobs:
     lease-duration: PT30S
+    poll-delay-ms: ${MY_BILL_JOB_POLL_DELAY_MS:5000}

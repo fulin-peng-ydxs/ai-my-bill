@@ -22,14 +22,16 @@ public class JdbcJobRunRepository implements JobRunRepository {
 
     @Override
     @Transactional
-    public UUID schedule(String type, UUID tenantId, String batchKey, int maxAttempts, Instant now) {
+    public UUID schedule(String type, UUID tenantId, String batchKey, int maxAttempts,
+                         Instant availableAt, Instant now) {
         validate(type, batchKey, maxAttempts);
+        if (availableAt == null) throw new IllegalArgumentException("availableAt is required");
         UUID id = UUID.randomUUID();
         jdbc.sql("""
-                INSERT INTO job_run(id, tenant_id, job_type, batch_key, status, max_attempts, created_at, updated_at)
-                VALUES (:id, :tenantId, :type, :batchKey, 'PENDING', :maxAttempts, :now, :now)
+                INSERT INTO job_run(id, tenant_id, job_type, batch_key, status, max_attempts, available_at, created_at, updated_at)
+                VALUES (:id, :tenantId, :type, :batchKey, 'PENDING', :maxAttempts, :availableAt, :now, :now)
                 ON CONFLICT DO NOTHING
-                """).param("id", id).param("tenantId", tenantId).param("type", type)
+                """).param("id", id).param("tenantId", tenantId).param("type", type).param("availableAt", ts(availableAt))
                 .param("batchKey", batchKey).param("maxAttempts", maxAttempts).param("now", ts(now)).update();
         return jdbc.sql("SELECT id FROM job_run WHERE job_type=:type AND tenant_id IS NOT DISTINCT FROM :tenantId AND batch_key=:batchKey")
                 .param("type", type).param("tenantId", tenantId).param("batchKey", batchKey)
@@ -48,9 +50,9 @@ public class JdbcJobRunRepository implements JobRunRepository {
         return jdbc.sql("""
                 WITH candidate AS (
                     SELECT id FROM job_run
-                    WHERE status='PENDING' AND batch_key IS NOT NULL
+                    WHERE status='PENDING' AND batch_key IS NOT NULL AND available_at<=:now
                       AND attempt_count < max_attempts AND job_type IN (:types)
-                    ORDER BY created_at, id FOR UPDATE SKIP LOCKED LIMIT 1
+                    ORDER BY available_at, created_at, id FOR UPDATE SKIP LOCKED LIMIT 1
                 )
                 UPDATE job_run j SET status='RUNNING', started_at=COALESCE(started_at,:now),
                     attempt_count=attempt_count+1, lease_owner=:owner, lease_expires_at=:leaseUntil,

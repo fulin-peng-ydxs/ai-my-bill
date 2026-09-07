@@ -498,12 +498,16 @@ paths:
   /ledger-entries:
     get:
       operationId: listLedgerEntries
-      summary: 按稳定游标查询当前租户的有效支出、收入与生效调整
+      summary: 按稳定游标查询当前租户的有效账目或回收站
       tags: [ledger]
       parameters:
         - name: type
           in: query
           schema: { $ref: "#/components/schemas/LedgerEntryTypeFilter" }
+        - name: lifecycle
+          in: query
+          description: 有效账目与回收站是互斥集合。
+          schema: { $ref: "#/components/schemas/LedgerLifecycleFilter" }
         - name: fundingChannelId
           in: query
           schema: { type: string, format: uuid }
@@ -527,7 +531,7 @@ paths:
           schema: { type: string, maxLength: 500 }
       responses:
         "200":
-          description: 每批最多 20 笔，按业务日期、业务时间、创建时间和 ID 倒序。
+          description: 每批最多 20 笔；有效账目按业务时间倒序，回收站按删除时间倒序。
           content:
             application/json:
               schema: { $ref: "#/components/schemas/LedgerPage" }
@@ -535,6 +539,54 @@ paths:
         "401": { $ref: "#/components/responses/AuthenticationError" }
         "403": { $ref: "#/components/responses/AuthorizationError" }
         "503": { $ref: "#/components/responses/ServiceUnavailableError" }
+  /ledger-entries/{ledgerId}/trash:
+    post:
+      operationId: trashLedgerEntry
+      summary: 将当前租户的一条有效收支移入 30 天回收站
+      tags: [ledger]
+      parameters:
+        - { name: ledgerId, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: Idempotency-Key, in: header, required: true, schema: { type: string, minLength: 1, maxLength: 128 } }
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/LedgerLifecycleRequest" } } } }
+      responses:
+        "200": { description: 已移入回收站；支出的有效调整同步冻结。, content: { application/json: { schema: { $ref: "#/components/schemas/LedgerLifecycleResponse" } } } }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "401": { $ref: "#/components/responses/AuthenticationError" }
+        "403": { $ref: "#/components/responses/AuthorizationError" }
+        "404": { $ref: "#/components/responses/NotFoundError" }
+        "409": { $ref: "#/components/responses/ConflictError" }
+  /ledger-entries/{ledgerId}/restore:
+    post:
+      operationId: restoreLedgerEntry
+      summary: 在 30 天期限内恢复当前租户的一条收支
+      tags: [ledger]
+      parameters:
+        - { name: ledgerId, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: Idempotency-Key, in: header, required: true, schema: { type: string, minLength: 1, maxLength: 128 } }
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/LedgerLifecycleRequest" } } } }
+      responses:
+        "200": { description: 已恢复；随来源冻结的调整同步重生效。, content: { application/json: { schema: { $ref: "#/components/schemas/LedgerLifecycleResponse" } } } }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "401": { $ref: "#/components/responses/AuthenticationError" }
+        "403": { $ref: "#/components/responses/AuthorizationError" }
+        "404": { $ref: "#/components/responses/NotFoundError" }
+        "409": { $ref: "#/components/responses/ConflictError" }
+  /ledger-entries/{ledgerId}/purge:
+    post:
+      operationId: purgeLedgerEntry
+      summary: 永久删除回收站收支并原子清理全部关联调整
+      tags: [ledger]
+      parameters:
+        - { name: ledgerId, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: Idempotency-Key, in: header, required: true, schema: { type: string, minLength: 1, maxLength: 128 } }
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/LedgerLifecycleRequest" } } } }
+      responses:
+        "204": { description: 原账目与关联调整已在同一事务永久删除。 }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "401": { $ref: "#/components/responses/AuthenticationError" }
+        "403": { $ref: "#/components/responses/AuthorizationError" }
+        "404": { $ref: "#/components/responses/NotFoundError" }
+        "409": { $ref: "#/components/responses/ConflictError" }
   /ledger-entries/{ledgerId}/daily-template:
     put:
       operationId: upsertDailyTemplateFromLedger
@@ -634,6 +686,54 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/ExpenseAdjustmentResponse" }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "401": { $ref: "#/components/responses/AuthenticationError" }
+        "403": { $ref: "#/components/responses/AuthorizationError" }
+        "404": { $ref: "#/components/responses/NotFoundError" }
+        "409": { $ref: "#/components/responses/ConflictError" }
+  /adjustments/{adjustmentId}/trash:
+    post:
+      operationId: trashExpenseAdjustment
+      summary: 将一条生效调整移入 30 天回收站
+      tags: [adjustments]
+      parameters:
+        - { name: adjustmentId, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: Idempotency-Key, in: header, required: true, schema: { type: string, minLength: 1, maxLength: 128 } }
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/LedgerLifecycleRequest" } } } }
+      responses:
+        "200": { description: 已移入回收站并退出净支出口径。, content: { application/json: { schema: { $ref: "#/components/schemas/LedgerLifecycleResponse" } } } }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "401": { $ref: "#/components/responses/AuthenticationError" }
+        "403": { $ref: "#/components/responses/AuthorizationError" }
+        "404": { $ref: "#/components/responses/NotFoundError" }
+        "409": { $ref: "#/components/responses/ConflictError" }
+  /adjustments/{adjustmentId}/restore:
+    post:
+      operationId: restoreExpenseAdjustment
+      summary: 在来源支出有效且累计金额合法时恢复调整
+      tags: [adjustments]
+      parameters:
+        - { name: adjustmentId, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: Idempotency-Key, in: header, required: true, schema: { type: string, minLength: 1, maxLength: 128 } }
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/LedgerLifecycleRequest" } } } }
+      responses:
+        "200": { description: 调整已恢复并重新冲减来源支出。, content: { application/json: { schema: { $ref: "#/components/schemas/LedgerLifecycleResponse" } } } }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "401": { $ref: "#/components/responses/AuthenticationError" }
+        "403": { $ref: "#/components/responses/AuthorizationError" }
+        "404": { $ref: "#/components/responses/NotFoundError" }
+        "409": { $ref: "#/components/responses/ConflictError" }
+  /adjustments/{adjustmentId}/purge:
+    post:
+      operationId: purgeExpenseAdjustment
+      summary: 永久删除回收站中的一条调整
+      tags: [adjustments]
+      parameters:
+        - { name: adjustmentId, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: Idempotency-Key, in: header, required: true, schema: { type: string, minLength: 1, maxLength: 128 } }
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/LedgerLifecycleRequest" } } } }
+      responses:
+        "204": { description: 调整已永久删除。 }
         "400": { $ref: "#/components/responses/ValidationError" }
         "401": { $ref: "#/components/responses/AuthenticationError" }
         "403": { $ref: "#/components/responses/AuthorizationError" }
@@ -1416,6 +1516,10 @@ components:
       type: string
       enum: [ALL, EXPENSE, INCOME, ADJUSTMENT]
       default: ALL
+    LedgerLifecycleFilter:
+      type: string
+      enum: [ACTIVE, TRASHED]
+      default: ACTIVE
     LedgerItemType:
       type: string
       enum: [EXPENSE, INCOME, ADJUSTMENT]
@@ -1428,7 +1532,8 @@ components:
       additionalProperties: false
       required: [id, entryType, occurredAt, businessDate, title, categoryName, counterpartyName,
         fundingChannelName, amount, createdAt, adjustmentType, originalExpenseId,
-        effectiveAdjustmentAmount, netExpenseAmount, fullyAdjusted]
+        effectiveAdjustmentAmount, netExpenseAmount, fullyAdjusted, version, lifecycleStatus,
+        linkedAdjustmentCount]
       properties:
         id: { type: string, format: uuid }
         entryType: { $ref: "#/components/schemas/LedgerItemType" }
@@ -1449,12 +1554,40 @@ components:
         netExpenseAmount:
           oneOf: [{ $ref: "#/components/schemas/Money" }, { type: "null" }]
         fullyAdjusted: { type: boolean }
+        version: { type: integer, format: int64, minimum: 0 }
+        lifecycleStatus:
+          type: string
+          enum: [ACTIVE, EFFECTIVE, TRASHED]
+        deletedAt: { type: string, format: date-time }
+        purgeAfter: { type: string, format: date-time }
+        remainingDays: { type: integer, minimum: 0, maximum: 30 }
+        linkedAdjustmentCount: { type: integer, minimum: 0 }
     ExpenseAdjustmentType:
       type: string
       enum: [REFUND, REIMBURSEMENT]
     ExpenseAdjustmentStatus:
       type: string
-      enum: [EFFECTIVE, REVOKED]
+      enum: [EFFECTIVE, REVOKED, TRASHED, SOURCE_FROZEN]
+    LedgerLifecycleRequest:
+      type: object
+      additionalProperties: false
+      required: [version]
+      properties:
+        version: { type: integer, format: int64, minimum: 0 }
+    LedgerLifecycleResponse:
+      type: object
+      additionalProperties: false
+      required: [id, entryType, lifecycleStatus, version, linkedAdjustmentCount]
+      properties:
+        id: { type: string, format: uuid }
+        entryType: { $ref: "#/components/schemas/LedgerItemType" }
+        lifecycleStatus:
+          type: string
+          enum: [ACTIVE, EFFECTIVE, TRASHED]
+        deletedAt: { type: string, format: date-time }
+        purgeAfter: { type: string, format: date-time }
+        version: { type: integer, format: int64, minimum: 0 }
+        linkedAdjustmentCount: { type: integer, minimum: 0 }
     CreateExpenseAdjustmentRequest:
       type: object
       additionalProperties: false

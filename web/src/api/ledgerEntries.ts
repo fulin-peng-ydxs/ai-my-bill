@@ -5,10 +5,12 @@ export type LedgerItem = components['schemas']['LedgerItem']
 export type LedgerPage = components['schemas']['LedgerPage']
 export type LedgerEntryTypeFilter = components['schemas']['LedgerEntryTypeFilter']
 export type LedgerDateRange = components['schemas']['LedgerDateRange']
+export type LedgerLifecycleFilter = components['schemas']['LedgerLifecycleFilter']
 
 export interface LedgerFilters {
   query: string
   type: LedgerEntryTypeFilter
+  lifecycle: LedgerLifecycleFilter
   fundingChannelId?: string
   range: LedgerDateRange
   startDate?: string
@@ -20,7 +22,7 @@ export function listLedgerEntries(
   cursor?: string,
   signal?: AbortSignal,
 ): Promise<LedgerPage> {
-  const params = new URLSearchParams({ query: filters.query, type: filters.type, range: filters.range })
+  const params = new URLSearchParams({ query: filters.query, type: filters.type, lifecycle: filters.lifecycle, range: filters.range })
   if (filters.fundingChannelId) params.set('fundingChannelId', filters.fundingChannelId)
   if (filters.range === 'CUSTOM' && filters.startDate && filters.endDate) {
     params.set('startDate', filters.startDate)

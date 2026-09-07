@@ -66,7 +66,7 @@ class ExpenseAdjustmentService {
 
     AdjustmentResponse find(CurrentPrincipal principal, UUID adjustmentId) {
         return tenantTransactions.execute(principal, () -> repository.find(adjustmentId)
-                .orElseThrow(() -> notFound("调整不存在或已不在可查看状态。")));
+                .orElseThrow(() -> notFound("调整不存在或不属于当前用户。")));
     }
 
     AdjustmentResponse revoke(CurrentPrincipal principal, UUID adjustmentId, String requestedKey,

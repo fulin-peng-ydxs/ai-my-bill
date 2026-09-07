@@ -13,6 +13,7 @@ defineProps<{
   open: boolean
   title: string
   actions: readonly LedgerContextAction[]
+  description?: string
 }>()
 
 defineEmits<{
@@ -26,7 +27,7 @@ defineEmits<{
     :id="id"
     :open="open"
     :title="title"
-    description="选择要对这条有效账目执行的操作。"
+    :description="description ?? '选择要对这条账目执行的操作。'"
     @update:open="$emit('update:open', $event)"
   >
     <div class="context-action-list">

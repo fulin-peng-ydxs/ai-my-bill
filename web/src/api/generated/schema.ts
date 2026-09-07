@@ -321,10 +321,61 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** 按稳定游标查询当前租户的有效支出、收入与生效调整 */
+        /** 按稳定游标查询当前租户的有效账目或回收站 */
         get: operations["listLedgerEntries"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/ledger-entries/{ledgerId}/trash": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 将当前租户的一条有效收支移入 30 天回收站 */
+        post: operations["trashLedgerEntry"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/ledger-entries/{ledgerId}/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 在 30 天期限内恢复当前租户的一条收支 */
+        post: operations["restoreLedgerEntry"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/ledger-entries/{ledgerId}/purge": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 永久删除回收站收支并原子清理全部关联调整 */
+        post: operations["purgeLedgerEntry"];
         delete?: never;
         options?: never;
         head?: never;
@@ -393,6 +444,57 @@ export interface paths {
         put?: never;
         /** 撤销当前租户的一条生效调整并恢复原支出净额 */
         post: operations["revokeExpenseAdjustment"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/adjustments/{adjustmentId}/trash": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 将一条生效调整移入 30 天回收站 */
+        post: operations["trashExpenseAdjustment"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/adjustments/{adjustmentId}/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 在来源支出有效且累计金额合法时恢复调整 */
+        post: operations["restoreExpenseAdjustment"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/adjustments/{adjustmentId}/purge": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 永久删除回收站中的一条调整 */
+        post: operations["purgeExpenseAdjustment"];
         delete?: never;
         options?: never;
         head?: never;
@@ -940,6 +1042,11 @@ export interface components {
          * @enum {string}
          */
         LedgerEntryTypeFilter: "ALL" | "EXPENSE" | "INCOME" | "ADJUSTMENT";
+        /**
+         * @default ACTIVE
+         * @enum {string}
+         */
+        LedgerLifecycleFilter: "ACTIVE" | "TRASHED";
         /** @enum {string} */
         LedgerItemType: "EXPENSE" | "INCOME" | "ADJUSTMENT";
         /**
@@ -969,11 +1076,39 @@ export interface components {
             effectiveAdjustmentAmount: components["schemas"]["Money"] | null;
             netExpenseAmount: components["schemas"]["Money"] | null;
             fullyAdjusted: boolean;
+            /** Format: int64 */
+            version: number;
+            /** @enum {string} */
+            lifecycleStatus: "ACTIVE" | "EFFECTIVE" | "TRASHED";
+            /** Format: date-time */
+            deletedAt?: string;
+            /** Format: date-time */
+            purgeAfter?: string;
+            remainingDays?: number;
+            linkedAdjustmentCount: number;
         };
         /** @enum {string} */
         ExpenseAdjustmentType: "REFUND" | "REIMBURSEMENT";
         /** @enum {string} */
-        ExpenseAdjustmentStatus: "EFFECTIVE" | "REVOKED";
+        ExpenseAdjustmentStatus: "EFFECTIVE" | "REVOKED" | "TRASHED" | "SOURCE_FROZEN";
+        LedgerLifecycleRequest: {
+            /** Format: int64 */
+            version: number;
+        };
+        LedgerLifecycleResponse: {
+            /** Format: uuid */
+            id: string;
+            entryType: components["schemas"]["LedgerItemType"];
+            /** @enum {string} */
+            lifecycleStatus: "ACTIVE" | "EFFECTIVE" | "TRASHED";
+            /** Format: date-time */
+            deletedAt?: string;
+            /** Format: date-time */
+            purgeAfter?: string;
+            /** Format: int64 */
+            version: number;
+            linkedAdjustmentCount: number;
+        };
         CreateExpenseAdjustmentRequest: {
             adjustmentType: components["schemas"]["ExpenseAdjustmentType"];
             amount: components["schemas"]["Money"];
@@ -1919,6 +2054,8 @@ export interface operations {
         parameters: {
             query?: {
                 type?: components["schemas"]["LedgerEntryTypeFilter"];
+                /** @description 有效账目与回收站是互斥集合。 */
+                lifecycle?: components["schemas"]["LedgerLifecycleFilter"];
                 fundingChannelId?: string;
                 range?: components["schemas"]["LedgerDateRange"];
                 /** @description range=CUSTOM 时必填。 */
@@ -1935,7 +2072,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description 每批最多 20 笔，按业务日期、业务时间、创建时间和 ID 倒序。 */
+            /** @description 每批最多 20 笔；有效账目按业务时间倒序，回收站按删除时间倒序。 */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -1948,6 +2085,103 @@ export interface operations {
             401: components["responses"]["AuthenticationError"];
             403: components["responses"]["AuthorizationError"];
             503: components["responses"]["ServiceUnavailableError"];
+        };
+    };
+    trashLedgerEntry: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path: {
+                ledgerId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LedgerLifecycleRequest"];
+            };
+        };
+        responses: {
+            /** @description 已移入回收站；支出的有效调整同步冻结。 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LedgerLifecycleResponse"];
+                };
+            };
+            400: components["responses"]["ValidationError"];
+            401: components["responses"]["AuthenticationError"];
+            403: components["responses"]["AuthorizationError"];
+            404: components["responses"]["NotFoundError"];
+            409: components["responses"]["ConflictError"];
+        };
+    };
+    restoreLedgerEntry: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path: {
+                ledgerId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LedgerLifecycleRequest"];
+            };
+        };
+        responses: {
+            /** @description 已恢复；随来源冻结的调整同步重生效。 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LedgerLifecycleResponse"];
+                };
+            };
+            400: components["responses"]["ValidationError"];
+            401: components["responses"]["AuthenticationError"];
+            403: components["responses"]["AuthorizationError"];
+            404: components["responses"]["NotFoundError"];
+            409: components["responses"]["ConflictError"];
+        };
+    };
+    purgeLedgerEntry: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path: {
+                ledgerId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LedgerLifecycleRequest"];
+            };
+        };
+        responses: {
+            /** @description 原账目与关联调整已在同一事务永久删除。 */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["ValidationError"];
+            401: components["responses"]["AuthenticationError"];
+            403: components["responses"]["AuthorizationError"];
+            404: components["responses"]["NotFoundError"];
+            409: components["responses"]["ConflictError"];
         };
     };
     upsertDailyTemplateFromLedger: {
@@ -2068,6 +2302,103 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["ExpenseAdjustmentResponse"];
                 };
+            };
+            400: components["responses"]["ValidationError"];
+            401: components["responses"]["AuthenticationError"];
+            403: components["responses"]["AuthorizationError"];
+            404: components["responses"]["NotFoundError"];
+            409: components["responses"]["ConflictError"];
+        };
+    };
+    trashExpenseAdjustment: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path: {
+                adjustmentId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LedgerLifecycleRequest"];
+            };
+        };
+        responses: {
+            /** @description 已移入回收站并退出净支出口径。 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LedgerLifecycleResponse"];
+                };
+            };
+            400: components["responses"]["ValidationError"];
+            401: components["responses"]["AuthenticationError"];
+            403: components["responses"]["AuthorizationError"];
+            404: components["responses"]["NotFoundError"];
+            409: components["responses"]["ConflictError"];
+        };
+    };
+    restoreExpenseAdjustment: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path: {
+                adjustmentId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LedgerLifecycleRequest"];
+            };
+        };
+        responses: {
+            /** @description 调整已恢复并重新冲减来源支出。 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LedgerLifecycleResponse"];
+                };
+            };
+            400: components["responses"]["ValidationError"];
+            401: components["responses"]["AuthenticationError"];
+            403: components["responses"]["AuthorizationError"];
+            404: components["responses"]["NotFoundError"];
+            409: components["responses"]["ConflictError"];
+        };
+    };
+    purgeExpenseAdjustment: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path: {
+                adjustmentId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LedgerLifecycleRequest"];
+            };
+        };
+        responses: {
+            /** @description 调整已永久删除。 */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             400: components["responses"]["ValidationError"];
             401: components["responses"]["AuthenticationError"];

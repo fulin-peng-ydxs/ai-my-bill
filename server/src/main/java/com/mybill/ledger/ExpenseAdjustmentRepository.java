@@ -61,7 +61,7 @@ class ExpenseAdjustmentRepository {
                        a.created_at,a.updated_at,a.version
                   FROM expense_adjustment a
                   JOIN ledger_entry l ON l.tenant_id=a.tenant_id AND l.id=a.original_expense_id
-                 WHERE a.id=:id AND a.status IN ('EFFECTIVE','REVOKED')
+                 WHERE a.id=:id
                 """).param("id", adjustmentId).query(ExpenseAdjustmentRepository::map).optional();
     }
 

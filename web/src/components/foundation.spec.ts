@@ -128,13 +128,13 @@ describe('shared frontend foundations', () => {
 
   it('renders grouped ledger items with explicit mixed-type and pagination semantics', async () => {
     const html = await render(IncrementalLedgerList, {
-      type: 'ALL', hasMore: true, loadingMore: false,
+      type: 'ALL', lifecycle: 'ACTIVE', hasMore: true, loadingMore: false,
       items: [{ id: '10000000-0000-4000-8000-000000000001', entryType: 'INCOME',
         occurredAt: '2026-09-07T01:00:00Z', businessDate: '2026-09-07', title: '项目奖金',
         categoryName: '奖金', counterpartyName: '客户甲', fundingChannelName: '银行卡',
         amount: '88.80', note: '需要完整显示并自然换行的长备注内容', createdAt: '2026-09-07T01:00:00Z',
         adjustmentType: null, originalExpenseId: null, effectiveAdjustmentAmount: null,
-        netExpenseAmount: null, fullyAdjusted: false }],
+        netExpenseAmount: null, fullyAdjusted: false, version: 0, lifecycleStatus: 'ACTIVE', linkedAdjustmentCount: 0 }],
     })
     expect(html).toContain('收入')
     expect(html).toContain('+¥88.80')
@@ -143,17 +143,52 @@ describe('shared frontend foundations', () => {
     expect(html).toContain('需要完整显示并自然换行的长备注内容')
   })
 
+  it('groups non-contiguous pages for the same business date under one heading', async () => {
+    const common = { entryType: 'INCOME', occurredAt: '2026-09-07T01:00:00Z', title: '项目奖金',
+      categoryName: '奖金', counterpartyName: '客户甲', fundingChannelName: '银行卡', amount: '88.80',
+      note: null, createdAt: '2026-09-07T01:00:00Z', adjustmentType: null, originalExpenseId: null,
+      effectiveAdjustmentAmount: null, netExpenseAmount: null, fullyAdjusted: false, version: 0,
+      lifecycleStatus: 'TRASHED', linkedAdjustmentCount: 0 }
+    const html = await render(IncrementalLedgerList, {
+      type: 'ALL', lifecycle: 'TRASHED', hasMore: false, loadingMore: false, items: [
+        { ...common, id: '1', businessDate: '2026-09-07' },
+        { ...common, id: '2', businessDate: '2026-09-06' },
+        { ...common, id: '3', businessDate: '2026-09-07' },
+      ],
+    })
+    expect(html.match(/9月7日/g)).toHaveLength(1)
+    expect(html.match(/9月6日/g)).toHaveLength(1)
+  })
+
   it('renders adjustment type and fully adjusted source state explicitly', async () => {
     const common = { occurredAt: '2026-09-07T01:00:00Z', businessDate: '2026-09-07',
       categoryName: '餐饮', fundingChannelName: '银行卡', note: null, createdAt: '2026-09-07T01:00:00Z' }
-    const html = await render(IncrementalLedgerList, { type: 'ALL', hasMore: false, loadingMore: false, items: [
+    const html = await render(IncrementalLedgerList, { type: 'ALL', lifecycle: 'ACTIVE', hasMore: false, loadingMore: false, items: [
       { ...common, id: '1', entryType: 'EXPENSE', title: '咖啡', counterpartyName: '1 杯', amount: '30.00',
-        adjustmentType: null, originalExpenseId: null, effectiveAdjustmentAmount: '30.00', netExpenseAmount: '0.00', fullyAdjusted: true },
+        adjustmentType: null, originalExpenseId: null, effectiveAdjustmentAmount: '30.00', netExpenseAmount: '0.00', fullyAdjusted: true,
+        version: 0, lifecycleStatus: 'ACTIVE', linkedAdjustmentCount: 1 },
       { ...common, id: '2', entryType: 'ADJUSTMENT', title: '退款', counterpartyName: '原支出 · 咖啡', amount: '30.00',
-        adjustmentType: 'REFUND', originalExpenseId: '1', effectiveAdjustmentAmount: '30.00', netExpenseAmount: '0.00', fullyAdjusted: true },
+        adjustmentType: 'REFUND', originalExpenseId: '1', effectiveAdjustmentAmount: '30.00', netExpenseAmount: '0.00', fullyAdjusted: true,
+        version: 0, lifecycleStatus: 'EFFECTIVE', linkedAdjustmentCount: 0 },
     ] })
     expect(html).toContain('已全额退款/报销')
     expect(html).toContain('退款')
     expect(html).toContain('+¥30.00')
+  })
+
+  it('renders recycle-bin expiry and linked cleanup impact without hiding it in color', async () => {
+    const html = await render(IncrementalLedgerList, { type: 'ALL', lifecycle: 'TRASHED', hasMore: false,
+      loadingMore: false, busyItemId: 'trash-1', items: [{
+        id: 'trash-1', entryType: 'EXPENSE', occurredAt: '2026-09-07T01:00:00Z', businessDate: '2026-09-07',
+        title: '咖啡', categoryName: '餐饮', counterpartyName: '1 杯', fundingChannelName: '银行卡', amount: '30.00',
+        createdAt: '2026-09-07T01:00:00Z', adjustmentType: null, originalExpenseId: null,
+        effectiveAdjustmentAmount: null, netExpenseAmount: null, fullyAdjusted: false, version: 1,
+        lifecycleStatus: 'TRASHED', deletedAt: '2026-09-07T02:00:00Z', purgeAfter: '2026-10-07T02:00:00Z',
+        remainingDays: 30, linkedAdjustmentCount: 2,
+      }] })
+    expect(html).toContain('回收站列表')
+    expect(html).toContain('剩余 30 天')
+    expect(html).toContain('联动清理 2 条调整')
+    expect(html).toContain('aria-busy="true"')
   })
 })

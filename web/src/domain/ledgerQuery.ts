@@ -1,10 +1,11 @@
 import type { LocationQuery, LocationQueryRaw } from 'vue-router'
 
-import type { LedgerDateRange, LedgerEntryTypeFilter, LedgerFilters } from '../api/ledgerEntries'
+import type { LedgerDateRange, LedgerEntryTypeFilter, LedgerFilters, LedgerLifecycleFilter } from '../api/ledgerEntries'
 
 const TYPES: readonly LedgerEntryTypeFilter[] = ['ALL', 'EXPENSE', 'INCOME', 'ADJUSTMENT']
 const DRILL_SCOPES: readonly LedgerDrillContext['scope'][] = ['ALL', 'EXPENSE', 'INCOME']
 const RANGES: readonly LedgerDateRange[] = ['TODAY', 'THIS_WEEK', 'THIS_MONTH', 'LAST_MONTH', 'THIS_YEAR', 'CUSTOM']
+const LIFECYCLES: readonly LedgerLifecycleFilter[] = ['ACTIVE', 'TRASHED']
 const UUID = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i
 const DATE = /^\d{4}-\d{2}-\d{2}$/
 const CONTEXT_TOKEN = /^[\p{L}\p{N}_-]{1,64}$/u
@@ -37,6 +38,9 @@ export function parseLedgerRoute(query: LocationQuery, defaultRange: LedgerDateR
   const rawType = one(query.type)
   const type = TYPES.includes(rawType as LedgerEntryTypeFilter) ? rawType as LedgerEntryTypeFilter : 'ALL'
   const rawRange = one(query.range)
+  const rawLifecycle = one(query.lifecycle)
+  const lifecycle = LIFECYCLES.includes(rawLifecycle as LedgerLifecycleFilter)
+    ? rawLifecycle as LedgerLifecycleFilter : 'ACTIVE'
   let range = RANGES.includes(rawRange as LedgerDateRange) ? rawRange as LedgerDateRange : defaultRange
   const rawStart = one(query.startDate)
   const rawEnd = one(query.endDate)
@@ -47,6 +51,7 @@ export function parseLedgerRoute(query: LocationQuery, defaultRange: LedgerDateR
   const filters: LedgerFilters = {
     query: rawSearch.length <= 200 ? rawSearch : '',
     type,
+    lifecycle,
     range,
     ...(UUID.test(rawFunding) ? { fundingChannelId: rawFunding } : {}),
     ...(range === 'CUSTOM' && validCustom ? { startDate: rawStart, endDate: rawEnd } : {}),
@@ -73,6 +78,7 @@ export function ledgerRouteQuery(filters: LedgerFilters, drill?: LedgerDrillCont
   const result: LocationQueryRaw = {
     ...(filters.query ? { q: filters.query } : {}),
     type: filters.type,
+    ...(filters.lifecycle === 'TRASHED' ? { lifecycle: filters.lifecycle } : {}),
     range: filters.range,
     ...(filters.fundingChannelId ? { fundingChannelId: filters.fundingChannelId } : {}),
     ...(filters.range === 'CUSTOM' ? { startDate: filters.startDate, endDate: filters.endDate } : {}),
@@ -88,13 +94,17 @@ export function ledgerRouteQuery(filters: LedgerFilters, drill?: LedgerDrillCont
   return result
 }
 
-export function clearedLedgerFilters(defaultRange: LedgerDateRange): LedgerFilters {
-  return { query: '', type: 'ALL', range: defaultRange }
+export function clearedLedgerFilters(defaultRange: LedgerDateRange, lifecycle: LedgerLifecycleFilter = 'ACTIVE'): LedgerFilters {
+  return { query: '', type: 'ALL', lifecycle, range: defaultRange }
 }
 
 export const ledgerTypeOptions = [
   { value: 'ALL', label: '全部' }, { value: 'EXPENSE', label: '支出' }, { value: 'INCOME', label: '收入' },
   { value: 'ADJUSTMENT', label: '退款与报销' },
+] as const
+
+export const ledgerLifecycleOptions = [
+  { value: 'ACTIVE', label: '有效账单' }, { value: 'TRASHED', label: '回收站' },
 ] as const
 
 export const ledgerRangeOptions = [

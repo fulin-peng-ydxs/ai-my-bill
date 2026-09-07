@@ -9,6 +9,7 @@ final class LedgerQueryContracts {
     private LedgerQueryContracts() { }
 
     enum EntryTypeFilter { ALL, EXPENSE, INCOME, ADJUSTMENT }
+    enum LifecycleFilter { ACTIVE, TRASHED }
     enum DateRange { TODAY, THIS_WEEK, THIS_MONTH, LAST_MONTH, THIS_YEAR, CUSTOM }
 
     record LedgerItem(
@@ -16,7 +17,9 @@ final class LedgerQueryContracts {
             String title, String categoryName, String counterpartyName, String fundingChannelName,
             String amount, String note, Instant createdAt,
             String adjustmentType, UUID originalExpenseId,
-            String effectiveAdjustmentAmount, String netExpenseAmount, boolean fullyAdjusted
+            String effectiveAdjustmentAmount, String netExpenseAmount, boolean fullyAdjusted,
+            long version, String lifecycleStatus, Instant deletedAt, Instant purgeAfter,
+            Integer remainingDays, int linkedAdjustmentCount
     ) { }
 
     record LedgerPage(List<LedgerItem> items, String nextCursor, boolean hasMore) { }

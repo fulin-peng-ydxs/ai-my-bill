@@ -8,6 +8,7 @@ import { getExpenseAdjustment, revokeExpenseAdjustment, type ExpenseAdjustmentRe
 import { getExpense, type ExpenseResponse } from '../api/expenses'
 import { getIncome, type IncomeResponse } from '../api/incomes'
 import type { LedgerDateRange, LedgerFilters, LedgerItem } from '../api/ledgerEntries'
+import { changeLedgerLifecycle, type LedgerLifecycleResponse } from '../api/ledgerLifecycle'
 import { listDictionaryCandidates } from '../api/dictionaries'
 import AppliedFilterBar from '../components/AppliedFilterBar.vue'
 import AppDialog from '../components/AppDialog.vue'
@@ -29,8 +30,9 @@ import { ledgerScrollKey, readLedgerScroll, rememberLedgerScroll } from '../comp
 import { useLatestRequest } from '../composables/useLatestRequest'
 import { requestDiscardChanges } from '../composables/unsavedChanges'
 import { createIdempotencyAttemptTracker } from '../domain/idempotency'
+import { formatShanghaiDateTime } from '../domain/businessTime'
 import {
-  clearedLedgerFilters, ledgerRangeOptions, ledgerRouteQuery, ledgerTypeOptions, optionLabel, parseLedgerRoute,
+  clearedLedgerFilters, ledgerLifecycleOptions, ledgerRangeOptions, ledgerRouteQuery, ledgerTypeOptions, optionLabel, parseLedgerRoute,
   type LedgerDrillContext,
 } from '../domain/ledgerQuery'
 import { usePreferencesStore } from '../stores/preferences'
@@ -45,7 +47,7 @@ const fundingRequest = useLatestRequest<Awaited<ReturnType<typeof listDictionary
 const editRequest = useLatestRequest<ExpenseResponse | IncomeResponse>()
 const adjustmentRequest = useLatestRequest<ExpenseAdjustmentResponse>()
 const searchText = ref('')
-const filters = ref<LedgerFilters>({ query: '', type: 'ALL', range: 'TODAY' })
+const filters = ref<LedgerFilters>({ query: '', type: 'ALL', lifecycle: 'ACTIVE', range: 'TODAY' })
 const draft = ref<LedgerFilters>({ ...filters.value })
 const filterOpen = ref(false)
 const rangeError = ref('')
@@ -64,6 +66,13 @@ const adjustmentDetailOpen = ref(false)
 const revokeConfirmOpen = ref(false)
 const revoking = ref(false)
 const revokeAttempt = createIdempotencyAttemptTracker()
+const lifecycleAttempt = createIdempotencyAttemptTracker()
+const lifecycleBusyId = ref('')
+const pendingUndo = ref<LedgerLifecycleResponse>()
+const purgeTarget = ref<LedgerItem>()
+const purgeConfirmOpen = ref(false)
+const trashDetailTarget = ref<LedgerItem>()
+const trashDetailOpen = ref(false)
 
 const defaultRange = computed<LedgerDateRange>(() => preferences.values.ledgerDefaultRange)
 const parsed = computed(() => parseLedgerRoute(route.query, defaultRange.value))
@@ -107,8 +116,12 @@ function updateType(value: string): void {
   navigate({ ...filters.value, type: value as LedgerFilters['type'] })
 }
 
+function updateLifecycle(value: string): void {
+  navigate({ ...filters.value, lifecycle: value as LedgerFilters['lifecycle'] })
+}
+
 function clearFilters(): void {
-  navigate(clearedLedgerFilters(defaultRange.value))
+  navigate(clearedLedgerFilters(defaultRange.value, filters.value.lifecycle))
 }
 
 function applyFilters(): void {
@@ -134,10 +147,18 @@ function openContext(item: LedgerItem): void {
 
 const contextActions = computed(() => {
   if (!contextItem.value) return []
-  if (contextItem.value.entryType === 'ADJUSTMENT') return [{ key: 'detail', label: '查看调整详情' }]
+  if (contextItem.value.lifecycleStatus === 'TRASHED') return [
+    { key: 'restore', label: '恢复到账目' },
+    { key: 'purge', label: contextItem.value.linkedAdjustmentCount
+      ? `永久删除并联动清理 ${contextItem.value.linkedAdjustmentCount} 条调整` : '永久删除', danger: true },
+  ]
+  if (contextItem.value.entryType === 'ADJUSTMENT') return [
+    { key: 'detail', label: '查看调整详情' }, { key: 'trash', label: '移入回收站', danger: true },
+  ]
   return [
     { key: 'daily', label: contextBusy.value ? '正在加入日常…' : '加入或更新日常模板', disabled: contextBusy.value },
     ...(contextItem.value.entryType === 'EXPENSE' ? [{ key: 'adjust', label: '记录退款/报销' }] : []),
+    { key: 'trash', label: '移入回收站', danger: true },
   ]
 })
 
@@ -151,6 +172,11 @@ function loadEdit(): void {
 }
 
 function openEdit(item: LedgerItem): void {
+  if (item.lifecycleStatus === 'TRASHED') {
+    trashDetailTarget.value = item
+    trashDetailOpen.value = true
+    return
+  }
   if (item.entryType === 'ADJUSTMENT') { openAdjustmentDetail(item); return }
   editTarget.value = item
   editOpen.value = true
@@ -175,6 +201,7 @@ async function requestAdjustmentOpen(value: boolean): Promise<void> {
 
 async function adjustmentSaved(): Promise<void> {
   adjustmentOpen.value = false
+  pendingUndo.value = undefined
   toastKind.value = 'success'; toastMessage.value = '退款/报销调整已保存，原支出净额已更新。'; toastOpen.value = true
   await list.replace(filters.value)
 }
@@ -187,6 +214,7 @@ async function confirmRevoke(): Promise<void> {
     const request = { id: detail.id, version: detail.version }
     adjustmentRequest.data.value = await revokeExpenseAdjustment(detail.id, detail.version, revokeAttempt.keyFor(request))
     revokeAttempt.reset(); revokeConfirmOpen.value = false
+    pendingUndo.value = undefined
     toastKind.value = 'success'; toastMessage.value = '调整已撤销，原支出净额已恢复。'; toastOpen.value = true
     await list.replace(filters.value)
   } catch (cause) {
@@ -201,6 +229,7 @@ async function requestEditOpen(value: boolean): Promise<void> {
 
 async function editSaved(value: ExpenseResponse | IncomeResponse): Promise<void> {
   editOpen.value = false
+  pendingUndo.value = undefined
   toastKind.value = 'success'
   toastMessage.value = `${'productName' in value ? '支出' : '收入'}修改已保存。`
   toastOpen.value = true
@@ -215,21 +244,77 @@ async function contextAction(key: string): Promise<void> {
   if (key === 'detail' && contextItem.value.entryType === 'ADJUSTMENT') {
     const item = contextItem.value; contextOpen.value = false; openAdjustmentDetail(item); return
   }
+  if (key === 'trash' || key === 'restore') {
+    const item = contextItem.value; contextOpen.value = false
+    await runLifecycle(item, key)
+    return
+  }
+  if (key === 'purge') {
+    purgeTarget.value = contextItem.value; contextOpen.value = false; purgeConfirmOpen.value = true
+    return
+  }
   if (key !== 'daily' || contextItem.value.entryType === 'ADJUSTMENT') return
   contextBusy.value = true
   try {
     await upsertDailyTemplateFromLedger(contextItem.value.id)
+    pendingUndo.value = undefined
     toastMessage.value = `“${contextItem.value.title}”已加入日常`
     toastKind.value = 'success'
     contextOpen.value = false
     toastOpen.value = true
   } catch (cause) {
+    pendingUndo.value = undefined
     toastMessage.value = cause instanceof Error ? cause.message : '加入日常失败，请重试。'
     toastKind.value = 'error'
     toastOpen.value = true
   } finally {
     contextBusy.value = false
   }
+}
+
+async function runLifecycle(item: Pick<LedgerItem, 'id' | 'entryType' | 'version'>,
+  action: 'trash' | 'restore'): Promise<void> {
+  if (lifecycleBusyId.value) return
+  lifecycleBusyId.value = item.id
+  try {
+    const request = { id: item.id, entryType: item.entryType, version: item.version, action }
+    const result = await changeLedgerLifecycle(item, action, lifecycleAttempt.keyFor(request))
+    lifecycleAttempt.reset()
+    if (action === 'trash' && result) {
+      pendingUndo.value = result
+      toastMessage.value = '账目已移入回收站，相关统计已更新。'
+    } else {
+      pendingUndo.value = undefined
+      toastMessage.value = '账目已恢复，相关调整与统计已更新。'
+    }
+    toastKind.value = 'success'; toastOpen.value = true
+    await list.replace(filters.value)
+  } catch (cause) {
+    toastMessage.value = cause instanceof Error ? cause.message : '账目状态更新失败，请重试。'
+    toastKind.value = 'error'; toastOpen.value = true
+  } finally { lifecycleBusyId.value = '' }
+}
+
+async function undoTrash(): Promise<void> {
+  const item = pendingUndo.value
+  if (!item) return
+  await runLifecycle({ id: item.id, entryType: item.entryType as LedgerItem['entryType'], version: item.version }, 'restore')
+}
+
+async function confirmPurge(): Promise<void> {
+  const item = purgeTarget.value
+  if (!item || lifecycleBusyId.value) return
+  lifecycleBusyId.value = item.id
+  try {
+    const request = { id: item.id, entryType: item.entryType, version: item.version, action: 'purge' }
+    await changeLedgerLifecycle(item, 'purge', lifecycleAttempt.keyFor(request))
+    lifecycleAttempt.reset(); purgeConfirmOpen.value = false; purgeTarget.value = undefined
+    pendingUndo.value = undefined
+    toastKind.value = 'success'; toastMessage.value = '账目已永久删除，无法恢复。'; toastOpen.value = true
+    await list.replace(filters.value)
+  } catch (cause) {
+    toastKind.value = 'error'; toastMessage.value = cause instanceof Error ? cause.message : '永久删除失败，请重试。'; toastOpen.value = true
+  } finally { lifecycleBusyId.value = '' }
 }
 
 function returnToReports(context: LedgerDrillContext): void {
@@ -248,10 +333,10 @@ onBeforeUnmount(() => { fundingRequest.cancel(); editRequest.cancel(); adjustmen
     <header class="page-heading ledger-page-heading">
       <div>
         <p class="eyebrow">
-          有效账目
+          {{ filters.lifecycle === 'ACTIVE' ? '有效账目' : '30 天回收站' }}
         </p>
         <h1>收支明细</h1>
-        <p>按上海业务日期分组，稳定加载每一笔收支与退款/报销调整。</p>
+        <p>{{ filters.lifecycle === 'ACTIVE' ? '按上海业务日期分组，稳定加载每一笔收支与退款/报销调整。' : '删除后 30 天内可恢复，也可经确认永久删除。' }}</p>
       </div>
     </header>
 
@@ -289,6 +374,15 @@ onBeforeUnmount(() => { fundingRequest.cancel(); editRequest.cancel(); adjustmen
       aria-label="明细视图控制"
     >
       <div>
+        <span class="control-label">账目状态</span>
+        <SegmentedControl
+          label="账目状态"
+          :model-value="filters.lifecycle"
+          :options="ledgerLifecycleOptions"
+          @update:model-value="updateLifecycle"
+        />
+      </div>
+      <div>
         <span class="control-label">账目类型</span>
         <SegmentedControl
           label="账目类型"
@@ -297,7 +391,7 @@ onBeforeUnmount(() => { fundingRequest.cancel(); editRequest.cancel(); adjustmen
           @update:model-value="updateType"
         />
       </div>
-      <p>长按、右键或按 Shift+F10 管理有效账目</p>
+      <p>长按、右键或按 Shift+F10 管理{{ filters.lifecycle === 'ACTIVE' ? '有效账目' : '回收站账目' }}</p>
     </section>
 
     <AppStateBlock
@@ -316,8 +410,8 @@ onBeforeUnmount(() => { fundingRequest.cancel(); editRequest.cancel(); adjustmen
     <AppStateBlock
       v-else-if="list.status.value === 'empty'"
       kind="empty"
-      title="当前条件没有明细"
-      message="调整账目类型、搜索内容、资金渠道或日期范围后重试。"
+      :title="filters.lifecycle === 'ACTIVE' ? '当前条件没有明细' : '回收站为空'"
+      :message="filters.lifecycle === 'ACTIVE' ? '调整账目类型、搜索内容、资金渠道或日期范围后重试。' : '删除的账目会在这里保留 30 天。'"
       action-label="清除筛选"
       @action="clearFilters"
     />
@@ -335,6 +429,8 @@ onBeforeUnmount(() => { fundingRequest.cancel(); editRequest.cancel(); adjustmen
         :type="filters.type"
         :has-more="list.hasMore.value"
         :loading-more="list.loadingMore.value"
+        :lifecycle="filters.lifecycle"
+        :busy-item-id="lifecycleBusyId"
         @more="list.more"
         @context="openContext"
         @open="openEdit"
@@ -444,8 +540,34 @@ onBeforeUnmount(() => { fundingRequest.cancel(); editRequest.cancel(); adjustmen
       v-model:open="contextOpen"
       :title="contextItem ? `管理“${contextItem.title}”` : '账目操作'"
       :actions="contextActions"
+      :description="contextItem?.lifecycleStatus === 'TRASHED' ? '恢复会重新计入统计；永久删除不可恢复。' : '选择要对这条有效账目执行的操作。'"
       @select="contextAction"
     />
+    <AppDrawer
+      id="trash-ledger-detail"
+      v-model:open="trashDetailOpen"
+      :title="trashDetailTarget ? `查看“${trashDetailTarget.title}”` : '查看回收站账目'"
+      description="这里只展示删除前的账目信息；恢复或永久删除请使用长按、右键或 Shift+F10。"
+    >
+      <dl
+        v-if="trashDetailTarget"
+        class="adjustment-metadata"
+      >
+        <div><dt>账目类型</dt><dd>{{ trashDetailTarget.entryType === 'EXPENSE' ? '支出' : trashDetailTarget.entryType === 'INCOME' ? '收入' : trashDetailTarget.adjustmentType === 'REFUND' ? '退款' : '报销' }}</dd></div>
+        <div><dt>业务时间</dt><dd>{{ formatShanghaiDateTime(trashDetailTarget.occurredAt) }}</dd></div>
+        <div><dt>金额</dt><dd>¥{{ trashDetailTarget.amount }}</dd></div>
+        <div><dt>分类</dt><dd>{{ trashDetailTarget.categoryName }}</dd></div>
+        <div><dt>对象</dt><dd>{{ trashDetailTarget.counterpartyName }}</dd></div>
+        <div><dt>资金渠道</dt><dd>{{ trashDetailTarget.fundingChannelName }}</dd></div>
+        <div><dt>恢复期限</dt><dd>{{ trashDetailTarget.remainingDays === 0 ? '今天到期' : `剩余 ${trashDetailTarget.remainingDays} 天` }}</dd></div>
+        <div v-if="trashDetailTarget.linkedAdjustmentCount">
+          <dt>关联调整</dt><dd>恢复后重生效；永久删除将联动清理 {{ trashDetailTarget.linkedAdjustmentCount }} 条</dd>
+        </div>
+        <div v-if="trashDetailTarget.note">
+          <dt>备注</dt><dd>{{ trashDetailTarget.note }}</dd>
+        </div>
+      </dl>
+    </AppDrawer>
     <AppDrawer
       id="ledger-edit"
       :open="editOpen"
@@ -523,6 +645,16 @@ onBeforeUnmount(() => { fundingRequest.cancel(); editRequest.cancel(); adjustmen
       />
     </AppDrawer>
     <AppDialog
+      id="purge-ledger"
+      v-model:open="purgeConfirmOpen"
+      title="确认永久删除？"
+      :description="purgeTarget?.linkedAdjustmentCount ? `原账目及关联的 ${purgeTarget.linkedAdjustmentCount} 条调整会在同一操作中永久删除，且无法恢复。` : '该记录将被永久删除，且无法恢复。'"
+      confirm-label="永久删除"
+      :busy="Boolean(lifecycleBusyId)"
+      danger
+      @confirm="confirmPurge"
+    />
+    <AppDialog
       id="revoke-adjustment"
       v-model:open="revokeConfirmOpen"
       title="确认撤销这笔调整？"
@@ -536,6 +668,9 @@ onBeforeUnmount(() => { fundingRequest.cancel(); editRequest.cancel(); adjustmen
       v-model:open="toastOpen"
       :message="toastMessage"
       :kind="toastKind"
+      :action-label="pendingUndo && toastKind === 'success' ? '撤销' : undefined"
+      :action-disabled="Boolean(lifecycleBusyId)"
+      @action="undoTrash"
     />
   </article>
 </template>

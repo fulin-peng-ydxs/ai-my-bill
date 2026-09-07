@@ -12,7 +12,9 @@ defineEmits<{ revoke: [] }>()
     <div class="adjustment-detail-heading">
       <span class="ledger-type-tag ledger-type-adjustment">{{ adjustment.adjustmentType === 'REFUND' ? '退款' : '报销' }}</span>
       <strong>{{ adjustment.originalExpenseTitle }}</strong>
-      <span class="status-text">{{ adjustment.status === 'EFFECTIVE' ? '已生效' : '已撤销' }}</span>
+      <span class="status-text">{{ {
+        EFFECTIVE: '已生效', REVOKED: '已撤销', TRASHED: '回收站', SOURCE_FROZEN: '随原支出冻结',
+      }[adjustment.status] }}</span>
     </div>
     <MoneySummary
       :items="[

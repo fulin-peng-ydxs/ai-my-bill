@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 
-import type { LedgerEntryTypeFilter, LedgerItem } from '../api/ledgerEntries'
+import type { LedgerEntryTypeFilter, LedgerItem, LedgerLifecycleFilter } from '../api/ledgerEntries'
 import { formatLedgerDate } from '../domain/ledgerFormatting'
 import LedgerListItem from './LedgerListItem.vue'
 
@@ -10,17 +10,19 @@ const props = defineProps<{
   type: LedgerEntryTypeFilter
   hasMore: boolean
   loadingMore: boolean
+  lifecycle: LedgerLifecycleFilter
+  busyItemId?: string
 }>()
 const emit = defineEmits<{ more: [], context: [item: LedgerItem], open: [item: LedgerItem] }>()
 
 const groups = computed(() => {
-  const result: Array<{ date: string, items: LedgerItem[] }> = []
+  const byDate = new Map<string, LedgerItem[]>()
   for (const item of props.items) {
-    const latest = result.at(-1)
-    if (!latest || latest.date !== item.businessDate) result.push({ date: item.businessDate, items: [item] })
-    else latest.items.push(item)
+    const group = byDate.get(item.businessDate)
+    if (group) group.push(item)
+    else byDate.set(item.businessDate, [item])
   }
-  return result
+  return Array.from(byDate, ([date, items]) => ({ date, items }))
 })
 
 </script>
@@ -28,7 +30,7 @@ const groups = computed(() => {
 <template>
   <section
     class="incremental-ledger-list"
-    aria-label="有效收支列表"
+    :aria-label="lifecycle === 'ACTIVE' ? '有效收支列表' : '回收站列表'"
   >
     <section
       v-for="group in groups"
@@ -42,6 +44,7 @@ const groups = computed(() => {
           :key="item.id"
           :item="item"
           :show-type="type === 'ALL' || type === 'ADJUSTMENT'"
+          :busy="busyItemId === item.id"
           @context="emit('context', $event)"
           @open="emit('open', $event)"
         />
