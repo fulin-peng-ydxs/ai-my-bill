@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { createExpense, listExpenseProducts, undoCreatedExpense } from './expenses'
+import { createExpense, getExpense, listExpenseProducts, undoCreatedExpense, updateExpense } from './expenses'
 
 afterEach(() => vi.unstubAllGlobals())
 
@@ -48,5 +48,22 @@ describe('expense api', () => {
     expect(fetch.mock.calls[0]?.[0]).toContain('/expenses/expense%2Fid/undo')
     expect(fetch.mock.calls[0]?.[1]).toMatchObject({ method: 'DELETE' })
     expect(new Headers(fetch.mock.calls[0]?.[1]?.headers).get('Idempotency-Key')).toBe('undo-key')
+  })
+
+  it('gets and updates one encoded expense with version and idempotency key', async () => {
+    const fetch = vi.fn().mockImplementation(async () => new Response(JSON.stringify({ id: 'expense', version: 2 }), {
+      status: 200, headers: { 'Content-Type': 'application/json' },
+    }))
+    vi.stubGlobal('fetch', fetch)
+    await getExpense('expense/id')
+    await updateExpense('expense/id', { version: 1, entry: {
+      productId: 'product', primaryCategoryId: 'category', unitId: 'unit', unitPrice: '2', quantity: '3',
+      paidAmount: '6', fundingChannelId: 'funding', occurredAt: '2026-09-06T02:30:00Z',
+    } }, 'update-key')
+    expect(fetch.mock.calls[0]?.[0]).toContain('/expenses/expense%2Fid')
+    const options = fetch.mock.calls[1]?.[1] as RequestInit
+    expect(options.method).toBe('PUT')
+    expect(new Headers(options.headers).get('Idempotency-Key')).toBe('update-key')
+    expect(JSON.parse(String(options.body)).version).toBe(1)
   })
 })

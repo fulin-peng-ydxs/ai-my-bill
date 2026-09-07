@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createIncome, listRecentIncomeNames, undoCreatedIncome } from './incomes'
+import { createIncome, getIncome, listRecentIncomeNames, undoCreatedIncome, updateIncome } from './incomes'
 
 afterEach(() => vi.unstubAllGlobals())
 describe('income api', () => {
@@ -20,5 +20,19 @@ describe('income api', () => {
     const fetch = vi.fn().mockResolvedValue(new Response(null, { status: 204 })); vi.stubGlobal('fetch', fetch)
     await undoCreatedIncome('income/id', 'key')
     expect(fetch.mock.calls[0]?.[0]).toContain('/incomes/income%2Fid/undo')
+  })
+  it('gets and updates one encoded income with its version', async () => {
+    const fetch = vi.fn().mockImplementation(async () => new Response(JSON.stringify({ id: 'income', version: 3 }), {
+      status: 200, headers: { 'Content-Type': 'application/json' },
+    })); vi.stubGlobal('fetch', fetch)
+    await getIncome('income/id')
+    await updateIncome('income/id', { version: 2, entry: { incomeName: '奖金', payerId: 'payer',
+      incomeCategoryId: 'category', amount: '20.00', fundingChannelId: 'funding',
+      occurredAt: '2026-09-06T02:30:00Z' } }, 'update-key')
+    expect(fetch.mock.calls[0]?.[0]).toContain('/incomes/income%2Fid')
+    const options = fetch.mock.calls[1]?.[1] as RequestInit
+    expect(options.method).toBe('PUT')
+    expect(new Headers(options.headers).get('Idempotency-Key')).toBe('update-key')
+    expect(JSON.parse(String(options.body)).version).toBe(2)
   })
 })

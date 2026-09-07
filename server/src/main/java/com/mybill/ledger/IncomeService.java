@@ -44,26 +44,51 @@ class IncomeService {
     CreationResult create(CurrentPrincipal principal, String requestedKey, CreateIncomeRequest request) {
         String key = validateIdempotencyKey(requestedKey);
         Instant now = clock.instant();
-        validateOccurredAt(request.occurredAt(), now, "收入时间");
-        String incomeName = normalizeRequired("incomeName", request.incomeName(), 200, "收入名称");
-        String note = normalizeNote(request.note());
-        BigDecimal amount = decimalField("amount", request.amount(), 2, new BigDecimal("999999999.99"), true);
-        String digest = LedgerWritePolicy.digest(incomeName, request.payerId(), request.incomeCategoryId(), amount,
-                request.fundingChannelId(), request.occurredAt(), note);
+        ValidatedIncome values = validate(request, now);
+        String digest = requestDigest(request, values);
         return tenantTransactions.execute(principal, () -> {
             LedgerIdempotencyStore.Reservation reservation = idempotency.reserve(CREATE_OPERATION, key, digest, now);
             if (reservation.replayed()) return new CreationResult(repository.find(reservation.resultId())
                     .orElseThrow(() -> new IllegalStateException("幂等结果账目不存在")), true);
             IncomeReferences refs = dictionaries.lockActiveReferences(request.payerId(), request.incomeCategoryId(),
                     request.fundingChannelId());
-            if (refs.payer() == null) throw fieldError("payerId", "请选择启用的付款方。");
-            if (refs.category() == null) throw fieldError("incomeCategoryId", "请选择启用的收入分类。");
-            if (refs.fundingChannel() == null) throw fieldError("fundingChannelId", "请选择启用的收款方式。");
+            validateReferences(refs);
             UUID id = UUID.randomUUID();
-            repository.insert(id, request, incomeName, refs, amount,
-                    request.occurredAt().atZone(BUSINESS_ZONE).toLocalDate(), note, now);
+            repository.insert(id, request, values.incomeName(), refs, values.amount(),
+                    request.occurredAt().atZone(BUSINESS_ZONE).toLocalDate(), values.note(), now);
             idempotency.complete(CREATE_OPERATION, key, id, now);
             return new CreationResult(repository.find(id).orElseThrow(), false);
+        });
+    }
+
+    IncomeResponse find(CurrentPrincipal principal, UUID incomeId) {
+        return tenantTransactions.execute(principal, () -> repository.find(incomeId)
+                .orElseThrow(() -> notFound("收入不存在或已不在有效账目中。")));
+    }
+
+    IncomeResponse update(CurrentPrincipal principal, UUID incomeId, String requestedKey,
+                          UpdateIncomeRequest request) {
+        String key = validateIdempotencyKey(requestedKey);
+        Instant now = clock.instant();
+        CreateIncomeRequest entry = request.entry();
+        ValidatedIncome values = validate(entry, now);
+        String digest = LedgerWritePolicy.digest(incomeId, request.version(), requestDigest(entry, values));
+        return tenantTransactions.execute(principal, () -> {
+            LedgerIdempotencyStore.Reservation reservation = idempotency.reserve("UPDATE_INCOME", key, digest, now);
+            if (reservation.replayed()) {
+                IncomeResponse replayed = repository.find(reservation.resultId())
+                        .orElseThrow(() -> new IllegalStateException("幂等更新结果账目不存在"));
+                if (replayed.version() != request.version() + 1) throw conflict();
+                return replayed;
+            }
+            if (repository.find(incomeId).isEmpty()) throw notFound("收入不存在或已不在有效账目中。");
+            IncomeReferences refs = dictionaries.lockActiveReferences(entry.payerId(), entry.incomeCategoryId(),
+                    entry.fundingChannelId());
+            validateReferences(refs);
+            if (!repository.update(incomeId, request.version(), entry, values.incomeName(), refs, values.amount(),
+                    entry.occurredAt().atZone(BUSINESS_ZONE).toLocalDate(), values.note(), now)) throw conflict();
+            idempotency.complete("UPDATE_INCOME", key, incomeId, now);
+            return repository.find(incomeId).orElseThrow();
         });
     }
 
@@ -77,4 +102,33 @@ class IncomeService {
             return null;
         });
     }
+
+    private ValidatedIncome validate(CreateIncomeRequest request, Instant now) {
+        validateOccurredAt(request.occurredAt(), now, "收入时间");
+        return new ValidatedIncome(normalizeRequired("incomeName", request.incomeName(), 200, "收入名称"),
+                decimalField("amount", request.amount(), 2, new BigDecimal("999999999.99"), true),
+                normalizeNote(request.note()));
+    }
+
+    private static void validateReferences(IncomeReferences refs) {
+        if (refs.payer() == null) throw fieldError("payerId", "请选择启用的付款方。");
+        if (refs.category() == null) throw fieldError("incomeCategoryId", "请选择启用的收入分类。");
+        if (refs.fundingChannel() == null) throw fieldError("fundingChannelId", "请选择启用的收款方式。");
+    }
+
+    private static String requestDigest(CreateIncomeRequest request, ValidatedIncome values) {
+        return LedgerWritePolicy.digest(values.incomeName(), request.payerId(), request.incomeCategoryId(), values.amount(),
+                request.fundingChannelId(), request.occurredAt(), values.note());
+    }
+
+    private static ApiException notFound(String message) {
+        return new ApiException(HttpStatus.NOT_FOUND, "LEDGER_ENTRY_NOT_FOUND", message, false);
+    }
+
+    private static ApiException conflict() {
+        return new ApiException(HttpStatus.CONFLICT, "LEDGER_VERSION_CONFLICT",
+                "账目已在其他窗口发生变化，请加载最新内容或重新确认本次修改。", false);
+    }
+
+    private record ValidatedIncome(String incomeName, BigDecimal amount, String note) { }
 }

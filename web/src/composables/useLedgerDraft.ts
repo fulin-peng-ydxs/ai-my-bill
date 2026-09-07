@@ -125,7 +125,7 @@ export async function removeLedgerDraft(accountId: string, type: EntryType): Pro
 }
 
 /** T11/T12 表单共用：类型切换只换当前视图，不覆盖另一类型草稿。 */
-export function useLedgerDraft(accountId: Ref<string | undefined>, type: Ref<EntryType>) {
+export function useLedgerDraft(accountId: Ref<string | undefined>, type: Ref<EntryType>, enabled?: Ref<boolean>) {
   const data = ref<LedgerDraftData>({})
   const restored = ref(false)
   const storageError = ref<string>()
@@ -133,7 +133,8 @@ export function useLedgerDraft(accountId: Ref<string | undefined>, type: Ref<Ent
   let operation = Promise.resolve()
   let restoreRevision = 0
 
-  const dirty = computed(() => Object.keys(data.value).length > 0)
+  const active = computed(() => enabled?.value ?? true)
+  const dirty = computed(() => active.value && Object.keys(data.value).length > 0)
   const stopMemoryCleanup = registerAccountMemoryCleanup((removedAccountId) => {
     if (removedAccountId === accountId.value) {
       data.value = {}
@@ -156,7 +157,7 @@ export function useLedgerDraft(accountId: Ref<string | undefined>, type: Ref<Ent
     const requestRevision = ++restoreRevision
     const currentAccount = accountId.value
     const currentType = type.value
-    const stored = currentAccount ? await readStoredLedgerDraft(currentAccount, currentType) : undefined
+    const stored = active.value && currentAccount ? await readStoredLedgerDraft(currentAccount, currentType) : undefined
     if (requestRevision !== restoreRevision || currentAccount !== accountId.value || currentType !== type.value) return
     data.value = stored?.data ?? {}
     createdAt = stored?.createdAt ?? Date.now()
@@ -166,6 +167,7 @@ export function useLedgerDraft(accountId: Ref<string | undefined>, type: Ref<Ent
   }
 
   function replace(next: LedgerDraftData): Promise<void> {
+    if (!active.value) return Promise.resolve()
     data.value = sanitize(type.value, next)
     notifyUnsavedChangesChanged()
     const currentAccount = accountId.value
@@ -202,7 +204,7 @@ export function useLedgerDraft(accountId: Ref<string | undefined>, type: Ref<Ent
     }
   }
 
-  watch([accountId, type], () => {
+  watch([accountId, type, active], () => {
     restoreRevision += 1
     data.value = {}
     restored.value = false

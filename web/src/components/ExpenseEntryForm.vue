@@ -1,21 +1,24 @@
 <script setup lang="ts">
-import { computed, reactive, ref, watch } from 'vue'
+import { computed, onScopeDispose, reactive, ref, watch } from 'vue'
 
 import { ApiClientError } from '../api/http'
 import type { DailyTemplateSelection } from '../api/dailyTemplates'
-import { createExpense, undoCreatedExpense, type ExpenseResponse, type ProductSuggestion } from '../api/expenses'
+import {
+  createExpense, getExpense, undoCreatedExpense, updateExpense, type ExpenseResponse, type ProductSuggestion,
+} from '../api/expenses'
 import { listDictionaryCandidates } from '../api/dictionaries'
 import {
-  calculateExpenseTotal, decimalToScaledInteger, isDecimalInRange, MONEY_MAX, QUANTITY_MAX,
-  scaledIntegerToDecimal, UNIT_PRICE_MAX,
+  calculateExpenseTotal, decimalToScaledInteger, isDecimalInRange, MONEY_MAX, scaledIntegerToDecimal,
 } from '../domain/money'
 import { expenseContinuationFields } from '../domain/expense'
 import { createIdempotencyAttemptTracker } from '../domain/idempotency'
+import { formatShanghaiDateTime, toShanghaiLocalDateTime } from '../domain/businessTime'
 import {
-  formatShanghaiDateTime, isShanghaiLocalDateTime, shanghaiLocalDateTimeToIso, toShanghaiLocalDateTime,
-} from '../domain/businessTime'
-import { unicodeCodePointLength } from '../domain/text'
+  emptyExpenseForm, expenseFormFromResponse, expenseRequestFromForm, validateExpenseForm,
+  type ExpenseField, type ExpenseFormState,
+} from '../domain/ledgerEntryForm'
 import { useLedgerDraft } from '../composables/useLedgerDraft'
+import { registerUnsavedChanges } from '../composables/unsavedChanges'
 import AppStateBlock from './AppStateBlock.vue'
 import AppToast from './AppToast.vue'
 import DailyTemplateFallbackNotice from './DailyTemplateFallbackNotice.vue'
@@ -33,26 +36,10 @@ const props = defineProps<{
   defaultFundingChannelId?: string | null
   templateSelection?: DailyTemplateSelection
   templateRevision?: number
+  editEntry?: ExpenseResponse
 }>()
-const emit = defineEmits<{ 'templateConsumed': [] }>()
+const emit = defineEmits<{ 'templateConsumed': [], saved: [value: ExpenseResponse] }>()
 
-interface ExpenseFormState {
-  productId: string
-  productName: string
-  primaryCategoryId: string
-  secondaryCategoryId: string
-  unitId: string
-  unitPrice: string
-  quantity: string
-  paidAmount: string
-  fundingChannelId: string
-  purchaseChannelId: string
-  locationLabelId: string
-  occurredAt: string
-  note: string
-}
-
-type FieldName = keyof ExpenseFormState | 'calculatedAmount'
 type OptionGroup = 'categories' | 'units' | 'funding' | 'purchase' | 'locations'
 
 interface ExpenseOption {
@@ -61,24 +48,18 @@ interface ExpenseOption {
   parentId?: string
 }
 
-function emptyForm(): ExpenseFormState {
-  return {
-    productId: '', productName: '', primaryCategoryId: '', secondaryCategoryId: '', unitId: '',
-    unitPrice: '', quantity: '1', paidAmount: '', fundingChannelId: props.defaultFundingChannelId ?? '',
-    purchaseChannelId: '', locationLabelId: '', occurredAt: toShanghaiLocalDateTime(), note: '',
-  }
-}
-
+const emptyForm = () => emptyExpenseForm(props.defaultFundingChannelId)
 const form = reactive<ExpenseFormState>(emptyForm())
+const editMode = computed(() => Boolean(props.editEntry))
 const expenseType = ref<'EXPENSE'>('EXPENSE')
 const accountId = computed(() => props.accountId)
-const draft = useLedgerDraft(accountId, expenseType)
+const draft = useLedgerDraft(accountId, expenseType, computed(() => !editMode.value))
 const optionItems = reactive<Record<OptionGroup, ExpenseOption[]>>({
   categories: [], units: [], funding: [], purchase: [], locations: [],
 })
 const optionFailures = ref<string[]>([])
 const optionsLoading = ref(false)
-const errors = reactive<Partial<Record<FieldName, string>>>({})
+const errors = reactive<Partial<Record<ExpenseField, string>>>({})
 const submitting = ref(false)
 const undoing = ref(false)
 const saved = ref<ExpenseResponse>()
@@ -91,6 +72,9 @@ const paidOverridden = ref(false)
 const productCombobox = ref<{ reset: () => void }>()
 const idempotencyAttempt = createIdempotencyAttemptTracker()
 const appliedTemplateRevision = ref(props.templateRevision ?? 0)
+const editVersion = ref(0)
+const editBaseline = ref('')
+const versionConflict = ref(false)
 const templateUnavailableFields = ref<DailyTemplateSelection['unavailableFields']>(
   props.templateSelection?.entryType === 'EXPENSE' ? props.templateSelection.unavailableFields : [],
 )
@@ -120,9 +104,32 @@ const summaryItems = computed(() => [
     ? scaledIntegerToDecimal(decimalToScaledInteger(form.paidAmount, 2), 2) : '0.00',
   tone: 'expense' as const, sign: '-' as const },
 ])
+const editDirty = computed(() => editMode.value && editBaseline.value !== JSON.stringify(form))
+
+function applyEditEntry(value: ExpenseResponse): void {
+  Object.assign(form, expenseFormFromResponse(value))
+  editVersion.value = value.version
+  editBaseline.value = JSON.stringify(form)
+  versionConflict.value = false
+  paidOverridden.value = true
+  ensureEditOptions(value)
+  Object.keys(errors).forEach((key) => delete errors[key as ExpenseField])
+  idempotencyAttempt.reset()
+}
+
+function ensureEditOptions(value: ExpenseResponse): void {
+  ensureOption('categories', value.primaryCategoryId, value.primaryCategoryName)
+  ensureOption('categories', value.secondaryCategoryId, value.secondaryCategoryName, value.primaryCategoryId)
+  ensureOption('units', value.unitId, value.unitName)
+  ensureOption('funding', value.fundingChannelId, value.fundingChannelName)
+  ensureOption('purchase', value.purchaseChannelId, value.purchaseChannelName)
+  ensureOption('locations', value.locationLabelId, value.locationLabelName)
+}
+
+watch(() => props.editEntry, (value) => { if (value) applyEditEntry(value) }, { immediate: true })
 
 watch(() => draft.restored.value, (restored) => {
-  if (!restored) return
+  if (!restored || editMode.value) return
   const stored = draft.data.value
   Object.assign(form, emptyForm(), stored)
   paidOverridden.value = Boolean(stored.paidAmount)
@@ -130,7 +137,7 @@ watch(() => draft.restored.value, (restored) => {
 
 watch([() => draft.restored.value, () => props.templateRevision], ([restored, revision]) => {
   const selection = props.templateSelection
-  if (!restored || !revision || revision === appliedTemplateRevision.value || selection?.entryType !== 'EXPENSE') return
+  if (editMode.value || !restored || !revision || revision === appliedTemplateRevision.value || selection?.entryType !== 'EXPENSE') return
   ensureOption('categories', selection.primaryCategoryId, selection.primaryCategoryName)
   ensureOption('categories', selection.secondaryCategoryId, selection.secondaryCategoryName,
     selection.primaryCategoryId ?? undefined)
@@ -146,7 +153,7 @@ watch([() => draft.restored.value, () => props.templateRevision], ([restored, re
     purchaseChannelId: selection.purchaseChannelId ?? '', locationLabelId: selection.locationLabelId ?? '',
     occurredAt: toShanghaiLocalDateTime(), note: '',
   })
-  Object.keys(errors).forEach((key) => delete errors[key as FieldName])
+  Object.keys(errors).forEach((key) => delete errors[key as ExpenseField])
   paidOverridden.value = true
   saved.value = undefined
   templateUnavailableFields.value = selection.unavailableFields
@@ -156,14 +163,19 @@ watch([() => draft.restored.value, () => props.templateRevision], ([restored, re
 })
 
 watch(() => props.defaultFundingChannelId, (value) => {
-  if (!form.fundingChannelId && value) form.fundingChannelId = value
+  if (!editMode.value && !form.fundingChannelId && value) form.fundingChannelId = value
 })
+
+const unregisterEditGuard = registerUnsavedChanges(editDirty, () => {
+  if (props.editEntry) applyEditEntry(props.editEntry)
+})
+onScopeDispose(unregisterEditGuard)
 
 function persist(): void {
   void draft.replace(Object.fromEntries(Object.entries(form).filter(([, value]) => value)))
 }
 
-function clearError(field: FieldName): void {
+function clearError(field: ExpenseField): void {
   delete errors[field]
 }
 
@@ -237,51 +249,28 @@ async function loadOptions(): Promise<void> {
     if (result.status === 'fulfilled') optionItems[key] = result.value.items
     else optionFailures.value.push(label)
   })
+  if (props.editEntry) ensureEditOptions(props.editEntry)
   optionsLoading.value = false
 }
 
 function validate(): boolean {
-  Object.keys(errors).forEach((key) => delete errors[key as FieldName])
-  if (!form.productId) errors.productId = '请选择或新增商品。'
-  if (!form.primaryCategoryId) errors.primaryCategoryId = '请选择一级分类。'
-  if (!form.unitId) errors.unitId = '请选择单位。'
-  if (!isDecimalInRange(form.unitPrice, 4, UNIT_PRICE_MAX)) errors.unitPrice = '单价为 0 至 99,999,999.9999，最多 4 位小数。'
-  if (!isDecimalInRange(form.quantity, 3, QUANTITY_MAX, true)) errors.quantity = '数量须大于 0，最多 3 位小数。'
-  if (!isDecimalInRange(form.paidAmount, 2, MONEY_MAX)) errors.paidAmount = '实付金额为 0 至 999,999,999.99，最多 2 位小数。'
-  if (!form.fundingChannelId) errors.fundingChannelId = '请选择支付方式。'
-  if (!isShanghaiLocalDateTime(form.occurredAt)) errors.occurredAt = '请选择有效消费时间。'
-  if (unicodeCodePointLength(form.note.trim()) > 500) errors.note = '备注最多 500 个字符。'
-  try {
-    calculateExpenseTotal(form.unitPrice, form.quantity)
-  } catch {
-    errors.calculatedAmount = '计算金额超出允许范围。'
-  }
+  Object.keys(errors).forEach((key) => delete errors[key as ExpenseField])
+  Object.assign(errors, validateExpenseForm(form))
   return Object.keys(errors).length === 0
-}
-
-function requestBody() {
-  return {
-    productId: form.productId,
-    primaryCategoryId: form.primaryCategoryId,
-    ...(form.secondaryCategoryId ? { secondaryCategoryId: form.secondaryCategoryId } : {}),
-    unitId: form.unitId,
-    unitPrice: form.unitPrice,
-    quantity: form.quantity,
-    paidAmount: form.paidAmount,
-    fundingChannelId: form.fundingChannelId,
-    ...(form.purchaseChannelId ? { purchaseChannelId: form.purchaseChannelId } : {}),
-    ...(form.locationLabelId ? { locationLabelId: form.locationLabelId } : {}),
-    occurredAt: shanghaiLocalDateTimeToIso(form.occurredAt),
-    ...(form.note.trim() ? { note: form.note.trim() } : {}),
-  }
 }
 
 async function submit(continueEntry: boolean): Promise<void> {
   if (submitting.value || !validate()) return
-  const body = requestBody()
+  const body = expenseRequestFromForm(form)
   const idempotencyKey = idempotencyAttempt.keyFor(body)
   submitting.value = true
   try {
+    if (props.editEntry) {
+      saved.value = await updateExpense(props.editEntry.id, { version: editVersion.value, entry: body }, idempotencyKey)
+      applyEditEntry(saved.value)
+      emit('saved', saved.value)
+      return
+    }
     saved.value = await createExpense(body, idempotencyKey)
     savedIdempotencyKey.value = idempotencyKey
     detailOpen.value = false
@@ -300,15 +289,37 @@ async function submit(continueEntry: boolean): Promise<void> {
   } catch (error) {
     if (error instanceof ApiClientError && error.body?.fieldErrors) {
       Object.entries(error.body.fieldErrors).forEach(([field, messages]) => {
-        errors[field as FieldName] = messages?.[0]
+        errors[field as ExpenseField] = messages?.[0]
       })
     }
+    versionConflict.value = error instanceof ApiClientError && error.body?.code === 'LEDGER_VERSION_CONFLICT'
     toastKind.value = 'error'
     toastMessage.value = error instanceof Error ? error.message : '保存失败，请重试。'
     toastOpen.value = true
   } finally {
     submitting.value = false
   }
+}
+
+async function resolveConflict(overwrite: boolean): Promise<void> {
+  if (!props.editEntry || submitting.value) return
+  submitting.value = true
+  try {
+    const latest = await getExpense(props.editEntry.id)
+    if (overwrite) applyEditEntry(latest)
+    else {
+      editVersion.value = latest.version
+      versionConflict.value = false
+      idempotencyAttempt.reset()
+      toastKind.value = 'success'
+      toastMessage.value = '已同步最新版本；你的输入仍保留，请确认后再次保存。'
+      toastOpen.value = true
+    }
+  } catch (error) {
+    toastKind.value = 'error'
+    toastMessage.value = error instanceof Error ? error.message : '加载最新支出失败。'
+    toastOpen.value = true
+  } finally { submitting.value = false }
 }
 
 async function undo(): Promise<void> {
@@ -337,7 +348,7 @@ void loadOptions()
 <template>
   <section
     class="expense-entry-form"
-    aria-label="支出填报"
+    :aria-label="editMode ? '编辑支出' : '支出填报'"
   >
     <AppStateBlock
       v-if="optionsLoading"
@@ -354,12 +365,41 @@ void loadOptions()
       @action="loadOptions"
     />
     <AppStateBlock
-      v-if="draft.storageError.value"
+      v-if="!editMode && draft.storageError.value"
       kind="error"
       title="草稿未保存到此设备"
       :message="draft.storageError.value"
     />
-    <DailyTemplateFallbackNotice :fields="templateUnavailableFields" />
+    <DailyTemplateFallbackNotice
+      v-if="!editMode"
+      :fields="templateUnavailableFields"
+    />
+    <section
+      v-if="versionConflict"
+      class="edit-conflict"
+      role="alert"
+    >
+      <strong>这条支出已在其他窗口更新</strong>
+      <p>你的输入仍然保留。可以加载最新内容，或保留当前输入并同步最新版本后再次确认保存。</p>
+      <div>
+        <button
+          type="button"
+          class="secondary-button"
+          :disabled="submitting"
+          @click="resolveConflict(true)"
+        >
+          加载最新内容
+        </button>
+        <button
+          type="button"
+          class="primary-button"
+          :disabled="submitting"
+          @click="resolveConflict(false)"
+        >
+          保留输入并重新确认
+        </button>
+      </div>
+    </section>
 
     <form
       class="expense-form"
@@ -606,13 +646,14 @@ void loadOptions()
 
       <EntrySaveBar
         :submitting="submitting"
-        primary-label="保存支出"
+        :continue-visible="!editMode"
+        :primary-label="editMode ? '保存修改' : '保存支出'"
         @continue="submit(true)"
       />
     </form>
 
     <section
-      v-if="saved"
+      v-if="saved && !editMode"
       class="saved-expense"
       aria-labelledby="saved-expense-title"
     >
@@ -649,7 +690,7 @@ void loadOptions()
       v-model:open="toastOpen"
       :message="toastMessage"
       :kind="toastKind"
-      :action-label="saved && toastKind === 'success' ? '撤销' : undefined"
+      :action-label="saved && !editMode && toastKind === 'success' ? '撤销' : undefined"
       :action-disabled="undoing"
       @action="undo"
     />

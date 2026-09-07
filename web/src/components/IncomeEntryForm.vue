@@ -1,16 +1,22 @@
 <script setup lang="ts">
-import { computed, reactive, ref, watch } from 'vue'
+import { computed, onScopeDispose, reactive, ref, watch } from 'vue'
 
 import type { DailyTemplateSelection } from '../api/dailyTemplates'
 import { createDictionaryItem, listDictionaryCandidates, type DictionaryItem } from '../api/dictionaries'
 import { ApiClientError } from '../api/http'
-import { createIncome, listRecentIncomeNames, undoCreatedIncome, type IncomeResponse } from '../api/incomes'
+import {
+  createIncome, getIncome, listRecentIncomeNames, undoCreatedIncome, updateIncome, type IncomeResponse,
+} from '../api/incomes'
 import { useLedgerDraft } from '../composables/useLedgerDraft'
+import { registerUnsavedChanges } from '../composables/unsavedChanges'
 import { createIdempotencyAttemptTracker } from '../domain/idempotency'
-import { isShanghaiLocalDateTime, shanghaiLocalDateTimeToIso, toShanghaiLocalDateTime } from '../domain/businessTime'
+import { toShanghaiLocalDateTime } from '../domain/businessTime'
 import { isDecimalInRange, MONEY_MAX, scaledIntegerToDecimal, decimalToScaledInteger } from '../domain/money'
 import { normalizeDictionaryName } from '../domain/dictionaries'
-import { unicodeCodePointLength } from '../domain/text'
+import {
+  emptyIncomeForm, incomeFormFromResponse, incomeRequestFromForm, validateIncomeForm,
+  type IncomeField, type IncomeFormState,
+} from '../domain/ledgerEntryForm'
 import AppStateBlock from './AppStateBlock.vue'
 import AppToast from './AppToast.vue'
 import DailyTemplateFallbackNotice from './DailyTemplateFallbackNotice.vue'
@@ -22,27 +28,22 @@ import FundingChannelPicker from './FundingChannelPicker.vue'
 import MoneySummary from './MoneySummary.vue'
 
 const props = defineProps<{ accountId?: string, defaultFundingChannelId?: string | null,
-  templateSelection?: DailyTemplateSelection, templateRevision?: number }>()
-const emit = defineEmits<{ 'templateConsumed': [] }>()
-type Field = 'incomeName' | 'payerId' | 'incomeCategoryId' | 'amount' | 'fundingChannelId' | 'occurredAt' | 'note'
-interface State { incomeName: string, payerId: string, payerName: string, incomeCategoryId: string,
-  amount: string, fundingChannelId: string, occurredAt: string, note: string }
-function empty(): State {
-  return { incomeName: '', payerId: '', payerName: '', incomeCategoryId: '', amount: '',
-    fundingChannelId: props.defaultFundingChannelId ?? '', occurredAt: toShanghaiLocalDateTime(), note: '' }
-}
+  templateSelection?: DailyTemplateSelection, templateRevision?: number, editEntry?: IncomeResponse }>()
+const emit = defineEmits<{ 'templateConsumed': [], saved: [value: IncomeResponse] }>()
+const empty = () => emptyIncomeForm(props.defaultFundingChannelId)
 
-const form = reactive<State>(empty())
+const form = reactive<IncomeFormState>(empty())
+const editMode = computed(() => Boolean(props.editEntry))
 const accountId = computed(() => props.accountId)
 const type = ref<'INCOME'>('INCOME')
-const draft = useLedgerDraft(accountId, type)
+const draft = useLedgerDraft(accountId, type, computed(() => !editMode.value))
 const payers = ref<DictionaryItem[]>([])
 const categories = ref<DictionaryItem[]>([])
 const funding = ref<DictionaryItem[]>([])
 const recentNames = ref<string[]>([])
 const loading = ref(true)
 const loadError = ref('')
-const errors = reactive<Partial<Record<Field, string>>>({})
+const errors = reactive<Partial<Record<IncomeField, string>>>({})
 const submitting = ref(false)
 const addingPayer = ref(false)
 const undoing = ref(false)
@@ -52,6 +53,9 @@ const toastOpen = ref(false)
 const toastMessage = ref('')
 const toastKind = ref<'success' | 'error'>('success')
 const attempt = createIdempotencyAttemptTracker()
+const editVersion = ref(0)
+const editBaseline = ref('')
+const versionConflict = ref(false)
 const appliedTemplateRevision = ref(props.templateRevision ?? 0)
 const templateUnavailableFields = ref<DailyTemplateSelection['unavailableFields']>(
   props.templateSelection?.entryType === 'INCOME' ? props.templateSelection.unavailableFields : [],
@@ -60,11 +64,30 @@ const summary = computed(() => [{ key: 'income', label: '本次收入',
   amount: isDecimalInRange(form.amount, 2, MONEY_MAX, true)
     ? scaledIntegerToDecimal(decimalToScaledInteger(form.amount, 2), 2) : '0.00',
   tone: 'income' as const, sign: '+' as const }])
+const editDirty = computed(() => editMode.value && editBaseline.value !== JSON.stringify(form))
 
-watch(() => draft.restored.value, (ready) => { if (ready) Object.assign(form, empty(), draft.data.value) })
+function applyEditEntry(value: IncomeResponse): void {
+  Object.assign(form, incomeFormFromResponse(value))
+  editVersion.value = value.version
+  editBaseline.value = JSON.stringify(form)
+  versionConflict.value = false
+  ensureEditOptions(value)
+  Object.keys(errors).forEach((key) => delete errors[key as IncomeField])
+  attempt.reset()
+}
+
+function ensureEditOptions(value: IncomeResponse): void {
+  ensureItem(payers, 'payer', value.payerId, value.payerName)
+  ensureItem(categories, 'income-category', value.incomeCategoryId, value.incomeCategoryName)
+  ensureItem(funding, 'funding-channel', value.fundingChannelId, value.fundingChannelName)
+}
+
+watch(() => props.editEntry, (value) => { if (value) applyEditEntry(value) }, { immediate: true })
+
+watch(() => draft.restored.value, (ready) => { if (ready && !editMode.value) Object.assign(form, empty(), draft.data.value) })
 watch([() => draft.restored.value, () => props.templateRevision], ([ready, revision]) => {
   const selection = props.templateSelection
-  if (!ready || !revision || revision === appliedTemplateRevision.value || selection?.entryType !== 'INCOME') return
+  if (editMode.value || !ready || !revision || revision === appliedTemplateRevision.value || selection?.entryType !== 'INCOME') return
   ensureItem(payers, 'payer', selection.payerId, selection.payerName)
   ensureItem(categories, 'income-category', selection.incomeCategoryId, selection.incomeCategoryName)
   ensureItem(funding, 'funding-channel', selection.fundingChannelId, selection.fundingChannelName)
@@ -74,17 +97,22 @@ watch([() => draft.restored.value, () => props.templateRevision], ([ready, revis
     incomeCategoryId: selection.incomeCategoryId ?? '', amount: selection.incomeAmount ?? '',
     fundingChannelId: selection.fundingChannelId ?? '', occurredAt: toShanghaiLocalDateTime(), note: '',
   })
-  Object.keys(errors).forEach((key) => delete errors[key as Field])
+  Object.keys(errors).forEach((key) => delete errors[key as IncomeField])
   saved.value = undefined
   templateUnavailableFields.value = selection.unavailableFields
   appliedTemplateRevision.value = revision
   attempt.reset()
   persist()
 })
-watch(() => props.defaultFundingChannelId, (value) => { if (!form.fundingChannelId && value) form.fundingChannelId = value })
+watch(() => props.defaultFundingChannelId, (value) => { if (!editMode.value && !form.fundingChannelId && value) form.fundingChannelId = value })
+
+const unregisterEditGuard = registerUnsavedChanges(editDirty, () => {
+  if (props.editEntry) applyEditEntry(props.editEntry)
+})
+onScopeDispose(unregisterEditGuard)
 
 function persist(): void { void draft.replace(Object.fromEntries(Object.entries(form).filter(([, value]) => value))) }
-function clear(field: Field): void { delete errors[field]; persist() }
+function clear(field: IncomeField): void { delete errors[field]; persist() }
 function ensureItem(target: typeof payers, itemType: DictionaryItem['type'], id?: string | null, name?: string | null): void {
   if (!id || !name || target.value.some((item) => item.id === id)) return
   target.value = [...target.value, { id, type: itemType, name, status: 'ACTIVE', sortOrder: 0, referenced: true }]
@@ -99,6 +127,7 @@ async function loadOptions(): Promise<void> {
     ])
     payers.value = payerPage.items; categories.value = categoryPage.items; funding.value = fundingPage.items
     recentNames.value = names.items
+    if (props.editEntry) ensureEditOptions(props.editEntry)
   } catch { loadError.value = '收入填报选项暂未完整加载。' }
   finally { loading.value = false }
 }
@@ -124,25 +153,22 @@ async function addPayer(): Promise<void> {
 }
 
 function validate(): boolean {
-  Object.keys(errors).forEach((key) => delete errors[key as Field])
-  if (!form.incomeName.trim()) errors.incomeName = '请输入收入名称。'
-  else if (unicodeCodePointLength(form.incomeName.trim()) > 200) errors.incomeName = '收入名称最多 200 个字符。'
-  if (!form.payerId) errors.payerId = '请选择或新增付款方。'
-  if (!form.incomeCategoryId) errors.incomeCategoryId = '请选择收入分类。'
-  if (!isDecimalInRange(form.amount, 2, MONEY_MAX, true)) errors.amount = '收入金额须大于 0，最多 2 位小数。'
-  if (!form.fundingChannelId) errors.fundingChannelId = '请选择收款方式。'
-  if (!isShanghaiLocalDateTime(form.occurredAt)) errors.occurredAt = '请选择有效收入时间。'
-  if (unicodeCodePointLength(form.note.trim()) > 500) errors.note = '备注最多 500 个字符。'
+  Object.keys(errors).forEach((key) => delete errors[key as IncomeField])
+  Object.assign(errors, validateIncomeForm(form))
   return Object.keys(errors).length === 0
 }
 
 async function submit(continueEntry: boolean): Promise<void> {
   if (submitting.value || !validate()) return
-  const body = { incomeName: form.incomeName.trim(), payerId: form.payerId,
-    incomeCategoryId: form.incomeCategoryId, amount: form.amount, fundingChannelId: form.fundingChannelId,
-    occurredAt: shanghaiLocalDateTimeToIso(form.occurredAt), ...(form.note.trim() ? { note: form.note.trim() } : {}) }
+  const body = incomeRequestFromForm(form)
   const key = attempt.keyFor(body); submitting.value = true
   try {
+    if (props.editEntry) {
+      saved.value = await updateIncome(props.editEntry.id, { version: editVersion.value, entry: body }, key)
+      applyEditEntry(saved.value)
+      emit('saved', saved.value)
+      return
+    }
     saved.value = await createIncome(body, key); savedKey.value = key
     toastKind.value = 'success'; toastMessage.value = '收入已保存，可撤销本次保存。'; toastOpen.value = true
     const retained = continueEntry ? { occurredAt: form.occurredAt, incomeCategoryId: form.incomeCategoryId,
@@ -152,8 +178,26 @@ async function submit(continueEntry: boolean): Promise<void> {
     if (!recentNames.value.includes(saved.value.incomeName)) recentNames.value.unshift(saved.value.incomeName)
   } catch (error) {
     if (error instanceof ApiClientError && error.body?.fieldErrors) Object.entries(error.body.fieldErrors)
-      .forEach(([field, messages]) => { errors[field as Field] = messages?.[0] })
+      .forEach(([field, messages]) => { errors[field as IncomeField] = messages?.[0] })
+    versionConflict.value = error instanceof ApiClientError && error.body?.code === 'LEDGER_VERSION_CONFLICT'
     toastKind.value = 'error'; toastMessage.value = error instanceof Error ? error.message : '保存失败，请重试。'; toastOpen.value = true
+  } finally { submitting.value = false }
+}
+
+async function resolveConflict(overwrite: boolean): Promise<void> {
+  if (!props.editEntry || submitting.value) return
+  submitting.value = true
+  try {
+    const latest = await getIncome(props.editEntry.id)
+    if (overwrite) applyEditEntry(latest)
+    else {
+      editVersion.value = latest.version
+      versionConflict.value = false
+      attempt.reset()
+      toastKind.value = 'success'; toastMessage.value = '已同步最新版本；你的输入仍保留，请确认后再次保存。'; toastOpen.value = true
+    }
+  } catch (error) {
+    toastKind.value = 'error'; toastMessage.value = error instanceof Error ? error.message : '加载最新收入失败。'; toastOpen.value = true
   } finally { submitting.value = false }
 }
 
@@ -171,7 +215,7 @@ void loadOptions()
 <template>
   <section
     class="income-entry-form"
-    aria-label="收入填报"
+    :aria-label="editMode ? '编辑收入' : '收入填报'"
   >
     <AppStateBlock
       v-if="loading"
@@ -188,12 +232,41 @@ void loadOptions()
       @action="loadOptions"
     />
     <AppStateBlock
-      v-if="draft.storageError.value"
+      v-if="!editMode && draft.storageError.value"
       kind="error"
       title="草稿未保存到此设备"
       :message="draft.storageError.value"
     />
-    <DailyTemplateFallbackNotice :fields="templateUnavailableFields" />
+    <DailyTemplateFallbackNotice
+      v-if="!editMode"
+      :fields="templateUnavailableFields"
+    />
+    <section
+      v-if="versionConflict"
+      class="edit-conflict"
+      role="alert"
+    >
+      <strong>这条收入已在其他窗口更新</strong>
+      <p>你的输入仍然保留。可以加载最新内容，或保留当前输入并同步最新版本后再次确认保存。</p>
+      <div>
+        <button
+          type="button"
+          class="secondary-button"
+          :disabled="submitting"
+          @click="resolveConflict(true)"
+        >
+          加载最新内容
+        </button>
+        <button
+          type="button"
+          class="primary-button"
+          :disabled="submitting"
+          @click="resolveConflict(false)"
+        >
+          保留输入并重新确认
+        </button>
+      </div>
+    </section>
     <form
       class="income-form"
       @submit.prevent="submit(false)"
@@ -347,12 +420,13 @@ void loadOptions()
       </FormSection>
       <EntrySaveBar
         :submitting="submitting"
-        primary-label="保存收入"
+        :continue-visible="!editMode"
+        :primary-label="editMode ? '保存修改' : '保存收入'"
         @continue="submit(true)"
       />
     </form>
     <section
-      v-if="saved"
+      v-if="saved && !editMode"
       class="saved-income"
     >
       <p class="eyebrow">
@@ -363,7 +437,7 @@ void loadOptions()
       v-model:open="toastOpen"
       :message="toastMessage"
       :kind="toastKind"
-      :action-label="saved && toastKind === 'success' ? '撤销' : undefined"
+      :action-label="saved && !editMode && toastKind === 'success' ? '撤销' : undefined"
       :action-disabled="undoing"
       @action="undo"
     />

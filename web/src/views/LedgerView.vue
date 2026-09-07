@@ -4,20 +4,26 @@ import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
 
 import { upsertDailyTemplateFromLedger } from '../api/dailyTemplates'
+import { getExpense, type ExpenseResponse } from '../api/expenses'
+import { getIncome, type IncomeResponse } from '../api/incomes'
 import type { LedgerDateRange, LedgerFilters, LedgerItem } from '../api/ledgerEntries'
 import { listDictionaryCandidates } from '../api/dictionaries'
 import AppliedFilterBar from '../components/AppliedFilterBar.vue'
+import AppDrawer from '../components/AppDrawer.vue'
 import AppStateBlock from '../components/AppStateBlock.vue'
 import AppToast from '../components/AppToast.vue'
 import FilterSheet from '../components/FilterSheet.vue'
+import ExpenseEntryForm from '../components/ExpenseEntryForm.vue'
 import FormField from '../components/FormField.vue'
 import GlobalLedgerSearch from '../components/GlobalLedgerSearch.vue'
 import IncrementalLedgerList from '../components/IncrementalLedgerList.vue'
+import IncomeEntryForm from '../components/IncomeEntryForm.vue'
 import LedgerContextActions from '../components/LedgerContextActions.vue'
 import SegmentedControl from '../components/SegmentedControl.vue'
 import { useIncrementalLedgerQuery } from '../composables/useIncrementalLedgerQuery'
 import { ledgerScrollKey, readLedgerScroll, rememberLedgerScroll } from '../composables/ledgerNavigationMemory'
 import { useLatestRequest } from '../composables/useLatestRequest'
+import { requestDiscardChanges } from '../composables/unsavedChanges'
 import {
   clearedLedgerFilters, ledgerRangeOptions, ledgerRouteQuery, ledgerTypeOptions, optionLabel, parseLedgerRoute,
   type LedgerDrillContext,
@@ -31,6 +37,7 @@ const preferences = usePreferencesStore()
 const session = useSessionStore()
 const list = useIncrementalLedgerQuery()
 const fundingRequest = useLatestRequest<Awaited<ReturnType<typeof listDictionaryCandidates>>>()
+const editRequest = useLatestRequest<ExpenseResponse | IncomeResponse>()
 const searchText = ref('')
 const filters = ref<LedgerFilters>({ query: '', type: 'ALL', range: 'TODAY' })
 const draft = ref<LedgerFilters>({ ...filters.value })
@@ -42,6 +49,8 @@ const contextBusy = ref(false)
 const toastOpen = ref(false)
 const toastMessage = ref('')
 const toastKind = ref<'success' | 'error'>('success')
+const editOpen = ref(false)
+const editTarget = ref<LedgerItem>()
 
 const defaultRange = computed<LedgerDateRange>(() => preferences.values.ledgerDefaultRange)
 const parsed = computed(() => parseLedgerRoute(route.query, defaultRange.value))
@@ -110,6 +119,34 @@ function openContext(item: LedgerItem): void {
   contextOpen.value = true
 }
 
+function loadEdit(): void {
+  const item = editTarget.value
+  if (!item) return
+  void editRequest.execute(
+    (signal) => item.entryType === 'EXPENSE' ? getExpense(item.id, signal) : getIncome(item.id, signal),
+    { intent: 'replace' },
+  )
+}
+
+function openEdit(item: LedgerItem): void {
+  editTarget.value = item
+  editOpen.value = true
+  loadEdit()
+}
+
+async function requestEditOpen(value: boolean): Promise<void> {
+  if (value) { editOpen.value = true; return }
+  if (await requestDiscardChanges('navigation')) editOpen.value = false
+}
+
+async function editSaved(value: ExpenseResponse | IncomeResponse): Promise<void> {
+  editOpen.value = false
+  toastKind.value = 'success'
+  toastMessage.value = `${'productName' in value ? '支出' : '收入'}修改已保存。`
+  toastOpen.value = true
+  await list.replace(filters.value)
+}
+
 async function contextAction(key: string): Promise<void> {
   if (key !== 'daily' || !contextItem.value || contextBusy.value) return
   contextBusy.value = true
@@ -133,7 +170,7 @@ function returnToReports(context: LedgerDrillContext): void {
 }
 
 onBeforeRouteLeave(() => { rememberLedgerScroll(currentScrollKey.value, globalThis.scrollY) })
-onBeforeUnmount(() => fundingRequest.cancel())
+onBeforeUnmount(() => { fundingRequest.cancel(); editRequest.cancel() })
 </script>
 
 <template>
@@ -233,6 +270,7 @@ onBeforeUnmount(() => fundingRequest.cancel())
         :loading-more="list.loadingMore.value"
         @more="list.more"
         @context="openContext"
+        @edit="openEdit"
       />
     </template>
 
@@ -341,6 +379,41 @@ onBeforeUnmount(() => fundingRequest.cancel())
       :actions="[{ key: 'daily', label: contextBusy ? '正在加入日常…' : '加入或更新日常模板', disabled: contextBusy }]"
       @select="contextAction"
     />
+    <AppDrawer
+      id="ledger-edit"
+      :open="editOpen"
+      :title="editTarget?.entryType === 'EXPENSE' ? '编辑支出' : '编辑收入'"
+      description="修改只作用于当前账目；账目类型不可转换。"
+      @update:open="requestEditOpen"
+    >
+      <AppStateBlock
+        v-if="editRequest.status.value === 'loading'"
+        kind="loading"
+        title="正在加载账目详情"
+      />
+      <AppStateBlock
+        v-else-if="editRequest.status.value === 'error'"
+        kind="error"
+        title="账目详情加载失败"
+        :message="editRequest.error.value?.message"
+        action-label="重试"
+        @action="loadEdit"
+      />
+      <ExpenseEntryForm
+        v-else-if="editRequest.data.value && 'productName' in editRequest.data.value"
+        :key="`${editRequest.data.value.id}:${editRequest.data.value.version}`"
+        :account-id="session.session?.accountId"
+        :edit-entry="editRequest.data.value"
+        @saved="editSaved"
+      />
+      <IncomeEntryForm
+        v-else-if="editRequest.data.value"
+        :key="`${editRequest.data.value.id}:${editRequest.data.value.version}`"
+        :account-id="session.session?.accountId"
+        :edit-entry="editRequest.data.value"
+        @saved="editSaved"
+      />
+    </AppDrawer>
     <AppToast
       v-model:open="toastOpen"
       :message="toastMessage"

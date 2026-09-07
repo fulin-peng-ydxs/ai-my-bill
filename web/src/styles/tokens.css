@@ -623,6 +623,13 @@ textarea:disabled {
   padding-left: max(var(--space-lg), env(safe-area-inset-left));
 }
 
+/* 复杂账目表单已由抽屉提供表面边界，避免在窄屏重复嵌套卡片。 */
+.app-drawer .expense-form {
+  padding-inline: 0;
+  border: 0;
+  border-radius: 0;
+}
+
 .settings-disclosure-list {
   display: grid;
   width: 100%;
@@ -830,6 +837,7 @@ textarea:disabled {
   border-bottom: 1px solid var(--color-border);
   outline: 0;
   touch-action: pan-y;
+  cursor: pointer;
 }
 
 .ledger-list-item:last-child { border-bottom: 0; }
@@ -1340,6 +1348,19 @@ textarea:disabled {
   backdrop-filter: blur(16px);
 }
 .entry-savebar button { width: 100%; }
+.entry-savebar-single { grid-template-columns: minmax(0, 1fr); }
+
+.edit-conflict {
+  display: grid;
+  gap: var(--space-sm);
+  padding: var(--space-md);
+  color: var(--color-text);
+  background: color-mix(in srgb, var(--color-warning) 9%, var(--color-surface));
+  border: 1px solid color-mix(in srgb, var(--color-warning) 42%, var(--color-border));
+  border-radius: var(--radius-control);
+}
+.edit-conflict p { margin: 0; color: var(--color-muted); line-height: 22px; }
+.edit-conflict > div { display: flex; flex-wrap: wrap; gap: var(--space-sm); }
 
 .saved-expense {
   display: grid;

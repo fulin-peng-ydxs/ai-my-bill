@@ -11,7 +11,7 @@ const props = defineProps<{
   hasMore: boolean
   loadingMore: boolean
 }>()
-const emit = defineEmits<{ more: [], context: [item: LedgerItem] }>()
+const emit = defineEmits<{ more: [], context: [item: LedgerItem], edit: [item: LedgerItem] }>()
 
 const groups = computed(() => {
   const result: Array<{ date: string, items: LedgerItem[] }> = []
@@ -43,6 +43,7 @@ const groups = computed(() => {
           :item="item"
           :show-type="type === 'ALL'"
           @context="emit('context', $event)"
+          @edit="emit('edit', $event)"
         />
       </div>
     </section>

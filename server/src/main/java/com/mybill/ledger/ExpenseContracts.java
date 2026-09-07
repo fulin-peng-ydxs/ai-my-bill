@@ -2,6 +2,8 @@ package com.mybill.ledger;
 
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.PositiveOrZero;
+import jakarta.validation.Valid;
 
 import java.time.Instant;
 import java.time.LocalDate;
@@ -24,6 +26,12 @@ final class ExpenseContracts {
             UUID locationLabelId,
             @NotNull Instant occurredAt,
             String note
+    ) { }
+
+    /** 编辑继续消费新增请求的同一字段契约，仅额外携带乐观锁版本。 */
+    record UpdateExpenseRequest(
+            @NotNull @PositiveOrZero Long version,
+            @NotNull @Valid CreateExpenseRequest entry
     ) { }
 
     record ExpenseResponse(
@@ -49,7 +57,9 @@ final class ExpenseContracts {
             UUID locationLabelId,
             String locationLabelName,
             String note,
-            Instant createdAt
+            Instant createdAt,
+            Instant updatedAt,
+            long version
     ) { }
 
     record ProductSuggestion(

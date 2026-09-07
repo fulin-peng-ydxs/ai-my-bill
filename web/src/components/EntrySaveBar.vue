@@ -1,11 +1,17 @@
 <script setup lang="ts">
-defineProps<{ submitting: boolean, primaryLabel: string }>()
+withDefaults(defineProps<{ submitting: boolean, primaryLabel: string, continueVisible?: boolean }>(), {
+  continueVisible: true,
+})
 defineEmits<{ continue: [] }>()
 </script>
 
 <template>
-  <div class="entry-savebar">
+  <div
+    class="entry-savebar"
+    :class="{ 'entry-savebar-single': !continueVisible }"
+  >
     <button
+      v-if="continueVisible"
       type="button"
       class="secondary-button"
       :disabled="submitting"

@@ -312,6 +312,54 @@ paths:
         "403": { $ref: "#/components/responses/AuthorizationError" }
         "409": { $ref: "#/components/responses/ConflictError" }
         "503": { $ref: "#/components/responses/ServiceUnavailableError" }
+  /expenses/{expenseId}:
+    get:
+      operationId: getExpense
+      summary: 读取当前租户的一条有效支出供查看或编辑
+      tags: [expenses]
+      parameters:
+        - name: expenseId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: 支出当前字段、快照与乐观锁版本
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ExpenseResponse" }
+        "401": { $ref: "#/components/responses/AuthenticationError" }
+        "403": { $ref: "#/components/responses/AuthorizationError" }
+        "404": { $ref: "#/components/responses/NotFoundError" }
+    put:
+      operationId: updateExpense
+      summary: 按版本更新当前租户的一条有效支出
+      tags: [expenses]
+      parameters:
+        - name: expenseId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateExpenseRequest" }
+      responses:
+        "200":
+          description: 更新后的支出，version 已递增
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ExpenseResponse" }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "401": { $ref: "#/components/responses/AuthenticationError" }
+        "403": { $ref: "#/components/responses/AuthorizationError" }
+        "404": { $ref: "#/components/responses/NotFoundError" }
+        "409": { $ref: "#/components/responses/ConflictError" }
   /incomes/names:
     get:
       operationId: listRecentIncomeNames
@@ -379,6 +427,54 @@ paths:
         "400": { $ref: "#/components/responses/ValidationError" }
         "401": { $ref: "#/components/responses/AuthenticationError" }
         "403": { $ref: "#/components/responses/AuthorizationError" }
+        "409": { $ref: "#/components/responses/ConflictError" }
+  /incomes/{incomeId}:
+    get:
+      operationId: getIncome
+      summary: 读取当前租户的一条有效收入供查看或编辑
+      tags: [incomes]
+      parameters:
+        - name: incomeId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: 收入当前字段、快照与乐观锁版本
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/IncomeResponse" }
+        "401": { $ref: "#/components/responses/AuthenticationError" }
+        "403": { $ref: "#/components/responses/AuthorizationError" }
+        "404": { $ref: "#/components/responses/NotFoundError" }
+    put:
+      operationId: updateIncome
+      summary: 按版本更新当前租户的一条有效收入
+      tags: [incomes]
+      parameters:
+        - name: incomeId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateIncomeRequest" }
+      responses:
+        "200":
+          description: 更新后的收入，version 已递增
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/IncomeResponse" }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "401": { $ref: "#/components/responses/AuthenticationError" }
+        "403": { $ref: "#/components/responses/AuthorizationError" }
+        "404": { $ref: "#/components/responses/NotFoundError" }
         "409": { $ref: "#/components/responses/ConflictError" }
   /daily-templates:
     get:
@@ -1082,12 +1178,19 @@ components:
         locationLabelId: { type: string, format: uuid }
         occurredAt: { $ref: "#/components/schemas/BusinessDateTime" }
         note: { $ref: "#/components/schemas/Note" }
+    UpdateExpenseRequest:
+      type: object
+      additionalProperties: false
+      required: [version, entry]
+      properties:
+        version: { type: integer, format: int64, minimum: 0 }
+        entry: { $ref: "#/components/schemas/CreateExpenseRequest" }
     ExpenseResponse:
       type: object
       additionalProperties: false
       required: [id, occurredAt, businessDate, productId, productName, primaryCategoryId,
         primaryCategoryName, unitId, unitName, unitPrice, quantity, calculatedAmount, paidAmount,
-        fundingChannelId, fundingChannelName, createdAt]
+        fundingChannelId, fundingChannelName, createdAt, updatedAt, version]
       properties:
         id: { type: string, format: uuid }
         occurredAt: { $ref: "#/components/schemas/BusinessDateTime" }
@@ -1112,6 +1215,8 @@ components:
         locationLabelName: { type: string, minLength: 1, maxLength: 100 }
         note: { $ref: "#/components/schemas/Note" }
         createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        version: { type: integer, format: int64, minimum: 0 }
     CreateIncomeRequest:
       type: object
       additionalProperties: false
@@ -1124,11 +1229,18 @@ components:
         fundingChannelId: { type: string, format: uuid }
         occurredAt: { $ref: "#/components/schemas/BusinessDateTime" }
         note: { $ref: "#/components/schemas/Note" }
+    UpdateIncomeRequest:
+      type: object
+      additionalProperties: false
+      required: [version, entry]
+      properties:
+        version: { type: integer, format: int64, minimum: 0 }
+        entry: { $ref: "#/components/schemas/CreateIncomeRequest" }
     IncomeResponse:
       type: object
       additionalProperties: false
       required: [id, occurredAt, businessDate, incomeName, payerId, payerName, incomeCategoryId,
-        incomeCategoryName, amount, fundingChannelId, fundingChannelName, createdAt]
+        incomeCategoryName, amount, fundingChannelId, fundingChannelName, createdAt, updatedAt, version]
       properties:
         id: { type: string, format: uuid }
         occurredAt: { $ref: "#/components/schemas/BusinessDateTime" }
@@ -1143,6 +1255,8 @@ components:
         fundingChannelName: { type: string, minLength: 1, maxLength: 100 }
         note: { $ref: "#/components/schemas/Note" }
         createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        version: { type: integer, format: int64, minimum: 0 }
     IncomeNames:
       type: object
       additionalProperties: false

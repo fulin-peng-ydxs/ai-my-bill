@@ -33,6 +33,18 @@ public class IncomeController {
         return ResponseEntity.status(result.replayed() ? HttpStatus.OK : HttpStatus.CREATED).body(result.response());
     }
 
+    @GetMapping("/{incomeId}")
+    IncomeResponse find(@AuthenticationPrincipal CurrentPrincipal principal, @PathVariable UUID incomeId) {
+        return service.find(principal, incomeId);
+    }
+
+    @PutMapping("/{incomeId}")
+    IncomeResponse update(@AuthenticationPrincipal CurrentPrincipal principal, @PathVariable UUID incomeId,
+                          @RequestHeader("Idempotency-Key") String key,
+                          @Valid @RequestBody UpdateIncomeRequest request) {
+        return service.update(principal, incomeId, key, request);
+    }
+
     @DeleteMapping("/{incomeId}/undo")
     ResponseEntity<Void> undo(@AuthenticationPrincipal CurrentPrincipal principal, @PathVariable UUID incomeId,
                               @RequestHeader("Idempotency-Key") String key) {

@@ -40,6 +40,7 @@ import static org.springframework.security.test.web.servlet.request.SecurityMock
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -258,6 +259,89 @@ class ExpenseHttpIntegrationTest {
                         .header("Idempotency-Key", "undo-key").contentType(MediaType.APPLICATION_JSON)
                         .content(json(request(PRODUCT, NOW.minusSeconds(60), "8.8", "2", "17.6"))))
                 .andExpect(status().isCreated());
+    }
+
+    @Test @Order(7)
+    void detailAndUpdateReuseValidationPreserveSnapshotsAndRejectStaleVersion() throws Exception {
+        Cookie user = login("t11-user", PASSWORD);
+        Map<String, Object> original = request(PRODUCT, NOW.minusSeconds(120), "10", "2", "19.50");
+        MvcResult created = mockMvc.perform(post("/api/v1/expenses").with(csrf()).cookie(user)
+                        .header("Idempotency-Key", "edit-expense-create").contentType(MediaType.APPLICATION_JSON)
+                        .content(json(original)))
+                .andExpect(status().isCreated()).andExpect(jsonPath("$.version").value(0)).andReturn();
+        String id = objectMapper.readTree(created.getResponse().getContentAsByteArray()).path("id").asText();
+        mockMvc.perform(get("/api/v1/expenses/{id}", id).cookie(user))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.productName").value("早餐包"));
+
+        tenantDatabase.execute(TENANT, () -> {
+            jdbc.sql("UPDATE expense_category SET display_name='餐食',normalized_name='餐食' WHERE id=:id")
+                    .param("id", PRIMARY).update();
+            return null;
+        });
+        Map<String, Object> changedEntry = new LinkedHashMap<>(original);
+        changedEntry.put("productId", NORMALIZED_PRODUCT);
+        changedEntry.put("unitPrice", "7.125");
+        changedEntry.put("quantity", "2.5");
+        changedEntry.put("paidAmount", "18.88");
+        changedEntry.put("occurredAt", NOW.minusSeconds(86_400));
+        changedEntry.put("note", "  编辑后备注  ");
+        changedEntry.remove("secondaryCategoryId");
+        changedEntry.remove("purchaseChannelId");
+        changedEntry.remove("locationLabelId");
+        Map<String, Object> update = Map.of("version", 0, "entry", changedEntry);
+        mockMvc.perform(put("/api/v1/expenses/{id}", id).with(csrf()).cookie(user)
+                        .header("Idempotency-Key", "edit-expense-key").contentType(MediaType.APPLICATION_JSON)
+                        .content(json(update)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.version").value(1))
+                .andExpect(jsonPath("$.productId").value(NORMALIZED_PRODUCT.toString()))
+                .andExpect(jsonPath("$.productName").value("Coffee Latte"))
+                .andExpect(jsonPath("$.unitPrice").value("7.125"))
+                .andExpect(jsonPath("$.quantity").value("2.5"))
+                .andExpect(jsonPath("$.calculatedAmount").value("17.81"))
+                .andExpect(jsonPath("$.paidAmount").value("18.88"))
+                .andExpect(jsonPath("$.primaryCategoryName").value("餐食"))
+                .andExpect(jsonPath("$.secondaryCategoryId").doesNotExist())
+                .andExpect(jsonPath("$.purchaseChannelId").doesNotExist())
+                .andExpect(jsonPath("$.locationLabelId").doesNotExist())
+                .andExpect(jsonPath("$.businessDate").value("2026-09-05"))
+                .andExpect(jsonPath("$.note").value("编辑后备注"));
+        mockMvc.perform(put("/api/v1/expenses/{id}", id).with(csrf()).cookie(user)
+                        .header("Idempotency-Key", "edit-expense-key").contentType(MediaType.APPLICATION_JSON)
+                        .content(json(update)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.version").value(1));
+        mockMvc.perform(put("/api/v1/expenses/{id}", id).with(csrf()).cookie(user)
+                        .header("Idempotency-Key", "stale-expense-key").contentType(MediaType.APPLICATION_JSON)
+                        .content(json(update)))
+                .andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("LEDGER_VERSION_CONFLICT"));
+
+        Map<String, Object> invalidEntry = new LinkedHashMap<>(changedEntry);
+        invalidEntry.put("quantity", "0");
+        mockMvc.perform(put("/api/v1/expenses/{id}", id).with(csrf()).cookie(user)
+                        .header("Idempotency-Key", "invalid-expense-edit").contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of("version", 1, "entry", invalidEntry))))
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.fieldErrors.quantity[0]").exists());
+        mockMvc.perform(put("/api/v1/expenses/{id}", id).with(csrf()).cookie(user)
+                        .header("Idempotency-Key", "negative-expense-version").contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of("version", -1, "entry", changedEntry))))
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.fieldErrors.version[0]").exists());
+        mockMvc.perform(get("/api/v1/expenses/{id}", id).cookie(user))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.version").value(1))
+                .andExpect(jsonPath("$.paidAmount").value("18.88"));
+        mockMvc.perform(get("/api/v1/ledger-entries").queryParam("range", "THIS_YEAR")
+                        .queryParam("query", "编辑后备注").cookie(user))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.items[0].id").value(id))
+                .andExpect(jsonPath("$.items[0].amount").value("18.88"));
+
+        String untouchedSnapshot = tenantDatabase.execute(TENANT, () -> jdbc.sql("""
+                SELECT primary_category_name_snapshot FROM ledger_entry
+                 WHERE id<>:id AND product_id=:product ORDER BY created_at LIMIT 1
+                """).param("id", UUID.fromString(id)).param("product", PRODUCT).query(String.class).single());
+        assertThat(untouchedSnapshot).isEqualTo("餐饮");
+        mockMvc.perform(get("/api/v1/expenses/{id}", UUID.randomUUID()).cookie(user))
+                .andExpect(status().isNotFound()).andExpect(jsonPath("$.code").value("LEDGER_ENTRY_NOT_FOUND"));
+        Cookie admin = login("t11-admin", "T11-Admin-Formal-Password-2026");
+        mockMvc.perform(get("/api/v1/expenses/{id}", id).cookie(admin))
+                .andExpect(status().isForbidden()).andExpect(jsonPath("$.code").value("FORBIDDEN"));
     }
 
     private Map<String, Object> request(UUID productId, Instant occurredAt, String price, String quantity, String paid) {

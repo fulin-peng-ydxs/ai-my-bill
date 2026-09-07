@@ -65,10 +65,40 @@ class ExpenseRepository {
                        unit_price, quantity, calculated_amount, paid_amount,
                        funding_channel_id, funding_channel_name_snapshot,
                        purchase_channel_id, purchase_channel_name_snapshot,
-                       location_label_id, location_label_name_snapshot, note, created_at
+                       location_label_id, location_label_name_snapshot, note, created_at, updated_at, version
                   FROM ledger_entry
                  WHERE id = :id AND entry_type = 'EXPENSE' AND lifecycle_status = 'ACTIVE'
                 """).param("id", id).query(ExpenseRepository::mapExpense).optional();
+    }
+
+    /** 版本条件与字段更新在同一语句完成，避免读后写窗口覆盖并发修改。 */
+    boolean updateExpense(UUID id, long version, ExpenseContracts.CreateExpenseRequest request,
+                          ExpenseReferences references, BigDecimal unitPrice, BigDecimal quantity,
+                          BigDecimal paidAmount, BigDecimal calculatedAmount, LocalDate businessDate,
+                          String note, Instant now) {
+        return jdbc.sql("""
+                UPDATE ledger_entry SET business_time=:businessTime,business_date=:businessDate,
+                  product_id=:productId,product_name_snapshot=:productName,
+                  primary_category_id=:primaryId,primary_category_name_snapshot=:primaryName,
+                  secondary_category_id=:secondaryId,secondary_category_name_snapshot=:secondaryName,
+                  unit_id=:unitId,unit_name_snapshot=:unitName,unit_price=:unitPrice,quantity=:quantity,
+                  calculated_amount=:calculatedAmount,paid_amount=:paidAmount,
+                  funding_channel_id=:fundingId,funding_channel_name_snapshot=:fundingName,
+                  purchase_channel_id=:purchaseId,purchase_channel_name_snapshot=:purchaseName,
+                  location_label_id=:locationId,location_label_name_snapshot=:locationName,
+                  note=:note,updated_at=:now,version=version+1
+                WHERE id=:id AND entry_type='EXPENSE' AND lifecycle_status='ACTIVE' AND version=:version
+                """).param("businessTime", Timestamp.from(request.occurredAt())).param("businessDate", businessDate)
+                .param("productId", request.productId()).param("productName", references.product().name())
+                .param("primaryId", request.primaryCategoryId()).param("primaryName", references.primaryCategory().name())
+                .param("secondaryId", request.secondaryCategoryId()).param("secondaryName", name(references.secondaryCategory()))
+                .param("unitId", request.unitId()).param("unitName", references.unit().name())
+                .param("unitPrice", unitPrice).param("quantity", quantity).param("calculatedAmount", calculatedAmount)
+                .param("paidAmount", paidAmount).param("fundingId", request.fundingChannelId())
+                .param("fundingName", references.fundingChannel().name()).param("purchaseId", request.purchaseChannelId())
+                .param("purchaseName", name(references.purchaseChannel())).param("locationId", request.locationLabelId())
+                .param("locationName", name(references.locationLabel())).param("note", note)
+                .param("now", Timestamp.from(now)).param("id", id).param("version", version).update() == 1;
     }
 
     Optional<UUID> deleteUndoableExpense(UUID id, String idempotencyKey) {
@@ -108,7 +138,8 @@ class ExpenseRepository {
                 rs.getObject("funding_channel_id", UUID.class), rs.getString("funding_channel_name_snapshot"),
                 rs.getObject("purchase_channel_id", UUID.class), rs.getString("purchase_channel_name_snapshot"),
                 rs.getObject("location_label_id", UUID.class), rs.getString("location_label_name_snapshot"),
-                rs.getString("note"), rs.getTimestamp("created_at").toInstant());
+                rs.getString("note"), rs.getTimestamp("created_at").toInstant(),
+                rs.getTimestamp("updated_at").toInstant(), rs.getLong("version"));
     }
 
     private static String decimal(BigDecimal value) {

@@ -210,6 +210,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/expenses/{expenseId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 读取当前租户的一条有效支出供查看或编辑 */
+        get: operations["getExpense"];
+        /** 按版本更新当前租户的一条有效支出 */
+        put: operations["updateExpense"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/incomes/names": {
         parameters: {
             query?: never;
@@ -256,6 +274,24 @@ export interface paths {
         post?: never;
         /** 撤销尚无模板关联的刚保存收入 */
         delete: operations["undoCreatedIncome"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/incomes/{incomeId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 读取当前租户的一条有效收入供查看或编辑 */
+        get: operations["getIncome"];
+        /** 按版本更新当前租户的一条有效收入 */
+        put: operations["updateIncome"];
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -707,6 +743,11 @@ export interface components {
             occurredAt: components["schemas"]["BusinessDateTime"];
             note?: components["schemas"]["Note"];
         };
+        UpdateExpenseRequest: {
+            /** Format: int64 */
+            version: number;
+            entry: components["schemas"]["CreateExpenseRequest"];
+        };
         ExpenseResponse: {
             /** Format: uuid */
             id: string;
@@ -741,6 +782,10 @@ export interface components {
             note?: components["schemas"]["Note"];
             /** Format: date-time */
             createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+            /** Format: int64 */
+            version: number;
         };
         CreateIncomeRequest: {
             incomeName: string;
@@ -753,6 +798,11 @@ export interface components {
             fundingChannelId: string;
             occurredAt: components["schemas"]["BusinessDateTime"];
             note?: components["schemas"]["Note"];
+        };
+        UpdateIncomeRequest: {
+            /** Format: int64 */
+            version: number;
+            entry: components["schemas"]["CreateIncomeRequest"];
         };
         IncomeResponse: {
             /** Format: uuid */
@@ -774,6 +824,10 @@ export interface components {
             note?: components["schemas"]["Note"];
             /** Format: date-time */
             createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+            /** Format: int64 */
+            version: number;
         };
         IncomeNames: {
             items: string[];
@@ -1533,6 +1587,64 @@ export interface operations {
             503: components["responses"]["ServiceUnavailableError"];
         };
     };
+    getExpense: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                expenseId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 支出当前字段、快照与乐观锁版本 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExpenseResponse"];
+                };
+            };
+            401: components["responses"]["AuthenticationError"];
+            403: components["responses"]["AuthorizationError"];
+            404: components["responses"]["NotFoundError"];
+        };
+    };
+    updateExpense: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path: {
+                expenseId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateExpenseRequest"];
+            };
+        };
+        responses: {
+            /** @description 更新后的支出，version 已递增 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExpenseResponse"];
+                };
+            };
+            400: components["responses"]["ValidationError"];
+            401: components["responses"]["AuthenticationError"];
+            403: components["responses"]["AuthorizationError"];
+            404: components["responses"]["NotFoundError"];
+            409: components["responses"]["ConflictError"];
+        };
+    };
     listRecentIncomeNames: {
         parameters: {
             query?: {
@@ -1620,6 +1732,64 @@ export interface operations {
             400: components["responses"]["ValidationError"];
             401: components["responses"]["AuthenticationError"];
             403: components["responses"]["AuthorizationError"];
+            409: components["responses"]["ConflictError"];
+        };
+    };
+    getIncome: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                incomeId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 收入当前字段、快照与乐观锁版本 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IncomeResponse"];
+                };
+            };
+            401: components["responses"]["AuthenticationError"];
+            403: components["responses"]["AuthorizationError"];
+            404: components["responses"]["NotFoundError"];
+        };
+    };
+    updateIncome: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path: {
+                incomeId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateIncomeRequest"];
+            };
+        };
+        responses: {
+            /** @description 更新后的收入，version 已递增 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IncomeResponse"];
+                };
+            };
+            400: components["responses"]["ValidationError"];
+            401: components["responses"]["AuthenticationError"];
+            403: components["responses"]["AuthorizationError"];
+            404: components["responses"]["NotFoundError"];
             409: components["responses"]["ConflictError"];
         };
     };
