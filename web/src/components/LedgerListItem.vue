@@ -5,7 +5,7 @@ import type { LedgerItem } from '../api/ledgerEntries'
 import { formatLedgerTime } from '../domain/ledgerFormatting'
 
 const props = defineProps<{ item: LedgerItem, showType: boolean }>()
-const emit = defineEmits<{ context: [item: LedgerItem], edit: [item: LedgerItem] }>()
+const emit = defineEmits<{ context: [item: LedgerItem], open: [item: LedgerItem] }>()
 let longPress: ReturnType<typeof globalThis.setTimeout> | undefined
 let longPressTriggered = false
 let longPressReset: ReturnType<typeof globalThis.setTimeout> | undefined
@@ -40,14 +40,14 @@ function openContext(): void {
   emit('context', props.item)
 }
 
-function openEdit(): void {
+function openItem(): void {
   if (longPressTriggered) {
     if (longPressReset) globalThis.clearTimeout(longPressReset)
     longPressReset = undefined
     longPressTriggered = false
     return
   }
-  emit('edit', props.item)
+  emit('open', props.item)
 }
 
 function onKeydown(event: unknown): void {
@@ -57,7 +57,7 @@ function onKeydown(event: unknown): void {
     emit('context', props.item)
   } else if (keyboardEvent.key === 'Enter' || keyboardEvent.key === ' ') {
     keyboardEvent.preventDefault()
-    emit('edit', props.item)
+    emit('open', props.item)
   }
 }
 
@@ -73,9 +73,9 @@ onBeforeUnmount(() => {
     role="button"
     tabindex="0"
     aria-haspopup="dialog"
-    :aria-label="`${item.entryType === 'EXPENSE' ? '支出' : '收入'} ${item.title}，按 Shift+F10 打开账目操作`"
+    :aria-label="`${item.entryType === 'EXPENSE' ? '支出' : item.entryType === 'INCOME' ? '收入' : '调整'} ${item.title}，按 Shift+F10 打开账目操作`"
     @contextmenu.prevent="openContext"
-    @click="openEdit"
+    @click="openItem"
     @keydown="onKeydown"
     @pointerdown="startLongPress"
     @pointerup="cancelLongPress"
@@ -88,11 +88,17 @@ onBeforeUnmount(() => {
           v-if="showType"
           class="ledger-type-tag"
           :class="`ledger-type-${item.entryType.toLowerCase()}`"
-        >{{ item.entryType === 'EXPENSE' ? '支出' : '收入' }}</span>
+        >{{ item.entryType === 'EXPENSE' ? '支出' : item.entryType === 'INCOME' ? '收入' : item.adjustmentType === 'REFUND' ? '退款' : '报销' }}</span>
         <strong>{{ item.title }}</strong>
       </div>
       <p class="ledger-item-meta">
         {{ formatLedgerTime(item.occurredAt) }} · {{ item.categoryName }} · {{ item.counterpartyName }} · {{ item.fundingChannelName }}
+      </p>
+      <p
+        v-if="item.entryType === 'EXPENSE' && item.effectiveAdjustmentAmount && item.effectiveAdjustmentAmount !== '0.00'"
+        class="ledger-adjustment-state"
+      >
+        {{ item.fullyAdjusted ? '已全额退款/报销' : `已调整 ¥${item.effectiveAdjustmentAmount} · 净支出 ¥${item.netExpenseAmount}` }}
       </p>
       <p
         v-if="item.note"

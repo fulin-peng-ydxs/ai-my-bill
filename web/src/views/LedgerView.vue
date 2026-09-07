@@ -4,16 +4,20 @@ import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
 
 import { upsertDailyTemplateFromLedger } from '../api/dailyTemplates'
+import { getExpenseAdjustment, revokeExpenseAdjustment, type ExpenseAdjustmentResponse } from '../api/expenseAdjustments'
 import { getExpense, type ExpenseResponse } from '../api/expenses'
 import { getIncome, type IncomeResponse } from '../api/incomes'
 import type { LedgerDateRange, LedgerFilters, LedgerItem } from '../api/ledgerEntries'
 import { listDictionaryCandidates } from '../api/dictionaries'
 import AppliedFilterBar from '../components/AppliedFilterBar.vue'
+import AppDialog from '../components/AppDialog.vue'
 import AppDrawer from '../components/AppDrawer.vue'
 import AppStateBlock from '../components/AppStateBlock.vue'
 import AppToast from '../components/AppToast.vue'
 import FilterSheet from '../components/FilterSheet.vue'
 import ExpenseEntryForm from '../components/ExpenseEntryForm.vue'
+import ExpenseAdjustmentDetail from '../components/ExpenseAdjustmentDetail.vue'
+import ExpenseAdjustmentForm from '../components/ExpenseAdjustmentForm.vue'
 import FormField from '../components/FormField.vue'
 import GlobalLedgerSearch from '../components/GlobalLedgerSearch.vue'
 import IncrementalLedgerList from '../components/IncrementalLedgerList.vue'
@@ -24,6 +28,7 @@ import { useIncrementalLedgerQuery } from '../composables/useIncrementalLedgerQu
 import { ledgerScrollKey, readLedgerScroll, rememberLedgerScroll } from '../composables/ledgerNavigationMemory'
 import { useLatestRequest } from '../composables/useLatestRequest'
 import { requestDiscardChanges } from '../composables/unsavedChanges'
+import { createIdempotencyAttemptTracker } from '../domain/idempotency'
 import {
   clearedLedgerFilters, ledgerRangeOptions, ledgerRouteQuery, ledgerTypeOptions, optionLabel, parseLedgerRoute,
   type LedgerDrillContext,
@@ -38,6 +43,7 @@ const session = useSessionStore()
 const list = useIncrementalLedgerQuery()
 const fundingRequest = useLatestRequest<Awaited<ReturnType<typeof listDictionaryCandidates>>>()
 const editRequest = useLatestRequest<ExpenseResponse | IncomeResponse>()
+const adjustmentRequest = useLatestRequest<ExpenseAdjustmentResponse>()
 const searchText = ref('')
 const filters = ref<LedgerFilters>({ query: '', type: 'ALL', range: 'TODAY' })
 const draft = ref<LedgerFilters>({ ...filters.value })
@@ -51,6 +57,13 @@ const toastMessage = ref('')
 const toastKind = ref<'success' | 'error'>('success')
 const editOpen = ref(false)
 const editTarget = ref<LedgerItem>()
+const adjustmentSource = ref<LedgerItem>()
+const adjustmentOpen = ref(false)
+const adjustmentTarget = ref<LedgerItem>()
+const adjustmentDetailOpen = ref(false)
+const revokeConfirmOpen = ref(false)
+const revoking = ref(false)
+const revokeAttempt = createIdempotencyAttemptTracker()
 
 const defaultRange = computed<LedgerDateRange>(() => preferences.values.ledgerDefaultRange)
 const parsed = computed(() => parseLedgerRoute(route.query, defaultRange.value))
@@ -119,6 +132,15 @@ function openContext(item: LedgerItem): void {
   contextOpen.value = true
 }
 
+const contextActions = computed(() => {
+  if (!contextItem.value) return []
+  if (contextItem.value.entryType === 'ADJUSTMENT') return [{ key: 'detail', label: '查看调整详情' }]
+  return [
+    { key: 'daily', label: contextBusy.value ? '正在加入日常…' : '加入或更新日常模板', disabled: contextBusy.value },
+    ...(contextItem.value.entryType === 'EXPENSE' ? [{ key: 'adjust', label: '记录退款/报销' }] : []),
+  ]
+})
+
 function loadEdit(): void {
   const item = editTarget.value
   if (!item) return
@@ -129,9 +151,47 @@ function loadEdit(): void {
 }
 
 function openEdit(item: LedgerItem): void {
+  if (item.entryType === 'ADJUSTMENT') { openAdjustmentDetail(item); return }
   editTarget.value = item
   editOpen.value = true
   loadEdit()
+}
+
+function openAdjustmentDetail(item: LedgerItem): void {
+  adjustmentTarget.value = item
+  adjustmentDetailOpen.value = true
+  void adjustmentRequest.execute((signal) => getExpenseAdjustment(item.id, signal), { intent: 'replace' })
+}
+
+function openAdjustmentForm(item: LedgerItem): void {
+  adjustmentSource.value = item
+  adjustmentOpen.value = true
+}
+
+async function requestAdjustmentOpen(value: boolean): Promise<void> {
+  if (value) { adjustmentOpen.value = true; return }
+  if (await requestDiscardChanges('navigation')) adjustmentOpen.value = false
+}
+
+async function adjustmentSaved(): Promise<void> {
+  adjustmentOpen.value = false
+  toastKind.value = 'success'; toastMessage.value = '退款/报销调整已保存，原支出净额已更新。'; toastOpen.value = true
+  await list.replace(filters.value)
+}
+
+async function confirmRevoke(): Promise<void> {
+  const detail = adjustmentRequest.data.value
+  if (!detail || revoking.value) return
+  revoking.value = true
+  try {
+    const request = { id: detail.id, version: detail.version }
+    adjustmentRequest.data.value = await revokeExpenseAdjustment(detail.id, detail.version, revokeAttempt.keyFor(request))
+    revokeAttempt.reset(); revokeConfirmOpen.value = false
+    toastKind.value = 'success'; toastMessage.value = '调整已撤销，原支出净额已恢复。'; toastOpen.value = true
+    await list.replace(filters.value)
+  } catch (cause) {
+    toastKind.value = 'error'; toastMessage.value = cause instanceof Error ? cause.message : '撤销调整失败，请重试。'; toastOpen.value = true
+  } finally { revoking.value = false }
 }
 
 async function requestEditOpen(value: boolean): Promise<void> {
@@ -148,7 +208,14 @@ async function editSaved(value: ExpenseResponse | IncomeResponse): Promise<void>
 }
 
 async function contextAction(key: string): Promise<void> {
-  if (key !== 'daily' || !contextItem.value || contextBusy.value) return
+  if (!contextItem.value || contextBusy.value) return
+  if (key === 'adjust' && contextItem.value.entryType === 'EXPENSE') {
+    const item = contextItem.value; contextOpen.value = false; openAdjustmentForm(item); return
+  }
+  if (key === 'detail' && contextItem.value.entryType === 'ADJUSTMENT') {
+    const item = contextItem.value; contextOpen.value = false; openAdjustmentDetail(item); return
+  }
+  if (key !== 'daily' || contextItem.value.entryType === 'ADJUSTMENT') return
   contextBusy.value = true
   try {
     await upsertDailyTemplateFromLedger(contextItem.value.id)
@@ -170,7 +237,7 @@ function returnToReports(context: LedgerDrillContext): void {
 }
 
 onBeforeRouteLeave(() => { rememberLedgerScroll(currentScrollKey.value, globalThis.scrollY) })
-onBeforeUnmount(() => { fundingRequest.cancel(); editRequest.cancel() })
+onBeforeUnmount(() => { fundingRequest.cancel(); editRequest.cancel(); adjustmentRequest.cancel() })
 </script>
 
 <template>
@@ -184,7 +251,7 @@ onBeforeUnmount(() => { fundingRequest.cancel(); editRequest.cancel() })
           有效账目
         </p>
         <h1>收支明细</h1>
-        <p>按上海业务日期分组，稳定加载每一笔收支。</p>
+        <p>按上海业务日期分组，稳定加载每一笔收支与退款/报销调整。</p>
       </div>
     </header>
 
@@ -270,7 +337,7 @@ onBeforeUnmount(() => { fundingRequest.cancel(); editRequest.cancel() })
         :loading-more="list.loadingMore.value"
         @more="list.more"
         @context="openContext"
-        @edit="openEdit"
+        @open="openEdit"
       />
     </template>
 
@@ -376,7 +443,7 @@ onBeforeUnmount(() => { fundingRequest.cancel(); editRequest.cancel() })
       id="ledger-context-actions"
       v-model:open="contextOpen"
       :title="contextItem ? `管理“${contextItem.title}”` : '账目操作'"
-      :actions="[{ key: 'daily', label: contextBusy ? '正在加入日常…' : '加入或更新日常模板', disabled: contextBusy }]"
+      :actions="contextActions"
       @select="contextAction"
     />
     <AppDrawer
@@ -414,6 +481,57 @@ onBeforeUnmount(() => { fundingRequest.cancel(); editRequest.cancel() })
         @saved="editSaved"
       />
     </AppDrawer>
+    <AppDrawer
+      id="expense-adjustment-create"
+      :open="adjustmentOpen"
+      title="记录退款/报销"
+      description="调整会冲减所选原支出的净额，不计入收入。"
+      @update:open="requestAdjustmentOpen"
+    >
+      <ExpenseAdjustmentForm
+        v-if="adjustmentSource"
+        :key="adjustmentSource.id"
+        :source="adjustmentSource"
+        @saved="adjustmentSaved"
+      />
+    </AppDrawer>
+    <AppDrawer
+      id="expense-adjustment-detail"
+      :open="adjustmentDetailOpen"
+      title="调整详情"
+      description="已撤销记录仍保留，用于还原调整轨迹。"
+      @update:open="adjustmentDetailOpen = $event"
+    >
+      <AppStateBlock
+        v-if="adjustmentRequest.status.value === 'loading'"
+        kind="loading"
+        title="正在加载调整详情"
+      />
+      <AppStateBlock
+        v-else-if="adjustmentRequest.status.value === 'error'"
+        kind="error"
+        title="调整详情加载失败"
+        :message="adjustmentRequest.error.value?.message"
+        action-label="重试"
+        @action="adjustmentTarget && openAdjustmentDetail(adjustmentTarget)"
+      />
+      <ExpenseAdjustmentDetail
+        v-else-if="adjustmentRequest.data.value"
+        :adjustment="adjustmentRequest.data.value"
+        :busy="revoking"
+        @revoke="revokeConfirmOpen = true"
+      />
+    </AppDrawer>
+    <AppDialog
+      id="revoke-adjustment"
+      v-model:open="revokeConfirmOpen"
+      title="确认撤销这笔调整？"
+      description="撤销后该金额不再冲减原支出，但调整记录会保留。"
+      confirm-label="确认撤销"
+      :busy="revoking"
+      danger
+      @confirm="confirmRevoke"
+    />
     <AppToast
       v-model:open="toastOpen"
       :message="toastMessage"

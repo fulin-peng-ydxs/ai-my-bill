@@ -860,9 +860,25 @@ textarea:disabled {
 }
 .ledger-type-expense { color: var(--color-expense-text); }
 .ledger-type-income { color: var(--color-income-text); }
+.ledger-type-adjustment { color: var(--color-income-text); border-style: dashed; }
 .ledger-item-amount { align-self: start; font-family: var(--font-data); font-size: 17px; white-space: nowrap; }
 .money-expense { color: var(--color-expense-text); }
 .money-income { color: var(--color-income-text); }
+.money-adjustment { color: var(--color-income-text); }
+.ledger-adjustment-state { margin: 0; color: var(--color-expense-text); font-size: 13px; font-weight: 600; }
+
+.adjustment-form,
+.adjustment-detail { display: grid; gap: var(--space-lg); }
+.adjustment-source { display: grid; gap: var(--space-xs); }
+.adjustment-source span,
+.status-text { color: var(--color-muted); font-size: 13px; }
+.adjustment-detail-heading { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-sm); }
+.adjustment-detail-heading .status-text { margin-left: auto; }
+.adjustment-metadata { display: grid; margin: 0; border-top: 1px solid var(--color-border); }
+.adjustment-metadata div { display: grid; grid-template-columns: minmax(100px, 0.4fr) minmax(0, 1fr); gap: var(--space-md); padding: var(--space-md) 0; border-bottom: 1px solid var(--color-border); }
+.adjustment-metadata dt { color: var(--color-muted); }
+.adjustment-metadata dd { margin: 0; overflow-wrap: anywhere; text-align: right; }
+.adjustment-full-state { margin: 0; padding: var(--space-md); color: var(--color-expense-text); font-weight: 600; background: color-mix(in srgb, var(--color-expense) 8%, var(--color-surface)); border-left: 3px solid var(--color-expense); }
 
 .ledger-progress {
   display: flex;

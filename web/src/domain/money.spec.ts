@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { calculateExpenseTotal, decimalToScaledInteger, formatCny, multiplyDecimalHalfUp } from './money'
+import { calculateExpenseTotal, decimalToScaledInteger, formatCny, multiplyDecimalHalfUp, subtractMoney } from './money'
 
 describe('exact decimal money helpers', () => {
   it('never accepts binary floating point or silently truncates decimals', () => {
@@ -18,6 +18,11 @@ describe('exact decimal money helpers', () => {
   it('formats CNY without converting through Number', () => {
     expect(formatCny('0')).toBe('¥0.00')
     expect(formatCny('999999999.99')).toBe('¥999,999,999.99')
+  })
+
+  it('subtracts adjustment amounts without binary floating point drift', () => {
+    expect(subtractMoney('100.00', '30.10')).toBe('69.90')
+    expect(subtractMoney('30.00', '30.01')).toBe('-0.01')
   })
 
   it('enforces the confirmed price, quantity and total boundaries', () => {

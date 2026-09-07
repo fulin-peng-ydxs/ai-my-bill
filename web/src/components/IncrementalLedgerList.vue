@@ -11,7 +11,7 @@ const props = defineProps<{
   hasMore: boolean
   loadingMore: boolean
 }>()
-const emit = defineEmits<{ more: [], context: [item: LedgerItem], edit: [item: LedgerItem] }>()
+const emit = defineEmits<{ more: [], context: [item: LedgerItem], open: [item: LedgerItem] }>()
 
 const groups = computed(() => {
   const result: Array<{ date: string, items: LedgerItem[] }> = []
@@ -41,9 +41,9 @@ const groups = computed(() => {
           v-for="item in group.items"
           :key="item.id"
           :item="item"
-          :show-type="type === 'ALL'"
+          :show-type="type === 'ALL' || type === 'ADJUSTMENT'"
           @context="emit('context', $event)"
-          @edit="emit('edit', $event)"
+          @open="emit('open', $event)"
         />
       </div>
     </section>

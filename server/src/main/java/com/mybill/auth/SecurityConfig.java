@@ -77,6 +77,8 @@ public class SecurityConfig {
                                 .hasRole("USER")
                         .requestMatchers(HttpMethod.GET, "/api/v1/ledger-entries").hasRole("USER")
                         .requestMatchers(HttpMethod.PUT, "/api/v1/ledger-entries/*/daily-template").hasRole("USER")
+                        .requestMatchers(HttpMethod.POST, "/api/v1/ledger-entries/*/adjustments").hasRole("USER")
+                        .requestMatchers("/api/v1/adjustments/**").hasRole("USER")
                         .requestMatchers("/api/v1/**").denyAll()
                         .anyRequest().permitAll())
                 .exceptionHandling(errors -> errors

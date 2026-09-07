@@ -498,7 +498,7 @@ paths:
   /ledger-entries:
     get:
       operationId: listLedgerEntries
-      summary: 按稳定游标查询当前租户的有效支出与收入
+      summary: 按稳定游标查询当前租户的有效支出、收入与生效调整
       tags: [ledger]
       parameters:
         - name: type
@@ -551,6 +551,90 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/DailyTemplateSummary" }
+        "401": { $ref: "#/components/responses/AuthenticationError" }
+        "403": { $ref: "#/components/responses/AuthorizationError" }
+        "404": { $ref: "#/components/responses/NotFoundError" }
+        "409": { $ref: "#/components/responses/ConflictError" }
+  /ledger-entries/{expenseId}/adjustments:
+    post:
+      operationId: createExpenseAdjustment
+      summary: 从当前租户的一条有效支出创建退款或报销调整
+      tags: [adjustments]
+      parameters:
+        - name: expenseId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateExpenseAdjustmentRequest" }
+      responses:
+        "201":
+          description: 调整创建成功
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ExpenseAdjustmentResponse" }
+        "200":
+          description: 相同幂等标识和请求内容的既有成功结果
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ExpenseAdjustmentResponse" }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "401": { $ref: "#/components/responses/AuthenticationError" }
+        "403": { $ref: "#/components/responses/AuthorizationError" }
+        "404": { $ref: "#/components/responses/NotFoundError" }
+        "409": { $ref: "#/components/responses/ConflictError" }
+  /adjustments/{adjustmentId}:
+    get:
+      operationId: getExpenseAdjustment
+      summary: 查看当前租户的一条有效或已撤销调整
+      tags: [adjustments]
+      parameters:
+        - name: adjustmentId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: 调整、来源支出及当前净额
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ExpenseAdjustmentResponse" }
+        "401": { $ref: "#/components/responses/AuthenticationError" }
+        "403": { $ref: "#/components/responses/AuthorizationError" }
+        "404": { $ref: "#/components/responses/NotFoundError" }
+  /adjustments/{adjustmentId}/revoke:
+    post:
+      operationId: revokeExpenseAdjustment
+      summary: 撤销当前租户的一条生效调整并恢复原支出净额
+      tags: [adjustments]
+      parameters:
+        - name: adjustmentId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RevokeExpenseAdjustmentRequest" }
+      responses:
+        "200":
+          description: 已撤销的调整及刷新后净额
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ExpenseAdjustmentResponse" }
+        "400": { $ref: "#/components/responses/ValidationError" }
         "401": { $ref: "#/components/responses/AuthenticationError" }
         "403": { $ref: "#/components/responses/AuthorizationError" }
         "404": { $ref: "#/components/responses/NotFoundError" }
@@ -1330,8 +1414,11 @@ components:
               purchaseChannelId, locationLabelId, payerId, incomeCategoryId]
     LedgerEntryTypeFilter:
       type: string
-      enum: [ALL, EXPENSE, INCOME]
+      enum: [ALL, EXPENSE, INCOME, ADJUSTMENT]
       default: ALL
+    LedgerItemType:
+      type: string
+      enum: [EXPENSE, INCOME, ADJUSTMENT]
     LedgerDateRange:
       type: string
       enum: [TODAY, THIS_WEEK, THIS_MONTH, LAST_MONTH, THIS_YEAR, CUSTOM]
@@ -1340,10 +1427,11 @@ components:
       type: object
       additionalProperties: false
       required: [id, entryType, occurredAt, businessDate, title, categoryName, counterpartyName,
-        fundingChannelName, amount, createdAt]
+        fundingChannelName, amount, createdAt, adjustmentType, originalExpenseId,
+        effectiveAdjustmentAmount, netExpenseAmount, fullyAdjusted]
       properties:
         id: { type: string, format: uuid }
-        entryType: { $ref: "#/components/schemas/EntryType" }
+        entryType: { $ref: "#/components/schemas/LedgerItemType" }
         occurredAt: { type: string, format: date-time }
         businessDate: { type: string, format: date }
         title: { type: string, minLength: 1, maxLength: 200 }
@@ -1353,6 +1441,58 @@ components:
         amount: { $ref: "#/components/schemas/Money" }
         note: { $ref: "#/components/schemas/Note" }
         createdAt: { type: string, format: date-time }
+        adjustmentType:
+          oneOf: [{ $ref: "#/components/schemas/ExpenseAdjustmentType" }, { type: "null" }]
+        originalExpenseId: { type: [string, "null"], format: uuid }
+        effectiveAdjustmentAmount:
+          oneOf: [{ $ref: "#/components/schemas/Money" }, { type: "null" }]
+        netExpenseAmount:
+          oneOf: [{ $ref: "#/components/schemas/Money" }, { type: "null" }]
+        fullyAdjusted: { type: boolean }
+    ExpenseAdjustmentType:
+      type: string
+      enum: [REFUND, REIMBURSEMENT]
+    ExpenseAdjustmentStatus:
+      type: string
+      enum: [EFFECTIVE, REVOKED]
+    CreateExpenseAdjustmentRequest:
+      type: object
+      additionalProperties: false
+      required: [adjustmentType, amount, occurredAt]
+      properties:
+        adjustmentType: { $ref: "#/components/schemas/ExpenseAdjustmentType" }
+        amount: { $ref: "#/components/schemas/Money" }
+        occurredAt: { $ref: "#/components/schemas/BusinessDateTime" }
+        note: { $ref: "#/components/schemas/Note" }
+    RevokeExpenseAdjustmentRequest:
+      type: object
+      additionalProperties: false
+      required: [version]
+      properties:
+        version: { type: integer, format: int64, minimum: 0 }
+    ExpenseAdjustmentResponse:
+      type: object
+      additionalProperties: false
+      required: [id, originalExpenseId, originalExpenseTitle, adjustmentType, amount, occurredAt,
+        businessDate, status, originalPaidAmount, effectiveAdjustmentAmount, netExpenseAmount,
+        fullyAdjusted, createdAt, updatedAt, version]
+      properties:
+        id: { type: string, format: uuid }
+        originalExpenseId: { type: string, format: uuid }
+        originalExpenseTitle: { type: string, minLength: 1, maxLength: 200 }
+        adjustmentType: { $ref: "#/components/schemas/ExpenseAdjustmentType" }
+        amount: { $ref: "#/components/schemas/Money" }
+        occurredAt: { $ref: "#/components/schemas/BusinessDateTime" }
+        businessDate: { type: string, format: date }
+        status: { $ref: "#/components/schemas/ExpenseAdjustmentStatus" }
+        note: { $ref: "#/components/schemas/Note" }
+        originalPaidAmount: { $ref: "#/components/schemas/Money" }
+        effectiveAdjustmentAmount: { $ref: "#/components/schemas/Money" }
+        netExpenseAmount: { $ref: "#/components/schemas/Money" }
+        fullyAdjusted: { type: boolean }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        version: { type: integer, format: int64, minimum: 0 }
     LedgerPage:
       type: object
       additionalProperties: false

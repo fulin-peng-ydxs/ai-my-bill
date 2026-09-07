@@ -25,4 +25,10 @@ describe('ledger route query', () => {
   it('clears search and advanced filters back to the user default range', () => {
     expect(clearedLedgerFilters('THIS_MONTH')).toEqual({ query: '', type: 'ALL', range: 'THIS_MONTH' })
   })
+
+  it('accepts adjustment as a ledger filter but never as a report drill scope', () => {
+    expect(parseLedgerRoute({ type: 'ADJUSTMENT', range: 'TODAY' }).filters.type).toBe('ADJUSTMENT')
+    expect(parseLedgerRoute({ type: 'ADJUSTMENT', range: 'TODAY', from: 'reports', scope: 'ADJUSTMENT',
+      dimension: 'type', value: '退款' }).drill).toBeUndefined()
+  })
 })

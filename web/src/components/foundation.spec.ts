@@ -132,12 +132,28 @@ describe('shared frontend foundations', () => {
       items: [{ id: '10000000-0000-4000-8000-000000000001', entryType: 'INCOME',
         occurredAt: '2026-09-07T01:00:00Z', businessDate: '2026-09-07', title: '项目奖金',
         categoryName: '奖金', counterpartyName: '客户甲', fundingChannelName: '银行卡',
-        amount: '88.80', note: '需要完整显示并自然换行的长备注内容', createdAt: '2026-09-07T01:00:00Z' }],
+        amount: '88.80', note: '需要完整显示并自然换行的长备注内容', createdAt: '2026-09-07T01:00:00Z',
+        adjustmentType: null, originalExpenseId: null, effectiveAdjustmentAmount: null,
+        netExpenseAmount: null, fullyAdjusted: false }],
     })
     expect(html).toContain('收入')
     expect(html).toContain('+¥88.80')
     expect(html).toContain('加载更多')
     expect(html).toContain('Shift+F10')
     expect(html).toContain('需要完整显示并自然换行的长备注内容')
+  })
+
+  it('renders adjustment type and fully adjusted source state explicitly', async () => {
+    const common = { occurredAt: '2026-09-07T01:00:00Z', businessDate: '2026-09-07',
+      categoryName: '餐饮', fundingChannelName: '银行卡', note: null, createdAt: '2026-09-07T01:00:00Z' }
+    const html = await render(IncrementalLedgerList, { type: 'ALL', hasMore: false, loadingMore: false, items: [
+      { ...common, id: '1', entryType: 'EXPENSE', title: '咖啡', counterpartyName: '1 杯', amount: '30.00',
+        adjustmentType: null, originalExpenseId: null, effectiveAdjustmentAmount: '30.00', netExpenseAmount: '0.00', fullyAdjusted: true },
+      { ...common, id: '2', entryType: 'ADJUSTMENT', title: '退款', counterpartyName: '原支出 · 咖啡', amount: '30.00',
+        adjustmentType: 'REFUND', originalExpenseId: '1', effectiveAdjustmentAmount: '30.00', netExpenseAmount: '0.00', fullyAdjusted: true },
+    ] })
+    expect(html).toContain('已全额退款/报销')
+    expect(html).toContain('退款')
+    expect(html).toContain('+¥30.00')
   })
 })

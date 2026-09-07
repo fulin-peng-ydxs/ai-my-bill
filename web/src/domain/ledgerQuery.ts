@@ -2,7 +2,8 @@ import type { LocationQuery, LocationQueryRaw } from 'vue-router'
 
 import type { LedgerDateRange, LedgerEntryTypeFilter, LedgerFilters } from '../api/ledgerEntries'
 
-const TYPES: readonly LedgerEntryTypeFilter[] = ['ALL', 'EXPENSE', 'INCOME']
+const TYPES: readonly LedgerEntryTypeFilter[] = ['ALL', 'EXPENSE', 'INCOME', 'ADJUSTMENT']
+const DRILL_SCOPES: readonly LedgerDrillContext['scope'][] = ['ALL', 'EXPENSE', 'INCOME']
 const RANGES: readonly LedgerDateRange[] = ['TODAY', 'THIS_WEEK', 'THIS_MONTH', 'LAST_MONTH', 'THIS_YEAR', 'CUSTOM']
 const UUID = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i
 const DATE = /^\d{4}-\d{2}-\d{2}$/
@@ -55,7 +56,7 @@ export function parseLedgerRoute(query: LocationQuery, defaultRange: LedgerDateR
   const scope = one(query.scope)
   const dimension = one(query.dimension)
   const value = one(query.value)
-  if (!TYPES.includes(scope as LedgerEntryTypeFilter) || !CONTEXT_TOKEN.test(dimension) || !value || value.length > 100) {
+  if (!DRILL_SCOPES.includes(scope as LedgerDrillContext['scope']) || !CONTEXT_TOKEN.test(dimension) || !value || value.length > 100) {
     return { filters }
   }
   const reportScroll = Number.parseInt(one(query.reportScroll), 10)
@@ -93,6 +94,7 @@ export function clearedLedgerFilters(defaultRange: LedgerDateRange): LedgerFilte
 
 export const ledgerTypeOptions = [
   { value: 'ALL', label: '全部' }, { value: 'EXPENSE', label: '支出' }, { value: 'INCOME', label: '收入' },
+  { value: 'ADJUSTMENT', label: '退款与报销' },
 ] as const
 
 export const ledgerRangeOptions = [

@@ -69,3 +69,8 @@ export function formatCny(value: string): string {
   const [integer, fraction] = decimal.split('.')
   return `¥${integer.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}.${fraction}`
 }
+
+/** 金额差值保持分为单位精确计算；负值说明业务上限已被越过。 */
+export function subtractMoney(left: string, right: string): string {
+  return scaledIntegerToDecimal(decimalToScaledInteger(left, 2) - decimalToScaledInteger(right, 2), 2)
+}

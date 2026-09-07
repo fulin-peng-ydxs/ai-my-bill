@@ -321,7 +321,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** 按稳定游标查询当前租户的有效支出与收入 */
+        /** 按稳定游标查询当前租户的有效支出、收入与生效调整 */
         get: operations["listLedgerEntries"];
         put?: never;
         post?: never;
@@ -342,6 +342,57 @@ export interface paths {
         /** 从当前租户有效收支新增或更新日常模板 */
         put: operations["upsertDailyTemplateFromLedger"];
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/ledger-entries/{expenseId}/adjustments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 从当前租户的一条有效支出创建退款或报销调整 */
+        post: operations["createExpenseAdjustment"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/adjustments/{adjustmentId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 查看当前租户的一条有效或已撤销调整 */
+        get: operations["getExpenseAdjustment"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/adjustments/{adjustmentId}/revoke": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 撤销当前租户的一条生效调整并恢复原支出净额 */
+        post: operations["revokeExpenseAdjustment"];
         delete?: never;
         options?: never;
         head?: never;
@@ -888,7 +939,9 @@ export interface components {
          * @default ALL
          * @enum {string}
          */
-        LedgerEntryTypeFilter: "ALL" | "EXPENSE" | "INCOME";
+        LedgerEntryTypeFilter: "ALL" | "EXPENSE" | "INCOME" | "ADJUSTMENT";
+        /** @enum {string} */
+        LedgerItemType: "EXPENSE" | "INCOME" | "ADJUSTMENT";
         /**
          * @default TODAY
          * @enum {string}
@@ -897,7 +950,7 @@ export interface components {
         LedgerItem: {
             /** Format: uuid */
             id: string;
-            entryType: components["schemas"]["EntryType"];
+            entryType: components["schemas"]["LedgerItemType"];
             /** Format: date-time */
             occurredAt: string;
             /** Format: date */
@@ -910,6 +963,50 @@ export interface components {
             note?: components["schemas"]["Note"];
             /** Format: date-time */
             createdAt: string;
+            adjustmentType: components["schemas"]["ExpenseAdjustmentType"] | null;
+            /** Format: uuid */
+            originalExpenseId: string | null;
+            effectiveAdjustmentAmount: components["schemas"]["Money"] | null;
+            netExpenseAmount: components["schemas"]["Money"] | null;
+            fullyAdjusted: boolean;
+        };
+        /** @enum {string} */
+        ExpenseAdjustmentType: "REFUND" | "REIMBURSEMENT";
+        /** @enum {string} */
+        ExpenseAdjustmentStatus: "EFFECTIVE" | "REVOKED";
+        CreateExpenseAdjustmentRequest: {
+            adjustmentType: components["schemas"]["ExpenseAdjustmentType"];
+            amount: components["schemas"]["Money"];
+            occurredAt: components["schemas"]["BusinessDateTime"];
+            note?: components["schemas"]["Note"];
+        };
+        RevokeExpenseAdjustmentRequest: {
+            /** Format: int64 */
+            version: number;
+        };
+        ExpenseAdjustmentResponse: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            originalExpenseId: string;
+            originalExpenseTitle: string;
+            adjustmentType: components["schemas"]["ExpenseAdjustmentType"];
+            amount: components["schemas"]["Money"];
+            occurredAt: components["schemas"]["BusinessDateTime"];
+            /** Format: date */
+            businessDate: string;
+            status: components["schemas"]["ExpenseAdjustmentStatus"];
+            note?: components["schemas"]["Note"];
+            originalPaidAmount: components["schemas"]["Money"];
+            effectiveAdjustmentAmount: components["schemas"]["Money"];
+            netExpenseAmount: components["schemas"]["Money"];
+            fullyAdjusted: boolean;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+            /** Format: int64 */
+            version: number;
         };
         LedgerPage: {
             items: components["schemas"]["LedgerItem"][];
@@ -1873,6 +1970,106 @@ export interface operations {
                     "application/json": components["schemas"]["DailyTemplateSummary"];
                 };
             };
+            401: components["responses"]["AuthenticationError"];
+            403: components["responses"]["AuthorizationError"];
+            404: components["responses"]["NotFoundError"];
+            409: components["responses"]["ConflictError"];
+        };
+    };
+    createExpenseAdjustment: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path: {
+                expenseId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateExpenseAdjustmentRequest"];
+            };
+        };
+        responses: {
+            /** @description 相同幂等标识和请求内容的既有成功结果 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExpenseAdjustmentResponse"];
+                };
+            };
+            /** @description 调整创建成功 */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExpenseAdjustmentResponse"];
+                };
+            };
+            400: components["responses"]["ValidationError"];
+            401: components["responses"]["AuthenticationError"];
+            403: components["responses"]["AuthorizationError"];
+            404: components["responses"]["NotFoundError"];
+            409: components["responses"]["ConflictError"];
+        };
+    };
+    getExpenseAdjustment: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                adjustmentId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 调整、来源支出及当前净额 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExpenseAdjustmentResponse"];
+                };
+            };
+            401: components["responses"]["AuthenticationError"];
+            403: components["responses"]["AuthorizationError"];
+            404: components["responses"]["NotFoundError"];
+        };
+    };
+    revokeExpenseAdjustment: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path: {
+                adjustmentId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RevokeExpenseAdjustmentRequest"];
+            };
+        };
+        responses: {
+            /** @description 已撤销的调整及刷新后净额 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExpenseAdjustmentResponse"];
+                };
+            };
+            400: components["responses"]["ValidationError"];
             401: components["responses"]["AuthenticationError"];
             403: components["responses"]["AuthorizationError"];
             404: components["responses"]["NotFoundError"];
