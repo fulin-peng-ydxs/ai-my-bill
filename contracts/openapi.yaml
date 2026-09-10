@@ -1440,6 +1440,7 @@ components:
       additionalProperties: false
       required: [id, occurredAt, businessDate, productId, productName, primaryCategoryId,
         primaryCategoryName, unitId, unitName, unitPrice, quantity, calculatedAmount, paidAmount,
+        effectiveAdjustmentAmount,
         fundingChannelId, fundingChannelName, createdAt, updatedAt, version]
       properties:
         id: { type: string, format: uuid }
@@ -1457,6 +1458,9 @@ components:
         quantity: { $ref: "#/components/schemas/Quantity" }
         calculatedAmount: { $ref: "#/components/schemas/Money" }
         paidAmount: { $ref: "#/components/schemas/Money" }
+        effectiveAdjustmentAmount:
+          allOf: [{ $ref: "#/components/schemas/Money" }]
+          description: 当前有效退款/报销合计；编辑时实付金额不得低于该值。
         fundingChannelId: { type: string, format: uuid }
         fundingChannelName: { type: string, minLength: 1, maxLength: 100 }
         purchaseChannelId: { type: string, format: uuid }

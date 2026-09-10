@@ -47,6 +47,15 @@ class ExpenseRepository {
         return operations.select(mapper::findExpense).param("id", id).map(ExpenseRepository::mapExpense).optional();
     }
 
+    /** 编辑前锁定原支出，使实付金额下限校验与并发新增调整串行。 */
+    Optional<ExpenseResponse> lockExpense(UUID id) {
+        return operations.select(mapper::lockExpense).param("id", id).map(ExpenseRepository::mapExpense).optional();
+    }
+
+    BigDecimal effectiveAdjustmentTotal(UUID id) {
+        return operations.select(mapper::effectiveAdjustmentTotal).param("id", id).map(BigDecimal.class).single();
+    }
+
     /** 版本条件与字段更新在同一语句完成，避免读后写窗口覆盖并发修改。 */
     boolean updateExpense(UUID id, long version, ExpenseContracts.CreateExpenseRequest request,
                           ExpenseReferences references, BigDecimal unitPrice, BigDecimal quantity,
@@ -86,6 +95,7 @@ class ExpenseRepository {
                 rs.getString("unit_name_snapshot"), decimal(rs.getBigDecimal("unit_price")),
                 decimal(rs.getBigDecimal("quantity")), money(rs.getBigDecimal("calculated_amount")),
                 money(rs.getBigDecimal("paid_amount")),
+                money(rs.getBigDecimal("effective_adjustment_amount")),
                 rs.getObject("funding_channel_id", UUID.class), rs.getString("funding_channel_name_snapshot"),
                 rs.getObject("purchase_channel_id", UUID.class), rs.getString("purchase_channel_name_snapshot"),
                 rs.getObject("location_label_id", UUID.class), rs.getString("location_label_name_snapshot"),

@@ -58,6 +58,12 @@ class PersonalExportJob implements JobDefinition {
             String location = files.commit(pending);
             committedLocation = location;
             pending = null;
+            if (context.shouldCancel()) {
+                repository.markCancelled(exportId, clock.instant());
+                files.delete(location);
+                repository.clearCancelledFileLocation(exportId, clock.instant());
+                return JobBatchResult.completed(0);
+            }
             repository.markSucceeded(exportId, location, clock.instant());
             return JobBatchResult.completed(rows);
         } catch (ExportCsvWriter.ExportCancelledException cancelled) {
@@ -72,6 +78,21 @@ class PersonalExportJob implements JobDefinition {
             }
             repository.markFailed(exportId, "EXPORT_GENERATION_FAILED", clock.instant());
             return JobBatchResult.completed(0);
+        }
+    }
+
+    @Override
+    public void onCancellationWon(JobExecutionContext context) {
+        UUID exportId = UUID.fromString(context.batchKey());
+        ExportRepository.JobRow job = repository.findForJob(exportId).orElse(null);
+        if (job == null) return;
+        repository.markCancelled(exportId, clock.instant());
+        try {
+            files.delete(job.fileLocation());
+            repository.clearCancelledFileLocation(exportId, clock.instant());
+        } catch (RuntimeException failure) {
+            log.warn("Cancelled export file retained for expiry cleanup exportId={} failure={}",
+                    exportId, failure.getClass().getSimpleName());
         }
     }
 }

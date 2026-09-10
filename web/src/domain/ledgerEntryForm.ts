@@ -1,7 +1,9 @@
 import type { CreateExpenseRequest, ExpenseResponse } from '../api/expenses'
 import type { CreateIncomeRequest, IncomeResponse } from '../api/incomes'
 import { isShanghaiLocalDateTime, shanghaiLocalDateTimeToIso, toShanghaiLocalDateTime } from './businessTime'
-import { calculateExpenseTotal, isDecimalInRange, MONEY_MAX, QUANTITY_MAX, UNIT_PRICE_MAX } from './money'
+import {
+  calculateExpenseTotal, decimalToScaledInteger, isDecimalInRange, MONEY_MAX, QUANTITY_MAX, UNIT_PRICE_MAX,
+} from './money'
 import { unicodeCodePointLength } from './text'
 
 export interface ExpenseFormState {
@@ -66,6 +68,16 @@ export function validateExpenseForm(form: ExpenseFormState): Partial<Record<Expe
   if (unicodeCodePointLength(form.note.trim()) > 500) errors.note = '备注最多 500 个字符。'
   try { calculateExpenseTotal(form.unitPrice, form.quantity) } catch { errors.calculatedAmount = '计算金额超出允许范围。' }
   return errors
+}
+
+export function validateExpensePaidMinimum(paidAmount: string, effectiveAdjustmentAmount: string): string | undefined {
+  if (!isDecimalInRange(paidAmount, 2, MONEY_MAX) || !isDecimalInRange(effectiveAdjustmentAmount, 2, MONEY_MAX)) {
+    return undefined
+  }
+  if (decimalToScaledInteger(paidAmount, 2) < decimalToScaledInteger(effectiveAdjustmentAmount, 2)) {
+    return `实付金额不能低于已生效退款/报销合计 ¥${effectiveAdjustmentAmount}。`
+  }
+  return undefined
 }
 
 export function expenseRequestFromForm(form: ExpenseFormState): CreateExpenseRequest {

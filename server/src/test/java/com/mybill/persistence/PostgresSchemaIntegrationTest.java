@@ -261,6 +261,8 @@ class PostgresSchemaIntegrationTest {
             assertThatThrownBy(() -> jobs.requestCancellation(runId, false, now.plusSeconds(1)))
                     .isInstanceOf(IllegalStateException.class);
             assertThat(jobs.requestCancellation(runId, true, now.plusSeconds(1))).isEqualTo("CANCEL_REQUESTED");
+            assertThatThrownBy(() -> jobs.complete(runId, claimed.leaseOwner(), 1, now.plusSeconds(2)))
+                    .isInstanceOf(IllegalStateException.class).hasMessage("任务租约已失效");
             jobs.cancel(runId, claimed.leaseOwner(), 0, now.plusSeconds(2));
         }
 

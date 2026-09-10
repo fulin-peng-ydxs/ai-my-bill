@@ -60,6 +60,7 @@ my-bill:
   jobs:
     lease-duration: PT30S
     poll-delay-ms: ${MY_BILL_JOB_POLL_DELAY_MS:5000}
+    max-tasks-per-poll: ${MY_BILL_JOB_MAX_TASKS_PER_POLL:20}
   export:
     directory: ${MY_BILL_EXPORT_DIRECTORY:.local/exports}
     retention: ${MY_BILL_EXPORT_RETENTION:PT24H}

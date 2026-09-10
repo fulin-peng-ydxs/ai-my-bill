@@ -13,6 +13,8 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Clock;
 import java.time.Instant;
+import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 import static com.mybill.ledger.LedgerWritePolicy.BUSINESS_ZONE;
@@ -106,8 +108,13 @@ class ExpenseService {
                 if (replayed.version() != request.version() + 1) throw conflict();
                 return replayed;
             }
-            ExpenseResponse current = repository.findExpense(expenseId)
+            ExpenseResponse current = repository.lockExpense(expenseId)
                     .orElseThrow(() -> notFound("支出不存在或已不在有效账目中。"));
+            if (current.version() != request.version()) throw conflict();
+            BigDecimal effectiveAdjustmentTotal = repository.effectiveAdjustmentTotal(expenseId);
+            if (values.paidAmount().compareTo(effectiveAdjustmentTotal) < 0) {
+                throw adjustmentMinimumConflict(effectiveAdjustmentTotal);
+            }
             ExpenseReferences references = dictionaries.lockActiveReferences(entry.productId(),
                     entry.primaryCategoryId(), entry.secondaryCategoryId(), entry.unitId(),
                     entry.fundingChannelId(), entry.purchaseChannelId(), entry.locationLabelId());
@@ -185,6 +192,13 @@ class ExpenseService {
     private static ApiException conflict() {
         return new ApiException(HttpStatus.CONFLICT, "LEDGER_VERSION_CONFLICT",
                 "账目已在其他窗口发生变化，请加载最新内容或重新确认本次修改。", false);
+    }
+
+    private static ApiException adjustmentMinimumConflict(BigDecimal minimum) {
+        String amount = minimum.setScale(2).toPlainString();
+        String message = "实付金额不能低于已生效退款/报销合计 ¥" + amount + "。";
+        return new ApiException(HttpStatus.CONFLICT, "EXPENSE_ADJUSTMENT_CONFLICT", message, false,
+                Map.of("paidAmount", List.of(message)));
     }
 
     private record ValidatedExpense(BigDecimal unitPrice, BigDecimal quantity, BigDecimal paidAmount,

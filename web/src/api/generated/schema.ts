@@ -991,6 +991,8 @@ export interface components {
             quantity: components["schemas"]["Quantity"];
             calculatedAmount: components["schemas"]["Money"];
             paidAmount: components["schemas"]["Money"];
+            /** @description 当前有效退款/报销合计；编辑时实付金额不得低于该值。 */
+            effectiveAdjustmentAmount: components["schemas"]["Money"];
             /** Format: uuid */
             fundingChannelId: string;
             fundingChannelName: string;

@@ -36,7 +36,11 @@
   </update>
 
   <update id="markCancelled">
-    <![CDATA[UPDATE export_job SET status='CANCELLED',file_location=NULL,error_summary=NULL,updated_at=#{p.now} WHERE id=#{p.id} AND status IN ('PENDING','RUNNING')]]>
+    <![CDATA[UPDATE export_job SET status='CANCELLED',error_summary=NULL,updated_at=#{p.now} WHERE id=#{p.id} AND status IN ('PENDING','RUNNING','SUCCEEDED')]]>
+  </update>
+
+  <update id="clearCancelledFileLocation">
+    <![CDATA[UPDATE export_job SET file_location=NULL,updated_at=#{p.now} WHERE id=#{p.id} AND status='CANCELLED']]>
   </update>
 
   <update id="markExpired">

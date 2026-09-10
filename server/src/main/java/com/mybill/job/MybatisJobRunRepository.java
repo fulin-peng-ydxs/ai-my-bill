@@ -62,10 +62,10 @@ public class MybatisJobRunRepository implements JobRunRepository {
     }
 
     @Override public void complete(UUID id, String owner, long count, Instant now) {
-        terminal(id, owner, "SUCCEEDED", count, null, now);
+        terminal(id, owner, "SUCCEEDED", false, count, null, now);
     }
     @Override public void cancel(UUID id, String owner, long count, Instant now) {
-        terminal(id, owner, "CANCELLED", count, null, now);
+        terminal(id, owner, "CANCELLED", true, count, null, now);
     }
 
     @Override
@@ -113,8 +113,11 @@ public class MybatisJobRunRepository implements JobRunRepository {
         return status;
     }
 
-    private void terminal(UUID id, String owner, String status, long count, String error, Instant now) {
-        requireOne(operations.update(mapper::terminal).param("status", status).param("count", count).param("now", ts(now)).param("error", error)
+    private void terminal(UUID id, String owner, String status, boolean cancellationRequested,
+                          long count, String error, Instant now) {
+        requireOne(operations.update(mapper::terminal).param("status", status)
+                .param("cancellationRequested", cancellationRequested).param("count", count)
+                .param("now", ts(now)).param("error", error)
                 .param("id", id).param("owner", owner).execute());
     }
 

@@ -43,7 +43,7 @@
     <![CDATA[
                 UPDATE job_run SET status='PENDING', processed_count=processed_count+#{p.count}, attempt_count=0,
                     lease_owner=NULL, lease_expires_at=NULL, cancel_requested=false, error_summary=NULL, updated_at=#{p.now}
-                WHERE id=#{p.id} AND status='RUNNING' AND lease_owner=#{p.owner}
+                WHERE id=#{p.id} AND status='RUNNING' AND lease_owner=#{p.owner} AND cancel_requested=false
                 ]]>
   </update>
 
@@ -51,7 +51,7 @@
     <![CDATA[
                 UPDATE job_run SET status=#{p.status}, finished_at=CASE WHEN #{p.retry} THEN NULL::timestamptz ELSE #{p.now} END,
                     error_summary=#{p.error}, lease_owner=NULL, lease_expires_at=NULL, cancel_requested=false, updated_at=#{p.now}
-                WHERE id=#{p.id} AND status='RUNNING' AND lease_owner=#{p.owner}
+                WHERE id=#{p.id} AND status='RUNNING' AND lease_owner=#{p.owner} AND cancel_requested=false
                 ]]>
   </update>
 
@@ -85,6 +85,7 @@
                 UPDATE job_run SET status=#{p.status}, processed_count=processed_count+#{p.count}, finished_at=#{p.now},
                     error_summary=#{p.error}, lease_owner=NULL, lease_expires_at=NULL, cancel_requested=false, updated_at=#{p.now}
                 WHERE id=#{p.id} AND status='RUNNING' AND lease_owner=#{p.owner}
+                  AND cancel_requested=#{p.cancellationRequested}
                 ]]>
   </update>
 </mapper>

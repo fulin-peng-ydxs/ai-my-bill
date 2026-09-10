@@ -6,6 +6,11 @@ export function toShanghaiLocalDateTime(date = new Date()): string {
   return new Date(date.getTime() + SHANGHAI_OFFSET_MS).toISOString().slice(0, 16)
 }
 
+/** 生成统一的上海业务日期，供下载文件名等不带时间的本地语义使用。 */
+export function formatShanghaiBusinessDate(date = new Date()): string {
+  return toShanghaiLocalDateTime(date).slice(0, 10)
+}
+
 export function shanghaiLocalDateTimeToIso(value: string): string {
   if (!LOCAL_DATE_TIME.test(value)) throw new RangeError('无效的上海本地时间')
   const withSeconds = value.length === 16 ? `${value}:00` : value

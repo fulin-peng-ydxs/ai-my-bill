@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
 
 import {
-  formatShanghaiDateTime, isShanghaiLocalDateTime, shanghaiLocalDateTimeToIso, toShanghaiLocalDateTime,
+  formatShanghaiBusinessDate, formatShanghaiDateTime, isShanghaiLocalDateTime,
+  shanghaiLocalDateTimeToIso, toShanghaiLocalDateTime,
 } from './businessTime'
 
 describe('business time', () => {
@@ -18,5 +19,11 @@ describe('business time', () => {
   it('formats saved instants in Shanghai rather than the device timezone', () => {
     expect(formatShanghaiDateTime('2026-09-06T16:30:45Z')).toContain('2026/09/07')
     expect(formatShanghaiDateTime('2026-09-06T16:30:45Z')).toContain('00:30:45')
+  })
+
+  it('formats export dates by the Shanghai calendar around midnight', () => {
+    expect(formatShanghaiBusinessDate(new Date('2026-09-07T15:59:59Z'))).toBe('2026-09-07')
+    expect(formatShanghaiBusinessDate(new Date('2026-09-07T16:00:00Z'))).toBe('2026-09-08')
+    expect(formatShanghaiBusinessDate(new Date('2026-09-07T23:59:59Z'))).toBe('2026-09-08')
   })
 })

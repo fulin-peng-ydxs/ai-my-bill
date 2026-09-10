@@ -26,11 +26,37 @@
                        product_id, product_name_snapshot, primary_category_id, primary_category_name_snapshot,
                        secondary_category_id, secondary_category_name_snapshot, unit_id, unit_name_snapshot,
                        unit_price, quantity, calculated_amount, paid_amount,
+                       (SELECT COALESCE(sum(a.amount),0) FROM expense_adjustment a
+                         WHERE a.original_expense_id=ledger_entry.id AND a.status='EFFECTIVE') AS effective_adjustment_amount,
                        funding_channel_id, funding_channel_name_snapshot,
                        purchase_channel_id, purchase_channel_name_snapshot,
                        location_label_id, location_label_name_snapshot, note, created_at, updated_at, version
                   FROM ledger_entry
                  WHERE id = #{p.id} AND entry_type = 'EXPENSE' AND lifecycle_status = 'ACTIVE'
+                ]]>
+  </select>
+
+  <select id="lockExpense" resultType="map">
+    <![CDATA[
+                SELECT id, business_time, business_date,
+                       product_id, product_name_snapshot, primary_category_id, primary_category_name_snapshot,
+                       secondary_category_id, secondary_category_name_snapshot, unit_id, unit_name_snapshot,
+                       unit_price, quantity, calculated_amount, paid_amount,
+                       0::numeric AS effective_adjustment_amount,
+                       funding_channel_id, funding_channel_name_snapshot,
+                       purchase_channel_id, purchase_channel_name_snapshot,
+                       location_label_id, location_label_name_snapshot, note, created_at, updated_at, version
+                  FROM ledger_entry
+                 WHERE id = #{p.id} AND entry_type = 'EXPENSE' AND lifecycle_status = 'ACTIVE'
+                   FOR UPDATE
+                ]]>
+  </select>
+
+  <select id="effectiveAdjustmentTotal" resultType="map">
+    <![CDATA[
+                SELECT COALESCE(sum(amount),0)
+                  FROM expense_adjustment
+                 WHERE original_expense_id=#{p.id} AND status='EFFECTIVE'
                 ]]>
   </select>
 

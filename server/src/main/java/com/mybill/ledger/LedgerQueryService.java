@@ -39,7 +39,8 @@ class LedgerQueryService {
         String normalizedKeyword = keyword == null ? "" : keyword.strip();
         Cursor cursor = decodeCursor(encodedCursor, lifecycle);
         return tenantTransactions.execute(principal, () -> {
-            Query query = new Query(bounds.start(), bounds.end(), type, fundingChannelId, normalizedKeyword, cursor);
+            Query query = new Query(bounds.start(), bounds.end(), type, fundingChannelId, normalizedKeyword, cursor,
+                    clock.instant());
             List<LedgerItem> rows = lifecycle == LifecycleFilter.ACTIVE
                     ? repository.findPage(query, PAGE_SIZE + 1) : repository.findTrashPage(query, PAGE_SIZE + 1);
             boolean hasMore = rows.size() > PAGE_SIZE;

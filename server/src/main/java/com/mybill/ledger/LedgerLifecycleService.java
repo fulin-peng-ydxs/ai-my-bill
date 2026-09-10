@@ -11,6 +11,7 @@ import org.springframework.stereotype.Service;
 
 import java.time.Clock;
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.UUID;
 
 import static com.mybill.ledger.LedgerWritePolicy.digest;
@@ -73,12 +74,10 @@ class LedgerLifecycleService {
                 idempotency.complete(operation, key, id, now);
             }
             LifecycleResponse result = find(id, adjustment);
-            if (!adjustment && "TRASHED".equals(result.lifecycleStatus()) && result.purgeAfter() != null) {
+            if ("TRASHED".equals(result.lifecycleStatus()) && result.purgeAfter() != null) {
+                PurgeSchedule schedule = purgeSchedule(result.purgeAfter());
                 jobs.scheduleAt(ExpiredLedgerPurgeJob.TYPE, principal.tenantId(),
-                        "ledger:" + id + ":" + result.version(), result.purgeAfter());
-            } else if (adjustment && "TRASHED".equals(result.lifecycleStatus()) && result.purgeAfter() != null) {
-                jobs.scheduleAt(ExpiredLedgerPurgeJob.TYPE, principal.tenantId(),
-                        "adjustment:" + id + ":" + result.version(), result.purgeAfter());
+                        schedule.batchKey(), schedule.availableAt());
             }
             return result;
         });
@@ -117,5 +116,13 @@ class LedgerLifecycleService {
         return new ApiException(HttpStatus.CONFLICT, "LEDGER_LIFECYCLE_CONFLICT", message, false);
     }
 
+    /** 同租户同一分钟到期的数据共享一个任务，最长只延迟到该分钟结束。 */
+    static PurgeSchedule purgeSchedule(Instant purgeAfter) {
+        Instant minute = purgeAfter.truncatedTo(ChronoUnit.MINUTES);
+        Instant availableAt = purgeAfter.equals(minute) ? minute : minute.plus(1, ChronoUnit.MINUTES);
+        return new PurgeSchedule("purge-minute:" + availableAt.getEpochSecond() / 60, availableAt);
+    }
+
     @FunctionalInterface private interface Change { boolean apply(long version, Instant now); }
+    record PurgeSchedule(String batchKey, Instant availableAt) { }
 }

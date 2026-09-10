@@ -11,6 +11,7 @@ import org.slf4j.LoggerFactory;
 
 import java.time.Clock;
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 
 /** 单进程或多进程均可安全调用的小批次任务协调器；调度触发由后续业务阶段接入。 */
@@ -55,8 +56,32 @@ public final class JobCoordinator {
 
     public boolean runNext() {
         recoverExpired();
+        return claimAndRun(registry.types());
+    }
+
+    /** 每轮每种任务至多领取一个，并在上限内循环，兼顾吞吐和任务类型公平性。 */
+    public int runAvailable(int maximum) {
+        if (maximum < 1) throw new IllegalArgumentException("maximum must be positive");
+        recoverExpired();
+        List<String> types = List.copyOf(registry.types());
+        int executed = 0;
+        boolean progressed;
+        do {
+            progressed = false;
+            for (String type : types) {
+                if (executed == maximum) return executed;
+                if (claimAndRun(List.of(type))) {
+                    executed++;
+                    progressed = true;
+                }
+            }
+        } while (progressed);
+        return executed;
+    }
+
+    private boolean claimAndRun(java.util.Collection<String> types) {
         Instant now = Instant.now(clock);
-        return repository.claimNext(registry.types(), owner, now, now.plus(properties.leaseDuration()))
+        return repository.claimNext(types, owner, now, now.plus(properties.leaseDuration()))
                 .map(run -> { execute(run); return true; }).orElse(false);
     }
 
@@ -88,26 +113,59 @@ public final class JobCoordinator {
             JobBatchResult result = inScopeTransaction(definition, run, () -> definition.executeBatch(context(run)));
             boolean cancelled = definition.cancellable() && repository.isCancellationRequested(run.id(), owner);
             Instant now = Instant.now(clock);
-            if (cancelled) repository.cancel(run.id(), owner, result.processedCount(), now);
-            else if (result.completed()) repository.complete(run.id(), owner, result.processedCount(), now);
-            else repository.releaseForMore(run.id(), owner, result.processedCount(), now);
+            if (!cancelled) {
+                try {
+                    if (result.completed()) repository.complete(run.id(), owner, result.processedCount(), now);
+                    else repository.releaseForMore(run.id(), owner, result.processedCount(), now);
+                } catch (JobLeaseLostException stateChanged) {
+                    if (definition.cancellable() && repository.isCancellationRequested(run.id(), owner)) cancelled = true;
+                    else throw stateChanged;
+                }
+            }
+            if (cancelled) finishCancellation(definition, run, result.processedCount());
             meters.counter("my_bill.jobs.executed", "job_type", run.jobType(), "outcome",
                     cancelled ? "cancelled" : result.completed() ? "succeeded" : "continued").increment();
         } catch (JobLeaseLostException leaseLost) {
             recordLeaseLost(run);
         } catch (Exception failure) {
+            if (definition.cancellable() && repository.isCancellationRequested(run.id(), owner)) {
+                try {
+                    finishCancellation(definition, run, 0);
+                    meters.counter("my_bill.jobs.executed", "job_type", run.jobType(), "outcome", "cancelled").increment();
+                } catch (JobLeaseLostException leaseLost) {
+                    recordLeaseLost(run);
+                }
+                return;
+            }
             boolean retry = definition.retryable() && run.attemptCount() < run.maxAttempts();
             LOG.warn("后台任务执行失败 jobType={} runId={} error={}",
                     run.jobType(), run.id(), safeError(failure));
             try {
                 repository.failOrRetry(run.id(), owner, retry, safeError(failure), Instant.now(clock));
             } catch (JobLeaseLostException leaseLost) {
-                recordLeaseLost(run);
+                if (definition.cancellable() && repository.isCancellationRequested(run.id(), owner)) {
+                    try {
+                        finishCancellation(definition, run, 0);
+                        meters.counter("my_bill.jobs.executed", "job_type", run.jobType(), "outcome", "cancelled").increment();
+                    } catch (JobLeaseLostException cancellationLost) {
+                        recordLeaseLost(run);
+                    }
+                } else {
+                    recordLeaseLost(run);
+                }
                 return;
             }
             meters.counter("my_bill.jobs.executed", "job_type", run.jobType(),
                     "outcome", retry ? "retry" : "failed").increment();
         }
+    }
+
+    private void finishCancellation(JobDefinition definition, JobRun run, long processedCount) {
+        inScopeTransaction(definition, run, () -> {
+            definition.onCancellationWon(context(run));
+            repository.cancel(run.id(), owner, processedCount, Instant.now(clock));
+            return null;
+        });
     }
 
     private void recordLeaseLost(JobRun run) {

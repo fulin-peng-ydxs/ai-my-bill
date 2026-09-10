@@ -126,6 +126,8 @@ class LedgerLifecycleHttpIntegrationTest {
                 individuallyTrashed.path("version").asLong(), "purge-individual-adjustment", 204);
         assertThat(adjustmentCount(PURGE_ADJUSTMENT)).isZero();
         assertThat(ledgerCount(PURGE_EXPENSE)).isOne();
+        assertThat(jdbc.sql("SELECT count(*) FROM job_run WHERE tenant_id=:tenant AND job_type=:type AND batch_key LIKE 'purge-minute:%'")
+                .param("tenant", TENANT).param("type", ExpiredLedgerPurgeJob.TYPE).query(Long.class).single()).isOne();
     }
 
     @Test @Order(4) void adjustmentRestoreRechecksCumulativeCapAndSourcePurgeIsAtomic() throws Exception {

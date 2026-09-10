@@ -5,6 +5,7 @@ import { computed, onBeforeUnmount, ref } from 'vue'
 import { cancelExport, createExport, downloadExport, getExport, type ExportRequest, type ExportResponse } from '../api/exports'
 import { normalizeRequestError } from '../api/errors'
 import { createIdempotencyAttemptTracker } from '../domain/idempotency'
+import { formatShanghaiBusinessDate } from '../domain/businessTime'
 
 const props = withDefaults(defineProps<{
   request: ExportRequest
@@ -81,7 +82,7 @@ async function poll(): Promise<void> {
     else if (task.value.status === 'SUCCEEDED') {
       if (task.value.rowCount === 0 || !task.value.downloadUrl) notify('当前范围没有可导出的数据。')
       else {
-        downloadExport(task.value.downloadUrl, `我的账单-${new Date().toISOString().slice(0, 10)}.csv`)
+        downloadExport(task.value.downloadUrl, `我的账单-${formatShanghaiBusinessDate()}.csv`)
         notify(`已导出 ${task.value.rowCount} 条数据，文件 24 小时内有效。`)
       }
       reset()

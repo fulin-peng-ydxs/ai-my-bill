@@ -50,6 +50,7 @@ final class ExpenseContracts {
             String quantity,
             String calculatedAmount,
             String paidAmount,
+            String effectiveAdjustmentAmount,
             UUID fundingChannelId,
             String fundingChannelName,
             UUID purchaseChannelId,

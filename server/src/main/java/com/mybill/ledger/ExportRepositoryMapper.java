@@ -23,5 +23,7 @@ public interface ExportRepositoryMapper {
 
     int markCancelled(@Param("p") Map<String, Object> parameters);
 
+    int clearCancelledFileLocation(@Param("p") Map<String, Object> parameters);
+
     int markExpired(@Param("p") Map<String, Object> parameters);
 }

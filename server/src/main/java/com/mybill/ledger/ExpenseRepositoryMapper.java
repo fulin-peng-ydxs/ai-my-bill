@@ -13,6 +13,10 @@ public interface ExpenseRepositoryMapper {
 
     List<Map<String, Object>> findExpense(@Param("p") Map<String, Object> parameters);
 
+    List<Map<String, Object>> lockExpense(@Param("p") Map<String, Object> parameters);
+
+    List<Map<String, Object>> effectiveAdjustmentTotal(@Param("p") Map<String, Object> parameters);
+
     int updateExpense(@Param("p") Map<String, Object> parameters);
 
     List<Map<String, Object>> deleteUndoableExpense(@Param("p") Map<String, Object> parameters);

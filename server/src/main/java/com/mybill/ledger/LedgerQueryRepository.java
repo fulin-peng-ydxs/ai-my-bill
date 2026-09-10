@@ -52,6 +52,7 @@ class LedgerQueryRepository {
                 .param("limit", limit).param("entryType", query.type() == EntryTypeFilter.ALL ? null : query.type().name())
                 .param("fundingId", query.fundingChannelId())
                 .param("keyword", query.keyword().isEmpty() ? null : "%" + escapeLike(query.keyword()) + "%")
+                .param("now", Timestamp.from(query.now()))
                 .param("hasCursor", query.cursor() != null);
     }
 
@@ -77,6 +78,6 @@ class LedgerQueryRepository {
     }
 
     record Query(LocalDate startDate, LocalDate endDate, EntryTypeFilter type, UUID fundingChannelId,
-                 String keyword, Cursor cursor) { }
+                 String keyword, Cursor cursor, Instant now) { }
     record Cursor(LocalDate businessDate, Instant businessTime, Instant createdAt, Instant deletedAt, UUID id) { }
 }

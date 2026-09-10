@@ -97,7 +97,8 @@ class ExportService {
             }
             Path path = files.readable(row.fileLocation());
             if (path == null) throw new ApiException(HttpStatus.GONE, "EXPORT_FILE_MISSING", "导出文件已清理，请重新导出。", false);
-            return new Download(new FileSystemResource(path), "my-bill-export-" + id + ".csv");
+            String filename = "我的账单-" + clock.instant().atZone(LedgerWritePolicy.BUSINESS_ZONE).toLocalDate() + ".csv";
+            return new Download(new FileSystemResource(path), filename);
         });
     }
 

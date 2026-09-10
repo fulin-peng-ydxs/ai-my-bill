@@ -10,4 +10,7 @@ public interface JobDefinition {
     boolean retryable();
     default int maxAttempts() { return 3; }
     JobBatchResult executeBatch(JobExecutionContext context) throws Exception;
+
+    /** 取消在批次完成后赢得竞态时，撤销该批次已产生但尚未对外生效的结果。 */
+    default void onCancellationWon(JobExecutionContext context) throws Exception { }
 }

@@ -27,6 +27,7 @@ import org.springframework.test.web.servlet.MvcResult;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.sql.Timestamp;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -326,11 +327,51 @@ class ExpenseHttpIntegrationTest {
                 .andExpect(status().isBadRequest()).andExpect(jsonPath("$.fieldErrors.version[0]").exists());
         mockMvc.perform(get("/api/v1/expenses/{id}", id).cookie(user))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.version").value(1))
-                .andExpect(jsonPath("$.paidAmount").value("18.88"));
+                .andExpect(jsonPath("$.paidAmount").value("18.88"))
+                .andExpect(jsonPath("$.effectiveAdjustmentAmount").value("0.00"));
+
+        UUID adjustmentId = UUID.fromString("e9000000-0000-4000-8000-000000000001");
+        tenantDatabase.execute(TENANT, () -> {
+            jdbc.sql("""
+                    INSERT INTO expense_adjustment(tenant_id,id,original_expense_id,adjustment_type,amount,
+                      business_time,business_date,status)
+                    VALUES(current_setting('app.tenant_id')::uuid,:id,:expense,'REFUND',5.00,
+                      :occurredAt,'2026-09-06','EFFECTIVE')
+                    """).param("id", adjustmentId).param("expense", UUID.fromString(id))
+                    .param("occurredAt", Timestamp.from(NOW.minusSeconds(30))).update();
+            return null;
+        });
+        mockMvc.perform(get("/api/v1/expenses/{id}", id).cookie(user))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.effectiveAdjustmentAmount").value("5.00"));
+
+        Map<String, Object> belowAdjustments = new LinkedHashMap<>(changedEntry);
+        belowAdjustments.put("paidAmount", "4.99");
+        mockMvc.perform(put("/api/v1/expenses/{id}", id).with(csrf()).cookie(user)
+                        .header("Idempotency-Key", "expense-below-adjustments").contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of("version", 1, "entry", belowAdjustments))))
+                .andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("EXPENSE_ADJUSTMENT_CONFLICT"))
+                .andExpect(jsonPath("$.retryable").value(false))
+                .andExpect(jsonPath("$.fieldErrors.paidAmount[0]").value("实付金额不能低于已生效退款/报销合计 ¥5.00。"));
+
+        Map<String, Object> equalAdjustments = new LinkedHashMap<>(changedEntry);
+        equalAdjustments.put("paidAmount", "5.00");
+        mockMvc.perform(put("/api/v1/expenses/{id}", id).with(csrf()).cookie(user)
+                        .header("Idempotency-Key", "expense-equal-adjustments").contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of("version", 1, "entry", equalAdjustments))))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.version").value(2))
+                .andExpect(jsonPath("$.paidAmount").value("5.00"));
+
+        Map<String, Object> aboveAdjustments = new LinkedHashMap<>(changedEntry);
+        aboveAdjustments.put("paidAmount", "5.01");
+        mockMvc.perform(put("/api/v1/expenses/{id}", id).with(csrf()).cookie(user)
+                        .header("Idempotency-Key", "expense-above-adjustments").contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of("version", 2, "entry", aboveAdjustments))))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.version").value(3))
+                .andExpect(jsonPath("$.paidAmount").value("5.01"));
         mockMvc.perform(get("/api/v1/ledger-entries").queryParam("range", "THIS_YEAR")
                         .queryParam("query", "编辑后备注").cookie(user))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.items[0].id").value(id))
-                .andExpect(jsonPath("$.items[0].amount").value("18.88"));
+                .andExpect(jsonPath("$.items[0].amount").value("5.01"));
 
         String untouchedSnapshot = tenantDatabase.execute(TENANT, () -> jdbc.sql("""
                 SELECT primary_category_name_snapshot FROM ledger_entry

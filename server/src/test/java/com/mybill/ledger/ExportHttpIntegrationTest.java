@@ -108,7 +108,9 @@ class ExportHttpIntegrationTest {
         MvcResult result = mockMvc.perform(get("/api/v1/exports/{id}/download", id).cookie(user))
                 .andExpect(status().isOk()).andExpect(header().string("Cache-Control", "no-store"))
                 .andExpect(header().string("Content-Type", "text/csv;charset=UTF-8"))
-                .andExpect(header().string("Content-Disposition", org.hamcrest.Matchers.containsString("attachment")))
+                .andExpect(header().string("Content-Disposition", org.hamcrest.Matchers.allOf(
+                        org.hamcrest.Matchers.containsString("attachment"),
+                        org.hamcrest.Matchers.containsString("2026-09-08.csv"))))
                 .andReturn();
         byte[] bytes = result.getResponse().getContentAsByteArray();
         assertThat(bytes).startsWith((byte) 0xEF, (byte) 0xBB, (byte) 0xBF);
@@ -253,7 +255,9 @@ class ExportHttpIntegrationTest {
     private static UUID uuid(String value) { return UUID.fromString(value); }
 
     @TestConfiguration static class ClockConfiguration {
-        @Bean @Primary MutableClock mutableExportClock() { return new MutableClock(Instant.now()); }
+        @Bean @Primary MutableClock mutableExportClock() {
+            return new MutableClock(Instant.parse("2026-09-07T16:00:00Z"));
+        }
     }
     static final class MutableClock extends Clock {
         private Instant now;

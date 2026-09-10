@@ -15,6 +15,7 @@ import { createIdempotencyAttemptTracker } from '../domain/idempotency'
 import { formatShanghaiDateTime, toShanghaiLocalDateTime } from '../domain/businessTime'
 import {
   emptyExpenseForm, expenseFormFromResponse, expenseRequestFromForm, validateExpenseForm,
+  validateExpensePaidMinimum,
   type ExpenseField, type ExpenseFormState,
 } from '../domain/ledgerEntryForm'
 import { useLedgerDraft } from '../composables/useLedgerDraft'
@@ -89,7 +90,11 @@ const calculatedAmount = computed(() => {
     return '0.00'
   }
 })
+const effectiveAdjustmentMinimum = computed(() => props.editEntry?.effectiveAdjustmentAmount ?? '0.00')
 const differenceText = computed(() => {
+  if (editMode.value && decimalToScaledInteger(effectiveAdjustmentMinimum.value, 2) > 0n) {
+    return `已生效退款/报销合计 ¥${effectiveAdjustmentMinimum.value}，实付金额不得低于此金额`
+  }
   if (!isDecimalInRange(form.paidAmount, 2, MONEY_MAX)) return '填写后显示与计算金额的差额'
   const paidCents = decimalToScaledInteger(form.paidAmount, 2)
   const calculatedCents = decimalToScaledInteger(calculatedAmount.value, 2)
@@ -256,6 +261,10 @@ async function loadOptions(): Promise<void> {
 function validate(): boolean {
   Object.keys(errors).forEach((key) => delete errors[key as ExpenseField])
   Object.assign(errors, validateExpenseForm(form))
+  if (!errors.paidAmount && editMode.value) {
+    errors.paidAmount = validateExpensePaidMinimum(form.paidAmount, effectiveAdjustmentMinimum.value)
+    if (!errors.paidAmount) delete errors.paidAmount
+  }
   return Object.keys(errors).length === 0
 }
 

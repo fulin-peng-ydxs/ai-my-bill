@@ -55,6 +55,11 @@ class ExportRepository {
                 .param("id", id).param("now", Timestamp.from(now)).execute();
     }
 
+    void clearCancelledFileLocation(UUID id, Instant now) {
+        operations.update(mapper::clearCancelledFileLocation)
+                .param("id", id).param("now", Timestamp.from(now)).execute();
+    }
+
     void markExpired(UUID id, Instant now) {
         operations.update(mapper::markExpired)
                 .param("id", id).param("now", Timestamp.from(now)).execute();
@@ -62,7 +67,8 @@ class ExportRepository {
 
     ExportResponse response(Row row, Instant now) {
         String status = row.status();
-        if (status.equals("SUCCEEDED") && "RUNNING".equals(row.runStatus())) status = "RUNNING";
+        if ("CANCELLED".equals(row.runStatus())) status = "CANCELLED";
+        else if (status.equals("SUCCEEDED") && "RUNNING".equals(row.runStatus())) status = "RUNNING";
         else if ((status.equals("PENDING") || status.equals("RUNNING")) && row.runStatus() != null) {
             status = switch (row.runStatus()) {
                 case "RUNNING" -> "RUNNING";

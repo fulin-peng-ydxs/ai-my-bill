@@ -9,10 +9,14 @@ import org.springframework.stereotype.Component;
 @EnableScheduling
 final class JobPoller {
     private final JobCoordinator coordinator;
+    private final JobRunnerProperties properties;
 
-    JobPoller(JobCoordinator coordinator) { this.coordinator = coordinator; }
+    JobPoller(JobCoordinator coordinator, JobRunnerProperties properties) {
+        this.coordinator = coordinator;
+        this.properties = properties;
+    }
 
     @Scheduled(initialDelayString = "${my-bill.jobs.poll-delay-ms:5000}",
             fixedDelayString = "${my-bill.jobs.poll-delay-ms:5000}")
-    void poll() { coordinator.runNext(); }
+    void poll() { coordinator.runAvailable(properties.maxTasksPerPoll()); }
 }
