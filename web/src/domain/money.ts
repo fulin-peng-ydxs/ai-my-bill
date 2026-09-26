@@ -64,10 +64,11 @@ export function calculateExpenseTotal(unitPrice: string, quantity: string): stri
 }
 
 export function formatCny(value: string): string {
-  const scaled = decimalToScaledInteger(value, 2)
+  const negative = value.startsWith('-')
+  const scaled = decimalToScaledInteger(negative ? value.slice(1) : value, 2)
   const decimal = scaledIntegerToDecimal(scaled, 2)
   const [integer, fraction] = decimal.split('.')
-  return `¥${integer.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}.${fraction}`
+  return `${negative ? '-' : ''}¥${integer.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}.${fraction}`
 }
 
 /** 金额差值保持分为单位精确计算；负值说明业务上限已被越过。 */

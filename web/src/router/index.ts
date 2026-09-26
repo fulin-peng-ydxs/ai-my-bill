@@ -22,6 +22,8 @@ const registeredRoutes: RouteRecordRaw[] = pageRegistry.map((page) => ({
       ? LedgerEntryPreferenceView
     : page.pageKey === 'bill-details'
       ? LedgerView
+    : page.pageKey === 'reports'
+      ? () => import('../views/ReportView.vue')
     : page.pageKey === 'admin-console'
       ? UserManagementView
     : page.pageKey === 'admin-default-dictionaries'

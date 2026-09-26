@@ -11,6 +11,7 @@ import com.mybill.admin.user.AdminUserRepositoryMapper;
 import com.mybill.dictionary.*;
 import com.mybill.ledger.*;
 import com.mybill.preference.PreferenceRepositoryMapper;
+import com.mybill.report.ReportRepositoryMapper;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
@@ -27,7 +28,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
         ExpenseRepositoryMapper.class, ExpiredLedgerPurgeJobMapper.class, ExportCsvWriterMapper.class,
         ExportRepositoryMapper.class, IncomeRepositoryMapper.class, LedgerIdempotencyStoreMapper.class,
         LedgerLifecycleRepositoryMapper.class, LedgerQueryRepositoryMapper.class,
-        PreferenceRepositoryMapper.class
+        PreferenceRepositoryMapper.class, ReportRepositoryMapper.class
 })
 class MyBillApplicationTest {
 

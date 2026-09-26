@@ -12,6 +12,14 @@ export interface LedgerFilters {
   type: LedgerEntryTypeFilter
   lifecycle: LedgerLifecycleFilter
   fundingChannelId?: string
+  primaryCategoryId?: string
+  secondaryCategoryId?: string
+  productId?: string
+  purchaseChannelId?: string
+  locationLabelId?: string
+  incomeCategoryId?: string
+  payerId?: string
+  incomeName?: string
   range: LedgerDateRange
   startDate?: string
   endDate?: string
@@ -24,6 +32,10 @@ export function listLedgerEntries(
 ): Promise<LedgerPage> {
   const params = new URLSearchParams({ query: filters.query, type: filters.type, lifecycle: filters.lifecycle, range: filters.range })
   if (filters.fundingChannelId) params.set('fundingChannelId', filters.fundingChannelId)
+  for (const key of ['primaryCategoryId', 'secondaryCategoryId', 'productId', 'purchaseChannelId',
+    'locationLabelId', 'incomeCategoryId', 'payerId', 'incomeName'] as const) {
+    if (filters[key]) params.set(key, filters[key])
+  }
   if (filters.range === 'CUSTOM' && filters.startDate && filters.endDate) {
     params.set('startDate', filters.startDate)
     params.set('endDate', filters.endDate)

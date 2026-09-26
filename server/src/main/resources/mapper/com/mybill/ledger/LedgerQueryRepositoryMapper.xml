@@ -12,6 +12,14 @@
     AND business_date BETWEEN #{p.startDate} AND #{p.endDate}
     <if test="p.entryType != null">AND entry_type=#{p.entryType}</if>
     <if test="p.fundingId != null">AND funding_channel_id=#{p.fundingId}</if>
+    <if test="p.primaryCategoryId != null">AND primary_category_id=#{p.primaryCategoryId}</if>
+    <if test="p.secondaryCategoryId != null">AND secondary_category_id=#{p.secondaryCategoryId}</if>
+    <if test="p.productId != null">AND product_id=#{p.productId}</if>
+    <if test="p.purchaseChannelId != null">AND purchase_channel_id=#{p.purchaseChannelId}</if>
+    <if test="p.locationLabelId != null">AND location_label_id=#{p.locationLabelId}</if>
+    <if test="p.incomeCategoryId != null">AND income_category_id=#{p.incomeCategoryId}</if>
+    <if test="p.payerId != null">AND payer_id=#{p.payerId}</if>
+    <if test="p.incomeName != null">AND income_name=#{p.incomeName}</if>
     <if test="p.keyword != null">AND search_text ILIKE #{p.keyword} ESCAPE '\'</if>
   </sql>
 
@@ -24,6 +32,8 @@
         CASE WHEN l.entry_type='EXPENSE' THEN concat_ws(' · ',l.quantity || ' ' || l.unit_name_snapshot,
              l.purchase_channel_name_snapshot,l.location_label_name_snapshot) ELSE l.payer_name_snapshot END AS counterparty_name,
         l.funding_channel_id,l.funding_channel_name_snapshot,
+        l.primary_category_id,l.secondary_category_id,l.product_id,l.purchase_channel_id,l.location_label_id,
+        l.income_category_id,l.payer_id,l.income_name,
         CASE WHEN l.entry_type='EXPENSE' THEN l.paid_amount ELSE l.income_amount END AS amount,l.note,
         CAST(NULL AS varchar) AS adjustment_type,CAST(NULL AS uuid) AS original_expense_id,
         CASE WHEN l.entry_type='EXPENSE' THEN l.id END AS source_expense_id,
@@ -39,6 +49,8 @@
         CASE a.adjustment_type WHEN 'REFUND' THEN '退款' ELSE '报销' END,
         CASE a.adjustment_type WHEN 'REFUND' THEN '支出退款' ELSE '费用报销' END,
         '原支出 · ' || l.product_name_snapshot,l.funding_channel_id,l.funding_channel_name_snapshot,
+        l.primary_category_id,l.secondary_category_id,l.product_id,l.purchase_channel_id,l.location_label_id,
+        CAST(NULL AS uuid),CAST(NULL AS uuid),CAST(NULL AS varchar),
         a.amount,a.note,a.adjustment_type,a.original_expense_id,a.original_expense_id,l.paid_amount,
         a.version,'EFFECTIVE',
         CAST(NULL AS timestamptz),CAST(NULL AS timestamptz),CAST(NULL AS integer),0,
@@ -80,6 +92,8 @@
         CASE WHEN l.entry_type='EXPENSE' THEN concat_ws(' · ',l.quantity || ' ' || l.unit_name_snapshot,
              l.purchase_channel_name_snapshot,l.location_label_name_snapshot) ELSE l.payer_name_snapshot END AS counterparty_name,
         l.funding_channel_id,l.funding_channel_name_snapshot,
+        l.primary_category_id,l.secondary_category_id,l.product_id,l.purchase_channel_id,l.location_label_id,
+        l.income_category_id,l.payer_id,l.income_name,
         CASE WHEN l.entry_type='EXPENSE' THEN l.paid_amount ELSE l.income_amount END AS amount,l.note,
         CAST(NULL AS varchar) AS adjustment_type,CAST(NULL AS uuid) AS original_expense_id,
         CAST(NULL AS numeric) AS effective_adjustment_amount,CAST(NULL AS numeric) AS net_expense_amount,false AS fully_adjusted,
@@ -95,6 +109,8 @@
         CASE a.adjustment_type WHEN 'REFUND' THEN '退款' ELSE '报销' END,
         CASE a.adjustment_type WHEN 'REFUND' THEN '支出退款' ELSE '费用报销' END,
         '原支出 · ' || l.product_name_snapshot,l.funding_channel_id,l.funding_channel_name_snapshot,
+        l.primary_category_id,l.secondary_category_id,l.product_id,l.purchase_channel_id,l.location_label_id,
+        CAST(NULL AS uuid),CAST(NULL AS uuid),CAST(NULL AS varchar),
         a.amount,a.note,a.adjustment_type,a.original_expense_id,CAST(NULL AS numeric),CAST(NULL AS numeric),false,
         a.version,a.status,a.deleted_at,a.purge_after,
         LEAST(30,GREATEST(0,CEIL(EXTRACT(EPOCH FROM (a.purge_after-#{p.now}))/86400)))::integer,0,

@@ -18,6 +18,7 @@ describe('exact decimal money helpers', () => {
   it('formats CNY without converting through Number', () => {
     expect(formatCny('0')).toBe('¥0.00')
     expect(formatCny('999999999.99')).toBe('¥999,999,999.99')
+    expect(formatCny('-1234567890.50')).toBe('-¥1,234,567,890.50')
   })
 
   it('subtracts adjustment amounts without binary floating point drift', () => {

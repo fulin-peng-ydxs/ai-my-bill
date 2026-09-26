@@ -6,20 +6,16 @@ import com.mybill.ledger.LedgerQueryContracts.*;
 import com.mybill.ledger.LedgerQueryRepository.Cursor;
 import com.mybill.ledger.LedgerQueryRepository.Query;
 import com.mybill.shared.api.ApiException;
+import com.mybill.shared.time.BusinessDateRange;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 
 import java.nio.charset.StandardCharsets;
 import java.time.Clock;
-import java.time.DayOfWeek;
 import java.time.LocalDate;
-import java.time.YearMonth;
-import java.time.temporal.TemporalAdjusters;
 import java.util.Base64;
 import java.util.List;
 import java.util.UUID;
-
-import static com.mybill.ledger.LedgerWritePolicy.BUSINESS_ZONE;
 
 @Service
 class LedgerQueryService {
@@ -33,14 +29,20 @@ class LedgerQueryService {
     }
 
     LedgerPage query(CurrentPrincipal principal, EntryTypeFilter type, LifecycleFilter lifecycle,
-                     UUID fundingChannelId, DateRange range,
+                     UUID fundingChannelId, UUID primaryCategoryId, UUID secondaryCategoryId, UUID productId,
+                     UUID purchaseChannelId, UUID locationLabelId, UUID incomeCategoryId, UUID payerId,
+                     String incomeName, BusinessDateRange range,
                      LocalDate startDate, LocalDate endDate, String keyword, String encodedCursor) {
+        validateSpecificFilters(type, primaryCategoryId, secondaryCategoryId, productId, purchaseChannelId,
+                locationLabelId, incomeCategoryId, payerId, incomeName);
         DateBounds bounds = bounds(range, startDate, endDate);
         String normalizedKeyword = keyword == null ? "" : keyword.strip();
         Cursor cursor = decodeCursor(encodedCursor, lifecycle);
         return tenantTransactions.execute(principal, () -> {
-            Query query = new Query(bounds.start(), bounds.end(), type, fundingChannelId, normalizedKeyword, cursor,
-                    clock.instant());
+            Query query = new Query(bounds.start(), bounds.end(), type, fundingChannelId,
+                    primaryCategoryId, secondaryCategoryId, productId, purchaseChannelId, locationLabelId,
+                    incomeCategoryId, payerId, incomeName == null || incomeName.isBlank() ? null : incomeName.strip(),
+                    normalizedKeyword, cursor, clock.instant());
             List<LedgerItem> rows = lifecycle == LifecycleFilter.ACTIVE
                     ? repository.findPage(query, PAGE_SIZE + 1) : repository.findTrashPage(query, PAGE_SIZE + 1);
             boolean hasMore = rows.size() > PAGE_SIZE;
@@ -50,21 +52,28 @@ class LedgerQueryService {
         });
     }
 
-    DateBounds bounds(DateRange range, LocalDate customStart, LocalDate customEnd) {
-        LocalDate today = LocalDate.now(clock.withZone(BUSINESS_ZONE));
-        return switch (range) {
-            case TODAY -> new DateBounds(today, today);
-            case THIS_WEEK -> new DateBounds(today.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY)), today);
-            case THIS_MONTH -> new DateBounds(today.withDayOfMonth(1), today);
-            case LAST_MONTH -> { YearMonth month = YearMonth.from(today).minusMonths(1); yield new DateBounds(month.atDay(1), month.atEndOfMonth()); }
-            case THIS_YEAR -> new DateBounds(today.withDayOfYear(1), today);
-            case CUSTOM -> {
-                if (customStart == null || customEnd == null || customEnd.isBefore(customStart)) {
-                    throw fieldError("startDate", "指定日期必须完整，且结束日期不能早于开始日期。");
-                }
-                yield new DateBounds(customStart, customEnd);
-            }
-        };
+    private static void validateSpecificFilters(EntryTypeFilter type,
+                                                UUID primaryCategoryId, UUID secondaryCategoryId, UUID productId,
+                                                UUID purchaseChannelId, UUID locationLabelId,
+                                                UUID incomeCategoryId, UUID payerId, String incomeName) {
+        boolean expenseSpecific = primaryCategoryId != null || secondaryCategoryId != null || productId != null
+                || purchaseChannelId != null || locationLabelId != null;
+        boolean incomeSpecific = incomeCategoryId != null || payerId != null || incomeName != null && !incomeName.isBlank();
+        if (type == EntryTypeFilter.ALL && (expenseSpecific || incomeSpecific)
+                || type == EntryTypeFilter.EXPENSE && incomeSpecific
+                || type == EntryTypeFilter.INCOME && expenseSpecific
+                || type == EntryTypeFilter.ADJUSTMENT && incomeSpecific) {
+            throw fieldError("type", "当前账目类型包含不适用的报表下钻条件，请重新加载明细。");
+        }
+    }
+
+    DateBounds bounds(BusinessDateRange range, LocalDate customStart, LocalDate customEnd) {
+        try {
+            BusinessDateRange.Bounds bounds = range.resolve(clock, customStart, customEnd);
+            return new DateBounds(bounds.start(), bounds.end());
+        } catch (IllegalArgumentException invalid) {
+            throw fieldError("startDate", "指定日期必须完整，且结束日期不能早于开始日期。");
+        }
     }
 
     private static String encodeCursor(LedgerItem item, LifecycleFilter lifecycle) {

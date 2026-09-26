@@ -10,8 +10,6 @@ final class LedgerQueryContracts {
 
     enum EntryTypeFilter { ALL, EXPENSE, INCOME, ADJUSTMENT }
     enum LifecycleFilter { ACTIVE, TRASHED }
-    enum DateRange { TODAY, THIS_WEEK, THIS_MONTH, LAST_MONTH, THIS_YEAR, CUSTOM }
-
     record LedgerItem(
             UUID id, String entryType, Instant occurredAt, LocalDate businessDate,
             String title, String categoryName, String counterpartyName, String fundingChannelName,

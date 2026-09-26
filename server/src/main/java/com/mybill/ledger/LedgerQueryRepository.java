@@ -51,6 +51,13 @@ class LedgerQueryRepository {
         return operations.select(method).param("startDate", query.startDate()).param("endDate", query.endDate())
                 .param("limit", limit).param("entryType", query.type() == EntryTypeFilter.ALL ? null : query.type().name())
                 .param("fundingId", query.fundingChannelId())
+                .param("primaryCategoryId", query.primaryCategoryId())
+                .param("secondaryCategoryId", query.secondaryCategoryId())
+                .param("productId", query.productId())
+                .param("purchaseChannelId", query.purchaseChannelId())
+                .param("locationLabelId", query.locationLabelId())
+                .param("incomeCategoryId", query.incomeCategoryId())
+                .param("payerId", query.payerId()).param("incomeName", query.incomeName())
                 .param("keyword", query.keyword().isEmpty() ? null : "%" + escapeLike(query.keyword()) + "%")
                 .param("now", Timestamp.from(query.now()))
                 .param("hasCursor", query.cursor() != null);
@@ -78,6 +85,8 @@ class LedgerQueryRepository {
     }
 
     record Query(LocalDate startDate, LocalDate endDate, EntryTypeFilter type, UUID fundingChannelId,
+                 UUID primaryCategoryId, UUID secondaryCategoryId, UUID productId,
+                 UUID purchaseChannelId, UUID locationLabelId, UUID incomeCategoryId, UUID payerId, String incomeName,
                  String keyword, Cursor cursor, Instant now) { }
     record Cursor(LocalDate businessDate, Instant businessTime, Instant createdAt, Instant deletedAt, UUID id) { }
 }

@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.mybill.report.ReportRepositoryMapper">
+  <sql id="expenseFilters">
+    <if test="p.primaryCategoryId != null">AND l.primary_category_id=#{p.primaryCategoryId}</if>
+    <if test="p.secondaryCategoryId != null">AND l.secondary_category_id=#{p.secondaryCategoryId}</if>
+    <if test="p.productId != null">AND l.product_id=#{p.productId}</if>
+    <if test="p.purchaseChannelId != null">AND l.purchase_channel_id=#{p.purchaseChannelId}</if>
+    <if test="p.locationLabelId != null">AND l.location_label_id=#{p.locationLabelId}</if>
+  </sql>
+
+  <sql id="incomeFilters">
+    <if test="p.incomeCategoryId != null">AND l.income_category_id=#{p.incomeCategoryId}</if>
+    <if test="p.payerId != null">AND l.payer_id=#{p.payerId}</if>
+    <if test="p.incomeName != null">AND l.income_name=#{p.incomeName}</if>
+  </sql>
+
+  <select id="summary" resultType="map">
+    WITH ledger_totals AS (
+      SELECT
+        COALESCE(sum(l.income_amount) FILTER (WHERE l.entry_type='INCOME'),0) AS total_income,
+        COALESCE(sum(l.paid_amount) FILTER (WHERE l.entry_type='EXPENSE'),0) AS gross_expense,
+        count(*) FILTER (WHERE l.entry_type='INCOME') AS income_count,
+        count(*) FILTER (WHERE l.entry_type='EXPENSE') AS expense_count
+      FROM ledger_entry l
+      WHERE l.tenant_id=current_setting('app.tenant_id')::uuid
+        AND l.lifecycle_status='ACTIVE'
+        AND l.business_date BETWEEN #{p.startDate} AND #{p.endDate}
+        <if test="p.scope == 'EXPENSE'">AND l.entry_type='EXPENSE'</if>
+        <if test="p.scope == 'INCOME'">AND l.entry_type='INCOME'</if>
+        <if test="p.fundingChannelId != null">AND l.funding_channel_id=#{p.fundingChannelId}</if>
+        <if test="p.keyword != null">
+          AND concat_ws(' ',l.product_name_snapshot,l.primary_category_name_snapshot,l.secondary_category_name_snapshot,
+            l.income_name,l.payer_name_snapshot,l.income_category_name_snapshot,l.funding_channel_name_snapshot,
+            l.purchase_channel_name_snapshot,l.location_label_name_snapshot,l.note) ILIKE #{p.keyword} ESCAPE '\'
+        </if>
+        <if test="p.scope == 'EXPENSE'"><include refid="expenseFilters"/></if>
+        <if test="p.scope == 'INCOME'"><include refid="incomeFilters"/></if>
+    ), adjustment_totals AS (
+      SELECT COALESCE(sum(a.amount),0) AS adjustment_amount, count(*) AS adjustment_count
+      FROM expense_adjustment a
+      JOIN ledger_entry l ON l.tenant_id=a.tenant_id AND l.id=a.original_expense_id
+      WHERE a.tenant_id=current_setting('app.tenant_id')::uuid
+        <if test="p.scope == 'INCOME'">AND 1=0</if>
+        AND a.status='EFFECTIVE' AND l.lifecycle_status='ACTIVE'
+        AND a.business_date BETWEEN #{p.startDate} AND #{p.endDate}
+        <if test="p.fundingChannelId != null">AND l.funding_channel_id=#{p.fundingChannelId}</if>
+        <if test="p.keyword != null">
+          AND concat_ws(' ',l.product_name_snapshot,l.primary_category_name_snapshot,l.secondary_category_name_snapshot,
+            l.funding_channel_name_snapshot,l.purchase_channel_name_snapshot,l.location_label_name_snapshot,a.note,
+            CASE a.adjustment_type WHEN 'REFUND' THEN '退款' ELSE '报销' END) ILIKE #{p.keyword} ESCAPE '\'
+        </if>
+        <if test="p.scope == 'EXPENSE'"><include refid="expenseFilters"/></if>
+    )
+    SELECT l.total_income,l.gross_expense,a.adjustment_amount,
+      l.income_count,l.expense_count,a.adjustment_count
+    FROM ledger_totals l CROSS JOIN adjustment_totals a
+  </select>
+</mapper>

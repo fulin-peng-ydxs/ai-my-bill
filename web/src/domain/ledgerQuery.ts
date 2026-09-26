@@ -9,6 +9,10 @@ const LIFECYCLES: readonly LedgerLifecycleFilter[] = ['ACTIVE', 'TRASHED']
 const UUID = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i
 const DATE = /^\d{4}-\d{2}-\d{2}$/
 const CONTEXT_TOKEN = /^[\p{L}\p{N}_-]{1,64}$/u
+const ADVANCED_UUID_KEYS = [
+  'primaryCategoryId', 'secondaryCategoryId', 'productId', 'purchaseChannelId',
+  'locationLabelId', 'incomeCategoryId', 'payerId',
+] as const
 
 export interface LedgerDrillContext {
   scope: 'ALL' | 'EXPENSE' | 'INCOME'
@@ -56,6 +60,12 @@ export function parseLedgerRoute(query: LocationQuery, defaultRange: LedgerDateR
     ...(UUID.test(rawFunding) ? { fundingChannelId: rawFunding } : {}),
     ...(range === 'CUSTOM' && validCustom ? { startDate: rawStart, endDate: rawEnd } : {}),
   }
+  for (const key of ADVANCED_UUID_KEYS) {
+    const value = one(query[key])
+    if (UUID.test(value)) filters[key] = value
+  }
+  const incomeName = one(query.incomeName)
+  if (incomeName && incomeName.length <= 100) filters.incomeName = incomeName
 
   if (one(query.from) !== 'reports') return { filters }
   const scope = one(query.scope)
@@ -66,7 +76,10 @@ export function parseLedgerRoute(query: LocationQuery, defaultRange: LedgerDateR
   }
   const reportScroll = Number.parseInt(one(query.reportScroll), 10)
   const reportQuery: LocationQueryRaw = {}
-  for (const key of ['reportRange', 'reportType', 'reportFundingChannelId', 'reportQ', 'reportDimension']) {
+  for (const key of ['reportRange', 'reportScope', 'reportFundingChannelId', 'reportQ', 'reportDimension',
+    'reportStartDate', 'reportEndDate', 'reportPrimaryCategoryId', 'reportSecondaryCategoryId',
+    'reportProductId', 'reportPurchaseChannelId', 'reportLocationLabelId', 'reportIncomeCategoryId',
+    'reportPayerId', 'reportIncomeName']) {
     const candidate = one(query[key])
     if (candidate && candidate.length <= 200) reportQuery[key.replace(/^report/, '').replace(/^./, (char) => char.toLowerCase())] = candidate
   }
@@ -84,10 +97,13 @@ export function ledgerRouteQuery(filters: LedgerFilters, drill?: LedgerDrillCont
     ...(filters.range === 'CUSTOM' ? { startDate: filters.startDate, endDate: filters.endDate } : {}),
     ...(drill ? { from: 'reports', scope: drill.scope, dimension: drill.dimension, value: drill.value } : {}),
   }
+  for (const key of [...ADVANCED_UUID_KEYS, 'incomeName'] as const) if (filters[key]) result[key] = filters[key]
   if (drill) {
+    if (Number.isSafeInteger(drill.reportScroll) && drill.reportScroll >= 0) result.reportScroll = String(drill.reportScroll)
     for (const [key, value] of Object.entries(drill.reportQuery)) {
       if (typeof value !== 'string') continue
-      const reportKey = key === 'scroll' ? 'reportScroll' : `report${key.charAt(0).toUpperCase()}${key.slice(1)}`
+      if (key === 'scroll') continue
+      const reportKey = `report${key.charAt(0).toUpperCase()}${key.slice(1)}`
       result[reportKey] = value
     }
   }

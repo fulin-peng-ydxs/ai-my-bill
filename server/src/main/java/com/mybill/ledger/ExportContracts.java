@@ -1,5 +1,7 @@
 package com.mybill.ledger;
 
+import com.mybill.shared.time.BusinessDateRange;
+
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 
@@ -17,7 +19,7 @@ final class ExportContracts {
             LedgerQueryContracts.EntryTypeFilter type,
             LedgerQueryContracts.LifecycleFilter lifecycle,
             UUID fundingChannelId,
-            LedgerQueryContracts.DateRange range,
+            BusinessDateRange range,
             LocalDate startDate,
             LocalDate endDate,
             @Size(max = 200) String query

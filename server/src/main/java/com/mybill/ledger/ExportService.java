@@ -10,6 +10,7 @@ import com.mybill.ledger.ExportContracts.ExportResponse;
 import com.mybill.ledger.ExportContracts.ExportScope;
 import com.mybill.ledger.ExportContracts.ExportSnapshot;
 import com.mybill.shared.api.ApiException;
+import com.mybill.shared.time.BusinessDateRange;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.core.io.FileSystemResource;
 import org.springframework.http.HttpStatus;
@@ -115,8 +116,7 @@ class ExportService {
                 ? LedgerQueryContracts.EntryTypeFilter.ALL : request.type();
         LedgerQueryContracts.LifecycleFilter lifecycle = request.lifecycle() == null
                 ? LedgerQueryContracts.LifecycleFilter.ACTIVE : request.lifecycle();
-        LedgerQueryContracts.DateRange range = request.range() == null
-                ? LedgerQueryContracts.DateRange.TODAY : request.range();
+        BusinessDateRange range = request.range() == null ? BusinessDateRange.TODAY : request.range();
         LedgerQueryService.DateBounds bounds = ledgerQueries.bounds(range, request.startDate(), request.endDate());
         return new ExportSnapshot(ExportScope.CURRENT_FILTERS, type, lifecycle, request.fundingChannelId(),
                 bounds.start(), bounds.end(), request.query() == null ? "" : request.query().strip());

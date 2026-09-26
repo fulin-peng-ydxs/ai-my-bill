@@ -9,8 +9,8 @@
 ## 2. 应用与模块边界
 
 - 采用单仓库、Vue 单页应用、Spring Boot 模块化单体和 PostgreSQL，同源接口前缀固定为 `/api/v1`。
-- 当前后端领域包为 `auth`、`admin`、`dictionary`、`preference`、`job`、`ledger`，公共 MyBatis-Plus 字段映射位于 `persistence`，Mapper XML 位于 `server/src/main/resources/mapper`，公共契约位于 `shared`；后续报表阶段新增 `report`。跨领域写操作只经应用服务，查询只能消费明确的只读接口或投影。
-- T1-T10 已建立工程、安全、应用外壳、共享组件、管理员与字典治理、偏好和账号隔离草稿；T11-T16 已实现收支填报、日常模板、统一明细、编辑及退款/报销。T17 接入有效/回收站完整生命周期与 30 天到期任务；T18 接入当前筛选/完整数据导出。注销、报表、运行概况和审计查询仍未实施；注销 API 与页面动作在 T19 的数据保留与清理策略确认前均不登记。
+- 当前后端领域包为 `auth`、`admin`、`dictionary`、`preference`、`job`、`ledger`、`report`，公共 MyBatis-Plus 字段映射位于 `persistence`，Mapper XML 位于 `server/src/main/resources/mapper`，公共契约和跨领域日期范围位于 `shared`。跨领域写操作只经应用服务，查询只能消费明确的只读接口或投影。
+- T1-T10 已建立工程、安全、应用外壳、共享组件、管理员与字典治理、偏好和账号隔离草稿；T11-T16 已实现收支填报、日常模板、统一明细、编辑及退款/报销。T17 接入有效/回收站完整生命周期与 30 天到期任务；T18 接入当前筛选/完整数据导出；T20 接入统一报表筛选、精确摘要、基础图表与可恢复下钻。注销、T21-T23 扩展报表、运行概况和审计查询仍未实施；注销 API 与页面动作在 T19 的数据保留与清理策略确认前均不登记。
 
 ## 3. HTTP 与数据契约
 

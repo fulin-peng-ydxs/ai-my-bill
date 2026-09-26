@@ -7,12 +7,16 @@ describe('ledger route query', () => {
     const parsed = parseLedgerRoute({
       q: '早餐', type: 'EXPENSE', range: 'CUSTOM', startDate: '2026-08-01', endDate: '2026-08-31',
       fundingChannelId: '123e4567-e89b-42d3-a456-426614174000', from: 'reports', scope: 'EXPENSE',
-      dimension: 'category', value: '餐饮', reportRange: 'THIS_MONTH', reportScroll: '320',
+      productId: '123e4567-e89b-42d3-a456-426614174000', dimension: 'category', value: '餐饮',
+      reportRange: 'THIS_MONTH', reportScope: 'EXPENSE', reportProductId: '123e4567-e89b-42d3-a456-426614174000', reportScroll: '320',
     })
     expect(parsed.filters).toMatchObject({ query: '早餐', type: 'EXPENSE', lifecycle: 'ACTIVE', range: 'CUSTOM', startDate: '2026-08-01' })
     expect(parsed.drill).toMatchObject({ scope: 'EXPENSE', dimension: 'category', value: '餐饮', reportScroll: 320 })
-    expect(parsed.drill?.reportQuery).toEqual({ range: 'THIS_MONTH', scroll: '320' })
-    expect(ledgerRouteQuery(parsed.filters, parsed.drill)).toMatchObject({ reportRange: 'THIS_MONTH', reportScroll: '320' })
+    expect(parsed.filters.productId).toBe('123e4567-e89b-42d3-a456-426614174000')
+    expect(parsed.drill?.reportQuery).toEqual({ range: 'THIS_MONTH', scope: 'EXPENSE',
+      productId: '123e4567-e89b-42d3-a456-426614174000', scroll: '320' })
+    expect(ledgerRouteQuery(parsed.filters, parsed.drill)).toMatchObject({ reportRange: 'THIS_MONTH',
+      reportScope: 'EXPENSE', reportProductId: '123e4567-e89b-42d3-a456-426614174000', reportScroll: '320' })
   })
 
   it('drops invalid fields and unsafe drill context', () => {
@@ -30,6 +34,13 @@ describe('ledger route query', () => {
     expect(parseLedgerRoute({ type: 'ADJUSTMENT', range: 'TODAY' }).filters.type).toBe('ADJUSTMENT')
     expect(parseLedgerRoute({ type: 'ADJUSTMENT', range: 'TODAY', from: 'reports', scope: 'ADJUSTMENT',
       dimension: 'type', value: '退款' }).drill).toBeUndefined()
+  })
+
+  it('serializes the authoritative report scroll even when reportQuery has no scroll field', () => {
+    const query = ledgerRouteQuery({ query: '', type: 'INCOME', lifecycle: 'ACTIVE', range: 'THIS_MONTH' }, {
+      scope: 'INCOME', dimension: 'OVERVIEW', value: 'INCOME', reportQuery: { scope: 'INCOME' }, reportScroll: 480,
+    })
+    expect(query).toMatchObject({ from: 'reports', reportScope: 'INCOME', reportScroll: '480' })
   })
 
   it('keeps the recycle-bin dataset explicit and clears only its business filters', () => {

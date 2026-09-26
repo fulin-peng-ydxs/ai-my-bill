@@ -784,6 +784,79 @@ textarea:disabled {
   margin: 0 auto;
 }
 
+.report-page {
+  display: grid;
+  width: min(100%, 920px);
+  gap: var(--space-lg);
+  margin: 0 auto;
+}
+
+.report-page .segmented-control { width: min(100%, 420px); }
+
+.report-dimension {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: var(--space-lg);
+  padding-block: var(--space-sm);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.report-dimension > div { display: grid; gap: var(--space-xs); min-width: min(100%, 240px); }
+.report-dimension label { color: var(--color-muted); font-size: 12px; font-weight: 600; }
+.report-dimension p { max-width: 540px; margin: 0; color: var(--color-muted); font-size: 13px; }
+
+.chart-panel {
+  display: grid;
+  gap: var(--space-md);
+  padding: var(--space-lg);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+}
+
+.chart-panel > header {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: var(--space-md);
+}
+
+.chart-panel h2 { margin: 0; font-size: 20px; }
+.chart-panel header > span { color: var(--color-muted); font-size: 13px; }
+.chart-canvas { width: 100%; min-height: 280px; }
+
+.chart-actions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-sm);
+}
+
+.chart-actions button {
+  display: grid;
+  gap: var(--space-xs);
+  min-width: 0;
+  padding: var(--space-md);
+  color: var(--color-text);
+  text-align: left;
+  background: var(--color-surface-secondary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  cursor: pointer;
+}
+
+.chart-actions button:hover { border-color: var(--color-primary); }
+.chart-actions button:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 2px; }
+.chart-actions strong { overflow-wrap: anywhere; font-family: var(--font-data); }
+.chart-actions small { color: var(--color-muted); }
+
+@media (max-width: 640px) {
+  .report-dimension { align-items: stretch; flex-direction: column; }
+  .chart-panel { padding: var(--space-md); }
+  .chart-canvas { min-height: 240px; }
+  .chart-actions { grid-template-columns: 1fr; }
+}
+
 .ledger-page-heading {
   display: flex;
   align-items: flex-start;

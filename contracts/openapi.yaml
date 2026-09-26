@@ -2,7 +2,7 @@ openapi: 3.1.0
 info:
   title: 我的账单 API
   version: 0.1.0
-  description: 同源 /api/v1 接口契约；T18 已开放认证、用户与字典治理、个人偏好、收支填报、统一明细生命周期及个人数据导出。
+  description: 同源 /api/v1 接口契约；T20 已开放认证、用户与字典治理、个人偏好、收支填报、统一明细生命周期、个人数据导出及报表统一筛选/摘要/下钻。
 servers:
   - url: /api/v1
 security:
@@ -561,6 +561,36 @@ paths:
         "404": { $ref: "#/components/responses/NotFoundError" }
         "409": { $ref: "#/components/responses/ConflictError" }
         "410": { description: 文件已过期或已清理, content: { application/json: { schema: { $ref: "#/components/schemas/ApiError" } } } }
+  /reports/summary:
+    get:
+      operationId: getReportSummary
+      summary: 按统一筛选口径聚合当前租户有效收支与生效调整
+      tags: [reports]
+      parameters:
+        - { name: scope, in: query, schema: { $ref: "#/components/schemas/ReportScope" } }
+        - { name: range, in: query, schema: { $ref: "#/components/schemas/LedgerDateRange" } }
+        - { name: startDate, in: query, description: range=CUSTOM 时必填。, schema: { type: string, format: date } }
+        - { name: endDate, in: query, description: range=CUSTOM 时必填且不得早于 startDate。, schema: { type: string, format: date } }
+        - { name: query, in: query, schema: { type: string, maxLength: 200, default: "" } }
+        - { name: fundingChannelId, in: query, schema: { type: string, format: uuid } }
+        - { name: primaryCategoryId, in: query, schema: { type: string, format: uuid } }
+        - { name: secondaryCategoryId, in: query, schema: { type: string, format: uuid } }
+        - { name: productId, in: query, schema: { type: string, format: uuid } }
+        - { name: purchaseChannelId, in: query, schema: { type: string, format: uuid } }
+        - { name: locationLabelId, in: query, schema: { type: string, format: uuid } }
+        - { name: incomeCategoryId, in: query, schema: { type: string, format: uuid } }
+        - { name: payerId, in: query, schema: { type: string, format: uuid } }
+        - { name: incomeName, in: query, schema: { type: string, maxLength: 100 } }
+      responses:
+        "200":
+          description: 全部指标与数据点使用同一筛选快照；冲减为生效退款/报销正数。
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ReportSummary" }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "401": { $ref: "#/components/responses/AuthenticationError" }
+        "403": { $ref: "#/components/responses/AuthorizationError" }
+        "503": { $ref: "#/components/responses/ServiceUnavailableError" }
   /ledger-entries:
     get:
       operationId: listLedgerEntries
@@ -577,6 +607,14 @@ paths:
         - name: fundingChannelId
           in: query
           schema: { type: string, format: uuid }
+        - { name: primaryCategoryId, in: query, schema: { type: string, format: uuid } }
+        - { name: secondaryCategoryId, in: query, schema: { type: string, format: uuid } }
+        - { name: productId, in: query, schema: { type: string, format: uuid } }
+        - { name: purchaseChannelId, in: query, schema: { type: string, format: uuid } }
+        - { name: locationLabelId, in: query, schema: { type: string, format: uuid } }
+        - { name: incomeCategoryId, in: query, schema: { type: string, format: uuid } }
+        - { name: payerId, in: query, schema: { type: string, format: uuid } }
+        - { name: incomeName, in: query, schema: { type: string, maxLength: 100 } }
         - name: range
           in: query
           schema: { $ref: "#/components/schemas/LedgerDateRange" }
@@ -1597,6 +1635,37 @@ components:
       type: string
       enum: [TODAY, THIS_WEEK, THIS_MONTH, LAST_MONTH, THIS_YEAR, CUSTOM]
       default: TODAY
+    ReportScope:
+      type: string
+      enum: [ALL, EXPENSE, INCOME]
+      default: ALL
+    ReportAmount:
+      type: string
+      pattern: "^-?(0|[1-9][0-9]*)(\\.[0-9]{2})$"
+      description: 服务端精确聚合后的人民币十进制字符串；结余可为负数，聚合值不受单笔金额上限约束。
+    ReportDataPoint:
+      type: object
+      additionalProperties: false
+      required: [label, value, amount, itemCount]
+      properties:
+        label: { type: string, minLength: 1, maxLength: 100 }
+        value: { type: string, enum: [INCOME, EXPENSE, ADJUSTMENT] }
+        amount: { $ref: "#/components/schemas/ReportAmount" }
+        itemCount: { type: integer, format: int64, minimum: 0 }
+    ReportSummary:
+      type: object
+      additionalProperties: false
+      required: [totalIncome, grossExpense, adjustmentAmount, netExpense, balance, matchingItemCount, dataPoints]
+      properties:
+        totalIncome: { $ref: "#/components/schemas/ReportAmount" }
+        grossExpense: { $ref: "#/components/schemas/ReportAmount" }
+        adjustmentAmount: { $ref: "#/components/schemas/ReportAmount" }
+        netExpense: { $ref: "#/components/schemas/ReportAmount" }
+        balance: { $ref: "#/components/schemas/ReportAmount" }
+        matchingItemCount: { type: integer, format: int64, minimum: 0 }
+        dataPoints:
+          type: array
+          items: { $ref: "#/components/schemas/ReportDataPoint" }
     ExportScope:
       type: string
       enum: [CURRENT_FILTERS, ALL_DATA]

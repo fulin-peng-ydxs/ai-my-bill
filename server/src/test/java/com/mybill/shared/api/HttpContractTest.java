@@ -12,6 +12,7 @@ import com.mybill.admin.user.AdminUserRepositoryMapper;
 import com.mybill.dictionary.*;
 import com.mybill.ledger.*;
 import com.mybill.preference.PreferenceRepositoryMapper;
+import com.mybill.report.ReportRepositoryMapper;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -42,7 +43,7 @@ import static org.mockito.Mockito.when;
         ExpenseRepositoryMapper.class, ExpiredLedgerPurgeJobMapper.class, ExportCsvWriterMapper.class,
         ExportRepositoryMapper.class, IncomeRepositoryMapper.class, LedgerIdempotencyStoreMapper.class,
         LedgerLifecycleRepositoryMapper.class, LedgerQueryRepositoryMapper.class,
-        PreferenceRepositoryMapper.class
+        PreferenceRepositoryMapper.class, ReportRepositoryMapper.class
 })
 class HttpContractTest {
 

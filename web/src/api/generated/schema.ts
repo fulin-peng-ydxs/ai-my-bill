@@ -382,6 +382,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/reports/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 按统一筛选口径聚合当前租户有效收支与生效调整 */
+        get: operations["getReportSummary"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/ledger-entries": {
         parameters: {
             query?: never;
@@ -1124,6 +1141,31 @@ export interface components {
          * @enum {string}
          */
         LedgerDateRange: "TODAY" | "THIS_WEEK" | "THIS_MONTH" | "LAST_MONTH" | "THIS_YEAR" | "CUSTOM";
+        /**
+         * @default ALL
+         * @enum {string}
+         */
+        ReportScope: "ALL" | "EXPENSE" | "INCOME";
+        /** @description 服务端精确聚合后的人民币十进制字符串；结余可为负数，聚合值不受单笔金额上限约束。 */
+        ReportAmount: string;
+        ReportDataPoint: {
+            label: string;
+            /** @enum {string} */
+            value: "INCOME" | "EXPENSE" | "ADJUSTMENT";
+            amount: components["schemas"]["ReportAmount"];
+            /** Format: int64 */
+            itemCount: number;
+        };
+        ReportSummary: {
+            totalIncome: components["schemas"]["ReportAmount"];
+            grossExpense: components["schemas"]["ReportAmount"];
+            adjustmentAmount: components["schemas"]["ReportAmount"];
+            netExpense: components["schemas"]["ReportAmount"];
+            balance: components["schemas"]["ReportAmount"];
+            /** Format: int64 */
+            matchingItemCount: number;
+            dataPoints: components["schemas"]["ReportDataPoint"][];
+        };
         /** @enum {string} */
         ExportScope: "CURRENT_FILTERS" | "ALL_DATA";
         /** @enum {string} */
@@ -2268,6 +2310,47 @@ export interface operations {
             };
         };
     };
+    getReportSummary: {
+        parameters: {
+            query?: {
+                scope?: components["schemas"]["ReportScope"];
+                range?: components["schemas"]["LedgerDateRange"];
+                /** @description range=CUSTOM 时必填。 */
+                startDate?: string;
+                /** @description range=CUSTOM 时必填且不得早于 startDate。 */
+                endDate?: string;
+                query?: string;
+                fundingChannelId?: string;
+                primaryCategoryId?: string;
+                secondaryCategoryId?: string;
+                productId?: string;
+                purchaseChannelId?: string;
+                locationLabelId?: string;
+                incomeCategoryId?: string;
+                payerId?: string;
+                incomeName?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 全部指标与数据点使用同一筛选快照；冲减为生效退款/报销正数。 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReportSummary"];
+                };
+            };
+            400: components["responses"]["ValidationError"];
+            401: components["responses"]["AuthenticationError"];
+            403: components["responses"]["AuthorizationError"];
+            503: components["responses"]["ServiceUnavailableError"];
+        };
+    };
     listLedgerEntries: {
         parameters: {
             query?: {
@@ -2275,6 +2358,14 @@ export interface operations {
                 /** @description 有效账目与回收站是互斥集合。 */
                 lifecycle?: components["schemas"]["LedgerLifecycleFilter"];
                 fundingChannelId?: string;
+                primaryCategoryId?: string;
+                secondaryCategoryId?: string;
+                productId?: string;
+                purchaseChannelId?: string;
+                locationLabelId?: string;
+                incomeCategoryId?: string;
+                payerId?: string;
+                incomeName?: string;
                 range?: components["schemas"]["LedgerDateRange"];
                 /** @description range=CUSTOM 时必填。 */
                 startDate?: string;
