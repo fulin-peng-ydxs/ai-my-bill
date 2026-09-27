@@ -11,6 +11,7 @@ const route = useRoute()
 const router = useRouter()
 const sessionStore = useSessionStore()
 const isAnonymous = computed(() => route.meta.role === 'anonymous')
+const isSessionInitializing = computed(() => sessionStore.status === 'unknown' || sessionStore.status === 'loading')
 const hasPagePermission = computed(() => {
   const requiredRole = route.meta.role?.toUpperCase()
   return !requiredRole || requiredRole === 'ANONYMOUS' || requiredRole === sessionStore.session?.role
@@ -18,7 +19,17 @@ const hasPagePermission = computed(() => {
 </script>
 
 <template>
-  <RouterView v-if="isAnonymous" />
+  <main
+    v-if="isSessionInitializing"
+    class="app-bootstrap-state"
+  >
+    <AppStateBlock
+      kind="loading"
+      title="正在确认会话"
+      message="确认完成前不会加载账号页面或管理数据。"
+    />
+  </main>
+  <RouterView v-else-if="isAnonymous" />
   <AppShell v-else>
     <RouterView v-if="hasPagePermission" />
     <AppStateBlock

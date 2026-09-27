@@ -33,6 +33,13 @@ const detailOpen = ref(false)
 const { data, status, error, staleWarning, refreshing, execute } = useLatestRequest<Awaited<ReturnType<typeof listAdminAuditLogs>>>()
 const items = computed(() => data.value?.items ?? [])
 const totalPages = computed(() => Math.max(1, Math.ceil((data.value?.total ?? 0) / 50)))
+const hasAppliedFilters = computed(() => Boolean(
+  applied.value.administrator
+  || applied.value.action
+  || applied.value.object
+  || applied.value.result
+  || applied.value.period !== 'ALL',
+))
 
 async function load(refresh = false): Promise<void> {
   const snapshot = { ...applied.value }
@@ -214,9 +221,9 @@ onMounted(() => void load())
     <AppStateBlock
       v-else-if="status === 'empty'"
       kind="empty"
-      title="没有匹配日志"
-      message="调整管理员、动作、对象、结果或时间条件后重试。"
-      action-label="清除条件"
+      :title="hasAppliedFilters ? '没有匹配日志' : '还没有操作日志'"
+      :message="hasAppliedFilters ? '调整管理员、动作、对象、结果或时间条件后重试。' : '完成创建用户、状态变更等高影响管理操作后，记录会出现在这里。'"
+      :action-label="hasAppliedFilters ? '清除条件' : undefined"
       @action="clearFilters"
     />
 

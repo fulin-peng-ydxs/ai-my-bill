@@ -230,6 +230,18 @@ textarea:disabled {
 
 @keyframes state-spin { to { transform: rotate(360deg); } }
 
+.app-bootstrap-state {
+  display: grid;
+  min-height: 100dvh;
+  place-items: center;
+  padding: max(var(--space-lg), env(safe-area-inset-top)) max(var(--space-lg), env(safe-area-inset-right)) max(var(--space-lg), env(safe-area-inset-bottom)) max(var(--space-lg), env(safe-area-inset-left));
+  background: var(--color-background);
+}
+
+.app-bootstrap-state .state-block {
+  width: min(100%, 520px);
+}
+
 .app-shell {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto;
@@ -319,7 +331,7 @@ textarea:disabled {
 .admin-mobile-navigation a {
   display: grid;
   place-items: center;
-  min-height: 40px;
+  min-height: 44px;
   padding: var(--space-sm) var(--space-xs);
   color: var(--color-muted);
   text-decoration: none;
@@ -541,6 +553,11 @@ textarea:disabled {
   color: var(--color-text);
   background: transparent;
   border: 0;
+}
+
+html:has(dialog[open]),
+body:has(dialog[open]) {
+  overflow: hidden;
 }
 
 .app-dialog::backdrop,
@@ -1178,7 +1195,9 @@ textarea:disabled {
   border-radius: var(--radius-control);
 }
 
-.admin-audit-toolbar select {
+.default-type-picker select,
+.admin-audit-toolbar select,
+.admin-toolbar select {
   width: 100%;
   min-height: 44px;
   padding: var(--space-sm) var(--space-xl) var(--space-sm) var(--space-md);
@@ -1234,16 +1253,7 @@ textarea:disabled {
 }
 
 .admin-search:focus-within { outline: 2px solid var(--color-focus); outline-offset: 2px; }
-.admin-search input { min-width: 0; height: 42px; color: var(--color-text); background: transparent; border: 0; outline: 0; }
-
-.admin-toolbar select {
-  min-height: 44px;
-  padding: var(--space-sm) var(--space-xl) var(--space-sm) var(--space-md);
-  color: var(--color-text);
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-tool);
-}
+.admin-search input { min-width: 0; height: 44px; color: var(--color-text); background: transparent; border: 0; outline: 0; }
 
 .admin-result-count { color: var(--color-muted); font-size: 14px; white-space: nowrap; }
 
@@ -1475,7 +1485,7 @@ textarea:disabled {
   line-height: 18px;
 }
 .reset-preferences-action {
-  min-height: 36px;
+  min-height: 44px;
   padding-block: var(--space-xs);
   justify-self: center;
   font-size: 14px;
