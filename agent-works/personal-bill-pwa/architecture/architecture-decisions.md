@@ -4,13 +4,14 @@
 
 - 前端锁定 Node.js 24.11.1 与 npm 11.6.2，使用 Vue 3、Vite、TypeScript、Pinia、Vue Router、ECharts 和 Lucide Vue Next。依赖由 `web/package-lock.json` 固化，CI 使用 `npm ci`。
 - 后端锁定 Java 21 LTS、Spring Boot 3.5.16、MyBatis-Plus 3.5.17 与 Maven Wrapper。生产 Java 只调用 Mapper 方法，参数化 SQL、动态条件、锁和批量语句集中在 XML；架构测试禁止 Spring JDBC/JPA 与 Java 内嵌 SQL 回流。
-- PostgreSQL 开发基线为 16 或更高受支持版本，生产镜像固定为 PostgreSQL 16.14。当前已固化 Flyway 11.7.2、独立 bootstrap/迁移/应用角色、16 张租户表的强制 RLS 与生产应用只读版本门禁；预期 schema 版本为 `011`。`job_run` 支持有限重试、租约、合作式取消、批次幂等和到时可领取，商品具备显式排序、合并留痕和默认字典规范化约束。
+- PostgreSQL 开发基线为 16 或更高受支持版本，生产镜像固定为 PostgreSQL 16.14。当前已固化 Flyway 11.7.2、独立 bootstrap/迁移/应用角色、16 张租户表的强制 RLS 与生产应用只读版本门禁；预期 schema 版本为 `012`。`job_run` 支持有限重试、租约、合作式取消、批次幂等和到时可领取，商品具备显式排序、合并留痕和默认字典规范化约束，注销匿名审计固定保留 180 天。
+- V012 的注销审计不保存账目、用户名、用户 ID 或租户 ID，仅保存匿名编号、执行元数据和带用途域的不可逆主体指纹。历史管理员用户审计按目标索引匿名化；个人导出文件先在受控根目录内原子移入隔离名，数据库回滚时恢复，提交成功后同步物理删除。若进程在隔离后中断，应用启动时按租户 RLS 查询原路径的导出记录：记录仍在则恢复，记录已删除则完成物理清理，避免事务失败或进程崩溃留下半注销状态。该指纹专用于备份恢复重放：T29 的恢复流程必须在覆盖数据库前独立保全尚未过期的注销审计，恢复并升级 schema 后重新导入，再匹配恢复出的普通用户并重放删除；未完成脚本和演练前不得宣称备份恢复满足注销策略。
 
 ## 2. 应用与模块边界
 
 - 采用单仓库、Vue 单页应用、Spring Boot 模块化单体和 PostgreSQL，同源接口前缀固定为 `/api/v1`。
 - 当前后端领域包为 `auth`、`admin`、`dictionary`、`preference`、`job`、`ledger`、`report`，公共 MyBatis-Plus 字段映射位于 `persistence`，Mapper XML 位于 `server/src/main/resources/mapper`，公共契约和跨领域日期范围位于 `shared`。跨领域写操作只经应用服务，查询只能消费明确的只读接口或投影。
-- T1-T10 已建立工程、安全、应用外壳、共享组件、管理员与字典治理、偏好和账号隔离草稿；T11-T16 已实现收支填报、日常模板、统一明细、编辑及退款/报销。T17 接入有效/回收站完整生命周期与 30 天到期任务；T18 接入当前筛选/完整数据导出；T20 接入统一报表筛选、精确摘要、基础图表与可恢复下钻。注销、T21-T23 扩展报表、运行概况和审计查询仍未实施；注销 API 与页面动作在 T19 的数据保留与清理策略确认前均不登记。
+- T1-T10 已建立工程、安全、应用外壳、共享组件、管理员与字典治理、偏好和账号隔离草稿；T11-T16 已实现收支填报、日常模板、统一明细、编辑及退款/报销。T17 接入有效/回收站完整生命周期与 30 天到期任务；T18 接入当前筛选/完整数据导出；T19 接入本人/管理员注销、在线数据及导出文件即时删除、全会话失效和 180 天匿名安全审计；T20 接入统一报表筛选、精确摘要、基础图表与可恢复下钻。T21-T23 扩展报表、运行概况和审计查询仍未实施。
 
 ## 3. HTTP 与数据契约
 
@@ -30,7 +31,7 @@
 ## 5. 本地启动与持续集成
 
 - `npm run dev` 使用仓库内 `.local/postgres` 数据目录启动隔离的本地 PostgreSQL，再并行启动后端和前端；脚本拒绝外部主机、非法连接参数、低于 16 的 PostgreSQL 以及被其他数据集群占用的端口，退出命令时仅停止本次启动的进程。
-- 本地开发由 bootstrap 账号 `my_bill_dev` 只负责建库/建角，非超级迁移所有者 `my_bill_migration` 执行 Flyway，后端连接非超级用户 `my_bill_app`；生产内嵌 Flyway 固定关闭，启动时只读核对 schema 版本 `011`。
+- 本地开发由 bootstrap 账号 `my_bill_dev` 只负责建库/建角，非超级迁移所有者 `my_bill_migration` 执行 Flyway，后端连接非超级用户 `my_bill_app`；生产内嵌 Flyway 固定关闭，启动时只读核对 schema 版本 `012`。
 - `npm run check:database` 使用系统已有 PostgreSQL 16+ 可执行程序创建一次性隔离集群，不连接本项目开发库、`ai-stocks` 或其他项目数据库，也不探测/依赖 Docker 或 Testcontainers。同一临时集群先运行认证、管理、字典、偏好、收支、明细、调整、回收站和导出 HTTP 集成测试，再重建空 schema 运行 migration、RLS、任务和回滚测试；退出时只清理 `mktemp` 生成的该集群。
 - Compose 将长驻数据库、一次性角色 provision、一次性 migrate 和长驻 app 分开；数据库只挂 bootstrap secret，provision 短时挂三类 secret，migrate 只挂迁移 secret，app 只挂运行 secret。app 的个人导出文件位于独立持久卷，目录和保留期使用非密钥环境变量配置；前端静态服务和反向代理仍属于 T29。
 - CI 分别执行前端 typecheck、lint、unit、OpenAPI 校验/类型漂移检查与后端 Maven verify；本地单独验证后端统一使用 `npm run check:server` 解析系统已有 Java 21。

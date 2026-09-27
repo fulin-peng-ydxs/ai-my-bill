@@ -146,6 +146,25 @@ paths:
           $ref: "#/components/responses/ConflictError"
         "503":
           $ref: "#/components/responses/ServiceUnavailableError"
+  /me/deletion:
+    post:
+      operationId: deleteCurrentAccount
+      summary: 注销当前普通用户并立即擦除在线个人数据
+      tags: [account-deletion]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SelfDeletionRequest" }
+      responses:
+        "200":
+          description: 在线个人数据与导出文件已擦除，匿名审计保留 180 天
+          content: { application/json: { schema: { $ref: "#/components/schemas/AccountDeletionResult" } } }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "401": { $ref: "#/components/responses/AuthenticationError" }
+        "403": { $ref: "#/components/responses/AuthorizationError" }
+        "409": { $ref: "#/components/responses/ConflictError" }
+        "503": { $ref: "#/components/responses/ServiceUnavailableError" }
   /admin/users:
     get:
       operationId: listAdminUsers
@@ -901,6 +920,20 @@ paths:
       parameters: [{ $ref: "#/components/parameters/UserId" }]
       requestBody: { $ref: "#/components/requestBodies/UserVersion" }
       responses: { "200": { description: 新临时密码仅本次展示, content: { application/json: { schema: { $ref: "#/components/schemas/TemporaryCredentialResponse" } } } }, "401": { $ref: "#/components/responses/AuthenticationError" }, "403": { $ref: "#/components/responses/AuthorizationError" }, "404": { $ref: "#/components/responses/NotFoundError" }, "409": { $ref: "#/components/responses/ConflictError" }, "503": { $ref: "#/components/responses/ServiceUnavailableError" } }
+  /admin/users/{userId}/deletion:
+    post:
+      operationId: deleteAdminUserAccount
+      summary: 管理员注销普通用户并立即擦除在线个人数据
+      tags: [admin-users, account-deletion]
+      parameters: [{ $ref: "#/components/parameters/UserId" }]
+      requestBody: { $ref: "#/components/requestBodies/UserVersion" }
+      responses:
+        "200": { description: 注销完成, content: { application/json: { schema: { $ref: "#/components/schemas/AccountDeletionResult" } } } }
+        "401": { $ref: "#/components/responses/AuthenticationError" }
+        "403": { $ref: "#/components/responses/AuthorizationError" }
+        "404": { $ref: "#/components/responses/NotFoundError" }
+        "409": { $ref: "#/components/responses/ConflictError" }
+        "503": { $ref: "#/components/responses/ServiceUnavailableError" }
   /admin/default-dictionaries:
     get:
       operationId: listDefaultDictionarySummaries
@@ -2005,6 +2038,20 @@ components:
       required: [version]
       properties:
         version: { type: integer, format: int64, minimum: 1 }
+    SelfDeletionRequest:
+      type: object
+      additionalProperties: false
+      required: [confirmation]
+      properties:
+        confirmation: { $ref: "#/components/schemas/Username" }
+    AccountDeletionResult:
+      type: object
+      additionalProperties: false
+      required: [deletionReference, executedAt, auditExpiresAt]
+      properties:
+        deletionReference: { type: string, format: uuid }
+        executedAt: { type: string, format: date-time }
+        auditExpiresAt: { type: string, format: date-time }
     AdminUser:
       type: object
       additionalProperties: false

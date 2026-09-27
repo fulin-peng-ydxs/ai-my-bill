@@ -148,7 +148,7 @@ class AdminUserHttpIntegrationTest {
 
     @Test
     @Order(5)
-    void lifecycleRevokesSessionsRejectsStaleVersionsAndKeepsDeletionClosed() throws Exception {
+    void lifecycleRevokesSessionsRejectsStaleVersionsAndPermanentlyDeletesTheAccount() throws Exception {
         Cookie admin = login("t7-admin", ADMIN_PASSWORD, false);
         Cookie firstUserSession = login("t7-managed", temporaryPassword, true);
 
@@ -168,24 +168,25 @@ class AdminUserHttpIntegrationTest {
         mockMvc.perform(get("/api/v1/auth/session").cookie(secondUserSession)).andExpect(status().isUnauthorized());
         Cookie resetSession = login("t7-managed", resetPassword, true);
 
-        JsonNode deletion = postAction(admin, "deletion", version, 404);
-        assertThat(deletion.path("code").asText()).isEqualTo("NOT_FOUND");
-        mockMvc.perform(get("/api/v1/auth/session").cookie(resetSession)).andExpect(status().isOk());
         UUID tenantId = jdbc.sql("SELECT tenant_id FROM app_user WHERE id = :id")
                 .param("id", UUID.fromString(managedUserId)).query(UUID.class).single();
-        assertThat(jdbc.sql("SELECT status FROM app_user WHERE id = :id")
-                .param("id", UUID.fromString(managedUserId)).query(String.class).single()).isEqualTo("ACTIVE");
-        assertThat(jdbc.sql("SELECT status FROM tenant WHERE id = :id")
-                .param("id", tenantId).query(String.class).single()).isEqualTo("ACTIVE");
-        assertThat(tenantDatabase.execute(tenantId,
-                () -> jdbc.sql("SELECT count(*) FROM account_deletion_job WHERE user_id = :id AND status = 'PENDING'")
-                        .param("id", UUID.fromString(managedUserId)).query(Long.class).single())).isZero();
+        postAction(admin, "deletion", version - 1, 409);
+        mockMvc.perform(get("/api/v1/auth/session").cookie(resetSession)).andExpect(status().isOk());
+        JsonNode deletion = postAction(admin, "deletion", version, 200);
+        String reference = deletion.path("deletionReference").asText();
+        assertThat(reference).isNotBlank();
+        mockMvc.perform(get("/api/v1/auth/session").cookie(resetSession)).andExpect(status().isUnauthorized());
+        assertThat(jdbc.sql("SELECT count(*) FROM app_user WHERE id = :id")
+                .param("id", UUID.fromString(managedUserId)).query(Long.class).single()).isZero();
+        assertThat(jdbc.sql("SELECT count(*) FROM tenant WHERE id = :id")
+                .param("id", tenantId).query(Long.class).single()).isZero();
+        assertThat(jdbc.sql("SELECT count(*) FROM account_deletion_audit WHERE id = :id AND actor_type='ADMIN'")
+                .param("id", UUID.fromString(reference)).query(Long.class).single()).isOne();
 
-        String audits = jdbc.sql("SELECT string_agg(action || safe_summary::text, ',') FROM admin_audit_log WHERE object_id = :id")
-                .param("id", managedUserId).query(String.class).single();
-        assertThat(audits).contains("CREATE_USER", "CHANGE_USER_STATUS", "RESET_USER_PASSWORD")
-                .doesNotContain("REQUEST_USER_DELETION")
-                .doesNotContain(temporaryPassword, resetPassword, "password_digest", "tenant_id");
+        String audits = jdbc.sql("SELECT string_agg(action || object_id || safe_summary::text, ',') FROM admin_audit_log WHERE action='DELETE_USER_ACCOUNT'")
+                .query(String.class).single();
+        assertThat(audits).contains("DELETE_USER_ACCOUNT", reference, "DELETED")
+                .doesNotContain(managedUserId, "t7-managed", temporaryPassword, resetPassword, "tenant_id");
     }
 
     private JsonNode postAction(Cookie admin, String action, long expectedVersion, int expectedStatus) throws Exception {

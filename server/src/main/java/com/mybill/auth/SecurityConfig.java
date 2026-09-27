@@ -83,6 +83,7 @@ public class SecurityConfig {
                         .requestMatchers("/api/v1/adjustments/**").hasRole("USER")
                         .requestMatchers("/api/v1/reports/**").hasRole("USER")
                         .requestMatchers("/api/v1/exports/**").hasRole("USER")
+                        .requestMatchers("/api/v1/me/**").hasRole("USER")
                         .requestMatchers("/api/v1/**").denyAll()
                         .anyRequest().permitAll())
                 .exceptionHandling(errors -> errors

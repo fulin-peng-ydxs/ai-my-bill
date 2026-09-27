@@ -25,6 +25,7 @@ const feedback = ref<string>()
 const showHelp = ref(false)
 const needsFirstPassword = computed(() => sessionStore.session?.passwordChangeRequired === true)
 const visibleFeedback = computed(() => feedback.value
+  ?? (route.query.deleted === '1' ? '账号及在线个人数据已永久删除。' : undefined)
   ?? (sessionStore.status === 'error' ? sessionStore.errorMessage : undefined))
 
 function errorMessage(error: unknown): string {

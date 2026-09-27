@@ -1,5 +1,6 @@
 import type { components } from './generated/schema'
 import { apiRequest } from './http'
+import { deleteAdminAccount, type AccountDeletionResult } from './accountDeletion'
 
 export type AdminUser = components['schemas']['AdminUser']
 export type AdminUserPage = components['schemas']['AdminUserPage']
@@ -31,4 +32,8 @@ export function mutateAdminUser(
     method: 'POST',
     body: JSON.stringify({ version: user.version }),
   })
+}
+
+export function deleteAdminUser(user: AdminUser): Promise<AccountDeletionResult> {
+  return deleteAdminAccount(user.accountId, user.version)
 }

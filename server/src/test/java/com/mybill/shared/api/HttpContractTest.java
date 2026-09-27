@@ -1,6 +1,7 @@
 package com.mybill.shared.api;
 
 import com.mybill.admin.audit.AdminAuditRepository;
+import com.mybill.account.AccountDeletionRepositoryMapper;
 import com.mybill.auth.AuthRepository;
 import com.mybill.auth.AuthenticationService;
 import com.mybill.auth.TenantTransactionExecutor;
@@ -43,7 +44,8 @@ import static org.mockito.Mockito.when;
         ExpenseRepositoryMapper.class, ExpiredLedgerPurgeJobMapper.class, ExportCsvWriterMapper.class,
         ExportRepositoryMapper.class, IncomeRepositoryMapper.class, LedgerIdempotencyStoreMapper.class,
         LedgerLifecycleRepositoryMapper.class, LedgerQueryRepositoryMapper.class,
-        PreferenceRepositoryMapper.class, ReportRepositoryMapper.class
+        PreferenceRepositoryMapper.class, ReportRepositoryMapper.class,
+        AccountDeletionRepositoryMapper.class
 })
 class HttpContractTest {
 

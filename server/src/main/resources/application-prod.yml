@@ -5,7 +5,7 @@ spring:
 my-bill:
   schema:
     validation-enabled: true
-    expected-version: "011"
+    expected-version: "012"
   auth:
     secure-cookie: true
     rate-limit-pepper: ""

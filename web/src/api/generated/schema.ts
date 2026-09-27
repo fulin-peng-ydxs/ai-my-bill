@@ -106,6 +106,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/me/deletion": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 注销当前普通用户并立即擦除在线个人数据 */
+        post: operations["deleteCurrentAccount"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/users": {
         parameters: {
             query?: never;
@@ -665,6 +682,23 @@ export interface paths {
         put?: never;
         /** 重置临时密码并撤销全部旧会话 */
         post: operations["resetAdminUserPassword"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/users/{userId}/deletion": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 管理员注销普通用户并立即擦除在线个人数据 */
+        post: operations["deleteAdminUserAccount"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1431,6 +1465,17 @@ export interface components {
             /** Format: int64 */
             version: number;
         };
+        SelfDeletionRequest: {
+            confirmation: components["schemas"]["Username"];
+        };
+        AccountDeletionResult: {
+            /** Format: uuid */
+            deletionReference: string;
+            /** Format: date-time */
+            executedAt: string;
+            /** Format: date-time */
+            auditExpiresAt: string;
+        };
         AdminUser: {
             /** Format: uuid */
             accountId: string;
@@ -1729,6 +1774,35 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SessionResponse"];
+                };
+            };
+            400: components["responses"]["ValidationError"];
+            401: components["responses"]["AuthenticationError"];
+            403: components["responses"]["AuthorizationError"];
+            409: components["responses"]["ConflictError"];
+            503: components["responses"]["ServiceUnavailableError"];
+        };
+    };
+    deleteCurrentAccount: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SelfDeletionRequest"];
+            };
+        };
+        responses: {
+            /** @description 在线个人数据与导出文件已擦除，匿名审计保留 180 天 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccountDeletionResult"];
                 };
             };
             400: components["responses"]["ValidationError"];
@@ -2820,6 +2894,33 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TemporaryCredentialResponse"];
+                };
+            };
+            401: components["responses"]["AuthenticationError"];
+            403: components["responses"]["AuthorizationError"];
+            404: components["responses"]["NotFoundError"];
+            409: components["responses"]["ConflictError"];
+            503: components["responses"]["ServiceUnavailableError"];
+        };
+    };
+    deleteAdminUserAccount: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                userId: components["parameters"]["UserId"];
+            };
+            cookie?: never;
+        };
+        requestBody: components["requestBodies"]["UserVersion"];
+        responses: {
+            /** @description 注销完成 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccountDeletionResult"];
                 };
             };
             401: components["responses"]["AuthenticationError"];

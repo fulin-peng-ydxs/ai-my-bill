@@ -1281,7 +1281,8 @@ textarea:disabled {
 }
 
 .account-section { text-align: center; }
-.logout-action { justify-self: center; }
+.logout-action,
+.delete-account-action { justify-self: center; }
 .preference-caption,
 .entry-stage-note {
   margin: 0;

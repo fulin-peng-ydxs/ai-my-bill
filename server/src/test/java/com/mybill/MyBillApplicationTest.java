@@ -1,6 +1,8 @@
 package com.mybill;
 
 import com.mybill.admin.audit.AdminAuditRepository;
+import com.mybill.account.AccountDeletionRepositoryMapper;
+import com.mybill.account.AccountDeletionFileRecovery;
 import com.mybill.auth.AuthRepository;
 import com.mybill.auth.TenantTransactionExecutor;
 import com.mybill.job.JobCoordinator;
@@ -28,7 +30,8 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
         ExpenseRepositoryMapper.class, ExpiredLedgerPurgeJobMapper.class, ExportCsvWriterMapper.class,
         ExportRepositoryMapper.class, IncomeRepositoryMapper.class, LedgerIdempotencyStoreMapper.class,
         LedgerLifecycleRepositoryMapper.class, LedgerQueryRepositoryMapper.class,
-        PreferenceRepositoryMapper.class, ReportRepositoryMapper.class
+        PreferenceRepositoryMapper.class, ReportRepositoryMapper.class,
+        AccountDeletionRepositoryMapper.class
 })
 class MyBillApplicationTest {
 
@@ -42,6 +45,7 @@ class MyBillApplicationTest {
     @MockitoBean private AdminAuditRepository adminAuditRepository;
     @MockitoBean private JobRunRepository jobRunRepository;
     @MockitoBean private JobCoordinator jobCoordinator;
+    @MockitoBean private AccountDeletionFileRecovery accountDeletionFileRecovery;
 
     @Test
     void contextLoads() {

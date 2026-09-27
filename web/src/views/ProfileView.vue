@@ -12,7 +12,11 @@ import PwaInstallPrompt from '../components/PwaInstallPrompt.vue'
 import SettingsDisclosureList, { type SettingsDisclosureItem } from '../components/SettingsDisclosureList.vue'
 import ThemeModeControl from '../components/ThemeModeControl.vue'
 import { useLogout } from '../composables/useLogout'
+import { clearAccountMemory } from '../composables/accountMemory'
 import { usePwaInstallStore } from '../pwa/install'
+import { deleteCurrentAccount } from '../api/accountDeletion'
+import { normalizeRequestError } from '../api/errors'
+import { clearAccountStorage } from '../storage/accountStorage'
 import { listDictionaryCandidates, type DictionaryItem } from '../api/dictionaries'
 import {
   ledgerRangeOptions,
@@ -34,6 +38,10 @@ const preferencesStore = usePreferencesStore()
 const { loggingOut, logoutError, logout } = useLogout()
 const activeSetting = ref<'funding' | 'ledgerRange' | 'reportRange' | 'appearance' | 'install'>()
 const resetOpen = ref(false)
+const deletionOpen = ref(false)
+const deletionConfirmation = ref('')
+const deletionError = ref('')
+const deletionBusy = ref(false)
 const fundingChannels = ref<DictionaryItem[]>([])
 const fundingLoading = ref(true)
 const fundingError = ref<string>()
@@ -129,6 +137,46 @@ async function confirmReset(): Promise<void> {
   } catch {
     // 统一状态块保留错误与原偏好。
   }
+}
+
+function openDeletion(): void {
+  deletionConfirmation.value = ''
+  deletionError.value = ''
+  deletionOpen.value = true
+}
+
+async function confirmDeletion(): Promise<void> {
+  const accountId = sessionStore.session?.accountId
+  if (!accountId || deletionBusy.value) return
+  deletionError.value = ''
+  deletionBusy.value = true
+  try {
+    await deleteCurrentAccount(deletionConfirmation.value)
+    await finishDeletion(accountId)
+  } catch (cause) {
+    // 响应可能在服务端提交后丢失；只有重新确认会话已失效时才按成功收口本地数据。
+    try {
+      await sessionStore.initialize(true)
+      if (sessionStore.status === 'guest') {
+        await finishDeletion(accountId)
+        return
+      }
+    } catch {
+      // 身份状态无法确认时保留本地数据和当前页面，允许用户重试。
+    }
+    const requestError = normalizeRequestError(cause)
+    deletionError.value = requestError.fieldErrors.confirmation?.[0] ?? requestError.message
+  } finally {
+    deletionBusy.value = false
+  }
+}
+
+async function finishDeletion(accountId: string): Promise<void> {
+  await clearAccountStorage(accountId)
+  clearAccountMemory(accountId)
+  sessionStore.clear()
+  deletionOpen.value = false
+  await router.replace({ name: 'login', query: { deleted: '1' } })
 }
 
 function showExportNotice(message: string, kind: 'success' | 'error'): void {
@@ -227,7 +275,7 @@ onMounted(loadFundingChannels)
           <h2 id="account-title">
             账号操作
           </h2>
-          <p>退出会撤销当前服务端会话。</p>
+          <p>退出仅撤销当前会话；注销会永久删除账号和在线个人数据。</p>
         </div>
       </div>
       <AppStateBlock
@@ -245,6 +293,14 @@ onMounted(loadFundingChannels)
         @click="logout"
       >
         {{ loggingOut ? '正在退出…' : '退出登录' }}
+      </button>
+      <button
+        class="text-action danger-text delete-account-action"
+        type="button"
+        :disabled="deletionBusy"
+        @click="openDeletion"
+      >
+        注销账号
       </button>
     </section>
 
@@ -370,6 +426,33 @@ onMounted(loadFundingChannels)
       <PwaInstallPrompt v-else-if="activeSetting === 'install'" />
     </AppDrawer>
 
+    <AppDialog
+      id="delete-account-confirm"
+      v-model:open="deletionOpen"
+      title="永久注销账号？"
+      description="在线账号、账目、字典、导出文件和全部会话会立即删除且无法恢复；仅保留不含账目内容的匿名安全审计 180 天。备份副本随既定周期自然过期，恢复备份时必须重放注销清理。建议先完成数据导出。"
+      confirm-label="永久注销"
+      danger
+      :busy="deletionBusy"
+      :confirm-disabled="deletionConfirmation !== sessionStore.session?.username"
+      @confirm="confirmDeletion"
+    >
+      <FormField
+        field-id="deletion-confirmation"
+        :label="`输入用户名 ${sessionStore.session?.username ?? ''} 以确认`"
+        :error="deletionError"
+      >
+        <template #default="{ describedBy }">
+          <input
+            id="deletion-confirmation"
+            v-model="deletionConfirmation"
+            autocomplete="off"
+            maxlength="64"
+            :aria-describedby="describedBy"
+          >
+        </template>
+      </FormField>
+    </AppDialog>
     <AppDialog
       id="reset-preferences-confirm"
       v-model:open="resetOpen"

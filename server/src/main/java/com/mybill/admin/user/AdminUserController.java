@@ -1,5 +1,7 @@
 package com.mybill.admin.user;
 
+import com.mybill.account.AccountDeletionContracts.AdminDeletionRequest;
+import com.mybill.account.AccountDeletionContracts.DeletionResult;
 import com.mybill.auth.CurrentPrincipal;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
@@ -27,9 +29,10 @@ import static com.mybill.admin.user.AdminUserContracts.VersionRequest;
 @RequestMapping("/api/v1/admin/users")
 public class AdminUserController {
     private final AdminUserService service;
+    private final AdminAccountDeletionService deletionService;
 
-    AdminUserController(AdminUserService service) {
-        this.service = service;
+    AdminUserController(AdminUserService service, AdminAccountDeletionService deletionService) {
+        this.service = service; this.deletionService = deletionService;
     }
 
     @GetMapping
@@ -62,6 +65,12 @@ public class AdminUserController {
     TemporaryCredential resetPassword(@AuthenticationPrincipal CurrentPrincipal administrator,
                                       @PathVariable UUID userId, @Valid @RequestBody VersionRequest request) {
         return service.resetPassword(administrator, userId, request.version());
+    }
+
+    @PostMapping("/{userId}/deletion")
+    DeletionResult delete(@AuthenticationPrincipal CurrentPrincipal administrator,
+                          @PathVariable UUID userId, @Valid @RequestBody AdminDeletionRequest request) {
+        return deletionService.delete(administrator, userId, request.version());
     }
 
 }

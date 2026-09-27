@@ -4,6 +4,7 @@ import { computed, onMounted, ref } from 'vue'
 
 import {
   createAdminUser,
+  deleteAdminUser,
   listAdminUsers,
   mutateAdminUser,
   type AdminUser,
@@ -19,7 +20,7 @@ import AppToast from '../../components/AppToast.vue'
 import FormField from '../../components/FormField.vue'
 import { useLatestRequest } from '../../composables/useLatestRequest'
 
-type UserAction = 'disable' | 'restore' | 'reset-password'
+type UserAction = 'disable' | 'restore' | 'reset-password' | 'deletion'
 
 const queryDraft = ref('')
 const appliedQuery = ref('')
@@ -44,10 +45,13 @@ const actionTitle = computed(() => {
     disable: '确认停用账号？',
     restore: '确认恢复账号？',
     'reset-password': '确认重置临时密码？',
+    deletion: '永久注销这个账号？',
   }
   return pendingAction.value ? labels[pendingAction.value] : ''
 })
-const actionDescription = computed(() => pendingAction.value === 'reset-password'
+const actionDescription = computed(() => pendingAction.value === 'deletion'
+  ? '账号、在线个人数据、导出文件和全部会话会立即删除且无法恢复；匿名安全审计保留 180 天。请先确认用户已获得所需导出。'
+  : pendingAction.value === 'reset-password'
     ? '全部旧会话会立即失效，新临时密码只展示这一次。'
     : pendingAction.value === 'disable'
       ? '用户会立即无法登录，全部旧会话也会失效。'
@@ -122,9 +126,21 @@ async function submitCreate(): Promise<void> {
 
 async function confirmAction(): Promise<void> {
   if (!selectedUser.value || !pendingAction.value) return
+  const action = pendingAction.value
+  const target = selectedUser.value
   actionBusy.value = true
   try {
-    const result = await mutateAdminUser(selectedUser.value, pendingAction.value)
+    if (action === 'deletion') {
+      await deleteAdminUser(target)
+      selectedUser.value = undefined
+      toastMessage.value = '账号及在线个人数据已永久删除'
+      toastKind.value = 'success'
+      toastOpen.value = true
+      pendingAction.value = undefined
+      await load('refresh')
+      return
+    }
+    const result = await mutateAdminUser(target, action)
     if ('temporaryPassword' in result) credential.value = result
     const updated = 'user' in result ? result.user : result
     selectedUser.value = updated
@@ -134,6 +150,18 @@ async function confirmAction(): Promise<void> {
     pendingAction.value = undefined
     await load('refresh')
   } catch (cause) {
+    if (action === 'deletion') {
+      // 响应可能在提交后丢失；刷新成功且目标已消失时按已完成收口。
+      await load('refresh')
+      if (!users.value.some((user) => user.accountId === target.accountId)) {
+        selectedUser.value = undefined
+        pendingAction.value = undefined
+        toastMessage.value = '账号及在线个人数据已永久删除'
+        toastKind.value = 'success'
+        toastOpen.value = true
+        return
+      }
+    }
     toastMessage.value = normalizeRequestError(cause).message
     toastKind.value = 'error'
     toastOpen.value = true
@@ -426,6 +454,14 @@ onMounted(() => void load())
         >
           重置临时密码
         </button>
+        <button
+          v-if="selectedUser.status !== 'DELETION_PENDING'"
+          type="button"
+          class="danger-text"
+          @click="askAction('deletion')"
+        >
+          永久注销账号
+        </button>
       </div>
     </AppDrawer>
 
@@ -434,7 +470,7 @@ onMounted(() => void load())
       :open="Boolean(pendingAction)"
       :title="actionTitle"
       :description="actionDescription"
-      :danger="pendingAction === 'disable'"
+      :danger="pendingAction === 'disable' || pendingAction === 'deletion'"
       :busy="actionBusy"
       @update:open="pendingAction = undefined"
       @confirm="confirmAction"
