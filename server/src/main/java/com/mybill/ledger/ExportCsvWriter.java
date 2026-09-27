@@ -50,6 +50,18 @@ class ExportCsvWriter {
                             || snapshot.type() == LedgerQueryContracts.EntryTypeFilter.EXPENSE_FLOW ? null : snapshot.type().name())
                     .param("expenseFlow", snapshot.type() == LedgerQueryContracts.EntryTypeFilter.EXPENSE_FLOW)
                     .param("fundingId", snapshot.fundingChannelId())
+                    .param("primaryCategoryId", snapshot.primaryCategoryId())
+                    .param("secondaryCategoryId", snapshot.secondaryCategoryId())
+                    .param("productId", snapshot.productId()).param("unitId", snapshot.unitId())
+                    .param("purchaseChannelId", snapshot.purchaseChannelId())
+                    .param("locationLabelId", snapshot.locationLabelId())
+                    .param("incomeCategoryId", snapshot.incomeCategoryId()).param("payerId", snapshot.payerId())
+                    .param("incomeName", snapshot.incomeName()).param("entryId", snapshot.entryId())
+                    .param("missingSecondaryCategory", snapshot.missingSecondaryCategory())
+                    .param("missingPurchaseChannel", snapshot.missingPurchaseChannel())
+                    .param("missingLocation", snapshot.missingLocation())
+                    .param("expenseWeekday", snapshot.expenseWeekday())
+                    .param("expenseTimeBand", snapshot.expenseTimeBand() == null ? null : snapshot.expenseTimeBand().name())
                     .param("keyword", snapshot.query().isEmpty() ? null : "%" + escapeLike(snapshot.query()) + "%")
                     .forEach(row -> {
                         long number = count.incrementAndGet();

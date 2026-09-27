@@ -55,8 +55,14 @@ class LedgerQueryRepository {
                 .param("primaryCategoryId", query.primaryCategoryId())
                 .param("secondaryCategoryId", query.secondaryCategoryId())
                 .param("productId", query.productId())
+                .param("unitId", query.unitId()).param("entryId", query.entryId())
                 .param("purchaseChannelId", query.purchaseChannelId())
                 .param("locationLabelId", query.locationLabelId())
+                .param("missingSecondaryCategory", query.missingSecondaryCategory())
+                .param("missingPurchaseChannel", query.missingPurchaseChannel())
+                .param("missingLocation", query.missingLocation())
+                .param("expenseWeekday", query.expenseWeekday())
+                .param("expenseTimeBand", query.expenseTimeBand() == null ? null : query.expenseTimeBand().name())
                 .param("incomeCategoryId", query.incomeCategoryId())
                 .param("payerId", query.payerId()).param("incomeName", query.incomeName())
                 .param("keyword", query.keyword().isEmpty() ? null : "%" + escapeLike(query.keyword()) + "%")
@@ -87,7 +93,10 @@ class LedgerQueryRepository {
 
     record Query(LocalDate startDate, LocalDate endDate, EntryTypeFilter type, UUID fundingChannelId,
                  UUID primaryCategoryId, UUID secondaryCategoryId, UUID productId,
-                 UUID purchaseChannelId, UUID locationLabelId, UUID incomeCategoryId, UUID payerId, String incomeName,
+                 UUID purchaseChannelId, UUID locationLabelId, UUID unitId, UUID entryId,
+                 boolean missingSecondaryCategory, boolean missingPurchaseChannel, boolean missingLocation,
+                 Integer expenseWeekday, LedgerQueryContracts.ExpenseTimeBand expenseTimeBand,
+                 UUID incomeCategoryId, UUID payerId, String incomeName,
                  String keyword, Cursor cursor, Instant now) { }
     record Cursor(LocalDate businessDate, Instant businessTime, Instant createdAt, Instant deletedAt, UUID id) { }
 }

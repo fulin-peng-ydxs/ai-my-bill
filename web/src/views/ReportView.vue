@@ -4,11 +4,12 @@ import { useRoute, useRouter } from 'vue-router'
 
 import { listDictionaryCandidates, type DictionaryItem } from '../api/dictionaries'
 import type { LedgerDateRange, LedgerFilters } from '../api/ledgerEntries'
-import { getReportSummary, getTimeReport, type ReportFilters, type ReportScope, type ReportSummary,
-  type ReportTimeGrain, type ReportTimeMetric, type TimeReport } from '../api/reports'
+import { getExpenseReport, getReportSummary, getTimeReport, type ExpenseReport, type ReportFilters,
+  type ReportScope, type ReportSummary, type ReportTimeGrain, type ReportTimeMetric, type TimeReport } from '../api/reports'
 import AppliedFilterBar from '../components/AppliedFilterBar.vue'
 import AppStateBlock from '../components/AppStateBlock.vue'
 import ChartPanel from '../components/ChartPanel.vue'
+import ExpenseDimensionPanel from '../components/ExpenseDimensionPanel.vue'
 import FilterSheet from '../components/FilterSheet.vue'
 import FormField from '../components/FormField.vue'
 import GlobalLedgerSearch from '../components/GlobalLedgerSearch.vue'
@@ -18,7 +19,7 @@ import TimeTrendPanel from '../components/TimeTrendPanel.vue'
 import { useLatestRequest } from '../composables/useLatestRequest'
 import { ledgerRangeOptions, ledgerRouteQuery, optionLabel, type LedgerDrillContext } from '../domain/ledgerQuery'
 import {
-  clearIncompatibleReportFilters, clearedReportFilters, parseReportPresentation, parseReportRoute,
+  clearIncompatibleReportFilters, clearedReportFilters, isExpenseDimension, parseReportPresentation, parseReportRoute,
   reportPresentationQuery, reportRouteQuery, reportScopeOptions, type ReportDimension,
 } from '../domain/reportQuery'
 import { usePreferencesStore } from '../stores/preferences'
@@ -31,6 +32,7 @@ const router = useRouter()
 const preferences = usePreferencesStore()
 const request = useLatestRequest<ReportSummary>()
 const timeRequest = useLatestRequest<TimeReport>()
+const expenseRequest = useLatestRequest<ExpenseReport>()
 const optionsRequest = useLatestRequest<{ items: OptionMap, failures: string[] }>()
 const searchText = ref('')
 const filters = ref<ReportFilters>({ query: '', scope: 'ALL', range: 'THIS_MONTH' })
@@ -50,6 +52,11 @@ const parsed = computed(() => parseReportRoute(route.query, defaultRange.value))
 const presentation = computed(() => parseReportPresentation(route.query, parsed.value))
 const rootCategories = computed(() => optionItems.categories.filter((item) => !item.parentId))
 const secondaryCategories = computed(() => optionItems.categories.filter((item) => item.parentId === draft.value.primaryCategoryId))
+const DIMENSION_LABELS: Record<ReportDimension, string> = {
+  OVERVIEW: '口径总览', TIME: '时间趋势', CATEGORY: '分类结构', PRODUCT: '商品排行',
+  FUNDING_CHANNEL: '支付方式', PURCHASE_CHANNEL: '购买渠道', LOCATION: '常用地点',
+  HABIT: '消费习惯', PRICE: '价格观察', FREQUENCY: '消费频次', QUALITY: '数据质量',
+}
 
 function nameFor(key: OptionKey, id?: string): string | undefined {
   return id ? optionItems[key].find((item) => item.id === id)?.name : undefined
@@ -91,12 +98,16 @@ const summaryItems = computed<MoneySummaryItem[]>(() => {
 async function load(): Promise<void> {
   const snapshot = { ...filters.value }
   const view = presentation.value
+  const expenseDimension = isExpenseDimension(view.dimension) ? view.dimension : undefined
   await Promise.all([
     request.execute((signal) => getReportSummary(snapshot, signal), {
       intent: request.data.value ? 'refresh' : 'replace', isEmpty: (data) => data.matchingItemCount === 0,
     }),
     ...(view.dimension === 'TIME' ? [timeRequest.execute((signal) => getTimeReport(snapshot, view.grain, signal),
       { intent: 'replace' })] : []),
+    ...(expenseDimension
+      ? [expenseRequest.execute((signal) => getExpenseReport(snapshot, expenseDimension, signal), { intent: 'replace' })]
+      : []),
   ])
   const scroll = Number.parseInt(typeof route.query.scroll === 'string' ? route.query.scroll : '', 10)
   if (Number.isSafeInteger(scroll) && scroll >= 0) await nextTick(() => globalThis.scrollTo({ top: scroll }))
@@ -175,7 +186,7 @@ function drill(point: ReportSummary['dataPoints'][number]): void {
   }
   delete (ledgerFilters as Partial<ReportFilters>).scope
   const context: LedgerDrillContext = {
-    scope: filters.value.scope, dimension: 'OVERVIEW', value: point.value,
+    scope: filters.value.scope, dimension: 'OVERVIEW', value: point.value, label: point.label,
     reportQuery: { ...reportRouteQuery(filters.value), dimension: 'OVERVIEW' }, reportScroll: Math.round(globalThis.scrollY),
   }
   void router.push({ path: '/ledger', query: ledgerRouteQuery(ledgerFilters, context) })
@@ -190,8 +201,49 @@ function drillTime(bucket: TimeReport['buckets'][number]): void {
     startDate: bucket.startDate, endDate: bucket.endDate }
   delete (ledgerFilters as Partial<ReportFilters>).scope
   const context: LedgerDrillContext = { scope: filters.value.scope, dimension: 'TIME',
-    value: `${bucket.startDate}/${bucket.endDate}`, reportQuery: reportPresentationQuery(filters.value, presentation.value),
+    value: `${bucket.startDate}/${bucket.endDate}`, label: bucket.label,
+    reportQuery: reportPresentationQuery(filters.value, presentation.value),
     reportScroll: Math.round(globalThis.scrollY) }
+  void router.push({ path: '/ledger', query: ledgerRouteQuery(ledgerFilters, context) })
+}
+
+function drillExpense(point: ExpenseReport['points'][number]): void {
+  const ledgerFilters: LedgerFilters = { ...filters.value, type: 'EXPENSE', lifecycle: 'ACTIVE' }
+  delete (ledgerFilters as Partial<ReportFilters>).scope
+  const dimension = presentation.value.dimension
+  if (dimension === 'CATEGORY') {
+    if (filters.value.primaryCategoryId) {
+      if (point.value === 'UNSPECIFIED') ledgerFilters.missingSecondaryCategory = true
+      else ledgerFilters.secondaryCategoryId = point.value
+    } else ledgerFilters.primaryCategoryId = point.value
+  } else if (dimension === 'PRODUCT' || dimension === 'PRICE') {
+    const [productId, unitId] = point.value.split('|')
+    ledgerFilters.productId = productId
+    ledgerFilters.unitId = unitId
+  } else if (dimension === 'FUNDING_CHANNEL') ledgerFilters.fundingChannelId = point.value
+  else if (dimension === 'PURCHASE_CHANNEL') {
+    if (point.value === 'UNSPECIFIED') ledgerFilters.missingPurchaseChannel = true
+    else ledgerFilters.purchaseChannelId = point.value
+  } else if (dimension === 'LOCATION') {
+    if (point.value === 'UNSPECIFIED') ledgerFilters.missingLocation = true
+    else ledgerFilters.locationLabelId = point.value
+  } else if (dimension === 'HABIT') {
+    const [kind, value] = point.value.split(':')
+    if (kind === 'WEEKDAY') ledgerFilters.expenseWeekday = Number(value)
+    else if (kind === 'TIME') ledgerFilters.expenseTimeBand = value as NonNullable<LedgerFilters['expenseTimeBand']>
+  } else if (dimension === 'FREQUENCY') {
+    if (point.entryId) ledgerFilters.entryId = point.entryId
+    else ledgerFilters.productId = point.value
+  } else if (dimension === 'QUALITY' && point.entryId) ledgerFilters.entryId = point.entryId
+  if (point.drillStartDate && point.drillEndDate) {
+    ledgerFilters.range = 'CUSTOM'
+    ledgerFilters.startDate = point.drillStartDate
+    ledgerFilters.endDate = point.drillEndDate
+  }
+  const context: LedgerDrillContext = {
+    scope: 'EXPENSE', dimension, value: point.value, label: point.label,
+    reportQuery: reportPresentationQuery(filters.value, presentation.value), reportScroll: Math.round(globalThis.scrollY),
+  }
   void router.push({ path: '/ledger', query: ledgerRouteQuery(ledgerFilters, context) })
 }
 </script>
@@ -270,6 +322,60 @@ function drillTime(bucket: TimeReport['buckets'][number]): void {
             <option value="TIME">
               时间趋势
             </option>
+            <option
+              v-if="filters.scope === 'EXPENSE'"
+              value="CATEGORY"
+            >
+              分类结构
+            </option>
+            <option
+              v-if="filters.scope === 'EXPENSE'"
+              value="PRODUCT"
+            >
+              商品排行
+            </option>
+            <option
+              v-if="filters.scope === 'EXPENSE'"
+              value="FUNDING_CHANNEL"
+            >
+              支付方式
+            </option>
+            <option
+              v-if="filters.scope === 'EXPENSE'"
+              value="PURCHASE_CHANNEL"
+            >
+              购买渠道
+            </option>
+            <option
+              v-if="filters.scope === 'EXPENSE'"
+              value="LOCATION"
+            >
+              常用地点
+            </option>
+            <option
+              v-if="filters.scope === 'EXPENSE'"
+              value="HABIT"
+            >
+              消费习惯
+            </option>
+            <option
+              v-if="filters.scope === 'EXPENSE'"
+              value="PRICE"
+            >
+              价格观察
+            </option>
+            <option
+              v-if="filters.scope === 'EXPENSE'"
+              value="FREQUENCY"
+            >
+              消费频次
+            </option>
+            <option
+              v-if="filters.scope === 'EXPENSE'"
+              value="QUALITY"
+            >
+              数据质量
+            </option>
           </select>
         </div>
         <div v-if="presentation.dimension === 'TIME'">
@@ -343,12 +449,12 @@ function drillTime(bucket: TimeReport['buckets'][number]): void {
         @select="drill"
       />
       <AppStateBlock
-        v-else-if="timeRequest.status.value === 'loading'"
+        v-else-if="presentation.dimension === 'TIME' && timeRequest.status.value === 'loading'"
         kind="loading"
         title="正在计算时间趋势"
       />
       <AppStateBlock
-        v-else-if="timeRequest.status.value === 'error'"
+        v-else-if="presentation.dimension === 'TIME' && timeRequest.status.value === 'error'"
         kind="error"
         title="时间趋势加载失败"
         :message="timeRequest.error.value?.message"
@@ -356,10 +462,29 @@ function drillTime(bucket: TimeReport['buckets'][number]): void {
         @action="load"
       />
       <TimeTrendPanel
-        v-else-if="timeRequest.data.value"
+        v-else-if="presentation.dimension === 'TIME' && timeRequest.data.value"
         :report="timeRequest.data.value"
         :metric="presentation.metric"
         @select="drillTime"
+      />
+      <AppStateBlock
+        v-else-if="expenseRequest.status.value === 'loading'"
+        kind="loading"
+        title="正在计算支出分析"
+      />
+      <AppStateBlock
+        v-else-if="expenseRequest.status.value === 'error'"
+        kind="error"
+        title="支出分析加载失败"
+        :message="expenseRequest.error.value?.message"
+        action-label="重试"
+        @action="load"
+      />
+      <ExpenseDimensionPanel
+        v-else-if="expenseRequest.data.value && isExpenseDimension(presentation.dimension)"
+        :report="expenseRequest.data.value"
+        :title="DIMENSION_LABELS[presentation.dimension]"
+        @select="drillExpense"
       />
     </template>
     <AppStateBlock

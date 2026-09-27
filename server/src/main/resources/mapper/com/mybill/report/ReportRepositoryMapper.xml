@@ -112,4 +112,199 @@
     SELECT (created_at AT TIME ZONE 'Asia/Shanghai')::date AS created_date
     FROM app_user WHERE tenant_id=current_setting('app.tenant_id')::uuid AND id=#{p.userId}
   </select>
+
+  <sql id="filteredExpenses">
+    SELECT l.*
+    FROM ledger_entry l
+    WHERE l.tenant_id=current_setting('app.tenant_id')::uuid
+      AND l.entry_type='EXPENSE' AND l.lifecycle_status='ACTIVE'
+      AND l.business_date BETWEEN #{p.startDate} AND #{p.endDate}
+      <if test="p.fundingChannelId != null">AND l.funding_channel_id=#{p.fundingChannelId}</if>
+      <if test="p.keyword != null">
+        AND concat_ws(' ',l.product_name_snapshot,l.primary_category_name_snapshot,l.secondary_category_name_snapshot,
+          l.funding_channel_name_snapshot,l.purchase_channel_name_snapshot,l.location_label_name_snapshot,l.note)
+          ILIKE #{p.keyword} ESCAPE '\'
+      </if>
+      <include refid="expenseFilters"/>
+  </sql>
+
+  <select id="expenseDimension" resultType="map">
+    WITH expenses AS (<include refid="filteredExpenses"/>), dimension_rows AS (
+    <choose>
+      <when test="p.dimension == 'CATEGORY'">
+        SELECT <choose><when test="p.primaryCategoryId != null">'二级分类'</when><otherwise>'一级分类'</otherwise></choose> AS group_name,
+          <choose><when test="p.primaryCategoryId != null">COALESCE(secondary_category_name_snapshot,'未选二级分类')</when>
+            <otherwise>primary_category_name_snapshot</otherwise></choose> AS label,
+          <choose><when test="p.primaryCategoryId != null">COALESCE(secondary_category_id::text,'UNSPECIFIED')</when>
+            <otherwise>primary_category_id::text</otherwise></choose> AS value,
+          sum(paid_amount) AS amount,count(*) AS item_count,NULL::numeric AS quantity,NULL::varchar AS unit_name,
+          NULL::numeric AS average_unit_price,NULL::numeric AS minimum_unit_price,NULL::numeric AS maximum_unit_price,
+          NULL::numeric AS latest_unit_price,NULL::numeric AS average_actual_cost,NULL::date AS latest_date,
+          NULL::numeric AS average_interval_days,NULL::varchar AS issue_type,NULL::numeric AS baseline_value,
+          NULL::numeric AS actual_value,NULL::uuid AS entry_id
+        FROM expenses GROUP BY 1,2,3
+      </when>
+      <when test="p.dimension == 'PRODUCT' or p.dimension == 'PRICE'">
+        SELECT <choose><when test="p.dimension == 'PRICE'">'商品价格'</when><otherwise>'商品与单位'</otherwise></choose> AS group_name,
+          product_name_snapshot || ' · ' || unit_name_snapshot AS label,
+          product_id::text || '|' || unit_id::text AS value,
+          <choose><when test="p.dimension == 'PRICE'">avg(unit_price)</when><otherwise>sum(paid_amount)</otherwise></choose> AS amount,
+          count(*) AS item_count,sum(quantity) AS quantity,unit_name_snapshot AS unit_name,avg(unit_price) AS average_unit_price,
+          min(unit_price) AS minimum_unit_price,max(unit_price) AS maximum_unit_price,
+          (array_agg(unit_price ORDER BY business_time DESC,created_at DESC,id DESC))[1] AS latest_unit_price,
+          avg(paid_amount/quantity) AS average_actual_cost,max(business_date) AS latest_date,
+          NULL::numeric AS average_interval_days,NULL::varchar AS issue_type,NULL::numeric AS baseline_value,
+          NULL::numeric AS actual_value,NULL::uuid AS entry_id
+        FROM expenses GROUP BY product_id,product_name_snapshot,unit_id,unit_name_snapshot
+      </when>
+      <when test="p.dimension == 'FUNDING_CHANNEL'">
+        SELECT '支付方式' AS group_name,funding_channel_name_snapshot AS label,funding_channel_id::text AS value,
+          sum(paid_amount) AS amount,count(*) AS item_count,NULL::numeric AS quantity,NULL::varchar AS unit_name,
+          NULL::numeric AS average_unit_price,NULL::numeric AS minimum_unit_price,NULL::numeric AS maximum_unit_price,
+          NULL::numeric AS latest_unit_price,NULL::numeric AS average_actual_cost,NULL::date AS latest_date,
+          NULL::numeric AS average_interval_days,NULL::varchar AS issue_type,NULL::numeric AS baseline_value,
+          NULL::numeric AS actual_value,NULL::uuid AS entry_id
+        FROM expenses GROUP BY funding_channel_id,funding_channel_name_snapshot
+      </when>
+      <when test="p.dimension == 'PURCHASE_CHANNEL'">
+        SELECT '购买渠道' AS group_name,COALESCE(purchase_channel_name_snapshot,'未指定') AS label,
+          COALESCE(purchase_channel_id::text,'UNSPECIFIED') AS value,sum(paid_amount) AS amount,count(*) AS item_count,
+          NULL::numeric AS quantity,NULL::varchar AS unit_name,NULL::numeric AS average_unit_price,
+          NULL::numeric AS minimum_unit_price,NULL::numeric AS maximum_unit_price,NULL::numeric AS latest_unit_price,
+          NULL::numeric AS average_actual_cost,NULL::date AS latest_date,NULL::numeric AS average_interval_days,
+          NULL::varchar AS issue_type,NULL::numeric AS baseline_value,NULL::numeric AS actual_value,NULL::uuid AS entry_id
+        FROM expenses GROUP BY purchase_channel_id,purchase_channel_name_snapshot
+      </when>
+      <when test="p.dimension == 'LOCATION'">
+        SELECT '常用地点' AS group_name,COALESCE(location_label_name_snapshot,'未指定') AS label,
+          COALESCE(location_label_id::text,'UNSPECIFIED') AS value,sum(paid_amount) AS amount,count(*) AS item_count,
+          NULL::numeric AS quantity,NULL::varchar AS unit_name,NULL::numeric AS average_unit_price,
+          NULL::numeric AS minimum_unit_price,NULL::numeric AS maximum_unit_price,NULL::numeric AS latest_unit_price,
+          NULL::numeric AS average_actual_cost,NULL::date AS latest_date,NULL::numeric AS average_interval_days,
+          NULL::varchar AS issue_type,NULL::numeric AS baseline_value,NULL::numeric AS actual_value,NULL::uuid AS entry_id
+        FROM expenses GROUP BY location_label_id,location_label_name_snapshot
+      </when>
+      <when test="p.dimension == 'HABIT'">
+        SELECT '星期分布' AS group_name,
+          CASE extract(isodow FROM business_time AT TIME ZONE 'Asia/Shanghai')::int
+            WHEN 1 THEN '周一' WHEN 2 THEN '周二' WHEN 3 THEN '周三' WHEN 4 THEN '周四'
+            WHEN 5 THEN '周五' WHEN 6 THEN '周六' ELSE '周日' END AS label,
+          'WEEKDAY:' || extract(isodow FROM business_time AT TIME ZONE 'Asia/Shanghai')::int AS value,
+          sum(paid_amount) AS amount,count(*) AS item_count,NULL::numeric AS quantity,NULL::varchar AS unit_name,
+          NULL::numeric AS average_unit_price,NULL::numeric AS minimum_unit_price,NULL::numeric AS maximum_unit_price,
+          NULL::numeric AS latest_unit_price,NULL::numeric AS average_actual_cost,NULL::date AS latest_date,
+          NULL::numeric AS average_interval_days,NULL::varchar AS issue_type,NULL::numeric AS baseline_value,
+          NULL::numeric AS actual_value,NULL::uuid AS entry_id
+        FROM expenses GROUP BY extract(isodow FROM business_time AT TIME ZONE 'Asia/Shanghai')::int
+        UNION ALL
+        SELECT '时段分布',CASE WHEN extract(hour FROM business_time AT TIME ZONE 'Asia/Shanghai') &lt; 6 THEN '凌晨'
+            WHEN extract(hour FROM business_time AT TIME ZONE 'Asia/Shanghai') &lt; 12 THEN '上午'
+            WHEN extract(hour FROM business_time AT TIME ZONE 'Asia/Shanghai') &lt; 18 THEN '下午' ELSE '晚上' END,
+          'TIME:' || CASE WHEN extract(hour FROM business_time AT TIME ZONE 'Asia/Shanghai') &lt; 6 THEN 'NIGHT'
+            WHEN extract(hour FROM business_time AT TIME ZONE 'Asia/Shanghai') &lt; 12 THEN 'MORNING'
+            WHEN extract(hour FROM business_time AT TIME ZONE 'Asia/Shanghai') &lt; 18 THEN 'AFTERNOON' ELSE 'EVENING' END,
+          sum(paid_amount),count(*),NULL::numeric,NULL::varchar,NULL::numeric,NULL::numeric,NULL::numeric,
+          NULL::numeric,NULL::numeric,NULL::date,NULL::numeric,NULL::varchar,NULL::numeric,NULL::numeric,NULL::uuid
+        FROM expenses GROUP BY 2,3
+        UNION ALL
+        SELECT '消费均值','日均','AVERAGE:DAY',COALESCE(sum(paid_amount),0)/GREATEST(#{p.endDate}-#{p.startDate}+1,1),
+          count(*),NULL::numeric,NULL::varchar,NULL::numeric,NULL::numeric,NULL::numeric,NULL::numeric,NULL::numeric,
+          NULL::date,NULL::numeric,'AVERAGE_DAILY',NULL::numeric,NULL::numeric,NULL::uuid FROM expenses HAVING count(*)&gt;0
+        UNION ALL
+        SELECT '消费均值','月均','AVERAGE:MONTH',COALESCE(sum(paid_amount),0)/GREATEST((SELECT count(*)
+            FROM generate_series(date_trunc('month',CAST(#{p.startDate} AS timestamp)),
+              date_trunc('month',CAST(#{p.endDate} AS timestamp)),INTERVAL '1 month')),1),
+          count(*),NULL::numeric,NULL::varchar,NULL::numeric,NULL::numeric,NULL::numeric,NULL::numeric,NULL::numeric,
+          NULL::date,NULL::numeric,'AVERAGE_MONTHLY',NULL::numeric,NULL::numeric,NULL::uuid FROM expenses HAVING count(*)&gt;0
+        UNION ALL
+        SELECT '消费均值','单条均值','AVERAGE:ENTRY',COALESCE(avg(paid_amount),0),count(*),NULL::numeric,NULL::varchar,
+          NULL::numeric,NULL::numeric,NULL::numeric,NULL::numeric,NULL::numeric,NULL::date,NULL::numeric,
+          'AVERAGE_ENTRY',NULL::numeric,NULL::numeric,NULL::uuid FROM expenses HAVING count(*)&gt;0
+      </when>
+      <otherwise>
+        SELECT '高频商品' AS group_name,product_name_snapshot AS label,product_id::text AS value,count(*)::numeric AS amount,
+          count(*) AS item_count,NULL::numeric AS quantity,NULL::varchar AS unit_name,NULL::numeric AS average_unit_price,
+          NULL::numeric AS minimum_unit_price,NULL::numeric AS maximum_unit_price,NULL::numeric AS latest_unit_price,
+          NULL::numeric AS average_actual_cost,max(business_date) AS latest_date,
+          avg(business_date-previous_date) FILTER (WHERE previous_date IS NOT NULL) AS average_interval_days,
+          NULL::varchar AS issue_type,NULL::numeric AS baseline_value,NULL::numeric AS actual_value,NULL::uuid AS entry_id
+        FROM (SELECT expenses.*,lag(business_date) OVER (PARTITION BY product_id ORDER BY business_date,business_time,created_at,id) AS previous_date
+              FROM expenses) sequenced
+        GROUP BY product_id,product_name_snapshot
+        UNION ALL
+        SELECT '长期未购买',product_name_snapshot,product_id::text,historical_count::numeric,historical_count,
+          NULL::numeric,NULL::varchar,NULL::numeric,NULL::numeric,NULL::numeric,NULL::numeric,NULL::numeric,
+          business_date,NULL::numeric,'LONG_UNUSED',NULL::numeric,NULL::numeric,id
+        FROM (
+          SELECT l.*,count(*) OVER (PARTITION BY l.product_id) AS historical_count,
+            row_number() OVER (PARTITION BY l.product_id ORDER BY l.business_time DESC,l.created_at DESC,l.id DESC) AS latest_rank
+          FROM ledger_entry l JOIN product p ON p.tenant_id=l.tenant_id AND p.id=l.product_id AND p.status='ACTIVE'
+          WHERE l.tenant_id=current_setting('app.tenant_id')::uuid AND l.entry_type='EXPENSE'
+            AND l.lifecycle_status='ACTIVE' AND l.business_date &lt; #{p.startDate}
+            <if test="p.fundingChannelId != null">AND l.funding_channel_id=#{p.fundingChannelId}</if>
+            <if test="p.keyword != null">
+              AND concat_ws(' ',l.product_name_snapshot,l.primary_category_name_snapshot,l.secondary_category_name_snapshot,
+                l.funding_channel_name_snapshot,l.purchase_channel_name_snapshot,l.location_label_name_snapshot,l.note)
+                ILIKE #{p.keyword} ESCAPE '\'
+            </if>
+            <include refid="expenseFilters"/>
+            AND NOT EXISTS (SELECT 1 FROM expenses current_period WHERE current_period.product_id=l.product_id)
+        ) historical WHERE latest_rank=1
+      </otherwise>
+    </choose>
+    )
+    SELECT dimension_rows.*,
+      CASE WHEN issue_type='LONG_UNUSED' THEN latest_date END AS drill_start_date,
+      CASE WHEN issue_type='LONG_UNUSED' THEN latest_date END AS drill_end_date
+    FROM dimension_rows
+    ORDER BY <if test="p.dimension == 'FREQUENCY'">CASE WHEN issue_type='LONG_UNUSED' THEN 1 ELSE 0 END,</if>
+      <choose><when test="p.dimension == 'FREQUENCY'">item_count</when><otherwise>amount</otherwise></choose> DESC,label,value
+    LIMIT #{p.limit}
+  </select>
+
+  <select id="expenseQuality" resultType="map">
+    WITH candidates AS (<include refid="filteredExpenses"/>), evaluated AS (
+      SELECT c.*,
+        history.sample_count,history.median_cost,
+        EXISTS(SELECT 1 FROM ledger_entry duplicate
+          WHERE duplicate.tenant_id=c.tenant_id AND duplicate.entry_type='EXPENSE'
+            AND duplicate.lifecycle_status='ACTIVE' AND duplicate.product_id=c.product_id
+            AND duplicate.paid_amount=c.paid_amount AND duplicate.funding_channel_id=c.funding_channel_id
+            AND duplicate.business_time BETWEEN c.business_time-(#{p.duplicateWindowMinutes} * INTERVAL '1 minute') AND c.business_time
+            AND (duplicate.business_time,duplicate.created_at,duplicate.id) &lt; (c.business_time,c.created_at,c.id)) AS duplicate_match
+      FROM candidates c
+      LEFT JOIN LATERAL (
+        SELECT count(*) AS sample_count,
+          percentile_cont(0.5) WITHIN GROUP (ORDER BY history.paid_amount/history.quantity) AS median_cost
+        FROM ledger_entry history
+        WHERE history.tenant_id=c.tenant_id AND history.entry_type='EXPENSE' AND history.lifecycle_status='ACTIVE'
+          AND history.product_id=c.product_id AND history.unit_id=c.unit_id
+          AND history.business_time &gt;= c.business_time-(#{p.priceWindowDays} * INTERVAL '1 day')
+          AND history.business_time &lt; c.business_time
+      ) history ON true
+    ), issues AS (
+      SELECT '数据质量' AS group_name,product_name_snapshot AS label,id::text AS value,paid_amount AS amount,
+        1::bigint AS item_count,NULL::numeric AS quantity,unit_name_snapshot AS unit_name,NULL::numeric AS average_unit_price,
+        NULL::numeric AS minimum_unit_price,NULL::numeric AS maximum_unit_price,NULL::numeric AS latest_unit_price,
+        NULL::numeric AS average_actual_cost,business_date AS latest_date,NULL::numeric AS average_interval_days,
+        'UNCATEGORIZED' AS issue_type,NULL::numeric AS baseline_value,NULL::numeric AS actual_value,id AS entry_id,
+        business_time,created_at
+      FROM evaluated WHERE primary_category_id IS NULL
+      UNION ALL
+      SELECT '数据质量',product_name_snapshot,id::text,paid_amount,1,NULL::numeric,unit_name_snapshot,NULL::numeric,
+        NULL::numeric,NULL::numeric,NULL::numeric,NULL::numeric,business_date,NULL::numeric,'HIGH_PRICE',median_cost,
+        paid_amount/quantity,id,business_time,created_at
+      FROM evaluated WHERE sample_count &gt;= #{p.minimumPriceSamples}
+        AND paid_amount/quantity &gt; median_cost*#{p.highPriceMultiplier}
+      UNION ALL
+      SELECT '数据质量',product_name_snapshot,id::text,paid_amount,1,NULL::numeric,unit_name_snapshot,NULL::numeric,
+        NULL::numeric,NULL::numeric,NULL::numeric,NULL::numeric,business_date,NULL::numeric,'DUPLICATE',NULL::numeric,
+        NULL::numeric,id,business_time,created_at
+      FROM evaluated WHERE duplicate_match
+    )
+    SELECT group_name,label,value,amount,item_count,quantity,unit_name,average_unit_price,minimum_unit_price,
+      maximum_unit_price,latest_unit_price,average_actual_cost,latest_date,average_interval_days,issue_type,
+      baseline_value,actual_value,entry_id,NULL::date AS drill_start_date,NULL::date AS drill_end_date
+    FROM issues ORDER BY business_time DESC,created_at DESC,entry_id,issue_type LIMIT #{p.limit}
+  </select>
 </mapper>

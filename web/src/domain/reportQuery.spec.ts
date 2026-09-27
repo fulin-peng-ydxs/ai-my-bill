@@ -42,4 +42,12 @@ describe('report route query', () => {
     expect(adaptiveGrain({ query: '', scope: 'ALL', range: 'CUSTOM', startDate: '2026-01-01', endDate: '2026-12-31' })).toBe('MONTH')
     expect(adaptiveGrain({ query: '', scope: 'ALL', range: 'CUSTOM', startDate: '2026-09-01', endDate: '2026-09-15' })).toBe('DAY')
   })
+
+  it('allows expense dimensions only inside the expense scope', () => {
+    const expense = { query: '', scope: 'EXPENSE' as const, range: 'THIS_MONTH' as const }
+    expect(parseReportPresentation({ dimension: 'QUALITY' }, expense).dimension).toBe('QUALITY')
+    expect(reportPresentationQuery(expense, { dimension: 'PRODUCT', grain: 'DAY', metric: 'NET_EXPENSE' }))
+      .toMatchObject({ scope: 'EXPENSE', dimension: 'PRODUCT' })
+    expect(parseReportPresentation({ dimension: 'QUALITY' }, { ...expense, scope: 'ALL' }).dimension).toBe('OVERVIEW')
+  })
 })

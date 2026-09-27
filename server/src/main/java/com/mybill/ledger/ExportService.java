@@ -110,7 +110,8 @@ class ExportService {
     private ExportSnapshot snapshot(CreateExportRequest request) {
         if (request.scope() == ExportScope.ALL_DATA) {
             return new ExportSnapshot(ExportScope.ALL_DATA, LedgerQueryContracts.EntryTypeFilter.ALL,
-                    null, null, null, null, "");
+                    null, null, null, null, null, null, null, null, null, null, null, null,
+                    false, false, false, null, null, null, null, "");
         }
         LedgerQueryContracts.EntryTypeFilter type = request.type() == null
                 ? LedgerQueryContracts.EntryTypeFilter.ALL : request.type();
@@ -118,7 +119,17 @@ class ExportService {
                 ? LedgerQueryContracts.LifecycleFilter.ACTIVE : request.lifecycle();
         BusinessDateRange range = request.range() == null ? BusinessDateRange.TODAY : request.range();
         LedgerQueryService.DateBounds bounds = ledgerQueries.bounds(range, request.startDate(), request.endDate());
+        LedgerQueryService.validateSpecificFilters(type, request.primaryCategoryId(), request.secondaryCategoryId(),
+                request.productId(), request.purchaseChannelId(), request.locationLabelId(), request.unitId(),
+                request.entryId(), request.missingSecondaryCategory(), request.missingPurchaseChannel(),
+                request.missingLocation(), request.expenseWeekday(), request.expenseTimeBand(),
+                request.incomeCategoryId(), request.payerId(), request.incomeName());
         return new ExportSnapshot(ExportScope.CURRENT_FILTERS, type, lifecycle, request.fundingChannelId(),
+                request.primaryCategoryId(), request.secondaryCategoryId(), request.productId(), request.unitId(),
+                request.purchaseChannelId(), request.locationLabelId(), request.incomeCategoryId(), request.payerId(),
+                request.incomeName() == null || request.incomeName().isBlank() ? null : request.incomeName().strip(),
+                request.entryId(), request.missingSecondaryCategory(), request.missingPurchaseChannel(),
+                request.missingLocation(), request.expenseWeekday(), request.expenseTimeBand(),
                 bounds.start(), bounds.end(), request.query() == null ? "" : request.query().strip());
     }
 

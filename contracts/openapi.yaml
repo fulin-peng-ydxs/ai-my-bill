@@ -637,6 +637,29 @@ paths:
         "401": { $ref: "#/components/responses/AuthenticationError" }
         "403": { $ref: "#/components/responses/AuthorizationError" }
         "503": { $ref: "#/components/responses/ServiceUnavailableError" }
+  /reports/expenses:
+    get:
+      operationId: getExpenseReport
+      summary: 聚合支出结构、习惯、价格、频次与只读数据质量线索
+      tags: [reports]
+      parameters:
+        - { name: dimension, in: query, required: true, schema: { $ref: "#/components/schemas/ExpenseReportDimension" } }
+        - { name: range, in: query, schema: { $ref: "#/components/schemas/LedgerDateRange" } }
+        - { name: startDate, in: query, schema: { type: string, format: date } }
+        - { name: endDate, in: query, schema: { type: string, format: date } }
+        - { name: query, in: query, schema: { type: string, maxLength: 200, default: "" } }
+        - { name: fundingChannelId, in: query, schema: { type: string, format: uuid } }
+        - { name: primaryCategoryId, in: query, schema: { type: string, format: uuid } }
+        - { name: secondaryCategoryId, in: query, schema: { type: string, format: uuid } }
+        - { name: productId, in: query, schema: { type: string, format: uuid } }
+        - { name: purchaseChannelId, in: query, schema: { type: string, format: uuid } }
+        - { name: locationLabelId, in: query, schema: { type: string, format: uuid } }
+      responses:
+        "200": { description: 最多 50 个排行点或 100 条质量线索；质量规则随响应返回版本。, content: { application/json: { schema: { $ref: "#/components/schemas/ExpenseReport" } } } }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "401": { $ref: "#/components/responses/AuthenticationError" }
+        "403": { $ref: "#/components/responses/AuthorizationError" }
+        "503": { $ref: "#/components/responses/ServiceUnavailableError" }
   /ledger-entries:
     get:
       operationId: listLedgerEntries
@@ -656,8 +679,15 @@ paths:
         - { name: primaryCategoryId, in: query, schema: { type: string, format: uuid } }
         - { name: secondaryCategoryId, in: query, schema: { type: string, format: uuid } }
         - { name: productId, in: query, schema: { type: string, format: uuid } }
+        - { name: unitId, in: query, schema: { type: string, format: uuid } }
         - { name: purchaseChannelId, in: query, schema: { type: string, format: uuid } }
         - { name: locationLabelId, in: query, schema: { type: string, format: uuid } }
+        - { name: entryId, in: query, schema: { type: string, format: uuid } }
+        - { name: missingSecondaryCategory, in: query, schema: { type: boolean, default: false } }
+        - { name: missingPurchaseChannel, in: query, schema: { type: boolean, default: false } }
+        - { name: missingLocation, in: query, schema: { type: boolean, default: false } }
+        - { name: expenseWeekday, in: query, schema: { type: integer, minimum: 1, maximum: 7 } }
+        - { name: expenseTimeBand, in: query, schema: { $ref: "#/components/schemas/ExpenseTimeBand" } }
         - { name: incomeCategoryId, in: query, schema: { type: string, format: uuid } }
         - { name: payerId, in: query, schema: { type: string, format: uuid } }
         - { name: incomeName, in: query, schema: { type: string, maxLength: 100 } }
@@ -1706,6 +1736,12 @@ components:
     ReportTimeMetric:
       type: string
       enum: [TOTAL_INCOME, GROSS_EXPENSE, ADJUSTMENT, NET_EXPENSE, BALANCE]
+    ExpenseReportDimension:
+      type: string
+      enum: [CATEGORY, PRODUCT, FUNDING_CHANNEL, PURCHASE_CHANNEL, LOCATION, HABIT, PRICE, FREQUENCY, QUALITY]
+    ExpenseTimeBand:
+      type: string
+      enum: [NIGHT, MORNING, AFTERNOON, EVENING]
     ReportAmount:
       type: string
       pattern: "^-?(0|[1-9][0-9]*)(\\.[0-9]{2})$"
@@ -1786,6 +1822,42 @@ components:
         endDate: { type: string, format: date }
         buckets: { type: array, maxItems: 400, items: { $ref: "#/components/schemas/TimeBucket" } }
         comparisons: { type: array, items: { $ref: "#/components/schemas/MetricComparison" } }
+    ExpenseReportPoint:
+      type: object
+      additionalProperties: false
+      required: [group, label, value, amount, itemCount]
+      properties:
+        group: { type: string, minLength: 1, maxLength: 100 }
+        label: { type: string, minLength: 1, maxLength: 220 }
+        value: { type: string, minLength: 1, maxLength: 100 }
+        amount: { $ref: "#/components/schemas/ReportAmount" }
+        itemCount: { type: integer, format: int64, minimum: 0 }
+        sharePercent: { type: string, pattern: "^[0-9]+\\.[0-9]{2}$" }
+        detail: { type: string, maxLength: 500 }
+        warning: { type: string, maxLength: 100 }
+        entryId: { type: string, format: uuid }
+        drillStartDate: { type: string, format: date }
+        drillEndDate: { type: string, format: date }
+    ExpenseQualityRule:
+      type: object
+      additionalProperties: false
+      required: [version, priceWindowDays, minimumPriceSamples, highPriceMultiplier, duplicateWindowMinutes]
+      properties:
+        version: { type: string, enum: [expense-quality-v1] }
+        priceWindowDays: { type: integer, minimum: 1 }
+        minimumPriceSamples: { type: integer, minimum: 1 }
+        highPriceMultiplier: { type: string, pattern: "^[0-9]+\\.[0-9]{2}$" }
+        duplicateWindowMinutes: { type: integer, minimum: 1 }
+    ExpenseReport:
+      type: object
+      additionalProperties: false
+      required: [dimension, measureLabel, points, truncated]
+      properties:
+        dimension: { $ref: "#/components/schemas/ExpenseReportDimension" }
+        measureLabel: { type: string, minLength: 1, maxLength: 100 }
+        points: { type: array, maxItems: 100, items: { $ref: "#/components/schemas/ExpenseReportPoint" } }
+        truncated: { type: boolean }
+        qualityRule: { $ref: "#/components/schemas/ExpenseQualityRule" }
     ExportScope:
       type: string
       enum: [CURRENT_FILTERS, ALL_DATA]
@@ -1801,6 +1873,21 @@ components:
         type: { $ref: "#/components/schemas/LedgerEntryTypeFilter" }
         lifecycle: { $ref: "#/components/schemas/LedgerLifecycleFilter" }
         fundingChannelId: { type: string, format: uuid }
+        primaryCategoryId: { type: string, format: uuid }
+        secondaryCategoryId: { type: string, format: uuid }
+        productId: { type: string, format: uuid }
+        unitId: { type: string, format: uuid }
+        purchaseChannelId: { type: string, format: uuid }
+        locationLabelId: { type: string, format: uuid }
+        incomeCategoryId: { type: string, format: uuid }
+        payerId: { type: string, format: uuid }
+        incomeName: { type: string, maxLength: 100 }
+        entryId: { type: string, format: uuid }
+        missingSecondaryCategory: { type: boolean }
+        missingPurchaseChannel: { type: boolean }
+        missingLocation: { type: boolean }
+        expenseWeekday: { type: integer, minimum: 1, maximum: 7 }
+        expenseTimeBand: { $ref: "#/components/schemas/ExpenseTimeBand" }
         range: { $ref: "#/components/schemas/LedgerDateRange" }
         startDate: { type: string, format: date }
         endDate: { type: string, format: date }

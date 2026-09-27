@@ -15,7 +15,7 @@ export function useReportChart(option: () => EChartsCoreOption, onDataIndex?: (i
     return host.value ? globalThis.getComputedStyle(host.value).getPropertyValue(name).trim() : ''
   }
   function render(): void {
-    if (!host.value) return
+    if (!host.value || host.value.clientWidth === 0 || host.value.clientHeight === 0) return
     if (!chart) {
       chart = init(host.value, undefined, { renderer: 'svg' })
       chart.on('click', (event) => { if (typeof event.dataIndex === 'number') onDataIndex?.(event.dataIndex) })
@@ -25,9 +25,11 @@ export function useReportChart(option: () => EChartsCoreOption, onDataIndex?: (i
   function refresh(): void { void nextTick(render) }
 
   onMounted(() => {
+    const element = host.value
+    if (!element) return
     render()
-    resizeObserver = new ResizeObserver(() => chart?.resize())
-    resizeObserver.observe(host.value!)
+    resizeObserver = new ResizeObserver(() => chart ? chart.resize() : render())
+    resizeObserver.observe(element)
     themeObserver = new MutationObserver(render)
     themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['class', 'data-theme'] })
   })

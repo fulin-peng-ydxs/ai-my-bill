@@ -39,6 +39,9 @@ class ReportHttpIntegrationTest {
     private static final UUID EXPENSE = uuid("20300000-0000-4000-8000-000000000001");
     private static final UUID PRODUCT = uuid("20400000-0000-4000-8000-000000000001");
     private static final UUID HISTORY_PRODUCT = uuid("20400000-0000-4000-8000-000000000007");
+    private static final UUID QUALITY_PRODUCT = uuid("20400000-0000-4000-8000-000000000008");
+    private static final UUID QUALITY_ENTRY = uuid("20300000-0000-4000-8000-000000000030");
+    private static final UUID DUPLICATE_ENTRY = uuid("20300000-0000-4000-8000-000000000031");
     private static final UUID CATEGORY = uuid("20400000-0000-4000-8000-000000000002");
     private static final UUID UNIT = uuid("20400000-0000-4000-8000-000000000003");
     private static final UUID FUNDING = uuid("20400000-0000-4000-8000-000000000004");
@@ -65,7 +68,7 @@ class ReportHttpIntegrationTest {
         jdbc.sql("UPDATE app_user SET created_at='2024-01-01T00:00:00Z' WHERE id=:id").param("id", USER).update();
         user(ADMIN, "t20-admin", "ADMIN", null);
         tenantDatabase.execute(TENANT, () -> { dictionaries(); expense(EXPENSE, "团队午餐", "100.00"); income(); adjustment(); excludedAdjustments();
-            comparisonHistory(); trashedIncome(); return null; });
+            comparisonHistory(); qualityHistory(); trashedIncome(); return null; });
         tenantDatabase.execute(OTHER, () -> { foreignIncome(); return null; });
     }
 
@@ -114,6 +117,10 @@ class ReportHttpIntegrationTest {
         mockMvc.perform(get("/api/v1/reports/summary").cookie(login("t20-admin"))).andExpect(status().isForbidden());
         mockMvc.perform(get("/api/v1/reports/time")).andExpect(status().isUnauthorized());
         mockMvc.perform(get("/api/v1/reports/time").cookie(login("t20-admin"))).andExpect(status().isForbidden());
+        mockMvc.perform(get("/api/v1/reports/expenses").queryParam("dimension", "PRODUCT"))
+                .andExpect(status().isUnauthorized());
+        mockMvc.perform(get("/api/v1/reports/expenses").cookie(login("t20-admin")).queryParam("dimension", "PRODUCT"))
+                .andExpect(status().isForbidden());
     }
 
     @Test @Order(6) void returnsZeroFilledTimeBucketsCumulativeValuesAndComparisons() throws Exception {
@@ -166,6 +173,49 @@ class ReportHttpIntegrationTest {
         assertThat(plan).containsAnyOf("idx_ledger_active_cursor", "idx_ledger_type_date");
     }
 
+    @Test @Order(9) void returnsEveryExpenseDimensionAndVersionedQualityClues() throws Exception {
+        Cookie cookie = login("t20-user");
+        Map<String, String> range = Map.of("range", "CUSTOM", "startDate", "2026-07-01", "endDate", "2026-07-01");
+        for (String dimension : new String[]{"CATEGORY", "PRODUCT", "FUNDING_CHANNEL", "PURCHASE_CHANNEL",
+                "LOCATION", "HABIT", "PRICE", "FREQUENCY"}) {
+            JsonNode report = expenses(cookie, dimension, range);
+            assertThat(report.path("points").isEmpty()).as(dimension).isFalse();
+            assertThat(report.path("points").get(0).path("value").asText()).as(dimension).isNotBlank();
+        }
+        JsonNode product = expenses(cookie, "PRODUCT", range);
+        assertThat(product.path("points").get(0).path("detail").asText()).contains("数量 3").contains("平均填写单价");
+        JsonNode location = expenses(cookie, "LOCATION", range);
+        assertThat(location.path("points").get(0).path("value").asText()).isEqualTo("UNSPECIFIED");
+        JsonNode habit = expenses(cookie, "HABIT", range);
+        assertThat(habit.path("points").findValuesAsText("label"))
+                .contains("日均", "月均", "单条均值", "周三", "上午");
+        assertThat(habit.path("points").findValuesAsText("amount")).contains("210.00", "70.00");
+        JsonNode emptyHabit = expenses(cookie, "HABIT",
+                Map.of("range", "CUSTOM", "startDate", "2024-01-01", "endDate", "2024-01-01"));
+        assertThat(emptyHabit.path("points").isEmpty()).isTrue();
+        JsonNode frequency = expenses(cookie, "FREQUENCY", range);
+        JsonNode longUnused = java.util.stream.StreamSupport.stream(frequency.path("points").spliterator(), false)
+                .filter(point -> point.path("group").asText().equals("长期未购买")).findFirst().orElseThrow();
+        assertThat(longUnused.path("label").asText()).isEqualTo("历史支出");
+        assertThat(longUnused.path("drillStartDate").asText()).isEqualTo("2025-09-07");
+        assertThat(longUnused.path("drillEndDate").asText()).isEqualTo("2025-09-07");
+        assertThat(longUnused.path("entryId").asText()).isEqualTo("20300000-0000-4000-8000-000000000021");
+        JsonNode quality = expenses(cookie, "QUALITY", range);
+        assertThat(quality.path("qualityRule").path("version").asText()).isEqualTo("expense-quality-v1");
+        assertThat(quality.path("qualityRule").path("priceWindowDays").asInt()).isEqualTo(180);
+        assertThat(quality.path("qualityRule").path("minimumPriceSamples").asInt()).isEqualTo(3);
+        assertThat(quality.path("qualityRule").path("highPriceMultiplier").asText()).isEqualTo("1.50");
+        assertThat(quality.path("qualityRule").path("duplicateWindowMinutes").asInt()).isEqualTo(10);
+        assertThat(quality.path("points")).hasSize(3);
+        assertThat(quality.path("points").findValuesAsText("warning"))
+                .contains("异常高价线索", "疑似重复线索");
+        mockMvc.perform(get("/api/v1/ledger-entries").cookie(cookie).queryParam("type", "EXPENSE")
+                .queryParam("range", "CUSTOM").queryParam("startDate", "2026-07-01").queryParam("endDate", "2026-07-01")
+                .queryParam("entryId", DUPLICATE_ENTRY.toString()))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.items.length()").value(1))
+                .andExpect(jsonPath("$.items[0].id").value(DUPLICATE_ENTRY.toString()));
+    }
+
     private JsonNode summary(Cookie cookie, Map<String, String> params) throws Exception {
         var request = get("/api/v1/reports/summary").cookie(cookie);
         params.forEach(request::queryParam);
@@ -174,6 +224,12 @@ class ReportHttpIntegrationTest {
 
     private JsonNode time(Cookie cookie, Map<String, String> params) throws Exception {
         var request = get("/api/v1/reports/time").cookie(cookie);
+        params.forEach(request::queryParam);
+        return objectMapper.readTree(mockMvc.perform(request).andExpect(status().isOk()).andReturn().getResponse().getContentAsByteArray());
+    }
+
+    private JsonNode expenses(Cookie cookie, String dimension, Map<String, String> params) throws Exception {
+        var request = get("/api/v1/reports/expenses").cookie(cookie).queryParam("dimension", dimension);
         params.forEach(request::queryParam);
         return objectMapper.readTree(mockMvc.perform(request).andExpect(status().isOk()).andReturn().getResponse().getContentAsByteArray());
     }
@@ -196,6 +252,7 @@ class ReportHttpIntegrationTest {
         dictionary("income_category", INCOME_CATEGORY, "奖金");
         jdbc.sql("INSERT INTO product(tenant_id,id,display_name,normalized_name,status) VALUES(current_setting('app.tenant_id')::uuid,:id,'团队午餐','团队午餐','ACTIVE')").param("id", PRODUCT).update();
         jdbc.sql("INSERT INTO product(tenant_id,id,display_name,normalized_name,status) VALUES(current_setting('app.tenant_id')::uuid,:id,'历史支出','历史支出','ACTIVE')").param("id", HISTORY_PRODUCT).update();
+        jdbc.sql("INSERT INTO product(tenant_id,id,display_name,normalized_name,status) VALUES(current_setting('app.tenant_id')::uuid,:id,'品质咖啡','品质咖啡','ACTIVE')").param("id", QUALITY_PRODUCT).update();
     }
 
     private void expense(UUID id, String name, String amount) {
@@ -239,6 +296,26 @@ class ReportHttpIntegrationTest {
     private void comparisonHistory() {
         comparisonEntries("20300000-0000-4000-8000-000000000010", "2026-08-20", "100.00", "80.00", "10.00");
         comparisonEntries("20300000-0000-4000-8000-000000000020", "2025-09-07", "200.00", "90.00", "20.00");
+    }
+
+    private void qualityHistory() {
+        qualityExpense(uuid("20300000-0000-4000-8000-000000000040"), "2026-06-01T09:00:00+08:00", "10.00");
+        qualityExpense(uuid("20300000-0000-4000-8000-000000000041"), "2026-06-05T09:00:00+08:00", "10.00");
+        qualityExpense(uuid("20300000-0000-4000-8000-000000000042"), "2026-07-01T08:00:00+08:00", "10.00");
+        qualityExpense(QUALITY_ENTRY, "2026-07-01T09:00:00+08:00", "100.00");
+        qualityExpense(DUPLICATE_ENTRY, "2026-07-01T09:05:00+08:00", "100.00");
+    }
+
+    private void qualityExpense(UUID id, String time, String amount) {
+        jdbc.sql("""
+                INSERT INTO ledger_entry(tenant_id,id,entry_type,business_time,business_date,product_id,product_name_snapshot,
+                  primary_category_id,primary_category_name_snapshot,unit_id,unit_name_snapshot,unit_price,quantity,
+                  calculated_amount,paid_amount,funding_channel_id,funding_channel_name_snapshot)
+                VALUES(current_setting('app.tenant_id')::uuid,:id,'EXPENSE',CAST(:time AS timestamptz),
+                  (CAST(:time AS timestamptz) AT TIME ZONE 'Asia/Shanghai')::date,:product,'品质咖啡',:category,'餐饮',
+                  :unit,'次',:amount,1,:amount,:amount,:funding,'银行卡')
+                """).param("id", id).param("time", time).param("product", QUALITY_PRODUCT).param("category", CATEGORY)
+                .param("unit", UNIT).param("amount", new BigDecimal(amount)).param("funding", FUNDING).update();
     }
 
     private void comparisonEntries(String idPrefix, String date, String income, String expense, String adjustment) {

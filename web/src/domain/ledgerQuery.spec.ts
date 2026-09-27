@@ -64,6 +64,18 @@ describe('ledger route query', () => {
     expect(query).toMatchObject({ from: 'reports', reportScope: 'INCOME', reportScroll: '480' })
   })
 
+  it('round-trips derived expense drill filters without accepting invalid values', () => {
+    const id = '123e4567-e89b-42d3-a456-426614174000'
+    const parsed = parseLedgerRoute({ type: 'EXPENSE', range: 'THIS_MONTH', unitId: id, entryId: id,
+      missingLocation: 'true', missingPurchaseChannel: 'false', expenseWeekday: '7', expenseTimeBand: 'EVENING' })
+    expect(parsed.filters).toMatchObject({ unitId: id, entryId: id, missingLocation: true,
+      expenseWeekday: 7, expenseTimeBand: 'EVENING' })
+    expect(ledgerRouteQuery(parsed.filters)).toMatchObject({ unitId: id, entryId: id, missingLocation: 'true',
+      expenseWeekday: '7', expenseTimeBand: 'EVENING' })
+    expect(parseLedgerRoute({ expenseWeekday: '8', expenseTimeBand: 'INVALID' }).filters)
+      .not.toHaveProperty('expenseWeekday')
+  })
+
   it('keeps the recycle-bin dataset explicit and clears only its business filters', () => {
     const parsed = parseLedgerRoute({ lifecycle: 'TRASHED', type: 'INCOME', range: 'THIS_MONTH' })
     expect(parsed.filters.lifecycle).toBe('TRASHED')

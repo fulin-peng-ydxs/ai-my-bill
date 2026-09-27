@@ -92,11 +92,13 @@ class ExportHttpIntegrationTest {
     @Test @Order(2) void filteredExportFreezesFiltersStreamsCsvAndProtectsFormulaCells() throws Exception {
         JsonNode created = create(user, "filtered-export", Map.of(
                 "scope", "CURRENT_FILTERS", "type", "EXPENSE", "lifecycle", "ACTIVE", "range", "CUSTOM",
-                "startDate", "2026-09-07", "endDate", "2026-09-07", "query", "公式账单"), 200);
+                "startDate", "2026-09-07", "endDate", "2026-09-07", "query", "公式账单",
+                "entryId", EXPENSE.toString()), 200);
         UUID id = UUID.fromString(created.path("id").asText());
         assertThat(create(user, "filtered-export", Map.of(
                 "scope", "CURRENT_FILTERS", "type", "EXPENSE", "lifecycle", "ACTIVE", "range", "CUSTOM",
-                "startDate", "2026-09-07", "endDate", "2026-09-07", "query", "公式账单"), 200).path("id").asText())
+                "startDate", "2026-09-07", "endDate", "2026-09-07", "query", "公式账单",
+                "entryId", EXPENSE.toString()), 200).path("id").asText())
                 .isEqualTo(id.toString());
         runUntilFinished(generateRun(id));
         JsonNode done = exportStatus(user, id, 200);
@@ -104,6 +106,8 @@ class ExportHttpIntegrationTest {
         assertThat(done.path("rowCount").asLong()).isEqualTo(1);
         assertThat(tenantDatabase.execute(TENANT, () -> jdbc.sql("SELECT filter_snapshot->>'query' FROM export_job WHERE id=:id")
                 .param("id", id).query(String.class).single())).isEqualTo("公式账单");
+        assertThat(tenantDatabase.execute(TENANT, () -> jdbc.sql("SELECT filter_snapshot->>'entryId' FROM export_job WHERE id=:id")
+                .param("id", id).query(String.class).single())).isEqualTo(EXPENSE.toString());
 
         MvcResult result = mockMvc.perform(get("/api/v1/exports/{id}/download", id).cookie(user))
                 .andExpect(status().isOk()).andExpect(header().string("Cache-Control", "no-store"))

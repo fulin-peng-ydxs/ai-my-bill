@@ -1,6 +1,6 @@
 import type { LocationQuery, LocationQueryRaw } from 'vue-router'
 
-import type { LedgerDateRange, LedgerEntryTypeFilter, LedgerFilters, LedgerLifecycleFilter } from '../api/ledgerEntries'
+import type { ExpenseTimeBand, LedgerDateRange, LedgerEntryTypeFilter, LedgerFilters, LedgerLifecycleFilter } from '../api/ledgerEntries'
 
 const TYPES: readonly LedgerEntryTypeFilter[] = ['ALL', 'EXPENSE', 'INCOME', 'ADJUSTMENT', 'EXPENSE_FLOW']
 const DRILL_SCOPES: readonly LedgerDrillContext['scope'][] = ['ALL', 'EXPENSE', 'INCOME']
@@ -10,14 +10,16 @@ const UUID = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i
 const DATE = /^\d{4}-\d{2}-\d{2}$/
 const CONTEXT_TOKEN = /^[\p{L}\p{N}_-]{1,64}$/u
 const ADVANCED_UUID_KEYS = [
-  'primaryCategoryId', 'secondaryCategoryId', 'productId', 'purchaseChannelId',
-  'locationLabelId', 'incomeCategoryId', 'payerId',
+  'primaryCategoryId', 'secondaryCategoryId', 'productId', 'unitId', 'purchaseChannelId',
+  'locationLabelId', 'incomeCategoryId', 'payerId', 'entryId',
 ] as const
+const TIME_BANDS: readonly ExpenseTimeBand[] = ['NIGHT', 'MORNING', 'AFTERNOON', 'EVENING']
 
 export interface LedgerDrillContext {
   scope: 'ALL' | 'EXPENSE' | 'INCOME'
   dimension: string
   value: string
+  label?: string
   reportQuery: LocationQueryRaw
   reportScroll: number
 }
@@ -66,11 +68,19 @@ export function parseLedgerRoute(query: LocationQuery, defaultRange: LedgerDateR
   }
   const incomeName = one(query.incomeName)
   if (incomeName && incomeName.length <= 100) filters.incomeName = incomeName
+  for (const key of ['missingSecondaryCategory', 'missingPurchaseChannel', 'missingLocation'] as const) {
+    if (one(query[key]) === 'true') filters[key] = true
+  }
+  const weekday = Number.parseInt(one(query.expenseWeekday), 10)
+  if (weekday >= 1 && weekday <= 7) filters.expenseWeekday = weekday
+  const timeBand = one(query.expenseTimeBand) as ExpenseTimeBand
+  if (TIME_BANDS.includes(timeBand)) filters.expenseTimeBand = timeBand
 
   if (one(query.from) !== 'reports') return { filters }
   const scope = one(query.scope)
   const dimension = one(query.dimension)
   const value = one(query.value)
+  const label = one(query.label)
   if (!DRILL_SCOPES.includes(scope as LedgerDrillContext['scope']) || !CONTEXT_TOKEN.test(dimension) || !value || value.length > 100) {
     return { filters }
   }
@@ -84,7 +94,9 @@ export function parseLedgerRoute(query: LocationQuery, defaultRange: LedgerDateR
     if (candidate && candidate.length <= 200) reportQuery[key.replace(/^report/, '').replace(/^./, (char) => char.toLowerCase())] = candidate
   }
   if (Number.isSafeInteger(reportScroll) && reportScroll >= 0) reportQuery.scroll = String(reportScroll)
-  return { filters, drill: { scope: scope as LedgerDrillContext['scope'], dimension, value, reportQuery, reportScroll: Number.isSafeInteger(reportScroll) && reportScroll >= 0 ? reportScroll : 0 } }
+  return { filters, drill: { scope: scope as LedgerDrillContext['scope'], dimension, value,
+    ...(label && label.length <= 220 ? { label } : {}), reportQuery,
+    reportScroll: Number.isSafeInteger(reportScroll) && reportScroll >= 0 ? reportScroll : 0 } }
 }
 
 export function ledgerRouteQuery(filters: LedgerFilters, drill?: LedgerDrillContext): LocationQueryRaw {
@@ -95,9 +107,15 @@ export function ledgerRouteQuery(filters: LedgerFilters, drill?: LedgerDrillCont
     range: filters.range,
     ...(filters.fundingChannelId ? { fundingChannelId: filters.fundingChannelId } : {}),
     ...(filters.range === 'CUSTOM' ? { startDate: filters.startDate, endDate: filters.endDate } : {}),
-    ...(drill ? { from: 'reports', scope: drill.scope, dimension: drill.dimension, value: drill.value } : {}),
+    ...(drill ? { from: 'reports', scope: drill.scope, dimension: drill.dimension, value: drill.value,
+      ...(drill.label ? { label: drill.label } : {}) } : {}),
   }
   for (const key of [...ADVANCED_UUID_KEYS, 'incomeName'] as const) if (filters[key]) result[key] = filters[key]
+  for (const key of ['missingSecondaryCategory', 'missingPurchaseChannel', 'missingLocation'] as const) {
+    if (filters[key]) result[key] = 'true'
+  }
+  if (filters.expenseWeekday) result.expenseWeekday = String(filters.expenseWeekday)
+  if (filters.expenseTimeBand) result.expenseTimeBand = filters.expenseTimeBand
   if (drill) {
     if (Number.isSafeInteger(drill.reportScroll) && drill.reportScroll >= 0) result.reportScroll = String(drill.reportScroll)
     for (const [key, value] of Object.entries(drill.reportQuery)) {

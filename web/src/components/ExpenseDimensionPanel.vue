@@ -1,0 +1,114 @@
+<script setup lang="ts">
+import { BarChart } from 'echarts/charts'
+import { GridComponent, TooltipComponent } from 'echarts/components'
+import { use } from 'echarts/core'
+import { computed, watch } from 'vue'
+
+import type { ExpenseReport } from '../api/reports'
+import { useReportChart } from '../composables/useReportChart'
+import { formatCny } from '../domain/money'
+
+use([BarChart, GridComponent, TooltipComponent])
+type Point = ExpenseReport['points'][number]
+const props = defineProps<{ report: ExpenseReport, title: string }>()
+const emit = defineEmits<{ select: [point: Point] }>()
+const chartPoints = computed(() => [...props.report.points.slice(0, 12)].reverse())
+const isCount = computed(() => props.report.dimension === 'FREQUENCY')
+const isQuality = computed(() => props.report.dimension === 'QUALITY')
+
+function displayValue(point: Point): string {
+  return isCount.value ? `${Number(point.amount)} 条` : formatCny(point.amount)
+}
+
+const { host, token, refresh } = useReportChart(() => ({
+  animationDuration: globalThis.matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 180,
+  color: [token('--color-expense-accent')],
+  textStyle: { color: token('--color-text') },
+  grid: { left: 8, right: 20, top: 8, bottom: 8, containLabel: true },
+  xAxis: { type: 'value', axisLabel: { color: token('--color-muted'),
+    formatter: (value: number) => isCount.value ? String(value) : `¥${value}` },
+  splitLine: { lineStyle: { color: token('--color-border'), type: 'dashed' } } },
+  yAxis: { type: 'category', data: chartPoints.value.map((point) => point.label),
+    axisLabel: { color: token('--color-muted'), width: 120, overflow: 'truncate' }, axisTick: { show: false },
+    axisLine: { lineStyle: { color: token('--color-border') } } },
+  tooltip: { trigger: 'axis', backgroundColor: token('--color-surface'), borderColor: token('--color-border'),
+    textStyle: { color: token('--color-text') },
+    valueFormatter: (value: unknown) => isCount.value ? `${value} 条` : formatCny(String(value)) },
+  series: [{ type: 'bar', data: chartPoints.value.map((point) => Number(point.amount)), barMaxWidth: 24 }],
+}), (index) => emit('select', chartPoints.value[index]))
+
+watch(() => props.report, refresh, { deep: true })
+</script>
+
+<template>
+  <section
+    class="chart-panel expense-dimension-panel"
+    :aria-label="title"
+  >
+    <header>
+      <div>
+        <p class="eyebrow">
+          支出分析
+        </p>
+        <h2>{{ title }}</h2>
+      </div>
+      <span>{{ report.measureLabel }} · 选择排行查看明细</span>
+    </header>
+
+    <div
+      v-if="report.qualityRule"
+      class="quality-rule"
+    >
+      <strong>规则 {{ report.qualityRule.version }}</strong>
+      <span>高价：过去 {{ report.qualityRule.priceWindowDays }} 天至少 {{ report.qualityRule.minimumPriceSamples }} 条，超过中位数 {{ Number(report.qualityRule.highPriceMultiplier) * 100 - 100 }}%</span>
+      <span>重复：同商品、金额和资金渠道在 {{ report.qualityRule.duplicateWindowMinutes }} 分钟内再次出现</span>
+      <small>只提示线索，不会修改、合并或删除账目。</small>
+    </div>
+
+    <div
+      v-if="!isQuality && report.points.length"
+      ref="host"
+      class="chart-canvas expense-ranking-chart"
+      aria-hidden="true"
+    />
+
+    <div
+      v-if="report.points.length"
+      class="dimension-ranking"
+      aria-label="可下钻排行"
+    >
+      <button
+        v-for="point in report.points"
+        :key="`${point.group}:${point.value}:${point.warning ?? ''}`"
+        type="button"
+        :class="{ 'quality-clue': point.warning }"
+        @click="emit('select', point)"
+      >
+        <span class="dimension-rank-main">
+          <small>{{ point.group }}</small>
+          <strong>{{ point.label }}</strong>
+          <span>{{ point.detail }}</span>
+        </span>
+        <span class="dimension-rank-value">
+          <em v-if="point.warning">{{ point.warning }}</em>
+          <strong>{{ displayValue(point) }}</strong>
+          <small v-if="point.sharePercent">{{ point.sharePercent }}% · {{ point.itemCount }} 条</small>
+          <small v-else>{{ point.itemCount }} 条 · 查看明细</small>
+        </span>
+      </button>
+    </div>
+    <div
+      v-else
+      class="dimension-empty"
+    >
+      <strong>{{ isQuality ? '当前没有质量线索' : '当前维度没有可分析数据' }}</strong>
+      <span>{{ isQuality ? '账目仍保持原样，规则会随筛选重新计算。' : '可调整日期或高级筛选后重试。' }}</span>
+    </div>
+    <p
+      v-if="report.truncated"
+      class="caption"
+    >
+      仅展示当前排序前 {{ isQuality ? 100 : 50 }} 项，请缩小筛选范围查看其余结果。
+    </p>
+  </section>
+</template>

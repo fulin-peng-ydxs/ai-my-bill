@@ -433,6 +433,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/reports/expenses": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 聚合支出结构、习惯、价格、频次与只读数据质量线索 */
+        get: operations["getExpenseReport"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/ledger-entries": {
         parameters: {
             query?: never;
@@ -1204,6 +1221,10 @@ export interface components {
         ReportTimeGrain: "DAY" | "WEEK" | "MONTH" | "QUARTER" | "YEAR";
         /** @enum {string} */
         ReportTimeMetric: "TOTAL_INCOME" | "GROSS_EXPENSE" | "ADJUSTMENT" | "NET_EXPENSE" | "BALANCE";
+        /** @enum {string} */
+        ExpenseReportDimension: "CATEGORY" | "PRODUCT" | "FUNDING_CHANNEL" | "PURCHASE_CHANNEL" | "LOCATION" | "HABIT" | "PRICE" | "FREQUENCY" | "QUALITY";
+        /** @enum {string} */
+        ExpenseTimeBand: "NIGHT" | "MORNING" | "AFTERNOON" | "EVENING";
         /** @description 服务端精确聚合后的人民币十进制字符串；结余可为负数，聚合值不受单笔金额上限约束。 */
         ReportAmount: string;
         ReportDataPoint: {
@@ -1273,6 +1294,38 @@ export interface components {
             buckets: components["schemas"]["TimeBucket"][];
             comparisons: components["schemas"]["MetricComparison"][];
         };
+        ExpenseReportPoint: {
+            group: string;
+            label: string;
+            value: string;
+            amount: components["schemas"]["ReportAmount"];
+            /** Format: int64 */
+            itemCount: number;
+            sharePercent?: string;
+            detail?: string;
+            warning?: string;
+            /** Format: uuid */
+            entryId?: string;
+            /** Format: date */
+            drillStartDate?: string;
+            /** Format: date */
+            drillEndDate?: string;
+        };
+        ExpenseQualityRule: {
+            /** @enum {string} */
+            version: "expense-quality-v1";
+            priceWindowDays: number;
+            minimumPriceSamples: number;
+            highPriceMultiplier: string;
+            duplicateWindowMinutes: number;
+        };
+        ExpenseReport: {
+            dimension: components["schemas"]["ExpenseReportDimension"];
+            measureLabel: string;
+            points: components["schemas"]["ExpenseReportPoint"][];
+            truncated: boolean;
+            qualityRule?: components["schemas"]["ExpenseQualityRule"];
+        };
         /** @enum {string} */
         ExportScope: "CURRENT_FILTERS" | "ALL_DATA";
         /** @enum {string} */
@@ -1283,6 +1336,30 @@ export interface components {
             lifecycle?: components["schemas"]["LedgerLifecycleFilter"];
             /** Format: uuid */
             fundingChannelId?: string;
+            /** Format: uuid */
+            primaryCategoryId?: string;
+            /** Format: uuid */
+            secondaryCategoryId?: string;
+            /** Format: uuid */
+            productId?: string;
+            /** Format: uuid */
+            unitId?: string;
+            /** Format: uuid */
+            purchaseChannelId?: string;
+            /** Format: uuid */
+            locationLabelId?: string;
+            /** Format: uuid */
+            incomeCategoryId?: string;
+            /** Format: uuid */
+            payerId?: string;
+            incomeName?: string;
+            /** Format: uuid */
+            entryId?: string;
+            missingSecondaryCategory?: boolean;
+            missingPurchaseChannel?: boolean;
+            missingLocation?: boolean;
+            expenseWeekday?: number;
+            expenseTimeBand?: components["schemas"]["ExpenseTimeBand"];
             range?: components["schemas"]["LedgerDateRange"];
             /** Format: date */
             startDate?: string;
@@ -2538,6 +2615,42 @@ export interface operations {
             503: components["responses"]["ServiceUnavailableError"];
         };
     };
+    getExpenseReport: {
+        parameters: {
+            query: {
+                dimension: components["schemas"]["ExpenseReportDimension"];
+                range?: components["schemas"]["LedgerDateRange"];
+                startDate?: string;
+                endDate?: string;
+                query?: string;
+                fundingChannelId?: string;
+                primaryCategoryId?: string;
+                secondaryCategoryId?: string;
+                productId?: string;
+                purchaseChannelId?: string;
+                locationLabelId?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 最多 50 个排行点或 100 条质量线索；质量规则随响应返回版本。 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExpenseReport"];
+                };
+            };
+            400: components["responses"]["ValidationError"];
+            401: components["responses"]["AuthenticationError"];
+            403: components["responses"]["AuthorizationError"];
+            503: components["responses"]["ServiceUnavailableError"];
+        };
+    };
     listLedgerEntries: {
         parameters: {
             query?: {
@@ -2548,8 +2661,15 @@ export interface operations {
                 primaryCategoryId?: string;
                 secondaryCategoryId?: string;
                 productId?: string;
+                unitId?: string;
                 purchaseChannelId?: string;
                 locationLabelId?: string;
+                entryId?: string;
+                missingSecondaryCategory?: boolean;
+                missingPurchaseChannel?: boolean;
+                missingLocation?: boolean;
+                expenseWeekday?: number;
+                expenseTimeBand?: components["schemas"]["ExpenseTimeBand"];
                 incomeCategoryId?: string;
                 payerId?: string;
                 incomeName?: string;

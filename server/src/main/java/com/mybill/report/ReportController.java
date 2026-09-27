@@ -18,8 +18,12 @@ import java.util.UUID;
 @RequestMapping("/api/v1/reports")
 public class ReportController {
     private final ReportService service;
+    private final ExpenseReportService expenseService;
 
-    ReportController(ReportService service) { this.service = service; }
+    ReportController(ReportService service, ExpenseReportService expenseService) {
+        this.service = service;
+        this.expenseService = expenseService;
+    }
 
     @GetMapping("/summary")
     ReportContracts.Summary summary(
@@ -64,5 +68,23 @@ public class ReportController {
         return service.time(principal, scope, range, startDate, endDate, grain, query, fundingChannelId,
                 primaryCategoryId, secondaryCategoryId, productId, purchaseChannelId, locationLabelId,
                 incomeCategoryId, payerId, incomeName);
+    }
+
+    @GetMapping("/expenses")
+    ReportContracts.ExpenseReport expenses(
+            @AuthenticationPrincipal CurrentPrincipal principal,
+            @RequestParam ReportContracts.ExpenseDimension dimension,
+            @RequestParam(defaultValue = "THIS_MONTH") BusinessDateRange range,
+            @RequestParam(required = false) LocalDate startDate,
+            @RequestParam(required = false) LocalDate endDate,
+            @RequestParam(defaultValue = "") @Size(max = 200) String query,
+            @RequestParam(required = false) UUID fundingChannelId,
+            @RequestParam(required = false) UUID primaryCategoryId,
+            @RequestParam(required = false) UUID secondaryCategoryId,
+            @RequestParam(required = false) UUID productId,
+            @RequestParam(required = false) UUID purchaseChannelId,
+            @RequestParam(required = false) UUID locationLabelId) {
+        return expenseService.report(principal, dimension, range, startDate, endDate, query, fundingChannelId,
+                primaryCategoryId, secondaryCategoryId, productId, purchaseChannelId, locationLabelId);
     }
 }

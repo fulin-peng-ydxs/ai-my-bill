@@ -3,6 +3,8 @@ package com.mybill.ledger;
 import com.mybill.auth.CurrentPrincipal;
 import com.mybill.ledger.LedgerQueryContracts.*;
 import jakarta.validation.constraints.Size;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -30,8 +32,15 @@ public class LedgerQueryController {
                      @RequestParam(required = false) UUID primaryCategoryId,
                      @RequestParam(required = false) UUID secondaryCategoryId,
                      @RequestParam(required = false) UUID productId,
+                     @RequestParam(required = false) UUID unitId,
                      @RequestParam(required = false) UUID purchaseChannelId,
                      @RequestParam(required = false) UUID locationLabelId,
+                     @RequestParam(required = false) UUID entryId,
+                     @RequestParam(defaultValue = "false") boolean missingSecondaryCategory,
+                     @RequestParam(defaultValue = "false") boolean missingPurchaseChannel,
+                     @RequestParam(defaultValue = "false") boolean missingLocation,
+                     @RequestParam(required = false) @Min(1) @Max(7) Integer expenseWeekday,
+                     @RequestParam(required = false) ExpenseTimeBand expenseTimeBand,
                      @RequestParam(required = false) UUID incomeCategoryId,
                      @RequestParam(required = false) UUID payerId,
                      @RequestParam(required = false) @Size(max = 100) String incomeName,
@@ -41,7 +50,9 @@ public class LedgerQueryController {
                      @RequestParam(defaultValue = "") @Size(max = 200) String query,
                      @RequestParam(required = false) @Size(max = 500) String cursor) {
         return service.query(principal, type, lifecycle, fundingChannelId, primaryCategoryId, secondaryCategoryId,
-                productId, purchaseChannelId, locationLabelId, incomeCategoryId, payerId, incomeName,
+                productId, unitId, purchaseChannelId, locationLabelId, entryId, missingSecondaryCategory,
+                missingPurchaseChannel, missingLocation, expenseWeekday, expenseTimeBand,
+                incomeCategoryId, payerId, incomeName,
                 range, startDate, endDate, query, cursor);
     }
 }

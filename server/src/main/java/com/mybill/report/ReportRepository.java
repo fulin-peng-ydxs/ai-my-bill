@@ -36,6 +36,23 @@ class ReportRepository {
                 .map((row, number) -> row.getObject("created_date", LocalDate.class)).single();
     }
 
+    List<ExpenseRow> expenseDimension(ReportFilter filter, ReportContracts.ExpenseDimension dimension, int limit) {
+        return bind(operations.select(mapper::expenseDimension), filter)
+                .param("dimension", dimension.name()).param("limit", limit)
+                .map(ReportRepository::mapExpense).list();
+    }
+
+    List<ExpenseRow> expenseQuality(ReportFilter filter, int limit, int priceWindowDays,
+                                    int minimumPriceSamples, BigDecimal highPriceMultiplier,
+                                    int duplicateWindowMinutes) {
+        return bind(operations.select(mapper::expenseQuality), filter)
+                .param("limit", limit).param("priceWindowDays", priceWindowDays)
+                .param("minimumPriceSamples", minimumPriceSamples)
+                .param("highPriceMultiplier", highPriceMultiplier)
+                .param("duplicateWindowMinutes", duplicateWindowMinutes)
+                .map(ReportRepository::mapExpense).list();
+    }
+
     private static MybatisOperations.SelectSpec bind(MybatisOperations.SelectSpec call, ReportFilter filter) {
         return call
                 .param("scope", filter.scope().name())
@@ -67,6 +84,18 @@ class ReportRepository {
                 row.getLong("expense_count"), row.getLong("adjustment_count"));
     }
 
+    private static ExpenseRow mapExpense(DatabaseRow row, int rowNumber) throws SQLException {
+        return new ExpenseRow(row.getString("group_name"), row.getString("label"), row.getString("value"),
+                row.getBigDecimal("amount"), row.getLong("item_count"), row.getBigDecimal("quantity"),
+                row.getString("unit_name"), row.getBigDecimal("average_unit_price"),
+                row.getBigDecimal("minimum_unit_price"), row.getBigDecimal("maximum_unit_price"),
+                row.getBigDecimal("latest_unit_price"), row.getBigDecimal("average_actual_cost"),
+                row.getObject("latest_date", LocalDate.class), row.getBigDecimal("average_interval_days"),
+                row.getString("issue_type"), row.getBigDecimal("baseline_value"),
+                row.getBigDecimal("actual_value"), row.getObject("entry_id", UUID.class),
+                row.getObject("drill_start_date", LocalDate.class), row.getObject("drill_end_date", LocalDate.class));
+    }
+
     private static String escapeLike(String value) {
         return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_");
     }
@@ -78,4 +107,11 @@ class ReportRepository {
                         long adjustmentCount) {
         long itemCount() { return incomeCount + expenseCount + adjustmentCount; }
     }
+    record ExpenseRow(String group, String label, String value, BigDecimal amount, long itemCount,
+                      BigDecimal quantity, String unitName, BigDecimal averageUnitPrice,
+                      BigDecimal minimumUnitPrice, BigDecimal maximumUnitPrice,
+                      BigDecimal latestUnitPrice, BigDecimal averageActualCost, LocalDate latestDate,
+                      BigDecimal averageIntervalDays, String issueType, BigDecimal baselineValue,
+                      BigDecimal actualValue, UUID entryId, LocalDate drillStartDate,
+                      LocalDate drillEndDate) { }
 }

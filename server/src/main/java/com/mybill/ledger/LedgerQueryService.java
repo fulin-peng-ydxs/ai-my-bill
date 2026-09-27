@@ -30,18 +30,24 @@ class LedgerQueryService {
 
     LedgerPage query(CurrentPrincipal principal, EntryTypeFilter type, LifecycleFilter lifecycle,
                      UUID fundingChannelId, UUID primaryCategoryId, UUID secondaryCategoryId, UUID productId,
-                     UUID purchaseChannelId, UUID locationLabelId, UUID incomeCategoryId, UUID payerId,
+                     UUID unitId, UUID purchaseChannelId, UUID locationLabelId, UUID entryId,
+                     boolean missingSecondaryCategory, boolean missingPurchaseChannel, boolean missingLocation,
+                     Integer expenseWeekday, ExpenseTimeBand expenseTimeBand,
+                     UUID incomeCategoryId, UUID payerId,
                      String incomeName, BusinessDateRange range,
                      LocalDate startDate, LocalDate endDate, String keyword, String encodedCursor) {
         validateSpecificFilters(type, primaryCategoryId, secondaryCategoryId, productId, purchaseChannelId,
-                locationLabelId, incomeCategoryId, payerId, incomeName);
+                locationLabelId, unitId, entryId, missingSecondaryCategory, missingPurchaseChannel,
+                missingLocation, expenseWeekday, expenseTimeBand, incomeCategoryId, payerId, incomeName);
         DateBounds bounds = bounds(range, startDate, endDate);
         String normalizedKeyword = keyword == null ? "" : keyword.strip();
         Cursor cursor = decodeCursor(encodedCursor, lifecycle);
         return tenantTransactions.execute(principal, () -> {
             Query query = new Query(bounds.start(), bounds.end(), type, fundingChannelId,
                     primaryCategoryId, secondaryCategoryId, productId, purchaseChannelId, locationLabelId,
-                    incomeCategoryId, payerId, incomeName == null || incomeName.isBlank() ? null : incomeName.strip(),
+                    unitId, entryId, missingSecondaryCategory, missingPurchaseChannel, missingLocation,
+                    expenseWeekday, expenseTimeBand, incomeCategoryId, payerId,
+                    incomeName == null || incomeName.isBlank() ? null : incomeName.strip(),
                     normalizedKeyword, cursor, clock.instant());
             List<LedgerItem> rows = lifecycle == LifecycleFilter.ACTIVE
                     ? repository.findPage(query, PAGE_SIZE + 1) : repository.findTrashPage(query, PAGE_SIZE + 1);
@@ -52,18 +58,25 @@ class LedgerQueryService {
         });
     }
 
-    private static void validateSpecificFilters(EntryTypeFilter type,
+    static void validateSpecificFilters(EntryTypeFilter type,
                                                 UUID primaryCategoryId, UUID secondaryCategoryId, UUID productId,
                                                 UUID purchaseChannelId, UUID locationLabelId,
+                                                UUID unitId, UUID entryId, boolean missingSecondaryCategory,
+                                                boolean missingPurchaseChannel, boolean missingLocation,
+                                                Integer expenseWeekday, ExpenseTimeBand expenseTimeBand,
                                                 UUID incomeCategoryId, UUID payerId, String incomeName) {
         boolean expenseSpecific = primaryCategoryId != null || secondaryCategoryId != null || productId != null
-                || purchaseChannelId != null || locationLabelId != null;
+                || purchaseChannelId != null || locationLabelId != null || unitId != null || entryId != null
+                || missingSecondaryCategory || missingPurchaseChannel || missingLocation
+                || expenseWeekday != null || expenseTimeBand != null;
         boolean incomeSpecific = incomeCategoryId != null || payerId != null || incomeName != null && !incomeName.isBlank();
         if (type == EntryTypeFilter.ALL && (expenseSpecific || incomeSpecific)
                 || type == EntryTypeFilter.EXPENSE && incomeSpecific
                 || type == EntryTypeFilter.INCOME && expenseSpecific
                 || type == EntryTypeFilter.ADJUSTMENT && incomeSpecific
-                || type == EntryTypeFilter.EXPENSE_FLOW && incomeSpecific) {
+                || type == EntryTypeFilter.EXPENSE_FLOW && incomeSpecific
+                || expenseSpecific && type != EntryTypeFilter.EXPENSE && type != EntryTypeFilter.ADJUSTMENT
+                    && type != EntryTypeFilter.EXPENSE_FLOW) {
             throw fieldError("type", "当前账目类型包含不适用的报表下钻条件，请重新加载明细。");
         }
     }

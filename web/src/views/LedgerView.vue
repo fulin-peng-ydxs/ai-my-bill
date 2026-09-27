@@ -358,7 +358,7 @@ onBeforeUnmount(() => { fundingRequest.cancel(); editRequest.cancel(); adjustmen
       class="drill-context"
       aria-label="报表下钻上下文"
     >
-      <div><span>报表下钻</span><strong>{{ drill.dimension }} · {{ drill.value }}</strong></div>
+      <div><span>报表下钻</span><strong>{{ drill.dimension }} · {{ drill.label ?? drill.value }}</strong></div>
       <button
         type="button"
         class="text-action"

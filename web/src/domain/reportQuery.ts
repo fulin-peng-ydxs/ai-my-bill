@@ -1,9 +1,9 @@
 import type { LocationQuery, LocationQueryRaw } from 'vue-router'
 
 import type { LedgerDateRange } from '../api/ledgerEntries'
-import type { ReportFilters, ReportScope, ReportTimeGrain, ReportTimeMetric } from '../api/reports'
+import type { ExpenseReportDimension, ReportFilters, ReportScope, ReportTimeGrain, ReportTimeMetric } from '../api/reports'
 
-export type ReportDimension = 'OVERVIEW' | 'TIME'
+export type ReportDimension = 'OVERVIEW' | 'TIME' | ExpenseReportDimension
 export interface ReportPresentation { dimension: ReportDimension, grain: ReportTimeGrain, metric: ReportTimeMetric }
 
 const SCOPES: readonly ReportScope[] = ['ALL', 'EXPENSE', 'INCOME']
@@ -66,7 +66,10 @@ export function adaptiveGrain(filters: ReportFilters): ReportTimeGrain {
 }
 
 export function parseReportPresentation(query: LocationQuery, filters: ReportFilters): ReportPresentation {
-  const dimensions: ReportDimension[] = ['OVERVIEW', 'TIME']
+  const expenseDimensions: ExpenseReportDimension[] = [
+    'CATEGORY', 'PRODUCT', 'FUNDING_CHANNEL', 'PURCHASE_CHANNEL', 'LOCATION', 'HABIT', 'PRICE', 'FREQUENCY', 'QUALITY',
+  ]
+  const dimensions: ReportDimension[] = ['OVERVIEW', 'TIME', ...(filters.scope === 'EXPENSE' ? expenseDimensions : [])]
   const grains: ReportTimeGrain[] = ['DAY', 'WEEK', 'MONTH', 'QUARTER', 'YEAR']
   const metrics: ReportTimeMetric[] = ['TOTAL_INCOME', 'GROSS_EXPENSE', 'ADJUSTMENT', 'NET_EXPENSE', 'BALANCE']
   const rawDimension = one(query.dimension) as ReportDimension
@@ -80,6 +83,10 @@ export function parseReportPresentation(query: LocationQuery, filters: ReportFil
     metric: allowed.includes(rawMetric) ? rawMetric : filters.scope === 'INCOME' ? 'TOTAL_INCOME'
       : filters.scope === 'EXPENSE' ? 'NET_EXPENSE' : 'BALANCE',
   }
+}
+
+export function isExpenseDimension(dimension: ReportDimension): dimension is ExpenseReportDimension {
+  return !['OVERVIEW', 'TIME'].includes(dimension)
 }
 
 export function reportPresentationQuery(filters: ReportFilters, presentation: ReportPresentation): LocationQueryRaw {
