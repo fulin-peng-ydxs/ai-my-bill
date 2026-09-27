@@ -24,15 +24,15 @@ class PersonalDictionaryRepository {
     }
 
     List<DictionaryRow> list(DictionaryType type, String query, DictionaryStatus status, int limit, int offset,
-                             boolean candidatesOnly) {
+                             boolean candidatesOnly, UUID parentId, boolean rootsOnly) {
         return operations.select(mapper::list).param("type", type.name()).param("query", query)
                 .param("status", status == null ? null : status.name()).param("limit", limit).param("offset", offset)
-                .param("candidatesOnly", candidatesOnly).map(PersonalDictionaryRepository::mapRow).list();
+                .param("candidatesOnly", candidatesOnly).param("parentId", parentId).param("rootsOnly", rootsOnly).map(PersonalDictionaryRepository::mapRow).list();
     }
 
-    long count(DictionaryType type, String query, DictionaryStatus status, boolean candidatesOnly) {
+    long count(DictionaryType type, String query, DictionaryStatus status, boolean candidatesOnly, UUID parentId, boolean rootsOnly) {
         return operations.select(mapper::count).param("type", type.name()).param("query", query)
-                .param("status", status == null ? null : status.name()).param("candidatesOnly", candidatesOnly)
+                .param("status", status == null ? null : status.name()).param("candidatesOnly", candidatesOnly).param("parentId", parentId).param("rootsOnly", rootsOnly)
                 .map(Long.class).single();
     }
 

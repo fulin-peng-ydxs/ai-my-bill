@@ -34,10 +34,18 @@ export function listDictionaryItems(
   signal?: AbortSignal,
   page = 0,
   size = 100,
+  hierarchy: { parentId?: string, rootsOnly?: boolean } = {},
 ): Promise<DictionaryPage> {
   const params = new URLSearchParams({ query, page: String(page), size: String(size) })
   if (status) params.set('status', status)
+  if (hierarchy.parentId) params.set('parentId', hierarchy.parentId)
+  if (hierarchy.rootsOnly) params.set('rootsOnly', 'true')
   return apiRequest(`/dictionaries/${encodeURIComponent(type)}?${params}`, { signal })
+}
+
+/** 历史筛选按 ID 回显，包括停用项；服务端继续使用认证租户和 RLS。 */
+export function getDictionaryItem(type: DictionaryType, id: string, signal?: AbortSignal): Promise<DictionaryItem> {
+  return apiRequest(`/dictionaries/${encodeURIComponent(type)}/${encodeURIComponent(id)}`, { signal })
 }
 
 export function listDictionaryCandidates(

@@ -91,6 +91,7 @@ function comparisonText(value: NonNullable<typeof comparison.value>['periodOverP
       <select
         id="time-point"
         v-model.number="selected"
+        class="select-control"
       >
         <option
           v-for="(bucket, index) in report.buckets"
@@ -101,6 +102,7 @@ function comparisonText(value: NonNullable<typeof comparison.value>['periodOverP
         </option>
       </select>
       <button
+        class="secondary-button"
         type="button"
         @click="emit('select', report.buckets[selected])"
       >

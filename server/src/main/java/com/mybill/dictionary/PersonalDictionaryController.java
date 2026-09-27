@@ -46,8 +46,10 @@ public class PersonalDictionaryController {
                         @RequestParam(defaultValue = "") @Size(max = 64) String query,
                         @RequestParam(required = false) DictionaryStatus status,
                         @RequestParam(defaultValue = "0") @Min(0) @Max(1_000_000) int page,
-                        @RequestParam(defaultValue = "50") @Min(1) @Max(100) int size) {
-        return service.list(principal, DictionaryType.fromSlug(type), query, status, page, size, false);
+                        @RequestParam(defaultValue = "50") @Min(1) @Max(100) int size,
+                        @RequestParam(required = false) UUID parentId,
+                        @RequestParam(defaultValue = "false") boolean rootsOnly) {
+        return service.list(principal, DictionaryType.fromSlug(type), query, status, page, size, false, parentId, rootsOnly);
     }
 
     @GetMapping("/{type}/candidates")
@@ -55,6 +57,12 @@ public class PersonalDictionaryController {
                               @RequestParam(defaultValue = "") @Size(max = 64) String query,
                               @RequestParam(defaultValue = "20") @Min(1) @Max(50) int limit) {
         return service.list(principal, DictionaryType.fromSlug(type), query, DictionaryStatus.ACTIVE, 0, limit, true);
+    }
+
+    @GetMapping("/{type}/{itemId}")
+    DictionaryItem get(@AuthenticationPrincipal CurrentPrincipal principal, @PathVariable String type,
+                       @PathVariable UUID itemId) {
+        return service.get(principal, DictionaryType.fromSlug(type), itemId);
     }
 
     @PostMapping("/{type}")

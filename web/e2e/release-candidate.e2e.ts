@@ -34,3 +34,30 @@ test('管理员进入管理端且不能进入普通用户页面', async ({ page 
   await expect(page).toHaveURL(/\/admin$/)
   await expect(page.getByRole('heading', { name: '用户管理' })).toBeVisible()
 })
+
+test('注销遭遇会话失效时不清草稿、不宣称删除，账号仍可登录', async ({ page }) => {
+  await login(page, 'e2e-user', 'E2E-Formal-Password-2026')
+  await expect(page).toHaveURL(/\/entry$/)
+  await page.goto('/me')
+  await page.locator('.delete-account-action').click()
+  await page.locator('#deletion-confirmation').fill('e2e-user')
+  const draftKey = await page.evaluate(async () => {
+    const response = await fetch('/api/v1/auth/session', { cache: 'no-store' })
+    const session = await response.json() as { accountId: string }
+    const hash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`my-bill/account/v1/${session.accountId.toLowerCase()}`))
+    const namespace = Array.from(new Uint8Array(hash), byte => byte.toString(16).padStart(2, '0')).join('')
+    const key = `my-bill:account:v1:${namespace}:draft:EXPENSE`
+    localStorage.setItem(key, 'deletion-failure-must-preserve')
+    const csrf = document.cookie.split(';').map(value => value.trim()).find(value => value.startsWith('XSRF-TOKEN='))?.slice('XSRF-TOKEN='.length)
+    const logout = await fetch('/api/v1/auth/logout', { method: 'POST', headers: { 'X-XSRF-TOKEN': decodeURIComponent(csrf ?? '') } })
+    if (!logout.ok) throw new Error(`logout failed: ${logout.status}`)
+    return key
+  })
+  await page.getByRole('dialog').getByRole('button', { name: '永久注销', exact: true }).click()
+  await expect(page.getByRole('dialog')).toContainText('未确认注销成功，本地数据已保留')
+  expect(await page.evaluate(key => localStorage.getItem(key), draftKey)).toBe('deletion-failure-must-preserve')
+  expect(page.url()).not.toContain('deleted=1')
+  await page.getByRole('dialog').getByRole('button', { name: '取消', exact: true }).click()
+  await login(page, 'e2e-user', 'E2E-Formal-Password-2026')
+  await expect(page).toHaveURL(/\/entry$/)
+})

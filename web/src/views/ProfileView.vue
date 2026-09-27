@@ -154,18 +154,9 @@ async function confirmDeletion(): Promise<void> {
     await deleteCurrentAccount(deletionConfirmation.value)
     await finishDeletion(accountId)
   } catch (cause) {
-    // 响应可能在服务端提交后丢失；只有重新确认会话已失效时才按成功收口本地数据。
-    try {
-      await sessionStore.initialize(true)
-      if (sessionStore.status === 'guest') {
-        await finishDeletion(accountId)
-        return
-      }
-    } catch {
-      // 身份状态无法确认时保留本地数据和当前页面，允许用户重试。
-    }
+    // 会话失效也可能来自过期、改密或停用，绝不能据此推断注销成功或清理草稿。
     const requestError = normalizeRequestError(cause)
-    deletionError.value = requestError.fieldErrors.confirmation?.[0] ?? requestError.message
+    deletionError.value = requestError.fieldErrors.confirmation?.[0] ?? `${requestError.message} 未确认注销成功，本地数据已保留；请重新登录核实或重试。`
   } finally {
     deletionBusy.value = false
   }

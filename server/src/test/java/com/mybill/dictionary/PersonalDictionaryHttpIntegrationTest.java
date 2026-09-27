@@ -207,6 +207,36 @@ class PersonalDictionaryHttpIntegrationTest {
                 .param("id", ledgerId).query(String.class).single())).isEqualTo("资金渠道旧快照");
     }
 
+    @Test @Order(6)
+    void historicalFiltersPageAllStatusesAndResolveOnlyOwnedIds() throws Exception {
+        Cookie user = login("t8-user", PASSWORD);
+        tenantDatabase.execute(TENANT, () -> jdbc.sql("""
+                INSERT INTO funding_channel(tenant_id,id,display_name,normalized_name,sort_order,status)
+                SELECT current_setting('app.tenant_id')::uuid,gen_random_uuid(),'分页渠道'||i,'分页渠道'||i,i,
+                  CASE WHEN i=55 THEN 'INACTIVE' ELSE 'ACTIVE' END FROM generate_series(1,55) i
+                """).update());
+        mockMvc.perform(get("/api/v1/dictionaries/funding-channel").cookie(user)
+                        .param("query", "分页渠道").param("page", "2").param("size", "20"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.total").value(55))
+                .andExpect(jsonPath("$.items.length()").value(15))
+                .andExpect(jsonPath("$.items[14].status").value("INACTIVE"));
+        UUID stopped = tenantDatabase.execute(TENANT, () -> jdbc.sql("SELECT id FROM funding_channel WHERE display_name='分页渠道55'").query(UUID.class).single());
+        mockMvc.perform(get("/api/v1/dictionaries/funding-channel/{id}", stopped).cookie(user))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.status").value("INACTIVE"));
+        mockMvc.perform(get("/api/v1/dictionaries/unit/c3000000-0000-0000-0000-000000000001").cookie(user))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(get("/api/v1/dictionaries/funding-channel/{id}", stopped)).andExpect(status().isUnauthorized());
+        mockMvc.perform(get("/api/v1/dictionaries/funding-channel/{id}", stopped)
+                        .cookie(login("t8-admin", "T8-Admin-Formal-Password-2026"))).andExpect(status().isForbidden());
+        UUID root = FIRST_IDS.get("expense-category");
+        mockMvc.perform(get("/api/v1/dictionaries/expense-category").cookie(user).param("parentId", root.toString()).param("size", "1"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.total").value(1))
+                .andExpect(jsonPath("$.items[0].parentId").value(root.toString()));
+        mockMvc.perform(get("/api/v1/dictionaries/expense-category").cookie(user).param("rootsOnly", "true"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.items[?(@.parentId)]").isEmpty());
+        mockMvc.perform(get("/api/v1/dictionaries/unit").cookie(user).param("rootsOnly", "true")).andExpect(status().isBadRequest());
+    }
+
     private UUID create(Cookie user, String type, String name, UUID parentId) throws Exception {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("name", name);

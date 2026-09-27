@@ -9,6 +9,10 @@ import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Import;
+import org.springframework.context.annotation.Primary;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -17,6 +21,9 @@ import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.math.BigDecimal;
+import java.time.Clock;
+import java.time.Instant;
+import java.time.ZoneOffset;
 import java.util.Map;
 import java.util.UUID;
 
@@ -29,6 +36,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 @SpringBootTest(properties = {"my-bill.auth.bcrypt-strength=10", "my-bill.auth.rate-limit-pepper=t20-report-pepper", "my-bill.schema.validation-enabled=false"})
 @AutoConfigureMockMvc
+@Import(ReportHttpIntegrationTest.FixedClockConfiguration.class)
 @EnabledIfSystemProperty(named = "mybill.test.jdbc-url", matches = ".+")
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 class ReportHttpIntegrationTest {
@@ -251,6 +259,68 @@ class ReportHttpIntegrationTest {
                 .andExpect(status().isOk()).andExpect(jsonPath("$.items.length()").value(2));
     }
 
+    @Test @Order(11) void renamedExpenseSnapshotsKeepOneStableGroupAndMatchingDrillSet() throws Exception {
+        UUID oldEntry = UUID.randomUUID(), newEntry = UUID.randomUUID();
+        UUID purchase = UUID.randomUUID(), location = UUID.randomUUID(), secondary = UUID.randomUUID();
+        tenantDatabase.execute(TENANT, () -> {
+            dictionary("purchase_channel", purchase, "商店"); dictionary("location_label", location, "家附近");
+            jdbc.sql("INSERT INTO expense_category(tenant_id,id,display_name,normalized_name,parent_id) VALUES(current_setting('app.tenant_id')::uuid,:id,'午餐','午餐',:parent)")
+                    .param("id", secondary).param("parent", CATEGORY).update();
+            expense(oldEntry, "旧商品", "10.00"); expense(newEntry, "新商品", "20.00");
+            for (UUID id : new UUID[]{oldEntry, newEntry}) {
+                boolean newer = id.equals(newEntry);
+                jdbc.sql("""
+                        UPDATE ledger_entry SET business_time=CAST(:time AS timestamptz),business_date='2024-11-01',
+                          primary_category_name_snapshot=:name,unit_name_snapshot=:name,funding_channel_name_snapshot=:name,
+                          secondary_category_id=:secondary,secondary_category_name_snapshot=:name,
+                          purchase_channel_id=:purchase,purchase_channel_name_snapshot=:name,
+                          location_label_id=:location,location_label_name_snapshot=:name WHERE id=:id
+                        """).param("time", newer ? "2024-11-01T12:00:00+08:00" : "2024-11-01T11:00:00+08:00")
+                        .param("name", newer ? "新名称" : "旧名称").param("secondary", secondary)
+                        .param("purchase", purchase).param("location", location).param("id", id).update();
+            }
+            return null;
+        });
+        Cookie cookie = login("t20-user");
+        Map<String, String> range = Map.of("range", "CUSTOM", "startDate", "2024-11-01", "endDate", "2024-11-01");
+        for (String dimension : new String[]{"CATEGORY", "PRODUCT", "PRICE", "FUNDING_CHANNEL", "PURCHASE_CHANNEL", "LOCATION", "FREQUENCY"}) {
+            JsonNode points = expenses(cookie, dimension, range).path("points");
+            assertThat(points).as(dimension).hasSize(1);
+            assertThat(points.get(0).path("itemCount").asInt()).isEqualTo(2);
+            assertThat(points.get(0).path("amount").asText()).isEqualTo(
+                    dimension.equals("PRICE") ? "15.00" : dimension.equals("FREQUENCY") ? "2.00" : "30.00");
+            assertThat(points.get(0).path("label").asText()).contains("新");
+        }
+        JsonNode secondaryReport = expenses(cookie, "CATEGORY", Map.of("range", "CUSTOM", "startDate", "2024-11-01",
+                "endDate", "2024-11-01", "primaryCategoryId", CATEGORY.toString()));
+        assertThat(secondaryReport.path("points")).hasSize(1);
+        assertThat(secondaryReport.path("points").get(0).path("value").asText()).isEqualTo(secondary.toString());
+        mockMvc.perform(get("/api/v1/ledger-entries").cookie(cookie).queryParam("type", "EXPENSE")
+                        .queryParam("range", "CUSTOM").queryParam("startDate", "2024-11-01").queryParam("endDate", "2024-11-01")
+                        .queryParam("productId", PRODUCT.toString()).queryParam("unitId", UNIT.toString()))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.items.length()").value(2));
+    }
+
+    @Test @Order(12) void priceMedianUsesExactOddAndEvenSamplesAtFiftyPercentBoundary() throws Exception {
+        Cookie cookie = login("t20-user");
+        for (boolean even : new boolean[]{false, true}) {
+            String month = even ? "2025-03" : "2024-03";
+            UUID boundary = UUID.randomUUID(), below = UUID.randomUUID(), above = UUID.randomUUID();
+            tenantDatabase.execute(TENANT, () -> {
+                String[] samples = even ? new String[]{"0.20", "0.30", "0.30", "0.40"} : new String[]{"0.30", "0.30", "0.30"};
+                for (int i = 0; i < samples.length; i++) qualityExpense(UUID.randomUUID(), month + "-0" + (i+1) + "T12:00:00+08:00", samples[i]);
+                qualityExpense(boundary, month + "-10T12:00:00+08:00", "0.45");
+                qualityExpense(below, month + "-10T12:00:00+08:00", "0.44");
+                qualityExpense(above, month + "-10T12:00:00+08:00", "0.46");
+                return null;
+            });
+            JsonNode report = expenses(cookie, "QUALITY", Map.of("range", "CUSTOM", "startDate", month + "-10", "endDate", month + "-10"));
+            assertThat(report.path("points")).hasSize(1);
+            assertThat(report.path("points").get(0).path("entryId").asText()).isEqualTo(above.toString());
+            assertThat(report.path("points").get(0).path("detail").asText()).contains("历史中位数 0.30");
+        }
+    }
+
     private JsonNode summary(Cookie cookie, Map<String, String> params) throws Exception {
         var request = get("/api/v1/reports/summary").cookie(cookie);
         params.forEach(request::queryParam);
@@ -429,6 +499,13 @@ class ReportHttpIntegrationTest {
     private void dictionary(String table, UUID id, String name) {
         jdbc.sql("INSERT INTO " + table + "(tenant_id,id,display_name,normalized_name,status) VALUES(current_setting('app.tenant_id')::uuid,:id,:name,:name,'ACTIVE')")
                 .param("id", id).param("name", name).update();
+    }
+
+    // 未结束区间的同比/环比依赖今天，固定业务时钟避免测试随午夜或执行日期漂移。
+    @TestConfiguration static class FixedClockConfiguration {
+        @Bean @Primary Clock fixedReportClock() {
+            return Clock.fixed(Instant.parse("2026-09-27T04:00:00Z"), ZoneOffset.UTC);
+        }
     }
 
     private static UUID uuid(String value) { return UUID.fromString(value); }

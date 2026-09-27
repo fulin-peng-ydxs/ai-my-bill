@@ -8,11 +8,13 @@ const props = withDefaults(defineProps<{
   modelValue: string
   label?: string
   placeholder?: string
+  maxLength?: number
   delay?: number
 }>(), {
   label: '搜索账目',
   placeholder: '搜索名称、分类、付款方或备注',
   delay: 300,
+  maxLength: 200,
 })
 
 const emit = defineEmits<{
@@ -61,6 +63,7 @@ function clear(): void {
       enterkeyhint="search"
       :value="modelValue"
       :placeholder="placeholder"
+      :maxlength="maxLength"
       @input="onInput"
       @keydown.enter="onEnter"
     >

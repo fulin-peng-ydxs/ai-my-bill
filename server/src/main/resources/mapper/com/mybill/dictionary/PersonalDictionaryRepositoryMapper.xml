@@ -71,6 +71,10 @@
   </sql>
 
   <sql id="filters">
+    <if test="p.type == 'EXPENSE_CATEGORY'">
+      <if test="p.parentId != null">AND d.parent_id=#{p.parentId}</if>
+      <if test="p.rootsOnly">AND d.parent_id IS NULL</if>
+    </if>
     AND (#{p.query}='' OR lower(d.display_name) LIKE ('%' || lower(#{p.query}) || '%') ESCAPE '\')
     AND (CAST(#{p.status} AS varchar) IS NULL OR d.status=CAST(#{p.status} AS varchar))
     <if test="p.type == 'PRODUCT'">AND d.status &lt;&gt; 'MERGED'</if>

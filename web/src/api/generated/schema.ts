@@ -918,7 +918,8 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /** 读取当前租户字典项，包括停用的历史引用项 */
+        get: operations["getDictionaryItem"];
         put?: never;
         post?: never;
         delete?: never;
@@ -3546,6 +3547,10 @@ export interface operations {
                 status?: components["schemas"]["DictionaryStatus"];
                 page?: number;
                 size?: number;
+                /** @description 只返回指定一级分类的子项，仅支出分类适用；与 rootsOnly 互斥。 */
+                parentId?: string;
+                /** @description 只返回一级分类，仅支出分类适用，在分页前过滤。 */
+                rootsOnly?: boolean;
             };
             header?: never;
             path: {
@@ -3618,6 +3623,26 @@ export interface operations {
                     "application/json": components["schemas"]["DictionaryPage"];
                 };
             };
+            400: components["responses"]["ValidationError"];
+            401: components["responses"]["AuthenticationError"];
+            403: components["responses"]["AuthorizationError"];
+            404: components["responses"]["NotFoundError"];
+            503: components["responses"]["ServiceUnavailableError"];
+        };
+    };
+    getDictionaryItem: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                type: components["parameters"]["DictionaryType"];
+                itemId: components["parameters"]["DictionaryItemId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: components["responses"]["DictionaryItem"];
             400: components["responses"]["ValidationError"];
             401: components["responses"]["AuthenticationError"];
             403: components["responses"]["AuthorizationError"];

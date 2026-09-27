@@ -479,7 +479,8 @@ textarea:disabled {
   border-radius: var(--radius-control);
 }
 
-.form-field select {
+.form-field select,
+.select-control {
   width: 100%;
   min-height: 48px;
   padding: var(--space-md) var(--space-lg);
@@ -1936,3 +1937,8 @@ body:has(dialog[open]) {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* 报表和明细共用历史筛选与结果交互边界。 */
+.dictionary-filter-picker { min-width: 0; display: grid; gap: var(--space-sm); }
+.dictionary-filter-pagination { display: flex; align-items: center; justify-content: space-between; gap: var(--space-sm); }
+.report-result { min-width: 0; border: 0; padding: 0; margin: 0; }

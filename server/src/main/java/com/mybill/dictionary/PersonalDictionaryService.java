@@ -43,14 +43,28 @@ class PersonalDictionaryService {
 
     DictionaryPage list(CurrentPrincipal principal, DictionaryType type, String query, DictionaryStatus status,
                         int page, int size, boolean candidatesOnly) {
+        return list(principal, type, query, status, page, size, candidatesOnly, null, false);
+    }
+
+    /** 历史筛选允许停用项，分类层级条件在分页前进入 SQL，不能在前端截断后过滤。 */
+    DictionaryPage list(CurrentPrincipal principal, DictionaryType type, String query, DictionaryStatus status,
+                        int page, int size, boolean candidatesOnly, UUID parentId, boolean rootsOnly) {
+        if ((parentId != null || rootsOnly) && !type.hierarchical() || parentId != null && rootsOnly) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "VALIDATION_FAILED", "分类层级筛选不合法。", false);
+        }
         return tenantTransactions.execute(principal, () -> {
             String normalizedQuery = escapeLike(query == null ? "" : query.strip());
             List<DictionaryItem> items = repository.list(type, normalizedQuery, status, size, page * size,
-                            candidatesOnly)
+                            candidatesOnly, parentId, rootsOnly)
                     .stream().map(row -> response(type, row)).toList();
-            long total = repository.count(type, normalizedQuery, status, candidatesOnly);
+            long total = repository.count(type, normalizedQuery, status, candidatesOnly, parentId, rootsOnly);
             return new DictionaryPage(items, total, page, size);
         });
+    }
+
+    DictionaryItem get(CurrentPrincipal principal, DictionaryType type, UUID id) {
+        return tenantTransactions.execute(principal, () -> response(type,
+                repository.find(type, id).orElseThrow(PersonalDictionaryService::itemNotFound)));
     }
 
     DictionaryItem create(CurrentPrincipal principal, DictionaryType type, String requestedName, UUID parentId) {

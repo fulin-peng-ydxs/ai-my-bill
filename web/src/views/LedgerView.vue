@@ -9,7 +9,8 @@ import { getExpense, type ExpenseResponse } from '../api/expenses'
 import { getIncome, type IncomeResponse } from '../api/incomes'
 import type { LedgerDateRange, LedgerFilters, LedgerItem } from '../api/ledgerEntries'
 import { changeLedgerLifecycle, type LedgerLifecycleResponse } from '../api/ledgerLifecycle'
-import { listDictionaryCandidates } from '../api/dictionaries'
+import DictionaryFilterPicker from '../components/DictionaryFilterPicker.vue'
+import { useDictionaryFilterLabels } from '../composables/useDictionaryFilterLabels'
 import AppliedFilterBar from '../components/AppliedFilterBar.vue'
 import AppDialog from '../components/AppDialog.vue'
 import AppDrawer from '../components/AppDrawer.vue'
@@ -44,7 +45,6 @@ const router = useRouter()
 const preferences = usePreferencesStore()
 const session = useSessionStore()
 const list = useIncrementalLedgerQuery()
-const fundingRequest = useLatestRequest<Awaited<ReturnType<typeof listDictionaryCandidates>>>()
 const editRequest = useLatestRequest<ExpenseResponse | IncomeResponse>()
 const adjustmentRequest = useLatestRequest<ExpenseAdjustmentResponse>()
 const searchText = ref('')
@@ -78,11 +78,11 @@ const trashDetailOpen = ref(false)
 const defaultRange = computed<LedgerDateRange>(() => preferences.values.ledgerDefaultRange)
 const parsed = computed(() => parseLedgerRoute(route.query, defaultRange.value))
 const drill = computed(() => parsed.value.drill)
-const fundingItems = computed(() => fundingRequest.data.value?.items ?? [])
+const filterName = useDictionaryFilterLabels(() => ({ fundingChannelId: filters.value.fundingChannelId }))
 const filterSummaries = computed(() => [
   optionLabel(ledgerRangeOptions, filters.value.range),
   ...(filters.value.type === 'ALL' ? [] : [optionLabel(ledgerTypeOptions, filters.value.type)]),
-  ...(filters.value.fundingChannelId ? [fundingItems.value.find((item) => item.id === filters.value.fundingChannelId)?.name ?? '指定资金渠道'] : []),
+  ...(filters.value.fundingChannelId ? [filterName('fundingChannelId') ?? '指定资金渠道'] : []),
 ])
 const currentScrollKey = computed(() => ledgerScrollKey(session.session?.accountId ?? '', route.fullPath))
 const exportRequest = computed(() => ({ scope: 'CURRENT_FILTERS' as const, ...filters.value }))
@@ -108,9 +108,6 @@ watch(filterOpen, (open) => {
   if (!open) return
   draft.value = { ...filters.value }
   rangeError.value = ''
-  void fundingRequest.execute((signal) => listDictionaryCandidates('funding-channel', '', signal), {
-    intent: fundingRequest.data.value ? 'refresh' : 'replace',
-  })
 })
 
 function navigate(next: LedgerFilters): void {
@@ -331,7 +328,7 @@ function returnToReports(context: LedgerDrillContext): void {
 }
 
 onBeforeRouteLeave(() => { rememberLedgerScroll(currentScrollKey.value, globalThis.scrollY) })
-onBeforeUnmount(() => { fundingRequest.cancel(); editRequest.cancel(); adjustmentRequest.cancel() })
+onBeforeUnmount(() => { editRequest.cancel(); adjustmentRequest.cancel() })
 </script>
 
 <template>
@@ -517,34 +514,12 @@ onBeforeUnmount(() => { fundingRequest.cancel(); editRequest.cancel(); adjustmen
           </option>
         </select>
       </FormField>
-      <FormField
-        field-id="ledger-funding"
+      <DictionaryFilterPicker
+        v-if="filterOpen"
+        id="ledger-funding"
+        v-model="draft.fundingChannelId"
+        type="funding-channel"
         label="资金渠道"
-      >
-        <select
-          id="ledger-funding"
-          v-model="draft.fundingChannelId"
-          :disabled="fundingRequest.status.value === 'loading'"
-        >
-          <option :value="undefined">
-            全部渠道
-          </option>
-          <option
-            v-for="item in fundingItems"
-            :key="item.id"
-            :value="item.id"
-          >
-            {{ item.name }}
-          </option>
-        </select>
-      </FormField>
-      <AppStateBlock
-        v-if="fundingRequest.status.value === 'error'"
-        kind="error"
-        title="资金渠道加载失败"
-        :message="fundingRequest.error.value?.message"
-        action-label="重试"
-        @action="fundingRequest.execute((signal) => listDictionaryCandidates('funding-channel', '', signal))"
       />
     </FilterSheet>
 

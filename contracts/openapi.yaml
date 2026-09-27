@@ -1181,6 +1181,14 @@ paths:
         - name: size
           in: query
           schema: { type: integer, minimum: 1, maximum: 100, default: 50 }
+        - name: parentId
+          in: query
+          description: 只返回指定一级分类的子项，仅支出分类适用；与 rootsOnly 互斥。
+          schema: { type: string, format: uuid }
+        - name: rootsOnly
+          in: query
+          description: 只返回一级分类，仅支出分类适用，在分页前过滤。
+          schema: { type: boolean, default: false }
       responses:
         "200":
           description: 字典项分页
@@ -1235,6 +1243,20 @@ paths:
         "404": { $ref: "#/components/responses/NotFoundError" }
         "503": { $ref: "#/components/responses/ServiceUnavailableError" }
   /dictionaries/{type}/{itemId}:
+    get:
+      operationId: getDictionaryItem
+      summary: 读取当前租户字典项，包括停用的历史引用项
+      tags: [personal-dictionaries]
+      parameters:
+        - { $ref: "#/components/parameters/DictionaryType" }
+        - { $ref: "#/components/parameters/DictionaryItemId" }
+      responses:
+        "200": { $ref: "#/components/responses/DictionaryItem" }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "401": { $ref: "#/components/responses/AuthenticationError" }
+        "403": { $ref: "#/components/responses/AuthorizationError" }
+        "404": { $ref: "#/components/responses/NotFoundError" }
+        "503": { $ref: "#/components/responses/ServiceUnavailableError" }
     patch:
       operationId: renameDictionaryItem
       summary: 修改个人字典展示名称并保留历史账目快照
