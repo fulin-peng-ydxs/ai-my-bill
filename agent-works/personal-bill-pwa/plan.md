@@ -11,7 +11,7 @@
 - 关键实现取舍：用户已确认采用单机同源部署；后端采用模块化单体和关系型精确数据模型；金额使用 Java `BigDecimal` 与 PostgreSQL `numeric`；第一期不引入 Redis、消息队列、微服务或地图服务；共享状态通过 PostgreSQL 和应用事务闭环。该选择以更可控的中国大陆访问、服务端 Cookie 会话和单一部署边界换取主机、补丁和备份运维责任。
 - 本次不做：R25-R38、R57、R69 对应的后续或明确排除能力；不重新生成或替换已确认 HTML 原型；不把原型演示数据当成生产 seed。
 - 计划输出目录：`agent-works/personal-bill-pwa/`。
-- 计划启动状态：T1-T28 已完成；下一阶段 T29 仍受生产决策与目标环境阻塞。T3-T28 已通过系统既有 IntelliJ Java 21、nvm Node 和项目隔离 PostgreSQL 16.14 验证；T4-T25 的页面阶段使用 Codex 内置浏览器，T28 使用 Playwright 隔离 Chromium，不依赖 Docker，也未接管用户个人浏览器。原候选 `568062a258e086ae3dd98f130910790f94ff6c2e` 已被审查修复替代，新候选摘要见部署前报告；Compose 镜像、容器 secret、正式图标、独立窗口及当前未连接的 iOS/Android 实机抽样仍属于 T29 目标环境补证项。T22 数据质量规则已由用户确认并以 `expense-quality-v1` 固化；其他未实施能力维持原范围状态。
+- 计划启动状态：T1-T28 已完成；下一阶段 T29 仍受生产决策与目标环境阻塞。T3-T28 已通过系统既有 IntelliJ Java 21、nvm Node 和项目隔离 PostgreSQL 16.14 验证；T4-T25 的页面阶段使用 Codex 内置浏览器，T28 使用 Playwright 隔离 Chromium，不依赖 Docker，也未接管用户个人浏览器。原候选 `568062a258e086ae3dd98f130910790f94ff6c2e` 已被审查修复替代，新候选固定为 `8b12a7737b41465f8e88a8ea81d7a5ada0022b43`，摘要见部署前报告；Compose 镜像、容器 secret、正式图标、独立窗口及当前未连接的 iOS/Android 实机抽样仍属于 T29 目标环境补证项。T22 数据质量规则已由用户确认并以 `expense-quality-v1` 固化；其他未实施能力维持原范围状态。
 
 ## 2. 当前项目依据
 

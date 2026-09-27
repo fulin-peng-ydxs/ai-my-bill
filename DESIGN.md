@@ -533,8 +533,8 @@ T5/T7 代码事实：登录页真实消费 `FormField` 与 `AppDialog`，主题�
 | --- | --- | --- | --- | --- |
 | `login` | 登录与安装 | `auth` | 完成安全登录并理解安装方式 | `ThemeModeControl` / `PwaInstallPrompt` / `AppStateBlock` |
 | `ledger-entry` | 记一笔 | `quick-entry` | 选择日常模板或手动快速保存商品支出、金额收入 | `EntryTypeSwitch` / `DailyEntryPicker` / `ProductCombobox` / `PayerCombobox` / `FundingChannelPicker` / `MoneySummary` |
-| `reports` | 收支报表 | `dashboard` | 分析收支、调整、时间趋势、收支多维与质量线索并下钻 | `GlobalLedgerSearch` / `MoneySummary` / `ChartPanel` / `TimeTrendPanel` / `ReportDimensionPanel` / `FilterSheet` |
-| `bill-details` | 收支明细 | `list` | 查询和纠正支出、收入及调整 | `GlobalLedgerSearch` / `LedgerListItem` / `LedgerContextActions` / `IncrementalLedgerList` / `FilterSheet` / `AppDrawer` |
+| `reports` | 收支报表 | `dashboard` | 分析收支、调整、时间趋势、收支多维与质量线索并下钻 | `GlobalLedgerSearch` / `MoneySummary` / `ChartPanel` / `TimeTrendPanel` / `ReportDimensionPanel` / `DictionaryFilterPicker` / `FilterSheet` |
+| `bill-details` | 收支明细 | `list` | 查询和纠正支出、收入及调整 | `GlobalLedgerSearch` / `LedgerListItem` / `LedgerContextActions` / `IncrementalLedgerList` / `DictionaryFilterPicker` / `FilterSheet` / `AppDrawer` |
 | `profile-settings` | 我的 | `settings` | 从单一“管理个人字典”入口进入八类维护，并管理偏好、安装帮助和个人数据 | `SettingsDisclosureList` / `ThemeModeControl` / `PwaInstallPrompt` / `AppDrawer` / `AppDialog` |
 | `personal-dictionaries` | 个人字典 | `settings` | 查看八类真实启用数与总数并进入对应维护页 | `SettingsDisclosureList` / `AppStateBlock` |
 | `personal-dictionary-detail` | 字典维护 | `settings` | 按类型新增、改名、排序、停用和恢复；分类最多两级 | `GlobalLedgerSearch` / `SegmentedControl` / `AppDrawer` / `AppDialog` / `AppToast` |
