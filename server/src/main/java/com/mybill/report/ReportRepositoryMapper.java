@@ -10,4 +10,6 @@ import java.util.Map;
 @Mapper
 public interface ReportRepositoryMapper {
     List<Map<String, Object>> summary(@Param("p") Map<String, Object> parameters);
+    List<Map<String, Object>> timeBuckets(@Param("p") Map<String, Object> parameters);
+    List<Map<String, Object>> accountCreatedDate(@Param("p") Map<String, Object> parameters);
 }

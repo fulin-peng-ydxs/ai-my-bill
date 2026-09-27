@@ -416,6 +416,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/reports/time": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 按日周月季年聚合收支趋势、累计值与环比同比 */
+        get: operations["getTimeReport"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/ledger-entries": {
         parameters: {
             query?: never;
@@ -1162,7 +1179,7 @@ export interface components {
          * @default ALL
          * @enum {string}
          */
-        LedgerEntryTypeFilter: "ALL" | "EXPENSE" | "INCOME" | "ADJUSTMENT";
+        LedgerEntryTypeFilter: "ALL" | "EXPENSE" | "INCOME" | "ADJUSTMENT" | "EXPENSE_FLOW";
         /**
          * @default ACTIVE
          * @enum {string}
@@ -1180,6 +1197,13 @@ export interface components {
          * @enum {string}
          */
         ReportScope: "ALL" | "EXPENSE" | "INCOME";
+        /**
+         * @default DAY
+         * @enum {string}
+         */
+        ReportTimeGrain: "DAY" | "WEEK" | "MONTH" | "QUARTER" | "YEAR";
+        /** @enum {string} */
+        ReportTimeMetric: "TOTAL_INCOME" | "GROSS_EXPENSE" | "ADJUSTMENT" | "NET_EXPENSE" | "BALANCE";
         /** @description 服务端精确聚合后的人民币十进制字符串；结余可为负数，聚合值不受单笔金额上限约束。 */
         ReportAmount: string;
         ReportDataPoint: {
@@ -1199,6 +1223,55 @@ export interface components {
             /** Format: int64 */
             matchingItemCount: number;
             dataPoints: components["schemas"]["ReportDataPoint"][];
+        };
+        TimeBucket: {
+            /** Format: date */
+            startDate: string;
+            /** Format: date */
+            endDate: string;
+            label: string;
+            totalIncome: components["schemas"]["ReportAmount"];
+            grossExpense: components["schemas"]["ReportAmount"];
+            adjustmentAmount: components["schemas"]["ReportAmount"];
+            netExpense: components["schemas"]["ReportAmount"];
+            balance: components["schemas"]["ReportAmount"];
+            cumulativeIncome: components["schemas"]["ReportAmount"];
+            cumulativeGrossExpense: components["schemas"]["ReportAmount"];
+            cumulativeAdjustmentAmount: components["schemas"]["ReportAmount"];
+            cumulativeNetExpense: components["schemas"]["ReportAmount"];
+            cumulativeBalance: components["schemas"]["ReportAmount"];
+            /** Format: int64 */
+            incomeCount: number;
+            /** Format: int64 */
+            expenseCount: number;
+            /** Format: int64 */
+            adjustmentCount: number;
+            /** Format: int64 */
+            itemCount: number;
+        };
+        PeriodComparison: {
+            /** Format: date */
+            startDate: string;
+            /** Format: date */
+            endDate: string;
+            amount?: components["schemas"]["ReportAmount"];
+            changePercent?: string;
+            unavailableReason?: string;
+        };
+        MetricComparison: {
+            metric: components["schemas"]["ReportTimeMetric"];
+            currentAmount: components["schemas"]["ReportAmount"];
+            periodOverPeriod: components["schemas"]["PeriodComparison"];
+            yearOverYear: components["schemas"]["PeriodComparison"];
+        };
+        TimeReport: {
+            grain: components["schemas"]["ReportTimeGrain"];
+            /** Format: date */
+            startDate: string;
+            /** Format: date */
+            endDate: string;
+            buckets: components["schemas"]["TimeBucket"][];
+            comparisons: components["schemas"]["MetricComparison"][];
         };
         /** @enum {string} */
         ExportScope: "CURRENT_FILTERS" | "ALL_DATA";
@@ -2417,6 +2490,46 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ReportSummary"];
+                };
+            };
+            400: components["responses"]["ValidationError"];
+            401: components["responses"]["AuthenticationError"];
+            403: components["responses"]["AuthorizationError"];
+            503: components["responses"]["ServiceUnavailableError"];
+        };
+    };
+    getTimeReport: {
+        parameters: {
+            query?: {
+                scope?: components["schemas"]["ReportScope"];
+                range?: components["schemas"]["LedgerDateRange"];
+                startDate?: string;
+                endDate?: string;
+                grain?: components["schemas"]["ReportTimeGrain"];
+                query?: string;
+                fundingChannelId?: string;
+                primaryCategoryId?: string;
+                secondaryCategoryId?: string;
+                productId?: string;
+                purchaseChannelId?: string;
+                locationLabelId?: string;
+                incomeCategoryId?: string;
+                payerId?: string;
+                incomeName?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 零值补齐的时间序列以及同长度环比、同日数同比。 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TimeReport"];
                 };
             };
             400: components["responses"]["ValidationError"];

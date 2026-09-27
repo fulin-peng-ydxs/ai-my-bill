@@ -285,13 +285,14 @@ Key Characteristics：
 | `DictionaryItemList` | 字典项、层级、状态和管理入口 | 同时承载桌面与窄屏，分类缩进和状态文字不可只靠颜色表达 |
 | `AppDataTable` | 桌面管理表格 | 表头稳定、表体滚动、分页和操作列稳定；不用于手机核心账单流 |
 | `ChartPanel` | 图表、口径、加载和下钻 | 标题附近显示统计口径；点击后带筛选上下文进入明细 |
+| `TimeTrendPanel` | 单指标时间趋势、累计与对比 | 单图展示当期实线和累计虚线；提供图表点击及键盘时间点下钻，不可计算时原位说明原因 |
 | `AppStateBlock` | loading/empty/error/permission | 四态视觉和文案单一事实源；无权是 error 变体，不是假空态 |
 | `AppDialog` | 确认和短表单 | 删除、停用和少字段编辑；不可承载复杂长流程 |
 | `AppDrawer` | 筛选、字典编辑、账单详情 | 手机从底部出现，桌面从右侧出现；正文内滚、操作区稳定 |
 | `Toast` | 短暂动作反馈和撤销 | 保存、删除成功等；失败若影响区域可用性，还必须保留页内错误态 |
 | `PwaInstallPrompt` | 登录页与“我的”的安装能力引导 | 复用同一检测状态源；只有浏览器提供安装事件时显示真实安装动作，否则显示分平台步骤或已安装状态 |
 
-T5/T7 代码事实：登录页真实消费 `FormField` 与 `AppDialog`，主题控件消费 `SegmentedControl`，“我的”页消费 `SettingsDisclosureList` 与 `AppDrawer`；T7 用户管理页真实消费 `FormField`、`AppStateBlock`、`AppDialog`、`AppDrawer`、`useLatestRequest`，并新增复用型 `AppDataTable` 与 `AppToast`。T8/T9 的个人字典和默认字典页面共享 `DictionaryToolbar`、`DictionaryItemList`、四态和浮层，默认字典在管理端桌面侧栏与窄屏页头均有入口，并明确“只影响后续新增用户”的作用域。T10 的“记一笔”入口真实消费 `EntryTypeSwitch` 和服务端最近类型偏好，“我的”页真实消费资金渠道、明细范围、报表范围与主题偏好；路由、刷新/关闭、退出和账号变化共享单一未保存内容守卫，账目草稿只通过不可逆账号命名空间和类型白名单读写。T11/T12 收支表单复用 `FormField`、`FormSection`、`MoneySummary`、`FundingChannelPicker`、账号隔离草稿、失败重试幂等键跟踪和带撤销动作的 `AppToast`；支出另消费商品与地点组件，收入提供最近名称、付款方快捷新增及收入专属连续录入清空规则，收支切换保持两类草稿隔离；编辑已有有效调整的支出时，金额说明和 `paidAmount` 原位错误必须展示服务端返回的累计调整下限。T13 的 `DailyEntryPicker` 真实复用 `AppDrawer`、`EntryTypeSwitch` 与 `AppStateBlock`，两类表单共享 `DailyTemplateFallbackNotice`；选择只回填白名单、更新本次时间、清空备注并继续走普通保存校验，类型请求与投递均有竞态保护。T14-T17 的明细页真实消费 `GlobalLedgerSearch`、`AppliedFilterBar`、`FilterSheet`、`SegmentedControl`、`AppStateBlock`、`LedgerContextActions`、`AppToast` 与共享请求代次/幂等能力，并落地 `LedgerListItem`、`IncrementalLedgerList`；有效/回收站使用同一状态切换、日期分组和上下文面板，回收站行显示剩余天数及关联清理影响，删除成功由 Toast 提供即时恢复，永久清理使用 `AppDialog` 二次确认。T18 的 P4 页头与 P5 数据设置真实复用 `DataExportAction`、统一导出 API/轮询/取消/下载状态和既有 `AppToast`；图标态保持 44×44px，设置态保持整行披露结构。T20 的报表页真实复用共享搜索、筛选、分段选择、金额摘要和四态，并新增唯一的 `ChartPanel` 封装 ECharts SVG、尺寸观察、主题 token、减少动态和键盘下钻；筛选草稿在应用前不影响展示，scope 切换清理不兼容条件，下钻与返回恢复同一 URL 上下文。
+T5/T7 代码事实：登录页真实消费 `FormField` 与 `AppDialog`，主题控件消费 `SegmentedControl`，“我的”页消费 `SettingsDisclosureList` 与 `AppDrawer`；T7 用户管理页真实消费 `FormField`、`AppStateBlock`、`AppDialog`、`AppDrawer`、`useLatestRequest`，并新增复用型 `AppDataTable` 与 `AppToast`。T8/T9 的个人字典和默认字典页面共享 `DictionaryToolbar`、`DictionaryItemList`、四态和浮层，默认字典在管理端桌面侧栏与窄屏页头均有入口，并明确“只影响后续新增用户”的作用域。T10 的“记一笔”入口真实消费 `EntryTypeSwitch` 和服务端最近类型偏好，“我的”页真实消费资金渠道、明细范围、报表范围与主题偏好；路由、刷新/关闭、退出和账号变化共享单一未保存内容守卫，账目草稿只通过不可逆账号命名空间和类型白名单读写。T11/T12 收支表单复用 `FormField`、`FormSection`、`MoneySummary`、`FundingChannelPicker`、账号隔离草稿、失败重试幂等键跟踪和带撤销动作的 `AppToast`；支出另消费商品与地点组件，收入提供最近名称、付款方快捷新增及收入专属连续录入清空规则，收支切换保持两类草稿隔离；编辑已有有效调整的支出时，金额说明和 `paidAmount` 原位错误必须展示服务端返回的累计调整下限。T13 的 `DailyEntryPicker` 真实复用 `AppDrawer`、`EntryTypeSwitch` 与 `AppStateBlock`，两类表单共享 `DailyTemplateFallbackNotice`；选择只回填白名单、更新本次时间、清空备注并继续走普通保存校验，类型请求与投递均有竞态保护。T14-T17 的明细页真实消费 `GlobalLedgerSearch`、`AppliedFilterBar`、`FilterSheet`、`SegmentedControl`、`AppStateBlock`、`LedgerContextActions`、`AppToast` 与共享请求代次/幂等能力，并落地 `LedgerListItem`、`IncrementalLedgerList`；有效/回收站使用同一状态切换、日期分组和上下文面板，回收站行显示剩余天数及关联清理影响，删除成功由 Toast 提供即时恢复，永久清理使用 `AppDialog` 二次确认。T18 的 P4 页头与 P5 数据设置真实复用 `DataExportAction`、统一导出 API/轮询/取消/下载状态和既有 `AppToast`；图标态保持 44×44px，设置态保持整行披露结构。T20 的报表页真实复用共享搜索、筛选、分段选择、金额摘要和四态，并新增 `ChartPanel`；T21 新增 `TimeTrendPanel`，两类图表共享 `useReportChart` 的 ECharts SVG、尺寸观察、主题 token 与减少动态，均提供键盘下钻。筛选草稿在应用前不影响展示，scope 切换清理不兼容条件，下钻与返回恢复同一 URL 上下文。
 
 ### 4.3 按钮与输入
 
@@ -353,7 +354,7 @@ T5/T7 代码事实：登录页真实消费 `FormField` 与 `AppDialog`，主题�
 - 小屏优先使用趋势线、水平排行、简化环图和摘要列表；避免在 360px 内并排多个图。
 - tooltip 使用当前主题表面和高对比文字，金额与日期格式统一。
 - 图表实例只在容器具有非零宽高后创建；容器尺寸变化由统一观察器触发 resize，隐藏区域重新显示后必须复核尺寸。
-- Canvas 不会自动继承主题变化；`ChartPanel` 必须在渲染时读取语义 token，并在主题版本变化后重建或更新图表，不维护独立明暗 fallback 色板。
+- Canvas/SVG 图表不会自动继承主题变化；`ChartPanel` 与 `TimeTrendPanel` 必须复用 `useReportChart`，渲染时读取语义 token，并在主题版本变化后更新图表，不维护独立明暗 fallback 色板。
 - 动画时长 160-240ms；减少动态模式下关闭非必要插值与位移动画。
 
 ## 5. Layout Principles
@@ -530,7 +531,7 @@ T5/T7 代码事实：登录页真实消费 `FormField` 与 `AppDialog`，主题�
 | --- | --- | --- | --- | --- |
 | `login` | 登录与安装 | `auth` | 完成安全登录并理解安装方式 | `ThemeModeControl` / `PwaInstallPrompt` / `AppStateBlock` |
 | `ledger-entry` | 记一笔 | `quick-entry` | 选择日常模板或手动快速保存商品支出、金额收入 | `EntryTypeSwitch` / `DailyEntryPicker` / `ProductCombobox` / `PayerCombobox` / `FundingChannelPicker` / `MoneySummary` |
-| `reports` | 收支报表 | `dashboard` | 分析收支、调整和结余并下钻 | `GlobalLedgerSearch` / `MoneySummary` / `ChartPanel` / `FilterSheet` |
+| `reports` | 收支报表 | `dashboard` | 分析收支、调整、结余和时间趋势并下钻 | `GlobalLedgerSearch` / `MoneySummary` / `ChartPanel` / `TimeTrendPanel` / `FilterSheet` |
 | `bill-details` | 收支明细 | `list` | 查询和纠正支出、收入及调整 | `GlobalLedgerSearch` / `LedgerListItem` / `LedgerContextActions` / `IncrementalLedgerList` / `FilterSheet` / `AppDrawer` |
 | `profile-settings` | 我的 | `settings` | 从单一“管理个人字典”入口进入八类维护，并管理偏好、安装帮助和个人数据 | `SettingsDisclosureList` / `ThemeModeControl` / `PwaInstallPrompt` / `AppDrawer` / `AppDialog` |
 | `personal-dictionaries` | 个人字典 | `settings` | 查看八类真实启用数与总数并进入对应维护页 | `SettingsDisclosureList` / `AppStateBlock` |
@@ -542,7 +543,7 @@ T5/T7 代码事实：登录页真实消费 `FormField` 与 `AppDialog`，主题�
 ## 10. Known Gaps
 
 - 前端工程已锁定 Vue 3 + Vite + TypeScript + Pinia + Vue Router，图表采用 ECharts，SVG 图标采用 Lucide Vue Next；不引入覆盖本设计契约的整套通用 UI 框架，优先实现本文定义的项目语义组件，不得据技术选型改变已确认视觉与交互契约。
-- 正式工程当前已实现登录页、主题/PWA 共享状态、普通用户四项导航、管理员外壳、T5 共享基础、T7 已开放的管理员账号管理、T8 个人字典治理、T9 商品合并和五类默认字典管理、T10 服务端偏好/类型切换/账号隔离草稿/统一未保存内容守卫、T11/T12 收支填报与连续录入、T13 日常模板选择/回填/失效提示/移除、T14-T17 统一明细查询、账目编辑、退款/报销及有效/回收站完整生命周期、T18 当前筛选/完整数据导出、T19 本人/管理员注销，以及 T20 报表统一筛选、精确摘要、基础图表和可恢复下钻。普通用户访问管理地址时在原地址显示 permission 状态且不挂载管理页面。个人字典在“我的”只保留一个入口，索引展示八类真实数量；商品合并通过目标搜索、影响预览和危险确认完成。默认字典从管理导航独立进入并明确修改只作用于后续新增用户。收支页在手机视口使用分组表单和底部固定双保存动作，候选、失败、校验、金额摘要、模板抽屉与撤销均在原上下文反馈；明细页在手机和桌面使用相同的信息顺序、日期分组和上下文动作，短按查看/编辑，低频操作由左滑、长按、右键或 `Shift+F10` 打开统一面板；回收站只出现恢复和永久清理动作，行级反馈、剩余天数、即时撤销及关联调整影响均在原上下文表达。报表页在手机和桌面保持搜索、已应用条件、摘要、维度和图表的阅读顺序，图表按主题 token 渲染并提供键盘下钻；T21-T23 才扩展时间和收支多维分析。调整创建抽屉锁定来源并复用既有表单、金额、弹层和保存组件，撤销经危险确认后保留已撤销轨迹。P4 页头导出保持 44×44px 图标并原位切换取消，P5“数据与安全”以设置行承载完整导出，两处共用状态组件且完成后直接下载。P5 注销与 P6 用户注销复用既有弹层/操作抽屉，危险确认必须完整呈现即时删除、180 天匿名审计和备份恢复重放边界；P5 成功后清理当前账号命名空间并返回登录页，失败不清本地数据。P6-F1 在桌面使用稳定数据表格，在 `≤833px` 使用带状态色轨的账号摘要卡和底部操作抽屉。移动端 Toast 位于底部导航上方且不使用装饰阴影。运行概况和审计日志查询仍未实现。
+- 正式工程当前已实现登录页、主题/PWA 共享状态、普通用户四项导航、管理员外壳、T5 共享基础、T7 已开放的管理员账号管理、T8 个人字典治理、T9 商品合并和五类默认字典管理、T10 服务端偏好/类型切换/账号隔离草稿/统一未保存内容守卫、T11/T12 收支填报与连续录入、T13 日常模板选择/回填/失效提示/移除、T14-T17 统一明细查询、账目编辑、退款/报销及有效/回收站完整生命周期、T18 当前筛选/完整数据导出、T19 本人/管理员注销、T20 报表统一筛选、精确摘要、基础图表和可恢复下钻，以及 T21 日/周/月/季/年时间趋势、累计、环比同比和指标一致下钻。普通用户访问管理地址时在原地址显示 permission 状态且不挂载管理页面。个人字典在“我的”只保留一个入口，索引展示八类真实数量；商品合并通过目标搜索、影响预览和危险确认完成。默认字典从管理导航独立进入并明确修改只作用于后续新增用户。收支页在手机视口使用分组表单和底部固定双保存动作，候选、失败、校验、金额摘要、模板抽屉与撤销均在原上下文反馈；明细页在手机和桌面使用相同的信息顺序、日期分组和上下文动作，短按查看/编辑，低频操作由左滑、长按、右键或 `Shift+F10` 打开统一面板；回收站只出现恢复和永久清理动作，行级反馈、剩余天数、即时撤销及关联调整影响均在原上下文表达。报表页在手机和桌面保持搜索、已应用条件、摘要、维度和图表的阅读顺序，图表按主题 token 渲染并提供键盘下钻；T22-T23 继续扩展支出和收入多维分析。调整创建抽屉锁定来源并复用既有表单、金额、弹层和保存组件，撤销经危险确认后保留已撤销轨迹。P4 页头导出保持 44×44px 图标并原位切换取消，P5“数据与安全”以设置行承载完整导出，两处共用状态组件且完成后直接下载。P5 注销与 P6 用户注销复用既有弹层/操作抽屉，危险确认必须完整呈现即时删除、180 天匿名审计和备份恢复重放边界；P5 成功后清理当前账号命名空间并返回登录页，失败不清本地数据。P6-F1 在桌面使用稳定数据表格，在 `≤833px` 使用带状态色轨的账号摘要卡和底部操作抽屉。移动端 Toast 位于底部导航上方且不使用装饰阴影。运行概况和审计日志查询仍未实现。
 - 尚无正式品牌名称、图标和启动图；第一期原型使用“我的账单”文字标识，不把临时图形固化为品牌资产。
 - 正式工程已接入 Manifest、Service Worker、真实浏览器安装事件、拒绝/不支持/已安装状态和分平台手动引导；正式图标、启动图、目标移动浏览器系统安装框、独立窗口与状态栏表现仍需在 T29 目标环境复验。
 - 管理后台是否需要独立桌面域名或路径属于技术与部署决策，不影响当前设计系统。

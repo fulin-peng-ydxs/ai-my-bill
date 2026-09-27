@@ -4,7 +4,8 @@ import { useRoute, useRouter } from 'vue-router'
 
 import { listDictionaryCandidates, type DictionaryItem } from '../api/dictionaries'
 import type { LedgerDateRange, LedgerFilters } from '../api/ledgerEntries'
-import { getReportSummary, type ReportFilters, type ReportScope, type ReportSummary } from '../api/reports'
+import { getReportSummary, getTimeReport, type ReportFilters, type ReportScope, type ReportSummary,
+  type ReportTimeGrain, type ReportTimeMetric, type TimeReport } from '../api/reports'
 import AppliedFilterBar from '../components/AppliedFilterBar.vue'
 import AppStateBlock from '../components/AppStateBlock.vue'
 import ChartPanel from '../components/ChartPanel.vue'
@@ -13,10 +14,12 @@ import FormField from '../components/FormField.vue'
 import GlobalLedgerSearch from '../components/GlobalLedgerSearch.vue'
 import MoneySummary, { type MoneySummaryItem } from '../components/MoneySummary.vue'
 import SegmentedControl from '../components/SegmentedControl.vue'
+import TimeTrendPanel from '../components/TimeTrendPanel.vue'
 import { useLatestRequest } from '../composables/useLatestRequest'
 import { ledgerRangeOptions, ledgerRouteQuery, optionLabel, type LedgerDrillContext } from '../domain/ledgerQuery'
 import {
-  clearIncompatibleReportFilters, clearedReportFilters, parseReportRoute, reportRouteQuery, reportScopeOptions,
+  clearIncompatibleReportFilters, clearedReportFilters, parseReportPresentation, parseReportRoute,
+  reportPresentationQuery, reportRouteQuery, reportScopeOptions, type ReportDimension,
 } from '../domain/reportQuery'
 import { usePreferencesStore } from '../stores/preferences'
 
@@ -27,6 +30,7 @@ const route = useRoute()
 const router = useRouter()
 const preferences = usePreferencesStore()
 const request = useLatestRequest<ReportSummary>()
+const timeRequest = useLatestRequest<TimeReport>()
 const optionsRequest = useLatestRequest<{ items: OptionMap, failures: string[] }>()
 const searchText = ref('')
 const filters = ref<ReportFilters>({ query: '', scope: 'ALL', range: 'THIS_MONTH' })
@@ -43,6 +47,7 @@ const FILTER_ID_KEYS = [
 
 const defaultRange = computed<LedgerDateRange>(() => preferences.values.reportDefaultRange)
 const parsed = computed(() => parseReportRoute(route.query, defaultRange.value))
+const presentation = computed(() => parseReportPresentation(route.query, parsed.value))
 const rootCategories = computed(() => optionItems.categories.filter((item) => !item.parentId))
 const secondaryCategories = computed(() => optionItems.categories.filter((item) => item.parentId === draft.value.primaryCategoryId))
 
@@ -85,9 +90,14 @@ const summaryItems = computed<MoneySummaryItem[]>(() => {
 
 async function load(): Promise<void> {
   const snapshot = { ...filters.value }
-  await request.execute((signal) => getReportSummary(snapshot, signal), {
-    intent: request.data.value ? 'refresh' : 'replace', isEmpty: (data) => data.matchingItemCount === 0,
-  })
+  const view = presentation.value
+  await Promise.all([
+    request.execute((signal) => getReportSummary(snapshot, signal), {
+      intent: request.data.value ? 'refresh' : 'replace', isEmpty: (data) => data.matchingItemCount === 0,
+    }),
+    ...(view.dimension === 'TIME' ? [timeRequest.execute((signal) => getTimeReport(snapshot, view.grain, signal),
+      { intent: 'replace' })] : []),
+  ])
   const scroll = Number.parseInt(typeof route.query.scroll === 'string' ? route.query.scroll : '', 10)
   if (Number.isSafeInteger(scroll) && scroll >= 0) await nextTick(() => globalThis.scrollTo({ top: scroll }))
 }
@@ -132,7 +142,12 @@ watch(filterOpen, (open) => {
   void loadOptions()
 })
 
-function navigate(next: ReportFilters): void { void router.replace({ query: reportRouteQuery(next) }) }
+function navigate(next: ReportFilters): void {
+  void router.replace({ query: reportPresentationQuery(next, parseReportPresentation(route.query, next)) })
+}
+function updatePresentation(change: Partial<{ dimension: ReportDimension, grain: ReportTimeGrain, metric: ReportTimeMetric }>): void {
+  void router.replace({ query: reportPresentationQuery(filters.value, { ...presentation.value, ...change }) })
+}
 function updateSearch(value: string): void { navigate({ ...filters.value, query: value }) }
 function updateScope(value: string): void { navigate(clearIncompatibleReportFilters(filters.value, value as ReportScope)) }
 function clearFilters(): void { navigate(clearedReportFilters(defaultRange.value, filters.value.scope)) }
@@ -163,6 +178,20 @@ function drill(point: ReportSummary['dataPoints'][number]): void {
     scope: filters.value.scope, dimension: 'OVERVIEW', value: point.value,
     reportQuery: { ...reportRouteQuery(filters.value), dimension: 'OVERVIEW' }, reportScroll: Math.round(globalThis.scrollY),
   }
+  void router.push({ path: '/ledger', query: ledgerRouteQuery(ledgerFilters, context) })
+}
+
+function drillTime(bucket: TimeReport['buckets'][number]): void {
+  const type = presentation.value.metric === 'TOTAL_INCOME' ? 'INCOME'
+    : presentation.value.metric === 'BALANCE' ? 'ALL'
+      : presentation.value.metric === 'ADJUSTMENT' ? 'ADJUSTMENT'
+        : presentation.value.metric === 'NET_EXPENSE' ? 'EXPENSE_FLOW' : 'EXPENSE'
+  const ledgerFilters: LedgerFilters = { ...filters.value, type, lifecycle: 'ACTIVE', range: 'CUSTOM',
+    startDate: bucket.startDate, endDate: bucket.endDate }
+  delete (ledgerFilters as Partial<ReportFilters>).scope
+  const context: LedgerDrillContext = { scope: filters.value.scope, dimension: 'TIME',
+    value: `${bucket.startDate}/${bucket.endDate}`, reportQuery: reportPresentationQuery(filters.value, presentation.value),
+    reportScroll: Math.round(globalThis.scrollY) }
   void router.push({ path: '/ledger', query: ledgerRouteQuery(ledgerFilters, context) })
 }
 </script>
@@ -232,20 +261,105 @@ function drill(point: ReportSummary['dataPoints'][number]): void {
           <label for="report-dimension">分析维度</label>
           <select
             id="report-dimension"
-            value="OVERVIEW"
-            disabled
+            :value="presentation.dimension"
+            @change="updatePresentation({ dimension: ($event.target as HTMLSelectElement).value as ReportDimension })"
           >
             <option value="OVERVIEW">
               口径总览
             </option>
+            <option value="TIME">
+              时间趋势
+            </option>
           </select>
         </div>
-        <p>T20 建立统一筛选与下钻基础；后续阶段在此扩展时间、分类等维度。</p>
+        <div v-if="presentation.dimension === 'TIME'">
+          <label for="report-grain">时间粒度</label>
+          <select
+            id="report-grain"
+            :value="presentation.grain"
+            @change="updatePresentation({ grain: ($event.target as HTMLSelectElement).value as ReportTimeGrain })"
+          >
+            <option value="DAY">
+              日
+            </option><option value="WEEK">
+              周
+            </option><option value="MONTH">
+              月
+            </option>
+            <option value="QUARTER">
+              季
+            </option><option value="YEAR">
+              年
+            </option>
+          </select>
+        </div>
+        <div v-if="presentation.dimension === 'TIME'">
+          <label for="report-metric">趋势指标</label>
+          <select
+            id="report-metric"
+            :value="presentation.metric"
+            @change="updatePresentation({ metric: ($event.target as HTMLSelectElement).value as ReportTimeMetric })"
+          >
+            <option
+              v-if="filters.scope !== 'EXPENSE'"
+              value="TOTAL_INCOME"
+            >
+              总收入
+            </option>
+            <option
+              v-if="filters.scope !== 'INCOME'"
+              value="GROSS_EXPENSE"
+            >
+              原始支出
+            </option>
+            <option
+              v-if="filters.scope !== 'INCOME'"
+              value="ADJUSTMENT"
+            >
+              退款/报销冲减
+            </option>
+            <option
+              v-if="filters.scope !== 'INCOME'"
+              value="NET_EXPENSE"
+            >
+              净支出
+            </option>
+            <option
+              v-if="filters.scope === 'ALL'"
+              value="BALANCE"
+            >
+              结余
+            </option>
+          </select>
+        </div>
+        <p v-if="presentation.dimension === 'OVERVIEW'">
+          统一口径概览，可点击指标下钻。
+        </p>
       </section>
       <ChartPanel
+        v-if="presentation.dimension === 'OVERVIEW'"
         title="口径总览"
         :points="request.data.value.dataPoints"
         @select="drill"
+      />
+      <AppStateBlock
+        v-else-if="timeRequest.status.value === 'loading'"
+        kind="loading"
+        title="正在计算时间趋势"
+      />
+      <AppStateBlock
+        v-else-if="timeRequest.status.value === 'error'"
+        kind="error"
+        title="时间趋势加载失败"
+        :message="timeRequest.error.value?.message"
+        action-label="重试"
+        @action="load"
+      />
+      <TimeTrendPanel
+        v-else-if="timeRequest.data.value"
+        :report="timeRequest.data.value"
+        :metric="presentation.metric"
+        @select="drillTime"
       />
     </template>
     <AppStateBlock

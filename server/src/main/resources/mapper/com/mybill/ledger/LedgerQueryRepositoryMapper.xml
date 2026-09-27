@@ -11,6 +11,7 @@
   <sql id="commonFilters">
     AND business_date BETWEEN #{p.startDate} AND #{p.endDate}
     <if test="p.entryType != null">AND entry_type=#{p.entryType}</if>
+    <if test="p.expenseFlow">AND entry_type IN ('EXPENSE','ADJUSTMENT')</if>
     <if test="p.fundingId != null">AND funding_channel_id=#{p.fundingId}</if>
     <if test="p.primaryCategoryId != null">AND primary_category_id=#{p.primaryCategoryId}</if>
     <if test="p.secondaryCategoryId != null">AND secondary_category_id=#{p.secondaryCategoryId}</if>

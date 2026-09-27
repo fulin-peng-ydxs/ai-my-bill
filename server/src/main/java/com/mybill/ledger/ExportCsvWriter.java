@@ -46,7 +46,9 @@ class ExportCsvWriter {
             operations.cursor(mapper::stream).param("filtered", snapshot.scope() == ExportContracts.ExportScope.CURRENT_FILTERS)
                     .param("startDate", snapshot.startDate()).param("endDate", snapshot.endDate())
                     .param("active", snapshot.lifecycle() == LedgerQueryContracts.LifecycleFilter.ACTIVE)
-                    .param("entryType", snapshot.type() == LedgerQueryContracts.EntryTypeFilter.ALL ? null : snapshot.type().name())
+                    .param("entryType", snapshot.type() == LedgerQueryContracts.EntryTypeFilter.ALL
+                            || snapshot.type() == LedgerQueryContracts.EntryTypeFilter.EXPENSE_FLOW ? null : snapshot.type().name())
+                    .param("expenseFlow", snapshot.type() == LedgerQueryContracts.EntryTypeFilter.EXPENSE_FLOW)
                     .param("fundingId", snapshot.fundingChannelId())
                     .param("keyword", snapshot.query().isEmpty() ? null : "%" + escapeLike(snapshot.query()) + "%")
                     .forEach(row -> {

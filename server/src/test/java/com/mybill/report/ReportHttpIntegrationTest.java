@@ -38,6 +38,7 @@ class ReportHttpIntegrationTest {
     private static final UUID ADMIN = uuid("20200000-0000-4000-8000-000000000002");
     private static final UUID EXPENSE = uuid("20300000-0000-4000-8000-000000000001");
     private static final UUID PRODUCT = uuid("20400000-0000-4000-8000-000000000001");
+    private static final UUID HISTORY_PRODUCT = uuid("20400000-0000-4000-8000-000000000007");
     private static final UUID CATEGORY = uuid("20400000-0000-4000-8000-000000000002");
     private static final UUID UNIT = uuid("20400000-0000-4000-8000-000000000003");
     private static final UUID FUNDING = uuid("20400000-0000-4000-8000-000000000004");
@@ -61,8 +62,10 @@ class ReportHttpIntegrationTest {
     @Test @Order(1) void prepare() {
         jdbc.sql("INSERT INTO tenant(id) VALUES(:tenant),(:other)").param("tenant", TENANT).param("other", OTHER).update();
         user(USER, "t20-user", "USER", TENANT);
+        jdbc.sql("UPDATE app_user SET created_at='2024-01-01T00:00:00Z' WHERE id=:id").param("id", USER).update();
         user(ADMIN, "t20-admin", "ADMIN", null);
-        tenantDatabase.execute(TENANT, () -> { dictionaries(); expense(EXPENSE, "团队午餐", "100.00"); income(); adjustment(); trashedIncome(); return null; });
+        tenantDatabase.execute(TENANT, () -> { dictionaries(); expense(EXPENSE, "团队午餐", "100.00"); income(); adjustment(); excludedAdjustments();
+            comparisonHistory(); trashedIncome(); return null; });
         tenantDatabase.execute(OTHER, () -> { foreignIncome(); return null; });
     }
 
@@ -109,9 +112,53 @@ class ReportHttpIntegrationTest {
         assertThat(result.path("matchingItemCount").asLong()).isZero();
         mockMvc.perform(get("/api/v1/reports/summary")).andExpect(status().isUnauthorized());
         mockMvc.perform(get("/api/v1/reports/summary").cookie(login("t20-admin"))).andExpect(status().isForbidden());
+        mockMvc.perform(get("/api/v1/reports/time")).andExpect(status().isUnauthorized());
+        mockMvc.perform(get("/api/v1/reports/time").cookie(login("t20-admin"))).andExpect(status().isForbidden());
     }
 
-    @Test @Order(6) void reportDateAccessCanUseExistingIndexes() {
+    @Test @Order(6) void returnsZeroFilledTimeBucketsCumulativeValuesAndComparisons() throws Exception {
+        Cookie cookie = login("t20-user");
+        JsonNode result = time(cookie, Map.of("range", "CUSTOM", "startDate", "2026-09-01", "endDate", "2026-09-15", "grain", "DAY"));
+        assertThat(result.path("buckets")).hasSize(15);
+        assertThat(result.path("buckets").get(0).path("balance").asText()).isEqualTo("0.00");
+        assertThat(result.path("buckets").get(6).path("balance").asText()).isEqualTo("150.00");
+        assertThat(result.path("buckets").get(6).path("incomeCount").asLong()).isEqualTo(1);
+        assertThat(result.path("buckets").get(6).path("expenseCount").asLong()).isEqualTo(1);
+        assertThat(result.path("buckets").get(7).path("balance").asText()).isEqualTo("30.00");
+        assertThat(result.path("buckets").get(7).path("adjustmentCount").asLong()).isEqualTo(1);
+        assertThat(result.path("buckets").get(14).path("cumulativeBalance").asText()).isEqualTo("180.00");
+        JsonNode balance = result.path("comparisons").findValuesAsText("metric").indexOf("BALANCE") >= 0
+                ? result.path("comparisons").get(4) : null;
+        assertThat(balance).isNotNull();
+        assertThat(balance.path("periodOverPeriod").path("amount").asText()).isEqualTo("30.00");
+        assertThat(balance.path("periodOverPeriod").path("changePercent").asText()).isEqualTo("500.00");
+        assertThat(balance.path("yearOverYear").path("amount").asText()).isEqualTo("130.00");
+        assertThat(balance.path("yearOverYear").path("changePercent").asText()).isEqualTo("38.46");
+        for (String grain : new String[]{"WEEK", "MONTH", "QUARTER", "YEAR"}) {
+            assertThat(time(cookie, Map.of("range", "CUSTOM", "startDate", "2026-09-01", "endDate", "2026-09-15", "grain", grain)).path("buckets").isEmpty()).isFalse();
+        }
+        mockMvc.perform(get("/api/v1/ledger-entries").cookie(cookie).queryParam("type", "EXPENSE_FLOW")
+                .queryParam("range", "CUSTOM").queryParam("startDate", "2026-09-01").queryParam("endDate", "2026-09-15"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.items.length()").value(2));
+    }
+
+    @Test @Order(7) void explainsUnavailableComparisonAndRejectsUnboundedGranularity() throws Exception {
+        Cookie cookie = login("t20-user");
+        JsonNode incomplete = time(cookie, Map.of("range", "CUSTOM", "startDate", "2026-09-01", "endDate", "2026-10-15", "grain", "WEEK"));
+        assertThat(incomplete.path("comparisons").get(4).path("periodOverPeriod").path("startDate").asText()).isEqualTo("2026-08-05");
+        assertThat(incomplete.path("comparisons").get(4).path("periodOverPeriod").path("endDate").asText()).isEqualTo("2026-08-31");
+        assertThat(incomplete.path("comparisons").get(4).path("yearOverYear").path("endDate").asText()).isEqualTo("2025-09-27");
+        tenantDatabase.execute(TENANT, () -> { jdbc.sql("UPDATE app_user SET created_at='2026-08-20T00:00:00Z' WHERE id=:id").param("id", USER).update(); return null; });
+        JsonNode result = time(cookie, Map.of("range", "CUSTOM", "startDate", "2026-09-01", "endDate", "2026-09-15", "grain", "DAY"));
+        assertThat(result.path("comparisons").get(4).path("periodOverPeriod").path("unavailableReason").asText())
+                .contains("账号在对比区间开始后创建");
+        tenantDatabase.execute(TENANT, () -> { jdbc.sql("UPDATE app_user SET created_at='2024-01-01T00:00:00Z' WHERE id=:id").param("id", USER).update(); return null; });
+        mockMvc.perform(get("/api/v1/reports/time").cookie(cookie).queryParam("range", "CUSTOM")
+                .queryParam("startDate", "2024-01-01").queryParam("endDate", "2026-09-15").queryParam("grain", "DAY"))
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.fieldErrors.grain[0]").exists());
+    }
+
+    @Test @Order(8) void reportDateAccessCanUseExistingIndexes() {
         String plan = tenantDatabase.execute(TENANT, () -> {
             jdbc.sql("SET LOCAL enable_seqscan=off").update();
             return String.join("\n", jdbc.sql("EXPLAIN SELECT paid_amount FROM ledger_entry WHERE tenant_id=current_setting('app.tenant_id')::uuid AND lifecycle_status='ACTIVE' AND business_date BETWEEN DATE '2026-09-01' AND DATE '2026-09-30'").query(String.class).list());
@@ -121,6 +168,12 @@ class ReportHttpIntegrationTest {
 
     private JsonNode summary(Cookie cookie, Map<String, String> params) throws Exception {
         var request = get("/api/v1/reports/summary").cookie(cookie);
+        params.forEach(request::queryParam);
+        return objectMapper.readTree(mockMvc.perform(request).andExpect(status().isOk()).andReturn().getResponse().getContentAsByteArray());
+    }
+
+    private JsonNode time(Cookie cookie, Map<String, String> params) throws Exception {
+        var request = get("/api/v1/reports/time").cookie(cookie);
         params.forEach(request::queryParam);
         return objectMapper.readTree(mockMvc.perform(request).andExpect(status().isOk()).andReturn().getResponse().getContentAsByteArray());
     }
@@ -142,6 +195,7 @@ class ReportHttpIntegrationTest {
         dictionary("funding_channel", FUNDING, "银行卡"); dictionary("payer", PAYER, "客户甲");
         dictionary("income_category", INCOME_CATEGORY, "奖金");
         jdbc.sql("INSERT INTO product(tenant_id,id,display_name,normalized_name,status) VALUES(current_setting('app.tenant_id')::uuid,:id,'团队午餐','团队午餐','ACTIVE')").param("id", PRODUCT).update();
+        jdbc.sql("INSERT INTO product(tenant_id,id,display_name,normalized_name,status) VALUES(current_setting('app.tenant_id')::uuid,:id,'历史支出','历史支出','ACTIVE')").param("id", HISTORY_PRODUCT).update();
     }
 
     private void expense(UUID id, String name, String amount) {
@@ -170,6 +224,46 @@ class ReportHttpIntegrationTest {
                 VALUES(current_setting('app.tenant_id')::uuid,'20300000-0000-4000-8000-000000000003',:expense,'REFUND',30.00,
                   '2026-09-08T12:00:00+08:00','2026-09-08','部分退款')
                 """).param("expense", EXPENSE).update();
+    }
+
+    private void excludedAdjustments() {
+        jdbc.sql("""
+                INSERT INTO expense_adjustment(tenant_id,id,original_expense_id,adjustment_type,amount,business_time,business_date,status,note)
+                VALUES(current_setting('app.tenant_id')::uuid,'20300000-0000-4000-8000-000000000005',:expense,'REFUND',5.00,
+                  '2026-09-09T12:00:00+08:00','2026-09-09','REVOKED','已撤销'),
+                  (current_setting('app.tenant_id')::uuid,'20300000-0000-4000-8000-000000000006',:expense,'REIMBURSEMENT',5.00,
+                  '2026-09-10T12:00:00+08:00','2026-09-10','SOURCE_FROZEN','已冻结')
+                """).param("expense", EXPENSE).update();
+    }
+
+    private void comparisonHistory() {
+        comparisonEntries("20300000-0000-4000-8000-000000000010", "2026-08-20", "100.00", "80.00", "10.00");
+        comparisonEntries("20300000-0000-4000-8000-000000000020", "2025-09-07", "200.00", "90.00", "20.00");
+    }
+
+    private void comparisonEntries(String idPrefix, String date, String income, String expense, String adjustment) {
+        UUID incomeId = UUID.fromString(idPrefix), expenseId = new UUID(incomeId.getMostSignificantBits(), incomeId.getLeastSignificantBits() + 1);
+        UUID adjustmentId = new UUID(incomeId.getMostSignificantBits(), incomeId.getLeastSignificantBits() + 2);
+        jdbc.sql("""
+                INSERT INTO ledger_entry(tenant_id,id,entry_type,business_time,business_date,income_name,payer_id,payer_name_snapshot,
+                  income_category_id,income_category_name_snapshot,income_amount,funding_channel_id,funding_channel_name_snapshot)
+                VALUES(current_setting('app.tenant_id')::uuid,:id,'INCOME',CAST(:date AS date)::timestamp AT TIME ZONE 'Asia/Shanghai',CAST(:date AS date),
+                  '历史收入',:payer,'客户甲',:category,'奖金',:amount,:funding,'银行卡')
+                """).param("id", incomeId).param("date", date).param("payer", PAYER).param("category", INCOME_CATEGORY)
+                .param("amount", new BigDecimal(income)).param("funding", FUNDING).update();
+        jdbc.sql("""
+                INSERT INTO ledger_entry(tenant_id,id,entry_type,business_time,business_date,product_id,product_name_snapshot,
+                  primary_category_id,primary_category_name_snapshot,unit_id,unit_name_snapshot,unit_price,quantity,
+                  calculated_amount,paid_amount,funding_channel_id,funding_channel_name_snapshot)
+                VALUES(current_setting('app.tenant_id')::uuid,:id,'EXPENSE',CAST(:date AS date)::timestamp AT TIME ZONE 'Asia/Shanghai',CAST(:date AS date),
+                  :product,'历史支出',:category,'餐饮',:unit,'次',:amount,1,:amount,:amount,:funding,'银行卡')
+                """).param("id", expenseId).param("date", date).param("product", HISTORY_PRODUCT).param("category", CATEGORY).param("unit", UNIT)
+                .param("amount", new BigDecimal(expense)).param("funding", FUNDING).update();
+        jdbc.sql("""
+                INSERT INTO expense_adjustment(tenant_id,id,original_expense_id,adjustment_type,amount,business_time,business_date)
+                VALUES(current_setting('app.tenant_id')::uuid,:id,:expense,'REFUND',:amount,
+                  CAST(:date AS date)::timestamp AT TIME ZONE 'Asia/Shanghai',CAST(:date AS date))
+                """).param("id", adjustmentId).param("expense", expenseId).param("amount", new BigDecimal(adjustment)).param("date", date).update();
     }
 
     private void trashedIncome() {

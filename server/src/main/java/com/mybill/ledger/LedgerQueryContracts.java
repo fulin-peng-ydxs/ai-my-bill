@@ -8,7 +8,7 @@ import java.util.UUID;
 final class LedgerQueryContracts {
     private LedgerQueryContracts() { }
 
-    enum EntryTypeFilter { ALL, EXPENSE, INCOME, ADJUSTMENT }
+    enum EntryTypeFilter { ALL, EXPENSE, INCOME, ADJUSTMENT, EXPENSE_FLOW }
     enum LifecycleFilter { ACTIVE, TRASHED }
     record LedgerItem(
             UUID id, String entryType, Instant occurredAt, LocalDate businessDate,

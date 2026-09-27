@@ -1,7 +1,10 @@
 import type { LocationQuery, LocationQueryRaw } from 'vue-router'
 
 import type { LedgerDateRange } from '../api/ledgerEntries'
-import type { ReportFilters, ReportScope } from '../api/reports'
+import type { ReportFilters, ReportScope, ReportTimeGrain, ReportTimeMetric } from '../api/reports'
+
+export type ReportDimension = 'OVERVIEW' | 'TIME'
+export interface ReportPresentation { dimension: ReportDimension, grain: ReportTimeGrain, metric: ReportTimeMetric }
 
 const SCOPES: readonly ReportScope[] = ['ALL', 'EXPENSE', 'INCOME']
 const RANGES: readonly LedgerDateRange[] = ['TODAY', 'THIS_WEEK', 'THIS_MONTH', 'LAST_MONTH', 'THIS_YEAR', 'CUSTOM']
@@ -53,6 +56,35 @@ export function reportRouteQuery(filters: ReportFilters): LocationQueryRaw {
   for (const key of UUID_KEYS) if (filters[key]) result[key] = filters[key]
   if (filters.incomeName) result.incomeName = filters.incomeName
   return result
+}
+
+export function adaptiveGrain(filters: ReportFilters): ReportTimeGrain {
+  if (filters.range === 'THIS_YEAR') return 'MONTH'
+  if (filters.range !== 'CUSTOM' || !filters.startDate || !filters.endDate) return 'DAY'
+  const days = Math.floor((Date.parse(filters.endDate) - Date.parse(filters.startDate)) / 86400000) + 1
+  return days > 730 ? 'YEAR' : days > 180 ? 'MONTH' : days > 62 ? 'WEEK' : 'DAY'
+}
+
+export function parseReportPresentation(query: LocationQuery, filters: ReportFilters): ReportPresentation {
+  const dimensions: ReportDimension[] = ['OVERVIEW', 'TIME']
+  const grains: ReportTimeGrain[] = ['DAY', 'WEEK', 'MONTH', 'QUARTER', 'YEAR']
+  const metrics: ReportTimeMetric[] = ['TOTAL_INCOME', 'GROSS_EXPENSE', 'ADJUSTMENT', 'NET_EXPENSE', 'BALANCE']
+  const rawDimension = one(query.dimension) as ReportDimension
+  const rawGrain = one(query.grain) as ReportTimeGrain
+  const rawMetric = one(query.metric) as ReportTimeMetric
+  const allowed = filters.scope === 'INCOME' ? ['TOTAL_INCOME'] : filters.scope === 'EXPENSE'
+    ? ['GROSS_EXPENSE', 'ADJUSTMENT', 'NET_EXPENSE'] : metrics
+  return {
+    dimension: dimensions.includes(rawDimension) ? rawDimension : 'OVERVIEW',
+    grain: grains.includes(rawGrain) ? rawGrain : adaptiveGrain(filters),
+    metric: allowed.includes(rawMetric) ? rawMetric : filters.scope === 'INCOME' ? 'TOTAL_INCOME'
+      : filters.scope === 'EXPENSE' ? 'NET_EXPENSE' : 'BALANCE',
+  }
+}
+
+export function reportPresentationQuery(filters: ReportFilters, presentation: ReportPresentation): LocationQueryRaw {
+  return { ...reportRouteQuery(filters), dimension: presentation.dimension,
+    ...(presentation.dimension === 'TIME' ? { grain: presentation.grain, metric: presentation.metric } : {}) }
 }
 
 export function clearIncompatibleReportFilters(filters: ReportFilters, scope: ReportScope): ReportFilters {

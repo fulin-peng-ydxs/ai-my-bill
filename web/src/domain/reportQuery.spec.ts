@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
-import { clearIncompatibleReportFilters, clearedReportFilters, parseReportRoute, reportRouteQuery } from './reportQuery'
+import { adaptiveGrain, clearIncompatibleReportFilters, clearedReportFilters, parseReportPresentation,
+  parseReportRoute, reportPresentationQuery, reportRouteQuery } from './reportQuery'
 
 const ID = '123e4567-e89b-42d3-a456-426614174000'
 
@@ -25,5 +26,20 @@ describe('report route query', () => {
       .toEqual({ query: '', scope: 'INCOME', range: 'THIS_MONTH', startDate: undefined, endDate: undefined,
         fundingChannelId: undefined, incomeCategoryId: undefined, payerId: undefined, incomeName: undefined })
     expect(clearedReportFilters('LAST_MONTH', 'EXPENSE')).toEqual({ query: '', scope: 'EXPENSE', range: 'LAST_MONTH' })
+  })
+
+  it('parses and serializes time presentation while enforcing scope metrics', () => {
+    const filters = { query: '', scope: 'EXPENSE' as const, range: 'THIS_YEAR' as const }
+    expect(parseReportPresentation({ dimension: 'TIME', grain: 'QUARTER', metric: 'NET_EXPENSE' }, filters))
+      .toEqual({ dimension: 'TIME', grain: 'QUARTER', metric: 'NET_EXPENSE' })
+    expect(parseReportPresentation({ dimension: 'TIME', metric: 'BALANCE' }, filters).metric).toBe('NET_EXPENSE')
+    expect(reportPresentationQuery(filters, { dimension: 'TIME', grain: 'MONTH', metric: 'NET_EXPENSE' }))
+      .toMatchObject({ dimension: 'TIME', grain: 'MONTH', metric: 'NET_EXPENSE' })
+  })
+
+  it('adapts the default grain to the selected range', () => {
+    expect(adaptiveGrain({ query: '', scope: 'ALL', range: 'THIS_YEAR' })).toBe('MONTH')
+    expect(adaptiveGrain({ query: '', scope: 'ALL', range: 'CUSTOM', startDate: '2026-01-01', endDate: '2026-12-31' })).toBe('MONTH')
+    expect(adaptiveGrain({ query: '', scope: 'ALL', range: 'CUSTOM', startDate: '2026-09-01', endDate: '2026-09-15' })).toBe('DAY')
   })
 })

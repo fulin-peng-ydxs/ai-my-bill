@@ -36,6 +36,27 @@ describe('ledger route query', () => {
       dimension: 'type', value: '退款' }).drill).toBeUndefined()
   })
 
+  it('round-trips the net-expense time drill and its report return state', () => {
+    const parsed = parseLedgerRoute({
+      type: 'EXPENSE_FLOW', range: 'CUSTOM', startDate: '2026-09-07', endDate: '2026-09-13',
+      from: 'reports', scope: 'EXPENSE', dimension: 'TIME', value: '2026-09-07/2026-09-13',
+      reportDimension: 'TIME', reportGrain: 'WEEK', reportMetric: 'NET_EXPENSE',
+      reportRange: 'CUSTOM', reportStartDate: '2026-09-01', reportEndDate: '2026-09-15',
+    })
+
+    expect(parsed.filters).toMatchObject({
+      type: 'EXPENSE_FLOW', range: 'CUSTOM', startDate: '2026-09-07', endDate: '2026-09-13',
+    })
+    expect(parsed.drill).toMatchObject({ scope: 'EXPENSE', dimension: 'TIME', value: '2026-09-07/2026-09-13' })
+    expect(parsed.drill?.reportQuery).toEqual({
+      range: 'CUSTOM', startDate: '2026-09-01', endDate: '2026-09-15',
+      dimension: 'TIME', grain: 'WEEK', metric: 'NET_EXPENSE',
+    })
+    expect(ledgerRouteQuery(parsed.filters, parsed.drill)).toMatchObject({
+      type: 'EXPENSE_FLOW', reportDimension: 'TIME', reportGrain: 'WEEK', reportMetric: 'NET_EXPENSE',
+    })
+  })
+
   it('serializes the authoritative report scroll even when reportQuery has no scroll field', () => {
     const query = ledgerRouteQuery({ query: '', type: 'INCOME', lifecycle: 'ACTIVE', range: 'THIS_MONTH' }, {
       scope: 'INCOME', dimension: 'OVERVIEW', value: 'INCOME', reportQuery: { scope: 'INCOME' }, reportScroll: 480,

@@ -60,6 +60,7 @@
         </otherwise>
       </choose>
       <if test="p.entryType != null">AND record_type=#{p.entryType}</if>
+      <if test="p.expenseFlow">AND record_type IN ('EXPENSE','ADJUSTMENT')</if>
       <if test="p.fundingId != null">AND filter_funding_channel_id=#{p.fundingId}</if>
       <if test="p.keyword != null">AND search_text ILIKE #{p.keyword} ESCAPE '\'</if>
     </if>

@@ -1,14 +1,14 @@
 <script setup lang="ts">
 import { BarChart } from 'echarts/charts'
 import { GridComponent, TooltipComponent } from 'echarts/components'
-import { init, use, type ECharts } from 'echarts/core'
-import { SVGRenderer } from 'echarts/renderers'
-import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { use } from 'echarts/core'
+import { watch } from 'vue'
 
 import type { components } from '../api/generated/schema'
 import { formatCny } from '../domain/money'
+import { useReportChart } from '../composables/useReportChart'
 
-use([BarChart, GridComponent, TooltipComponent, SVGRenderer])
+use([BarChart, GridComponent, TooltipComponent])
 
 const props = defineProps<{
   title: string
@@ -16,28 +16,17 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{ select: [point: components['schemas']['ReportDataPoint']] }>()
-const host = ref<globalThis.HTMLDivElement>()
-let chart: ECharts | undefined
-let resizeObserver: InstanceType<typeof globalThis.ResizeObserver> | undefined
-let themeObserver: InstanceType<typeof globalThis.MutationObserver> | undefined
-
-function token(name: string): string {
-  return host.value ? globalThis.getComputedStyle(host.value).getPropertyValue(name).trim() : ''
-}
-
 function color(value: string): string {
   if (value === 'INCOME') return token('--color-income-accent')
   if (value === 'EXPENSE') return token('--color-expense-accent')
   return token('--color-warning')
 }
 
-function render(): void {
-  if (!host.value) return
-  chart ??= init(host.value, undefined, { renderer: 'svg' })
+const { host, token, refresh } = useReportChart(() => {
   const text = token('--color-text')
   const muted = token('--color-muted')
   const border = token('--color-border')
-  chart.setOption({
+  return {
     animationDuration: globalThis.matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 180,
     textStyle: { color: text },
     grid: { left: 8, right: 8, top: 8, bottom: 28, containLabel: true },
@@ -51,24 +40,10 @@ function render(): void {
       type: 'bar', data: props.points.map((point) => ({ value: Number(point.amount), itemStyle: { color: color(point.value) } })),
       barMaxWidth: 64,
     }],
-  }, true)
-}
-
-watch(() => props.points, () => { void nextTick(render) }, { deep: true })
-
-onMounted(() => {
-  render()
-  resizeObserver = new globalThis.ResizeObserver(() => chart?.resize())
-  resizeObserver.observe(host.value!)
-  themeObserver = new globalThis.MutationObserver(render)
-  themeObserver.observe(globalThis.document.documentElement, { attributes: true, attributeFilter: ['class', 'data-theme'] })
+  }
 })
 
-onBeforeUnmount(() => {
-  resizeObserver?.disconnect()
-  themeObserver?.disconnect()
-  chart?.dispose()
-})
+watch(() => props.points, refresh, { deep: true })
 </script>
 
 <template>

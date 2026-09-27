@@ -62,7 +62,8 @@ class LedgerQueryService {
         if (type == EntryTypeFilter.ALL && (expenseSpecific || incomeSpecific)
                 || type == EntryTypeFilter.EXPENSE && incomeSpecific
                 || type == EntryTypeFilter.INCOME && expenseSpecific
-                || type == EntryTypeFilter.ADJUSTMENT && incomeSpecific) {
+                || type == EntryTypeFilter.ADJUSTMENT && incomeSpecific
+                || type == EntryTypeFilter.EXPENSE_FLOW && incomeSpecific) {
             throw fieldError("type", "当前账目类型包含不适用的报表下钻条件，请重新加载明细。");
         }
     }

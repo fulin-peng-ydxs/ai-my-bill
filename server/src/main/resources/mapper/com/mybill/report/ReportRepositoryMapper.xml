@@ -56,4 +56,60 @@
       l.income_count,l.expense_count,a.adjustment_count
     FROM ledger_totals l CROSS JOIN adjustment_totals a
   </select>
+
+  <select id="timeBuckets" resultType="map">
+    WITH events AS (
+      SELECT l.business_date AS event_date,
+        CASE WHEN l.entry_type='INCOME' THEN l.income_amount ELSE 0 END AS total_income,
+        CASE WHEN l.entry_type='EXPENSE' THEN l.paid_amount ELSE 0 END AS gross_expense,
+        0::numeric AS adjustment_amount,l.entry_type
+      FROM ledger_entry l
+      WHERE l.tenant_id=current_setting('app.tenant_id')::uuid
+        AND l.lifecycle_status='ACTIVE'
+        AND l.business_date BETWEEN #{p.startDate} AND #{p.endDate}
+        <if test="p.scope == 'EXPENSE'">AND l.entry_type='EXPENSE'</if>
+        <if test="p.scope == 'INCOME'">AND l.entry_type='INCOME'</if>
+        <if test="p.fundingChannelId != null">AND l.funding_channel_id=#{p.fundingChannelId}</if>
+        <if test="p.keyword != null">
+          AND concat_ws(' ',l.product_name_snapshot,l.primary_category_name_snapshot,l.secondary_category_name_snapshot,
+            l.income_name,l.payer_name_snapshot,l.income_category_name_snapshot,l.funding_channel_name_snapshot,
+            l.purchase_channel_name_snapshot,l.location_label_name_snapshot,l.note) ILIKE #{p.keyword} ESCAPE '\'
+        </if>
+        <if test="p.scope == 'EXPENSE'"><include refid="expenseFilters"/></if>
+        <if test="p.scope == 'INCOME'"><include refid="incomeFilters"/></if>
+      UNION ALL
+      SELECT a.business_date,0::numeric,0::numeric,a.amount,'ADJUSTMENT'
+      FROM expense_adjustment a
+      JOIN ledger_entry l ON l.tenant_id=a.tenant_id AND l.id=a.original_expense_id
+      WHERE a.tenant_id=current_setting('app.tenant_id')::uuid
+        <if test="p.scope == 'INCOME'">AND 1=0</if>
+        AND a.status='EFFECTIVE' AND l.lifecycle_status='ACTIVE'
+        AND a.business_date BETWEEN #{p.startDate} AND #{p.endDate}
+        <if test="p.fundingChannelId != null">AND l.funding_channel_id=#{p.fundingChannelId}</if>
+        <if test="p.keyword != null">
+          AND concat_ws(' ',l.product_name_snapshot,l.primary_category_name_snapshot,l.secondary_category_name_snapshot,
+            l.funding_channel_name_snapshot,l.purchase_channel_name_snapshot,l.location_label_name_snapshot,a.note,
+            CASE a.adjustment_type WHEN 'REFUND' THEN '退款' ELSE '报销' END) ILIKE #{p.keyword} ESCAPE '\'
+        </if>
+        <if test="p.scope == 'EXPENSE'"><include refid="expenseFilters"/></if>
+    )
+    SELECT CAST(CASE #{p.grain}
+        WHEN 'DAY' THEN event_date
+        WHEN 'WEEK' THEN date_trunc('week',event_date)::date
+        WHEN 'MONTH' THEN date_trunc('month',event_date)::date
+        WHEN 'QUARTER' THEN date_trunc('quarter',event_date)::date
+        ELSE date_trunc('year',event_date)::date END AS date) AS bucket_start,
+      COALESCE(sum(total_income),0) AS total_income,
+      COALESCE(sum(gross_expense),0) AS gross_expense,
+      COALESCE(sum(adjustment_amount),0) AS adjustment_amount,
+      count(*) FILTER (WHERE entry_type='INCOME') AS income_count,
+      count(*) FILTER (WHERE entry_type='EXPENSE') AS expense_count,
+      count(*) FILTER (WHERE entry_type='ADJUSTMENT') AS adjustment_count
+    FROM events GROUP BY bucket_start ORDER BY bucket_start
+  </select>
+
+  <select id="accountCreatedDate" resultType="map">
+    SELECT (created_at AT TIME ZONE 'Asia/Shanghai')::date AS created_date
+    FROM app_user WHERE tenant_id=current_setting('app.tenant_id')::uuid AND id=#{p.userId}
+  </select>
 </mapper>

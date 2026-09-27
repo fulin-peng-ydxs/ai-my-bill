@@ -3,6 +3,9 @@ import { apiRequest } from './http'
 
 export type ReportScope = components['schemas']['ReportScope']
 export type ReportSummary = components['schemas']['ReportSummary']
+export type TimeReport = components['schemas']['TimeReport']
+export type ReportTimeGrain = components['schemas']['ReportTimeGrain']
+export type ReportTimeMetric = components['schemas']['ReportTimeMetric']
 
 export interface ReportFilters {
   query: string
@@ -27,11 +30,22 @@ const OPTIONAL_KEYS = [
 ] as const
 
 export function getReportSummary(filters: ReportFilters, signal?: AbortSignal): Promise<ReportSummary> {
+  const params = reportParams(filters)
+  return apiRequest(`/reports/summary?${params}`, { signal })
+}
+
+function reportParams(filters: ReportFilters): URLSearchParams {
   const params = new URLSearchParams({ query: filters.query, scope: filters.scope, range: filters.range })
   for (const key of OPTIONAL_KEYS) if (filters[key]) params.set(key, filters[key])
   if (filters.range === 'CUSTOM' && filters.startDate && filters.endDate) {
     params.set('startDate', filters.startDate)
     params.set('endDate', filters.endDate)
   }
-  return apiRequest(`/reports/summary?${params}`, { signal })
+  return params
+}
+
+export function getTimeReport(filters: ReportFilters, grain: ReportTimeGrain, signal?: AbortSignal): Promise<TimeReport> {
+  const params = reportParams(filters)
+  params.set('grain', grain)
+  return apiRequest(`/reports/time?${params}`, { signal })
 }

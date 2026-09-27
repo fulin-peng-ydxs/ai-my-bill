@@ -850,11 +850,31 @@ textarea:disabled {
 .chart-actions strong { overflow-wrap: anywhere; font-family: var(--font-data); }
 .chart-actions small { color: var(--color-muted); }
 
+.comparison-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-sm);
+}
+
+.comparison-grid article {
+  display: grid;
+  gap: var(--space-xs);
+  padding-block: var(--space-sm);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.comparison-grid small { color: var(--color-muted); }
+.comparison-grid strong { font-size: 14px; font-weight: 600; }
+.time-drill { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--space-sm); }
+.time-drill label { grid-column: 1 / -1; color: var(--color-muted); font-size: 12px; font-weight: 600; }
+
 @media (max-width: 640px) {
   .report-dimension { align-items: stretch; flex-direction: column; }
   .chart-panel { padding: var(--space-md); }
   .chart-canvas { min-height: 240px; }
   .chart-actions { grid-template-columns: 1fr; }
+  .comparison-grid { grid-template-columns: 1fr; }
+  .time-drill { grid-template-columns: 1fr; }
 }
 
 .ledger-page-heading {

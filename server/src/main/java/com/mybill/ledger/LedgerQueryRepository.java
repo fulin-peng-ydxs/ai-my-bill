@@ -49,7 +49,8 @@ class LedgerQueryRepository {
             java.util.function.Function<java.util.Map<String, Object>, java.util.List<java.util.Map<String, Object>>> method,
             Query query, int limit) {
         return operations.select(method).param("startDate", query.startDate()).param("endDate", query.endDate())
-                .param("limit", limit).param("entryType", query.type() == EntryTypeFilter.ALL ? null : query.type().name())
+                .param("limit", limit).param("entryType", query.type() == EntryTypeFilter.ALL || query.type() == EntryTypeFilter.EXPENSE_FLOW ? null : query.type().name())
+                .param("expenseFlow", query.type() == EntryTypeFilter.EXPENSE_FLOW)
                 .param("fundingId", query.fundingChannelId())
                 .param("primaryCategoryId", query.primaryCategoryId())
                 .param("secondaryCategoryId", query.secondaryCategoryId())

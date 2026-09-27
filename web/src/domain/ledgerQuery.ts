@@ -2,7 +2,7 @@ import type { LocationQuery, LocationQueryRaw } from 'vue-router'
 
 import type { LedgerDateRange, LedgerEntryTypeFilter, LedgerFilters, LedgerLifecycleFilter } from '../api/ledgerEntries'
 
-const TYPES: readonly LedgerEntryTypeFilter[] = ['ALL', 'EXPENSE', 'INCOME', 'ADJUSTMENT']
+const TYPES: readonly LedgerEntryTypeFilter[] = ['ALL', 'EXPENSE', 'INCOME', 'ADJUSTMENT', 'EXPENSE_FLOW']
 const DRILL_SCOPES: readonly LedgerDrillContext['scope'][] = ['ALL', 'EXPENSE', 'INCOME']
 const RANGES: readonly LedgerDateRange[] = ['TODAY', 'THIS_WEEK', 'THIS_MONTH', 'LAST_MONTH', 'THIS_YEAR', 'CUSTOM']
 const LIFECYCLES: readonly LedgerLifecycleFilter[] = ['ACTIVE', 'TRASHED']
@@ -79,7 +79,7 @@ export function parseLedgerRoute(query: LocationQuery, defaultRange: LedgerDateR
   for (const key of ['reportRange', 'reportScope', 'reportFundingChannelId', 'reportQ', 'reportDimension',
     'reportStartDate', 'reportEndDate', 'reportPrimaryCategoryId', 'reportSecondaryCategoryId',
     'reportProductId', 'reportPurchaseChannelId', 'reportLocationLabelId', 'reportIncomeCategoryId',
-    'reportPayerId', 'reportIncomeName']) {
+    'reportPayerId', 'reportIncomeName', 'reportGrain', 'reportMetric']) {
     const candidate = one(query[key])
     if (candidate && candidate.length <= 200) reportQuery[key.replace(/^report/, '').replace(/^./, (char) => char.toLowerCase())] = candidate
   }
@@ -117,6 +117,7 @@ export function clearedLedgerFilters(defaultRange: LedgerDateRange, lifecycle: L
 export const ledgerTypeOptions = [
   { value: 'ALL', label: '全部' }, { value: 'EXPENSE', label: '支出' }, { value: 'INCOME', label: '收入' },
   { value: 'ADJUSTMENT', label: '退款与报销' },
+  { value: 'EXPENSE_FLOW', label: '净支出构成' },
 ] as const
 
 export const ledgerLifecycleOptions = [
