@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.mybill.admin.overview.AdminOverviewRepositoryMapper">
+  <select id="overview" resultType="map">
+    SELECT count(*) FILTER (WHERE role='USER' AND status&lt;&gt;'DELETED') AS total_users,
+           count(*) FILTER (WHERE role='USER' AND status='ACTIVE' AND temporary_password_expires_at IS NULL) AS active_users,
+           count(*) FILTER (WHERE role='USER' AND status='ACTIVE' AND temporary_password_expires_at IS NOT NULL) AS pending_users,
+           count(*) FILTER (WHERE role='USER' AND status='DISABLED') AS disabled_users,
+           count(*) FILTER (WHERE role='USER' AND status='DELETION_PENDING') AS deletion_pending_users,
+           (SELECT count(*) FROM user_session
+             WHERE revoked_at IS NULL AND expires_at&gt;CURRENT_TIMESTAMP) AS active_sessions,
+           max(last_active_at) FILTER (WHERE role='USER' AND status&lt;&gt;'DELETED') AS last_active_at,
+           pg_database_size(current_database()) AS database_bytes
+      FROM app_user
+  </select>
+</mapper>

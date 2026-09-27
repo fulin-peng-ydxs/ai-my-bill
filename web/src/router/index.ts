@@ -10,6 +10,8 @@ import PlaceholderView from '../views/PlaceholderView.vue'
 import ProfileView from '../views/ProfileView.vue'
 import UserManagementView from '../views/admin/UserManagementView.vue'
 import DefaultDictionaryManagementView from '../views/admin/DefaultDictionaryManagementView.vue'
+import AdminAuditLogView from '../views/admin/AdminAuditLogView.vue'
+import AdminOverviewView from '../views/admin/AdminOverviewView.vue'
 import DictionaryDetailView from '../views/me/dictionaries/DictionaryDetailView.vue'
 import DictionaryIndexView from '../views/me/dictionaries/DictionaryIndexView.vue'
 
@@ -28,6 +30,10 @@ const registeredRoutes: RouteRecordRaw[] = pageRegistry.map((page) => ({
       ? UserManagementView
     : page.pageKey === 'admin-default-dictionaries'
       ? DefaultDictionaryManagementView
+    : page.pageKey === 'admin-overview'
+      ? AdminOverviewView
+    : page.pageKey === 'admin-audit-logs'
+      ? AdminAuditLogView
     : page.pageKey === 'profile-settings'
       ? ProfileView
     : page.pageKey === 'personal-dictionaries'

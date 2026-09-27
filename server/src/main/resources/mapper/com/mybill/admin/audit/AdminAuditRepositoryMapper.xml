@@ -8,4 +8,30 @@
                 VALUES (#{p.id}, #{p.administrator}, #{p.action}, #{p.objectType}, #{p.objectId}, #{p.result}, CAST(#{p.summary} AS jsonb), #{p.occurredAt})
                 ]]>
   </update>
+
+  <sql id="queryFilters">
+    WHERE (#{p.administrator}='' OR a.username ILIKE #{p.administrator} ESCAPE '\')
+      AND (#{p.action}='' OR l.action ILIKE #{p.action} ESCAPE '\')
+      AND (#{p.object}='' OR l.object_type ILIKE #{p.object} ESCAPE '\'
+           OR l.object_id ILIKE #{p.object} ESCAPE '\')
+      AND (CAST(#{p.result} AS varchar) IS NULL OR l.result=CAST(#{p.result} AS varchar))
+      AND (CAST(#{p.startAt} AS timestamptz) IS NULL OR l.occurred_at&gt;=CAST(#{p.startAt} AS timestamptz))
+  </sql>
+
+  <select id="find" resultType="map">
+    SELECT l.id,a.username AS administrator,l.action,l.object_type,l.object_id,l.result,
+           l.safe_summary::text AS safe_summary,l.occurred_at
+      FROM admin_audit_log l
+      JOIN app_user a ON a.id=l.administrator_user_id AND a.role='ADMIN'
+      <include refid="queryFilters"/>
+     ORDER BY l.occurred_at DESC,l.id DESC
+     LIMIT #{p.limit} OFFSET #{p.offset}
+  </select>
+
+  <select id="count" resultType="map">
+    SELECT count(*)
+      FROM admin_audit_log l
+      JOIN app_user a ON a.id=l.administrator_user_id AND a.role='ADMIN'
+      <include refid="queryFilters"/>
+  </select>
 </mapper>

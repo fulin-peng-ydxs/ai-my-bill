@@ -53,7 +53,7 @@ async function load(intent: 'replace' | 'refresh' = 'replace'): Promise<void> {
     (signal) => listDefaultDictionaryItems(
       selectedType.value, appliedQuery.value, statusFilter.value, signal, pageIndex.value, 100,
     ),
-    { intent, isEmpty: (page) => page.items.length === 0 },
+    { intent: intent === 'refresh' ? 'silent' : 'replace', isEmpty: (page) => page.items.length === 0 },
   )
 }
 

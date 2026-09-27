@@ -189,6 +189,58 @@ class AdminUserHttpIntegrationTest {
                 .doesNotContain(managedUserId, "t7-managed", temporaryPassword, resetPassword, "tenant_id");
     }
 
+    @Test
+    @Order(6)
+    void overviewReportsOnlyAccountAndServiceMetadataWithExplicitBackupBoundary() throws Exception {
+        Cookie admin = login("t7-admin", ADMIN_PASSWORD, false);
+        MvcResult result = mockMvc.perform(get("/api/v1/admin/overview").cookie(admin))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.service.status").value("HEALTHY"))
+                .andExpect(jsonPath("$.accounts.activeSessions").isNumber())
+                .andExpect(jsonPath("$.backup.status").value("UNCONFIGURED"))
+                .andExpect(jsonPath("$.backup.latestCompletedAt").doesNotExist())
+                .andExpect(jsonPath("$.storage.databaseBytes").isNumber())
+                .andReturn();
+        JsonNode overview = objectMapper.readTree(result.getResponse().getContentAsByteArray());
+        long expectedUsers = jdbc.sql("SELECT count(*) FROM app_user WHERE role='USER' AND status<>'DELETED'")
+                .query(Long.class).single();
+        assertThat(overview.path("accounts").path("total").asLong()).isEqualTo(expectedUsers);
+        assertThat(overview.path("storage").path("databaseBytes").asLong()).isPositive();
+        assertThat(overview.toString()).doesNotContain("ledger", "amount", "payer", "location", "product", "incomeName");
+
+        Cookie ordinary = login("t7-ordinary", "T7-Ordinary-Password-2026", false);
+        mockMvc.perform(get("/api/v1/admin/overview").cookie(ordinary)).andExpect(status().isForbidden());
+        mockMvc.perform(get("/api/v1/admin/overview")).andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    @Order(7)
+    void auditLogsSupportCombinedFiltersAndExposeOnlySanitizedReadOnlyDetails() throws Exception {
+        Cookie admin = login("t7-admin", ADMIN_PASSWORD, false);
+        MvcResult result = mockMvc.perform(get("/api/v1/admin/audit-logs").cookie(admin)
+                        .queryParam("administrator", "t7-admin")
+                        .queryParam("action", "DELETE_USER_ACCOUNT")
+                        .queryParam("object", "ACCOUNT_DELETION")
+                        .queryParam("result", "SUCCEEDED")
+                        .queryParam("period", "ALL"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.total").value(1))
+                .andExpect(jsonPath("$.items[0].administrator").value("t7-admin"))
+                .andExpect(jsonPath("$.items[0].action").value("DELETE_USER_ACCOUNT"))
+                .andExpect(jsonPath("$.items[0].objectType").value("ACCOUNT_DELETION"))
+                .andExpect(jsonPath("$.items[0].result").value("SUCCEEDED"))
+                .andReturn();
+        String body = result.getResponse().getContentAsString();
+        assertThat(body).doesNotContain(managedUserId, "t7-managed", temporaryPassword,
+                "password", "token", "latitude", "longitude", "ledger", "amount");
+
+        mockMvc.perform(get("/api/v1/admin/audit-logs").cookie(admin).queryParam("period", "NOT_A_PERIOD"))
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));
+        Cookie ordinary = login("t7-ordinary", "T7-Ordinary-Password-2026", false);
+        mockMvc.perform(get("/api/v1/admin/audit-logs").cookie(ordinary)).andExpect(status().isForbidden());
+        mockMvc.perform(get("/api/v1/admin/audit-logs")).andExpect(status().isUnauthorized());
+    }
+
     private JsonNode postAction(Cookie admin, String action, long expectedVersion, int expectedStatus) throws Exception {
         MvcResult result = mockMvc.perform(post("/api/v1/admin/users/{id}/{action}", managedUserId, action)
                         .with(csrf()).cookie(admin).contentType(MediaType.APPLICATION_JSON)

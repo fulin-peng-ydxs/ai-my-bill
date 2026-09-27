@@ -10,4 +10,8 @@ import java.util.Map;
 @Mapper
 public interface AdminAuditRepositoryMapper {
     int append(@Param("p") Map<String, Object> parameters);
+
+    List<Map<String, Object>> find(@Param("p") Map<String, Object> parameters);
+
+    List<Map<String, Object>> count(@Param("p") Map<String, Object> parameters);
 }

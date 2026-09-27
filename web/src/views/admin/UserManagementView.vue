@@ -19,6 +19,7 @@ import AppStateBlock from '../../components/AppStateBlock.vue'
 import AppToast from '../../components/AppToast.vue'
 import FormField from '../../components/FormField.vue'
 import { useLatestRequest } from '../../composables/useLatestRequest'
+import { formatAdminTime } from '../../domain/adminPresentation'
 
 type UserAction = 'disable' | 'restore' | 'reset-password' | 'deletion'
 
@@ -66,14 +67,10 @@ function statusLabel(value: AdminUserStatus): string {
   }[value]
 }
 
-function formatTime(value?: string | null): string {
-  return value ? new Intl.DateTimeFormat('zh-CN', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value)) : '尚无记录'
-}
-
 async function load(intent: 'replace' | 'refresh' = 'replace'): Promise<void> {
   await execute(
     (signal) => listAdminUsers(appliedQuery.value, statusFilter.value, signal),
-    { intent, isEmpty: (page) => page.items.length === 0 },
+    { intent: intent === 'refresh' ? 'silent' : 'replace', isEmpty: (page) => page.items.length === 0 },
   )
 }
 
@@ -318,8 +315,8 @@ onMounted(() => void load())
               :data-status="user.status"
             >{{ statusLabel(user.status) }}</span>
           </td>
-          <td>{{ formatTime(user.registeredAt) }}</td>
-          <td>{{ formatTime(user.lastActiveAt) }}</td>
+          <td>{{ formatAdminTime(user.registeredAt) }}</td>
+          <td>{{ formatAdminTime(user.lastActiveAt) }}</td>
           <td>
             <button
               type="button"
@@ -347,7 +344,7 @@ onMounted(() => void load())
               :data-status="user.status"
             >{{ statusLabel(user.status) }}</span>
           </div>
-          <dl><dt>注册</dt><dd>{{ formatTime(user.registeredAt) }}</dd><dt>活跃</dt><dd>{{ formatTime(user.lastActiveAt) }}</dd></dl>
+          <dl><dt>注册</dt><dd>{{ formatAdminTime(user.registeredAt) }}</dd><dt>活跃</dt><dd>{{ formatAdminTime(user.lastActiveAt) }}</dd></dl>
           <button
             type="button"
             class="icon-button"
@@ -406,7 +403,7 @@ onMounted(() => void load())
       >
         <span>{{ credential.user.username }}</span>
         <code>{{ credential.temporaryPassword }}</code>
-        <span>有效期至 {{ formatTime(credential.expiresAt) }}</span>
+        <span>有效期至 {{ formatAdminTime(credential.expiresAt) }}</span>
         <button
           type="button"
           class="secondary-button"
@@ -427,7 +424,7 @@ onMounted(() => void load())
         v-if="selectedUser"
         class="user-detail-list"
       >
-        <dt>状态</dt><dd>{{ statusLabel(selectedUser.status) }}</dd><dt>注册时间</dt><dd>{{ formatTime(selectedUser.registeredAt) }}</dd><dt>最近活跃</dt><dd>{{ formatTime(selectedUser.lastActiveAt) }}</dd>
+        <dt>状态</dt><dd>{{ statusLabel(selectedUser.status) }}</dd><dt>注册时间</dt><dd>{{ formatAdminTime(selectedUser.registeredAt) }}</dd><dt>最近活跃</dt><dd>{{ formatAdminTime(selectedUser.lastActiveAt) }}</dd>
       </dl>
       <div
         v-if="selectedUser"

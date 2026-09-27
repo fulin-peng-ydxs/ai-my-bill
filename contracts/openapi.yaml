@@ -212,6 +212,39 @@ paths:
         "403": { $ref: "#/components/responses/AuthorizationError" }
         "409": { $ref: "#/components/responses/ConflictError" }
         "503": { $ref: "#/components/responses/ServiceUnavailableError" }
+  /admin/overview:
+    get:
+      operationId: getAdminOverview
+      summary: 查询账号、服务、备份配置和数据库容量概况
+      tags: [admin-operations]
+      responses:
+        "200":
+          description: 只含账号与服务元数据，不含任何用户账目字段或聚合
+          content: { application/json: { schema: { $ref: "#/components/schemas/AdminOverview" } } }
+        "401": { $ref: "#/components/responses/AuthenticationError" }
+        "403": { $ref: "#/components/responses/AuthorizationError" }
+        "503": { $ref: "#/components/responses/ServiceUnavailableError" }
+  /admin/audit-logs:
+    get:
+      operationId: listAdminAuditLogs
+      summary: 分页查询只读管理操作日志
+      tags: [admin-operations]
+      parameters:
+        - { name: administrator, in: query, schema: { type: string, maxLength: 64, default: "" } }
+        - { name: action, in: query, schema: { type: string, maxLength: 64, default: "" } }
+        - { name: object, in: query, schema: { type: string, maxLength: 128, default: "" } }
+        - { name: result, in: query, schema: { $ref: "#/components/schemas/AdminAuditResult" } }
+        - { name: period, in: query, schema: { $ref: "#/components/schemas/AdminAuditPeriod" } }
+        - { name: page, in: query, schema: { type: integer, minimum: 0, maximum: 1000000, default: 0 } }
+        - { name: size, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 50 } }
+      responses:
+        "200":
+          description: 日志摘要经过写入白名单和敏感字段清理，不含密码、令牌、坐标或账目内容
+          content: { application/json: { schema: { $ref: "#/components/schemas/AdminAuditLogPage" } } }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "401": { $ref: "#/components/responses/AuthenticationError" }
+        "403": { $ref: "#/components/responses/AuthorizationError" }
+        "503": { $ref: "#/components/responses/ServiceUnavailableError" }
   /preferences:
     get:
       operationId: getPreferences
@@ -2093,6 +2126,85 @@ components:
     AdminUserStatus:
       type: string
       enum: [ACTIVE, PENDING_FIRST_LOGIN, DISABLED, DELETION_PENDING]
+    AdminHealthStatus:
+      type: string
+      enum: [HEALTHY]
+    AdminBackupStatus:
+      type: string
+      enum: [UNCONFIGURED]
+    AdminAccountOverview:
+      type: object
+      additionalProperties: false
+      required: [total, active, pendingFirstLogin, disabled, deletionPending, activeSessions]
+      properties:
+        total: { type: integer, format: int64, minimum: 0 }
+        active: { type: integer, format: int64, minimum: 0 }
+        pendingFirstLogin: { type: integer, format: int64, minimum: 0 }
+        disabled: { type: integer, format: int64, minimum: 0 }
+        deletionPending: { type: integer, format: int64, minimum: 0 }
+        activeSessions: { type: integer, format: int64, minimum: 0 }
+        lastActiveAt: { type: string, format: date-time }
+    AdminServiceOverview:
+      type: object
+      additionalProperties: false
+      required: [status, checkedAt]
+      properties:
+        status: { $ref: "#/components/schemas/AdminHealthStatus" }
+        checkedAt: { type: string, format: date-time }
+    AdminBackupOverview:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties:
+        status: { $ref: "#/components/schemas/AdminBackupStatus" }
+        latestCompletedAt: { type: string, format: date-time }
+    AdminStorageOverview:
+      type: object
+      additionalProperties: false
+      required: [databaseBytes]
+      properties:
+        databaseBytes: { type: integer, format: int64, minimum: 0 }
+    AdminOverview:
+      type: object
+      additionalProperties: false
+      required: [accounts, service, backup, storage]
+      properties:
+        accounts: { $ref: "#/components/schemas/AdminAccountOverview" }
+        service: { $ref: "#/components/schemas/AdminServiceOverview" }
+        backup: { $ref: "#/components/schemas/AdminBackupOverview" }
+        storage: { $ref: "#/components/schemas/AdminStorageOverview" }
+    AdminAuditResult:
+      type: string
+      enum: [SUCCEEDED, FAILED, DENIED]
+    AdminAuditPeriod:
+      type: string
+      enum: [ALL, TODAY, LAST_7_DAYS, LAST_30_DAYS]
+    AdminAuditSafeSummary:
+      type: object
+      description: 仅包含对应管理动作允许写入的变化字段，且已递归清除敏感键。
+      additionalProperties: true
+    AdminAuditLogItem:
+      type: object
+      additionalProperties: false
+      required: [id, administrator, action, objectType, objectId, result, safeSummary, occurredAt]
+      properties:
+        id: { type: string, format: uuid }
+        administrator: { $ref: "#/components/schemas/Username" }
+        action: { type: string, minLength: 1, maxLength: 64 }
+        objectType: { type: string, minLength: 1, maxLength: 64 }
+        objectId: { type: string, minLength: 1, maxLength: 128 }
+        result: { $ref: "#/components/schemas/AdminAuditResult" }
+        safeSummary: { $ref: "#/components/schemas/AdminAuditSafeSummary" }
+        occurredAt: { type: string, format: date-time }
+    AdminAuditLogPage:
+      type: object
+      additionalProperties: false
+      required: [items, total, page, size]
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/AdminAuditLogItem" } }
+        total: { type: integer, format: int64, minimum: 0 }
+        page: { type: integer, minimum: 0 }
+        size: { type: integer, minimum: 1, maximum: 100 }
     DictionaryType:
       type: string
       enum: [product, expense-category, unit, funding-channel, purchase-channel, location, income-category, payer]

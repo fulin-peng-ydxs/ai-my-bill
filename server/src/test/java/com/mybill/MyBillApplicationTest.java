@@ -1,6 +1,7 @@
 package com.mybill;
 
 import com.mybill.admin.audit.AdminAuditRepository;
+import com.mybill.admin.overview.AdminOverviewRepositoryMapper;
 import com.mybill.account.AccountDeletionRepositoryMapper;
 import com.mybill.account.AccountDeletionFileRecovery;
 import com.mybill.auth.AuthRepository;
@@ -31,7 +32,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
         ExportRepositoryMapper.class, IncomeRepositoryMapper.class, LedgerIdempotencyStoreMapper.class,
         LedgerLifecycleRepositoryMapper.class, LedgerQueryRepositoryMapper.class,
         PreferenceRepositoryMapper.class, ReportRepositoryMapper.class,
-        AccountDeletionRepositoryMapper.class
+        AccountDeletionRepositoryMapper.class, AdminOverviewRepositoryMapper.class
 })
 class MyBillApplicationTest {
 

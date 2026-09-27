@@ -307,7 +307,8 @@ textarea:disabled {
 .admin-sidebar { display: none; }
 
 .admin-mobile-navigation {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   order: 3;
   width: 100%;
   gap: var(--space-xs);
@@ -316,8 +317,10 @@ textarea:disabled {
 .admin-shell-header { flex-wrap: wrap; }
 
 .admin-mobile-navigation a {
+  display: grid;
+  place-items: center;
   min-height: 40px;
-  padding: var(--space-sm) var(--space-md);
+  padding: var(--space-sm) var(--space-xs);
   color: var(--color-muted);
   text-decoration: none;
   border-radius: var(--radius-pill);
@@ -1067,7 +1070,9 @@ textarea:disabled {
 .custom-date-range { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-md); }
 
 .admin-users-page,
-.admin-default-dictionaries-page {
+.admin-default-dictionaries-page,
+.admin-overview-page,
+.admin-audit-page {
   display: grid;
   width: min(100%, 1120px);
   gap: var(--space-lg);
@@ -1123,6 +1128,77 @@ textarea:disabled {
   gap: var(--space-sm);
   flex: 0 0 auto;
 }
+
+.admin-heading-action {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.admin-metric-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-md);
+}
+
+.admin-metric-card {
+  position: relative;
+  display: grid;
+  min-width: 0;
+  gap: var(--space-sm);
+  padding: var(--space-lg);
+  overflow: hidden;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-top: 3px solid var(--color-primary);
+  border-radius: var(--radius-panel);
+}
+
+.admin-metric-card[data-tone="success"] { border-top-color: var(--color-success); }
+.admin-metric-card[data-tone="warning"] { border-top-color: var(--color-warning); }
+.admin-account-metric { grid-row: span 2; }
+.admin-metric-icon { color: var(--color-muted); }
+.admin-metric-card p,
+.admin-metric-card small { margin: 0; color: var(--color-muted); }
+.admin-metric-card > strong { font-family: var(--font-data); font-size: clamp(28px, 4vw, 44px); line-height: 1; }
+.admin-metric-card dl { display: grid; gap: var(--space-sm); margin: var(--space-sm) 0; }
+.admin-metric-card dl div { display: flex; justify-content: space-between; gap: var(--space-md); }
+.admin-metric-card dt { color: var(--color-muted); }
+.admin-metric-card dd { margin: 0; font-family: var(--font-data); font-weight: 600; }
+
+.admin-audit-toolbar {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(140px, 1fr));
+  align-items: center;
+  gap: var(--space-sm);
+  padding: var(--space-md);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+}
+
+.admin-audit-toolbar select {
+  width: 100%;
+  min-height: 44px;
+  padding: var(--space-sm) var(--space-xl) var(--space-sm) var(--space-md);
+  color: var(--color-text);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-tool);
+}
+
+.admin-audit-actions { display: flex; align-items: center; gap: var(--space-sm); }
+.admin-audit-actions .primary-button { min-width: 112px; justify-content: center; white-space: nowrap; }
+.admin-audit-toolbar .admin-result-count { justify-self: end; }
+.admin-audit-cards { display: none; }
+.status-badge[data-status="SUCCEEDED"] { color: var(--color-success); }
+.status-badge[data-status="FAILED"] { color: var(--color-danger); }
+.status-badge[data-status="DENIED"] { color: var(--color-warning); }
+.audit-change-list { display: grid; overflow: hidden; border: 1px solid var(--color-border); border-radius: var(--radius-control); }
+.audit-change-list > div { display: grid; gap: var(--space-xs); padding: var(--space-md); border-bottom: 1px solid var(--color-border); }
+.audit-change-list > div:last-child { border-bottom: 0; }
+.audit-change-list span { overflow-wrap: anywhere; color: var(--color-muted); }
 
 .privacy-boundary {
   display: flex;
@@ -1263,6 +1339,7 @@ textarea:disabled {
 
   .admin-page-heading { display: grid; }
   .admin-page-heading .primary-button { width: 100%; justify-content: center; }
+  .admin-heading-action { width: 100%; justify-content: center; }
   .admin-toolbar { grid-template-columns: minmax(0, 1fr) auto; }
   .admin-search { grid-column: 1 / -1; }
   .admin-toolbar label:has(select) { min-width: 0; }
@@ -1290,6 +1367,36 @@ textarea:disabled {
   .admin-user-cards dl { display: grid; grid-column: 1 / -1; grid-template-columns: max-content minmax(0, 1fr); gap: var(--space-xs) var(--space-md); margin: 0; font-size: 12px; }
   .admin-user-cards dt { color: var(--color-muted); }
   .admin-user-cards dd { margin: 0; text-align: right; }
+  .admin-metric-grid { grid-template-columns: minmax(0, 1fr); }
+  .admin-account-metric { grid-row: auto; }
+  .admin-audit-toolbar { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .admin-audit-toolbar .admin-search { grid-column: auto; }
+  .admin-audit-toolbar .admin-search:first-child { grid-column: 1 / -1; }
+  .admin-audit-toolbar label { min-width: 0; }
+  .admin-audit-actions { grid-column: 1 / -1; }
+  .admin-audit-toolbar .admin-result-count { grid-column: 1 / -1; }
+  .admin-audit-table { display: none; }
+  .admin-audit-cards { display: grid; gap: var(--space-md); margin: 0; padding: 0; list-style: none; }
+  .admin-audit-cards li {
+    position: relative;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: var(--space-sm) var(--space-md);
+    padding: var(--space-lg);
+    overflow: hidden;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-control);
+  }
+  .admin-audit-cards li::before { position: absolute; inset: 0 auto 0 0; width: 3px; content: ""; background: var(--color-success); }
+  .admin-audit-cards li[data-status="FAILED"]::before { background: var(--color-danger); }
+  .admin-audit-cards li[data-status="DENIED"]::before { background: var(--color-warning); }
+  .admin-audit-cards li > div { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-sm); min-width: 0; }
+  .admin-audit-cards strong,
+  .admin-audit-cards p { min-width: 0; overflow-wrap: anywhere; }
+  .admin-audit-cards p,
+  .admin-audit-cards small { grid-column: 1 / -1; margin: 0; color: var(--color-muted); }
+  .admin-audit-cards .icon-button { grid-column: 2; grid-row: 1; }
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -54,6 +54,12 @@ watch(() => sessionStore.session?.accountId, (accountId, previousAccountId) => {
         <RouterLink to="/admin/default-dictionaries">
           默认字典
         </RouterLink>
+        <RouterLink to="/admin/overview">
+          运行概况
+        </RouterLink>
+        <RouterLink to="/admin/audit-logs">
+          操作日志
+        </RouterLink>
       </nav>
     </aside>
     <header
@@ -97,6 +103,12 @@ watch(() => sessionStore.session?.accountId, (accountId, previousAccountId) => {
         </RouterLink>
         <RouterLink to="/admin/default-dictionaries">
           默认字典
+        </RouterLink>
+        <RouterLink to="/admin/overview">
+          运行概况
+        </RouterLink>
+        <RouterLink to="/admin/audit-logs">
+          操作日志
         </RouterLink>
       </nav>
     </header>

@@ -141,6 +141,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/overview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 查询账号、服务、备份配置和数据库容量概况 */
+        get: operations["getAdminOverview"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/audit-logs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 分页查询只读管理操作日志 */
+        get: operations["listAdminAuditLogs"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/preferences": {
         parameters: {
             query?: never;
@@ -1539,6 +1573,73 @@ export interface components {
         /** @enum {string} */
         AdminUserStatus: "ACTIVE" | "PENDING_FIRST_LOGIN" | "DISABLED" | "DELETION_PENDING";
         /** @enum {string} */
+        AdminHealthStatus: "HEALTHY";
+        /** @enum {string} */
+        AdminBackupStatus: "UNCONFIGURED";
+        AdminAccountOverview: {
+            /** Format: int64 */
+            total: number;
+            /** Format: int64 */
+            active: number;
+            /** Format: int64 */
+            pendingFirstLogin: number;
+            /** Format: int64 */
+            disabled: number;
+            /** Format: int64 */
+            deletionPending: number;
+            /** Format: int64 */
+            activeSessions: number;
+            /** Format: date-time */
+            lastActiveAt?: string;
+        };
+        AdminServiceOverview: {
+            status: components["schemas"]["AdminHealthStatus"];
+            /** Format: date-time */
+            checkedAt: string;
+        };
+        AdminBackupOverview: {
+            status: components["schemas"]["AdminBackupStatus"];
+            /** Format: date-time */
+            latestCompletedAt?: string;
+        };
+        AdminStorageOverview: {
+            /** Format: int64 */
+            databaseBytes: number;
+        };
+        AdminOverview: {
+            accounts: components["schemas"]["AdminAccountOverview"];
+            service: components["schemas"]["AdminServiceOverview"];
+            backup: components["schemas"]["AdminBackupOverview"];
+            storage: components["schemas"]["AdminStorageOverview"];
+        };
+        /** @enum {string} */
+        AdminAuditResult: "SUCCEEDED" | "FAILED" | "DENIED";
+        /** @enum {string} */
+        AdminAuditPeriod: "ALL" | "TODAY" | "LAST_7_DAYS" | "LAST_30_DAYS";
+        /** @description 仅包含对应管理动作允许写入的变化字段，且已递归清除敏感键。 */
+        AdminAuditSafeSummary: {
+            [key: string]: unknown;
+        };
+        AdminAuditLogItem: {
+            /** Format: uuid */
+            id: string;
+            administrator: components["schemas"]["Username"];
+            action: string;
+            objectType: string;
+            objectId: string;
+            result: components["schemas"]["AdminAuditResult"];
+            safeSummary: components["schemas"]["AdminAuditSafeSummary"];
+            /** Format: date-time */
+            occurredAt: string;
+        };
+        AdminAuditLogPage: {
+            items: components["schemas"]["AdminAuditLogItem"][];
+            /** Format: int64 */
+            total: number;
+            page: number;
+            size: number;
+        };
+        /** @enum {string} */
         DictionaryType: "product" | "expense-category" | "unit" | "funding-channel" | "purchase-channel" | "location" | "income-category" | "payer";
         /** @enum {string} */
         DictionaryStatus: "ACTIVE" | "INACTIVE";
@@ -2051,6 +2152,61 @@ export interface operations {
             401: components["responses"]["AuthenticationError"];
             403: components["responses"]["AuthorizationError"];
             409: components["responses"]["ConflictError"];
+            503: components["responses"]["ServiceUnavailableError"];
+        };
+    };
+    getAdminOverview: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 只含账号与服务元数据，不含任何用户账目字段或聚合 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminOverview"];
+                };
+            };
+            401: components["responses"]["AuthenticationError"];
+            403: components["responses"]["AuthorizationError"];
+            503: components["responses"]["ServiceUnavailableError"];
+        };
+    };
+    listAdminAuditLogs: {
+        parameters: {
+            query?: {
+                administrator?: string;
+                action?: string;
+                object?: string;
+                result?: components["schemas"]["AdminAuditResult"];
+                period?: components["schemas"]["AdminAuditPeriod"];
+                page?: number;
+                size?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 日志摘要经过写入白名单和敏感字段清理，不含密码、令牌、坐标或账目内容 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminAuditLogPage"];
+                };
+            };
+            400: components["responses"]["ValidationError"];
+            401: components["responses"]["AuthenticationError"];
+            403: components["responses"]["AuthorizationError"];
             503: components["responses"]["ServiceUnavailableError"];
         };
     };
