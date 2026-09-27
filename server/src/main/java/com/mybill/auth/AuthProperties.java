@@ -14,6 +14,7 @@ public record AuthProperties(
         @DefaultValue("12") int bcryptStrength,
         @DefaultValue("PT15M") Duration rateLimitWindow,
         @DefaultValue("5") int maxLoginFailures,
+        @DefaultValue("50") int maxSourceLoginFailures,
         @DefaultValue("PT15M") Duration loginLockDuration,
         @DefaultValue("my-bill-local-rate-limit-pepper") String rateLimitPepper,
         @DefaultValue("") String rateLimitPepperFile
@@ -34,7 +35,8 @@ public record AuthProperties(
         }
         boolean hasInlinePepper = rateLimitPepper != null && rateLimitPepper.length() >= 16;
         boolean hasPepperFile = rateLimitPepperFile != null && !rateLimitPepperFile.isBlank();
-        if (maxLoginFailures < 2 || (!hasInlinePepper && !hasPepperFile)) {
+        if (maxLoginFailures < 2 || maxSourceLoginFailures < maxLoginFailures
+                || (!hasInlinePepper && !hasPepperFile)) {
             throw new IllegalArgumentException("rate limit configuration is unsafe");
         }
     }

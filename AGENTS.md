@@ -23,6 +23,7 @@
 - 后端检查：`npm run check:server`（通过项目脚本解析 Java 21，不依赖当前 shell 的默认 Java）
 - 数据库迁移与隔离：`npm run check:database`（复用系统 PostgreSQL 16+ 可执行程序创建并销毁一次性测试集群）
 - 代表性性能基线：`npm run check:performance`（同样使用一次性 PostgreSQL 集群，不连接开发库或其他项目数据库）
+- 安全扫描：`npm run check:security`（扫描当前工作区与 Git 历史中的高置信 secret/敏感文件，并通过 OSV 检查前后端运行、构建和测试依赖；需要联网查询漏洞库）
 - 本地联调：`npm run dev`
 
 任何代码改动完成后，先做定向验证，再从第三方视角自审业务边界、复用、权限、安全、性能和相关事实文档是否同步。

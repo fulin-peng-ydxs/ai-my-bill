@@ -33,9 +33,13 @@ public class LoginRateLimiter {
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public void assertAllowed(String username) {
+    public void assertAllowed(String username, String sourceAddress) {
         Instant now = clock.instant();
-        String subject = subjectHasher.digest(username);
+        assertSubjectAllowed(subjectHasher.usernameDigest(username), now);
+        assertSubjectAllowed(subjectHasher.sourceDigest(sourceAddress), now);
+    }
+
+    private void assertSubjectAllowed(String subject, Instant now) {
         // 锁定时长可能跨越固定窗口边界，必须先检查该主体所有尚未到期的锁。
         if (repository.hasActiveLoginLock(subject, now)) {
             meters.counter("my_bill.auth.login", "outcome", "rate_limited").increment();
@@ -51,22 +55,26 @@ public class LoginRateLimiter {
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public void recordFailure(String username) {
+    public void recordFailure(String username, String sourceAddress) {
         Instant now = clock.instant();
-        String subject = subjectHasher.digest(username);
+        recordSubjectFailure(subjectHasher.usernameDigest(username), properties.maxLoginFailures(), now);
+        recordSubjectFailure(subjectHasher.sourceDigest(sourceAddress), properties.maxSourceLoginFailures(), now);
+        meters.counter("my_bill.auth.login", "outcome", "failed").increment();
+    }
+
+    private void recordSubjectFailure(String subject, int failureLimit, Instant now) {
         Instant windowStart = windowStart(now);
         repository.ensureRateLimitRow(subject, windowStart, now);
         RateLimitState state = repository.lockRateLimit(subject, windowStart);
         int failures = state.failureCount() + 1;
-        Instant lockedUntil = failures >= properties.maxLoginFailures()
+        Instant lockedUntil = failures >= failureLimit
                 ? now.plus(properties.loginLockDuration()) : null;
         repository.recordFailure(subject, windowStart, failures, lockedUntil, now);
-        meters.counter("my_bill.auth.login", "outcome", "failed").increment();
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void clear(String username) {
-        repository.clearLoginFailures(subjectHasher.digest(username));
+        repository.clearLoginFailures(subjectHasher.usernameDigest(username));
     }
 
     public void recordSuccess() {

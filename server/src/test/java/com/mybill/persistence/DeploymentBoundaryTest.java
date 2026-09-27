@@ -30,7 +30,8 @@ class DeploymentBoundaryTest {
         assertThat(provision).contains("restart: \"no\"", "postgres_admin_password", "migration_db_password", "app_db_password");
         assertThat(migrate).contains("restart: \"no\"", "migration_db_password")
                 .doesNotContain("app_db_password", "postgres_admin_password", "auth_rate_limit_pepper");
-        assertThat(app).contains("app_db_password", "auth_rate_limit_pepper")
+        assertThat(app).contains("app_db_password", "auth_rate_limit_pepper",
+                        "MY_BILL_AUTH_MAX_SOURCE_LOGIN_FAILURES")
                 .doesNotContain("migration_db_password", "postgres_admin_password");
     }
 

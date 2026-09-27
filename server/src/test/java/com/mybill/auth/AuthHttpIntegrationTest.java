@@ -39,6 +39,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @SpringBootTest(properties = {
         "my-bill.auth.bcrypt-strength=10",
         "my-bill.auth.max-login-failures=3",
+        "my-bill.auth.max-source-login-failures=10",
         "my-bill.auth.rate-limit-pepper=test-auth-rate-limit-pepper",
         "my-bill.schema.validation-enabled=false"
 })
@@ -125,6 +126,13 @@ class AuthHttpIntegrationTest {
     void publicSurfaceIssuesCsrfAndDefaultsUnknownApiToDenied() throws Exception {
         MvcResult health = mockMvc.perform(get("/api/v1/health"))
                 .andExpect(status().isOk())
+                .andExpect(header().string("Cache-Control", org.hamcrest.Matchers.containsString("no-store")))
+                .andExpect(header().string("Content-Security-Policy",
+                        "default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"))
+                .andExpect(header().string("Referrer-Policy", "no-referrer"))
+                .andExpect(header().string("Permissions-Policy", "camera=(), geolocation=(), microphone=()"))
+                .andExpect(header().string("X-Content-Type-Options", "nosniff"))
+                .andExpect(header().string("X-Frame-Options", "DENY"))
                 .andExpect(header().string("Set-Cookie", org.hamcrest.Matchers.containsString("XSRF-TOKEN=")))
                 .andReturn();
         Cookie csrfCookie = health.getResponse().getCookie("XSRF-TOKEN");
@@ -167,10 +175,16 @@ class AuthHttpIntegrationTest {
         mockMvc.perform(get("/api/v1/admin/probe").cookie(userCookie))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("FORBIDDEN"));
+        mockMvc.perform(get("/api/v1/not-registered").cookie(userCookie))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("FORBIDDEN"));
 
         Cookie adminCookie = login("system-admin", "Admin-Formal-Password-2026", false);
         mockMvc.perform(get("/api/v1/admin/probe").cookie(adminCookie))
                 .andExpect(status().isNotFound());
+        mockMvc.perform(get("/api/v1/preferences").cookie(adminCookie))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("FORBIDDEN"));
     }
 
     @Test
@@ -253,7 +267,7 @@ class AuthHttpIntegrationTest {
                 .query(String.class).single();
         assertThat(persistedSubject).hasSize(64).doesNotContain("missing-user");
 
-        String previousWindowSubject = rateLimitSubjectHasher.digest("window-boundary-user");
+        String previousWindowSubject = rateLimitSubjectHasher.usernameDigest("window-boundary-user");
         jdbc.sql("""
                         INSERT INTO auth_rate_limit(
                             id, entry_point, subject_digest, window_started_at,
@@ -364,6 +378,30 @@ class AuthHttpIntegrationTest {
                 .contains("my_bill_auth_login_total")
                 .doesNotContain("alice")
                 .doesNotContain("system-admin");
+    }
+
+    @Test
+    @Order(11)
+    void sourceRateLimitCannotBeBypassedWithForwardedHeaderOrRotatingUsername() throws Exception {
+        String sourceAddress = "198.51.100.7";
+        for (int attempt = 0; attempt < 10; attempt++) {
+            String username = "rotating-user-" + attempt;
+            mockMvc.perform(post("/api/v1/auth/login")
+                            .with(csrf())
+                            .with(request -> { request.setRemoteAddr(sourceAddress); return request; })
+                            .header("X-Forwarded-For", "203.0.113." + attempt)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(json(Map.of("username", username, "password", "wrong-password"))))
+                    .andExpect(status().isUnauthorized());
+        }
+        mockMvc.perform(post("/api/v1/auth/login")
+                        .with(csrf())
+                        .with(request -> { request.setRemoteAddr(sourceAddress); return request; })
+                        .header("X-Forwarded-For", "192.0.2.99")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of("username", "another-user", "password", "wrong-password"))))
+                .andExpect(status().isTooManyRequests())
+                .andExpect(jsonPath("$.code").value("LOGIN_RATE_LIMITED"));
     }
 
     private void insertUser(UUID id, UUID tenantId, String username, String password,

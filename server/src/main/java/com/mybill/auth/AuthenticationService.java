@@ -42,27 +42,27 @@ public class AuthenticationService {
         this.dummyPasswordDigest = passwordEncoder.encode(DUMMY_PASSWORD);
     }
 
-    public AuthenticatedSession login(String username, String password) {
+    public AuthenticatedSession login(String sourceAddress, String username, String password) {
         Instant now = clock.instant();
-        loginRateLimiter.assertAllowed(username);
+        loginRateLimiter.assertAllowed(username, sourceAddress);
 
         Optional<AuthUser> candidate = repository.findUserByUsername(username);
         String storedDigest = candidate.map(AuthUser::passwordDigest).orElse(dummyPasswordDigest);
         boolean passwordMatches = passwordEncoder.matches(password, storedDigest);
         if (candidate.isEmpty() || !passwordMatches) {
-            loginRateLimiter.recordFailure(username);
+            loginRateLimiter.recordFailure(username, sourceAddress);
             throw invalidCredentials();
         }
 
         AuthUser user = candidate.orElseThrow();
         if (!"ACTIVE".equals(user.status()) || (user.role() == CurrentPrincipal.Role.USER
                 && (user.tenantId() == null || !"ACTIVE".equals(user.tenantStatus())))) {
-            loginRateLimiter.recordFailure(username);
+            loginRateLimiter.recordFailure(username, sourceAddress);
             throw new ApiException(HttpStatus.FORBIDDEN, "ACCOUNT_UNAVAILABLE",
                     "账号当前不可用，请联系管理员。", false);
         }
         if (user.temporaryPasswordExpiresAt() != null && !user.temporaryPasswordExpiresAt().isAfter(now)) {
-            loginRateLimiter.recordFailure(username);
+            loginRateLimiter.recordFailure(username, sourceAddress);
             throw new ApiException(HttpStatus.UNAUTHORIZED, "TEMPORARY_PASSWORD_EXPIRED",
                     "临时密码已过期，请联系管理员重置。", false);
         }

@@ -67,6 +67,7 @@ my-bill:
     bcrypt-strength: 12
     rate-limit-window: PT15M
     max-login-failures: 5
+    max-source-login-failures: ${MY_BILL_AUTH_MAX_SOURCE_LOGIN_FAILURES:50}
     login-lock-duration: PT15M
     rate-limit-pepper: ${MY_BILL_AUTH_RATE_LIMIT_PEPPER:my-bill-local-rate-limit-pepper}
   jobs:

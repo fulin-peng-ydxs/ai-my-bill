@@ -24,11 +24,20 @@ final class RateLimitSubjectHasher {
         this.pepper = value.getBytes(StandardCharsets.UTF_8);
     }
 
-    String digest(String username) {
+    String usernameDigest(String username) {
+        return digest("username:" + username);
+    }
+
+    String sourceDigest(String sourceAddress) {
+        String source = sourceAddress == null || sourceAddress.isBlank() ? "unknown" : sourceAddress;
+        return digest("source:" + source);
+    }
+
+    private String digest(String subject) {
         try {
             Mac mac = Mac.getInstance("HmacSHA256");
             mac.init(new SecretKeySpec(pepper, "HmacSHA256"));
-            return HexFormat.of().formatHex(mac.doFinal(username.getBytes(StandardCharsets.UTF_8)));
+            return HexFormat.of().formatHex(mac.doFinal(subject.getBytes(StandardCharsets.UTF_8)));
         } catch (GeneralSecurityException exception) {
             throw new IllegalStateException("运行环境缺少 HMAC-SHA256", exception);
         }

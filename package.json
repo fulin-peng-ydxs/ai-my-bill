@@ -14,6 +14,7 @@
     "check:server": "bash scripts/check-server.sh",
     "check:database": "bash scripts/test-database.sh",
     "check:performance": "bash scripts/test-performance.sh",
+    "check:security": "bash scripts/check-security.sh",
     "contracts:generate": "bash scripts/run-frontend.sh contract:generate"
   }
 }

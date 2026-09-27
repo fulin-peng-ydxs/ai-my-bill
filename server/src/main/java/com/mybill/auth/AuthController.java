@@ -1,6 +1,6 @@
 package com.mybill.auth;
 
-import jakarta.servlet.http.HttpServletResponse;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
@@ -29,9 +29,10 @@ final class AuthController {
     }
 
     @PostMapping("/login")
-    ResponseEntity<SessionResponse> login(@Valid @RequestBody LoginRequest request, CsrfToken csrfToken) {
+    ResponseEntity<SessionResponse> login(@Valid @RequestBody LoginRequest request, CsrfToken csrfToken,
+                                          HttpServletRequest servletRequest) {
         AuthenticationService.AuthenticatedSession session = authenticationService.login(
-                request.username(), request.password());
+                servletRequest.getRemoteAddr(), request.username(), request.password());
         return withSessionCookie(session, csrfToken);
     }
 

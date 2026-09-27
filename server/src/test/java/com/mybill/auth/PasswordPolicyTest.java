@@ -20,6 +20,10 @@ class PasswordPolicyTest {
                 .isInstanceOf(ApiException.class)
                 .extracting("code")
                 .isEqualTo("PASSWORD_POLICY_VIOLATION");
+        assertThatThrownBy(() -> policy.validate("NeverSayMyPassword"))
+                .isInstanceOf(ApiException.class)
+                .extracting("code")
+                .isEqualTo("PASSWORD_POLICY_VIOLATION");
         assertThatThrownBy(() -> policy.validate("a".repeat(65)))
                 .isInstanceOf(ApiException.class);
         assertThatCode(() -> policy.validate("安全密码-For-MyBill-2026"))
