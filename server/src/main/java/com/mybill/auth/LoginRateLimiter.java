@@ -2,6 +2,7 @@ package com.mybill.auth;
 
 import com.mybill.auth.AuthRepository.RateLimitState;
 import com.mybill.shared.api.ApiException;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
@@ -20,13 +21,15 @@ public class LoginRateLimiter {
     private final AuthProperties properties;
     private final RateLimitSubjectHasher subjectHasher;
     private final Clock clock;
+    private final MeterRegistry meters;
 
     LoginRateLimiter(AuthRepository repository, AuthProperties properties,
-                     RateLimitSubjectHasher subjectHasher, Clock clock) {
+                     RateLimitSubjectHasher subjectHasher, Clock clock, MeterRegistry meters) {
         this.repository = repository;
         this.properties = properties;
         this.subjectHasher = subjectHasher;
         this.clock = clock;
+        this.meters = meters;
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
@@ -35,12 +38,14 @@ public class LoginRateLimiter {
         String subject = subjectHasher.digest(username);
         // 锁定时长可能跨越固定窗口边界，必须先检查该主体所有尚未到期的锁。
         if (repository.hasActiveLoginLock(subject, now)) {
+            meters.counter("my_bill.auth.login", "outcome", "rate_limited").increment();
             throw rateLimited();
         }
         Instant windowStart = windowStart(now);
         repository.ensureRateLimitRow(subject, windowStart, now);
         RateLimitState state = repository.lockRateLimit(subject, windowStart);
         if (state.lockedUntil() != null && state.lockedUntil().isAfter(now)) {
+            meters.counter("my_bill.auth.login", "outcome", "rate_limited").increment();
             throw rateLimited();
         }
     }
@@ -56,11 +61,16 @@ public class LoginRateLimiter {
         Instant lockedUntil = failures >= properties.maxLoginFailures()
                 ? now.plus(properties.loginLockDuration()) : null;
         repository.recordFailure(subject, windowStart, failures, lockedUntil, now);
+        meters.counter("my_bill.auth.login", "outcome", "failed").increment();
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void clear(String username) {
         repository.clearLoginFailures(subjectHasher.digest(username));
+    }
+
+    public void recordSuccess() {
+        meters.counter("my_bill.auth.login", "outcome", "succeeded").increment();
     }
 
     private Instant windowStart(Instant now) {

@@ -70,6 +70,15 @@ if [[ "${role_flags}" != "my_bill_app:true:false:false:false:false:false,my_bill
 fi
 
 cd "${PROJECT_ROOT}"
+if [[ "${MY_BILL_DATABASE_TEST_SUITE:-regression}" == "performance" ]]; then
+  ./mvnw -B -pl server \
+    -Dtest=PerformanceBaselineIntegrationTest \
+    -Dmybill.performance.enabled=true \
+    -Dmybill.test.jdbc-url="jdbc:postgresql://127.0.0.1:${TEST_PORT}/${TEST_DATABASE}" \
+    test
+  exit 0
+fi
+
 # 先在真实 Spring Security + PostgreSQL 上验证认证、管理用户、字典治理、个人偏好和支出填报闭环；测试库属于本次一次性集群。
 ./mvnw -B -pl server \
   -Dtest=AuthHttpIntegrationTest,AdminUserHttpIntegrationTest,AccountDeletionHttpIntegrationTest,PersonalDictionaryHttpIntegrationTest,GovernanceHttpIntegrationTest,PreferenceHttpIntegrationTest,ExpenseHttpIntegrationTest,IncomeHttpIntegrationTest,DailyTemplateHttpIntegrationTest,LedgerQueryHttpIntegrationTest,ExpenseAdjustmentHttpIntegrationTest,LedgerLifecycleHttpIntegrationTest,ExportHttpIntegrationTest,ReportHttpIntegrationTest \

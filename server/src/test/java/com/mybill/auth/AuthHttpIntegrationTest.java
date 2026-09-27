@@ -344,6 +344,28 @@ class AuthHttpIntegrationTest {
                 .isInstanceOf(IllegalStateException.class);
     }
 
+    @Test
+    @Order(10)
+    void operationalMetricsRequireAdministratorAndExposeBoundedBusinessSignals() throws Exception {
+        mockMvc.perform(get("/api/v1/metrics")).andExpect(status().isUnauthorized());
+        Cookie user = login("alice", "Alice-Formal-Password-2026", false);
+        mockMvc.perform(get("/api/v1/prometheus").cookie(user)).andExpect(status().isForbidden());
+
+        Cookie admin = login("system-admin", "Admin-Formal-Password-2026", false);
+        mockMvc.perform(get("/api/v1/metrics").cookie(admin))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.names").isArray());
+        String prometheus = mockMvc.perform(get("/api/v1/prometheus").cookie(admin))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        assertThat(prometheus)
+                .contains("http_server_requests_seconds")
+                .contains("hikaricp_connections")
+                .contains("my_bill_auth_login_total")
+                .doesNotContain("alice")
+                .doesNotContain("system-admin");
+    }
+
     private void insertUser(UUID id, UUID tenantId, String username, String password,
                             Instant temporaryExpiry, String role) {
         insertUser(id, tenantId, username, password, temporaryExpiry, role, "ACTIVE");

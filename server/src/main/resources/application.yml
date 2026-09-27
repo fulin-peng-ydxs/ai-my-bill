@@ -6,9 +6,9 @@ spring:
     username: ${MY_BILL_DB_APP_USER:my_bill_app}
     password: ${MY_BILL_DB_APP_PASSWORD:}
     hikari:
-      maximum-pool-size: 5
-      minimum-idle: 1
-      connection-timeout: 5000
+      maximum-pool-size: ${MY_BILL_DB_POOL_MAX_SIZE:5}
+      minimum-idle: ${MY_BILL_DB_POOL_MIN_IDLE:1}
+      connection-timeout: ${MY_BILL_DB_CONNECTION_TIMEOUT_MS:5000}
   flyway:
     enabled: true
     url: ${MY_BILL_DB_MIGRATION_URL:${spring.datasource.url}}
@@ -33,16 +33,28 @@ server:
     include-stacktrace: never
 
 management:
+  prometheus:
+    metrics:
+      export:
+        enabled: true
   endpoints:
     web:
       base-path: /api/v1
       exposure:
-        include: health
+        include: health,metrics,prometheus
   endpoint:
     health:
       show-details: never
       probes:
         enabled: true
+  metrics:
+    tags:
+      application: ${spring.application.name}
+    distribution:
+      percentiles-histogram:
+        http.server.requests: true
+      slo:
+        http.server.requests: 100ms,250ms,1s,3s
 
 my-bill:
   schema:

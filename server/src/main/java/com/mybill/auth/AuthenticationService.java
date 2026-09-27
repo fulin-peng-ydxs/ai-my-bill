@@ -68,7 +68,9 @@ public class AuthenticationService {
         }
 
         loginRateLimiter.clear(username);
-        return createSession(user, now);
+        AuthenticatedSession session = createSession(user, now);
+        loginRateLimiter.recordSuccess();
+        return session;
     }
 
     @Transactional

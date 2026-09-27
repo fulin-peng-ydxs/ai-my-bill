@@ -68,6 +68,8 @@ public class SecurityConfig {
                         .sessionAuthenticationStrategy((authentication, request, response) -> { }))
                 .authorizeHttpRequests(authorize -> authorize
                         .requestMatchers(HttpMethod.GET, "/api/v1/health").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/v1/metrics", "/api/v1/metrics/**",
+                                "/api/v1/prometheus").hasRole("ADMIN")
                         .requestMatchers(HttpMethod.POST, "/api/v1/auth/login").permitAll()
                         .requestMatchers("/api/v1/auth/**").authenticated()
                         .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
