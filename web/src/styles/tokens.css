@@ -889,7 +889,7 @@ textarea:disabled {
 
 .quality-rule strong { grid-row: 1 / span 3; color: var(--color-warning); }
 .quality-rule small { color: var(--color-muted); }
-.expense-ranking-chart { min-height: max(260px, calc(var(--ranking-count, 6) * 36px)); }
+.report-ranking-chart { min-height: max(260px, calc(var(--ranking-count, 6) * 36px)); }
 .dimension-ranking { display: grid; border-top: 1px solid var(--color-border); }
 .dimension-ranking > button {
   display: grid;

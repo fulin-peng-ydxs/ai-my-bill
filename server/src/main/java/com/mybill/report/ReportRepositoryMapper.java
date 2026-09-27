@@ -14,4 +14,5 @@ public interface ReportRepositoryMapper {
     List<Map<String, Object>> accountCreatedDate(@Param("p") Map<String, Object> parameters);
     List<Map<String, Object>> expenseDimension(@Param("p") Map<String, Object> parameters);
     List<Map<String, Object>> expenseQuality(@Param("p") Map<String, Object> parameters);
+    List<Map<String, Object>> incomeDimension(@Param("p") Map<String, Object> parameters);
 }

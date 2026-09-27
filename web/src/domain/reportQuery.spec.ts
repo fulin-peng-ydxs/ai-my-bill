@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { adaptiveGrain, clearIncompatibleReportFilters, clearedReportFilters, parseReportPresentation,
-  parseReportRoute, reportPresentationQuery, reportRouteQuery } from './reportQuery'
+  isExpenseDimension, isIncomeDimension, parseReportRoute, reportPresentationQuery, reportRouteQuery } from './reportQuery'
 
 const ID = '123e4567-e89b-42d3-a456-426614174000'
 
@@ -49,5 +49,16 @@ describe('report route query', () => {
     expect(reportPresentationQuery(expense, { dimension: 'PRODUCT', grain: 'DAY', metric: 'NET_EXPENSE' }))
       .toMatchObject({ scope: 'EXPENSE', dimension: 'PRODUCT' })
     expect(parseReportPresentation({ dimension: 'QUALITY' }, { ...expense, scope: 'ALL' }).dimension).toBe('OVERVIEW')
+  })
+
+  it('allows income dimensions only inside the income scope and resolves shared names by scope', () => {
+    const income = { query: '', scope: 'INCOME' as const, range: 'THIS_MONTH' as const }
+    expect(parseReportPresentation({ dimension: 'PAYER' }, income).dimension).toBe('PAYER')
+    expect(parseReportPresentation({ dimension: 'NAME' }, income).dimension).toBe('NAME')
+    expect(parseReportPresentation({ dimension: 'PAYER' }, { ...income, scope: 'EXPENSE' }).dimension).toBe('OVERVIEW')
+    expect(isIncomeDimension('CATEGORY', 'INCOME')).toBe(true)
+    expect(isIncomeDimension('CATEGORY', 'EXPENSE')).toBe(false)
+    expect(isExpenseDimension('FREQUENCY', 'EXPENSE')).toBe(true)
+    expect(isExpenseDimension('FREQUENCY', 'INCOME')).toBe(false)
   })
 })

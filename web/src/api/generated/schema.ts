@@ -450,6 +450,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/reports/incomes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 聚合收入分类、收款方式、付款方、名称与频次 */
+        get: operations["getIncomeReport"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/ledger-entries": {
         parameters: {
             query?: never;
@@ -1224,6 +1241,8 @@ export interface components {
         /** @enum {string} */
         ExpenseReportDimension: "CATEGORY" | "PRODUCT" | "FUNDING_CHANNEL" | "PURCHASE_CHANNEL" | "LOCATION" | "HABIT" | "PRICE" | "FREQUENCY" | "QUALITY";
         /** @enum {string} */
+        IncomeReportDimension: "CATEGORY" | "FUNDING_CHANNEL" | "PAYER" | "NAME" | "FREQUENCY";
+        /** @enum {string} */
         ExpenseTimeBand: "NIGHT" | "MORNING" | "AFTERNOON" | "EVENING";
         /** @description 服务端精确聚合后的人民币十进制字符串；结余可为负数，聚合值不受单笔金额上限约束。 */
         ReportAmount: string;
@@ -1325,6 +1344,22 @@ export interface components {
             points: components["schemas"]["ExpenseReportPoint"][];
             truncated: boolean;
             qualityRule?: components["schemas"]["ExpenseQualityRule"];
+        };
+        IncomeReportPoint: {
+            group: string;
+            label: string;
+            value: string;
+            amount: components["schemas"]["ReportAmount"];
+            /** Format: int64 */
+            itemCount: number;
+            sharePercent?: string;
+            detail?: string;
+        };
+        IncomeReport: {
+            dimension: components["schemas"]["IncomeReportDimension"];
+            measureLabel: string;
+            points: components["schemas"]["IncomeReportPoint"][];
+            truncated: boolean;
         };
         /** @enum {string} */
         ExportScope: "CURRENT_FILTERS" | "ALL_DATA";
@@ -2643,6 +2678,40 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ExpenseReport"];
+                };
+            };
+            400: components["responses"]["ValidationError"];
+            401: components["responses"]["AuthenticationError"];
+            403: components["responses"]["AuthorizationError"];
+            503: components["responses"]["ServiceUnavailableError"];
+        };
+    };
+    getIncomeReport: {
+        parameters: {
+            query: {
+                dimension: components["schemas"]["IncomeReportDimension"];
+                range?: components["schemas"]["LedgerDateRange"];
+                startDate?: string;
+                endDate?: string;
+                query?: string;
+                fundingChannelId?: string;
+                incomeCategoryId?: string;
+                payerId?: string;
+                incomeName?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 最多 50 个收入排行点，停用字典项仍使用账目历史快照展示。 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IncomeReport"];
                 };
             };
             400: components["responses"]["ValidationError"];

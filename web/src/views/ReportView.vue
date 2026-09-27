@@ -4,23 +4,25 @@ import { useRoute, useRouter } from 'vue-router'
 
 import { listDictionaryCandidates, type DictionaryItem } from '../api/dictionaries'
 import type { LedgerDateRange, LedgerFilters } from '../api/ledgerEntries'
-import { getExpenseReport, getReportSummary, getTimeReport, type ExpenseReport, type ReportFilters,
-  type ReportScope, type ReportSummary, type ReportTimeGrain, type ReportTimeMetric, type TimeReport } from '../api/reports'
+import { getExpenseReport, getIncomeReport, getReportSummary, getTimeReport, type ExpenseReport,
+  type IncomeReport, type ReportFilters, type ReportScope, type ReportSummary, type ReportTimeGrain,
+  type ReportTimeMetric, type TimeReport } from '../api/reports'
 import AppliedFilterBar from '../components/AppliedFilterBar.vue'
 import AppStateBlock from '../components/AppStateBlock.vue'
 import ChartPanel from '../components/ChartPanel.vue'
-import ExpenseDimensionPanel from '../components/ExpenseDimensionPanel.vue'
 import FilterSheet from '../components/FilterSheet.vue'
 import FormField from '../components/FormField.vue'
 import GlobalLedgerSearch from '../components/GlobalLedgerSearch.vue'
 import MoneySummary, { type MoneySummaryItem } from '../components/MoneySummary.vue'
+import ReportDimensionPanel from '../components/ReportDimensionPanel.vue'
 import SegmentedControl from '../components/SegmentedControl.vue'
 import TimeTrendPanel from '../components/TimeTrendPanel.vue'
 import { useLatestRequest } from '../composables/useLatestRequest'
 import { ledgerRangeOptions, ledgerRouteQuery, optionLabel, type LedgerDrillContext } from '../domain/ledgerQuery'
 import {
-  clearIncompatibleReportFilters, clearedReportFilters, isExpenseDimension, parseReportPresentation, parseReportRoute,
-  reportPresentationQuery, reportRouteQuery, reportScopeOptions, type ReportDimension,
+  clearIncompatibleReportFilters, clearedReportFilters, isExpenseDimension, isIncomeDimension,
+  parseReportPresentation, parseReportRoute, reportPresentationQuery, reportRouteQuery, reportScopeOptions,
+  type ReportDimension,
 } from '../domain/reportQuery'
 import { usePreferencesStore } from '../stores/preferences'
 
@@ -33,6 +35,7 @@ const preferences = usePreferencesStore()
 const request = useLatestRequest<ReportSummary>()
 const timeRequest = useLatestRequest<TimeReport>()
 const expenseRequest = useLatestRequest<ExpenseReport>()
+const incomeRequest = useLatestRequest<IncomeReport>()
 const optionsRequest = useLatestRequest<{ items: OptionMap, failures: string[] }>()
 const searchText = ref('')
 const filters = ref<ReportFilters>({ query: '', scope: 'ALL', range: 'THIS_MONTH' })
@@ -52,11 +55,22 @@ const parsed = computed(() => parseReportRoute(route.query, defaultRange.value))
 const presentation = computed(() => parseReportPresentation(route.query, parsed.value))
 const rootCategories = computed(() => optionItems.categories.filter((item) => !item.parentId))
 const secondaryCategories = computed(() => optionItems.categories.filter((item) => item.parentId === draft.value.primaryCategoryId))
-const DIMENSION_LABELS: Record<ReportDimension, string> = {
-  OVERVIEW: '口径总览', TIME: '时间趋势', CATEGORY: '分类结构', PRODUCT: '商品排行',
-  FUNDING_CHANNEL: '支付方式', PURCHASE_CHANNEL: '购买渠道', LOCATION: '常用地点',
-  HABIT: '消费习惯', PRICE: '价格观察', FREQUENCY: '消费频次', QUALITY: '数据质量',
-}
+const dimensionOptions = computed<{ value: ReportDimension, label: string }[]>(() => [
+  { value: 'OVERVIEW', label: '口径总览' }, { value: 'TIME', label: '时间趋势' },
+  ...(filters.value.scope === 'EXPENSE' ? [
+    { value: 'CATEGORY' as const, label: '分类结构' }, { value: 'PRODUCT' as const, label: '商品排行' },
+    { value: 'FUNDING_CHANNEL' as const, label: '支付方式' }, { value: 'PURCHASE_CHANNEL' as const, label: '购买渠道' },
+    { value: 'LOCATION' as const, label: '常用地点' }, { value: 'HABIT' as const, label: '消费习惯' },
+    { value: 'PRICE' as const, label: '价格观察' }, { value: 'FREQUENCY' as const, label: '消费频次' },
+    { value: 'QUALITY' as const, label: '数据质量' },
+  ] : []),
+  ...(filters.value.scope === 'INCOME' ? [
+    { value: 'CATEGORY' as const, label: '收入分类' }, { value: 'FUNDING_CHANNEL' as const, label: '收款方式' },
+    { value: 'PAYER' as const, label: '付款方' }, { value: 'NAME' as const, label: '收入名称' },
+    { value: 'FREQUENCY' as const, label: '收入频次' },
+  ] : []),
+])
+const dimensionTitle = computed(() => dimensionOptions.value.find((item) => item.value === presentation.value.dimension)?.label ?? '分析维度')
 
 function nameFor(key: OptionKey, id?: string): string | undefined {
   return id ? optionItems[key].find((item) => item.id === id)?.name : undefined
@@ -98,7 +112,8 @@ const summaryItems = computed<MoneySummaryItem[]>(() => {
 async function load(): Promise<void> {
   const snapshot = { ...filters.value }
   const view = presentation.value
-  const expenseDimension = isExpenseDimension(view.dimension) ? view.dimension : undefined
+  const expenseDimension = isExpenseDimension(view.dimension, snapshot.scope) ? view.dimension : undefined
+  const incomeDimension = isIncomeDimension(view.dimension, snapshot.scope) ? view.dimension : undefined
   await Promise.all([
     request.execute((signal) => getReportSummary(snapshot, signal), {
       intent: request.data.value ? 'refresh' : 'replace', isEmpty: (data) => data.matchingItemCount === 0,
@@ -107,6 +122,9 @@ async function load(): Promise<void> {
       { intent: 'replace' })] : []),
     ...(expenseDimension
       ? [expenseRequest.execute((signal) => getExpenseReport(snapshot, expenseDimension, signal), { intent: 'replace' })]
+      : []),
+    ...(incomeDimension
+      ? [incomeRequest.execute((signal) => getIncomeReport(snapshot, incomeDimension, signal), { intent: 'replace' })]
       : []),
   ])
   const scroll = Number.parseInt(typeof route.query.scroll === 'string' ? route.query.scroll : '', 10)
@@ -246,6 +264,21 @@ function drillExpense(point: ExpenseReport['points'][number]): void {
   }
   void router.push({ path: '/ledger', query: ledgerRouteQuery(ledgerFilters, context) })
 }
+
+function drillIncome(point: IncomeReport['points'][number]): void {
+  const ledgerFilters: LedgerFilters = { ...filters.value, type: 'INCOME', lifecycle: 'ACTIVE' }
+  delete (ledgerFilters as Partial<ReportFilters>).scope
+  const dimension = presentation.value.dimension
+  if (dimension === 'CATEGORY') ledgerFilters.incomeCategoryId = point.value
+  else if (dimension === 'FUNDING_CHANNEL') ledgerFilters.fundingChannelId = point.value
+  else if (dimension === 'PAYER') ledgerFilters.payerId = point.value
+  else if (dimension === 'NAME' || dimension === 'FREQUENCY') ledgerFilters.incomeName = point.value
+  const context: LedgerDrillContext = {
+    scope: 'INCOME', dimension, value: point.value, label: point.label,
+    reportQuery: reportPresentationQuery(filters.value, presentation.value), reportScroll: Math.round(globalThis.scrollY),
+  }
+  void router.push({ path: '/ledger', query: ledgerRouteQuery(ledgerFilters, context) })
+}
 </script>
 
 <template>
@@ -316,65 +349,12 @@ function drillExpense(point: ExpenseReport['points'][number]): void {
             :value="presentation.dimension"
             @change="updatePresentation({ dimension: ($event.target as HTMLSelectElement).value as ReportDimension })"
           >
-            <option value="OVERVIEW">
-              口径总览
-            </option>
-            <option value="TIME">
-              时间趋势
-            </option>
             <option
-              v-if="filters.scope === 'EXPENSE'"
-              value="CATEGORY"
+              v-for="item in dimensionOptions"
+              :key="item.value"
+              :value="item.value"
             >
-              分类结构
-            </option>
-            <option
-              v-if="filters.scope === 'EXPENSE'"
-              value="PRODUCT"
-            >
-              商品排行
-            </option>
-            <option
-              v-if="filters.scope === 'EXPENSE'"
-              value="FUNDING_CHANNEL"
-            >
-              支付方式
-            </option>
-            <option
-              v-if="filters.scope === 'EXPENSE'"
-              value="PURCHASE_CHANNEL"
-            >
-              购买渠道
-            </option>
-            <option
-              v-if="filters.scope === 'EXPENSE'"
-              value="LOCATION"
-            >
-              常用地点
-            </option>
-            <option
-              v-if="filters.scope === 'EXPENSE'"
-              value="HABIT"
-            >
-              消费习惯
-            </option>
-            <option
-              v-if="filters.scope === 'EXPENSE'"
-              value="PRICE"
-            >
-              价格观察
-            </option>
-            <option
-              v-if="filters.scope === 'EXPENSE'"
-              value="FREQUENCY"
-            >
-              消费频次
-            </option>
-            <option
-              v-if="filters.scope === 'EXPENSE'"
-              value="QUALITY"
-            >
-              数据质量
+              {{ item.label }}
             </option>
           </select>
         </div>
@@ -468,23 +448,46 @@ function drillExpense(point: ExpenseReport['points'][number]): void {
         @select="drillTime"
       />
       <AppStateBlock
-        v-else-if="expenseRequest.status.value === 'loading'"
+        v-else-if="isExpenseDimension(presentation.dimension, filters.scope) && expenseRequest.status.value === 'loading'"
         kind="loading"
         title="正在计算支出分析"
       />
       <AppStateBlock
-        v-else-if="expenseRequest.status.value === 'error'"
+        v-else-if="isExpenseDimension(presentation.dimension, filters.scope) && expenseRequest.status.value === 'error'"
         kind="error"
         title="支出分析加载失败"
         :message="expenseRequest.error.value?.message"
         action-label="重试"
         @action="load"
       />
-      <ExpenseDimensionPanel
-        v-else-if="expenseRequest.data.value && isExpenseDimension(presentation.dimension)"
+      <ReportDimensionPanel
+        v-else-if="expenseRequest.data.value && isExpenseDimension(presentation.dimension, filters.scope)"
         :report="expenseRequest.data.value"
-        :title="DIMENSION_LABELS[presentation.dimension]"
+        :title="dimensionTitle"
+        eyebrow="支出分析"
+        tone="expense"
         @select="drillExpense"
+      />
+      <AppStateBlock
+        v-else-if="isIncomeDimension(presentation.dimension, filters.scope) && incomeRequest.status.value === 'loading'"
+        kind="loading"
+        title="正在计算收入分析"
+      />
+      <AppStateBlock
+        v-else-if="isIncomeDimension(presentation.dimension, filters.scope) && incomeRequest.status.value === 'error'"
+        kind="error"
+        title="收入分析加载失败"
+        :message="incomeRequest.error.value?.message"
+        action-label="重试"
+        @action="load"
+      />
+      <ReportDimensionPanel
+        v-else-if="incomeRequest.data.value && isIncomeDimension(presentation.dimension, filters.scope)"
+        :report="incomeRequest.data.value"
+        :title="dimensionTitle"
+        eyebrow="收入分析"
+        tone="income"
+        @select="drillIncome"
       />
     </template>
     <AppStateBlock

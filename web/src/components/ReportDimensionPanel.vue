@@ -4,17 +4,30 @@ import { GridComponent, TooltipComponent } from 'echarts/components'
 import { use } from 'echarts/core'
 import { computed, watch } from 'vue'
 
-import type { ExpenseReport } from '../api/reports'
+import type { ExpenseReport, IncomeReport } from '../api/reports'
 import { useReportChart } from '../composables/useReportChart'
 import { formatCny } from '../domain/money'
 
 use([BarChart, GridComponent, TooltipComponent])
-type Point = ExpenseReport['points'][number]
-const props = defineProps<{ report: ExpenseReport, title: string }>()
+type Point = ExpenseReport['points'][number] | IncomeReport['points'][number]
+type QualityRule = NonNullable<ExpenseReport['qualityRule']>
+const props = defineProps<{
+  report: ExpenseReport | IncomeReport
+  title: string
+  eyebrow: string
+  tone: 'expense' | 'income'
+}>()
 const emit = defineEmits<{ select: [point: Point] }>()
-const chartPoints = computed(() => [...props.report.points.slice(0, 12)].reverse())
+const points = computed<Point[]>(() => props.report.points)
+const chartPoints = computed(() => [...points.value.slice(0, 12)].reverse())
 const isCount = computed(() => props.report.dimension === 'FREQUENCY')
-const isQuality = computed(() => props.report.dimension === 'QUALITY')
+const qualityRule = computed<QualityRule | undefined>(() => 'qualityRule' in props.report
+  ? props.report.qualityRule : undefined)
+const isQuality = computed(() => qualityRule.value !== undefined)
+
+function warning(point: Point): string | undefined {
+  return 'warning' in point ? point.warning : undefined
+}
 
 function displayValue(point: Point): string {
   return isCount.value ? `${Number(point.amount)} 条` : formatCny(point.amount)
@@ -22,7 +35,7 @@ function displayValue(point: Point): string {
 
 const { host, token, refresh } = useReportChart(() => ({
   animationDuration: globalThis.matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 180,
-  color: [token('--color-expense-accent')],
+  color: [token(props.tone === 'income' ? '--color-income-accent' : '--color-expense-accent')],
   textStyle: { color: token('--color-text') },
   grid: { left: 8, right: 20, top: 8, bottom: 8, containLabel: true },
   xAxis: { type: 'value', axisLabel: { color: token('--color-muted'),
@@ -42,13 +55,13 @@ watch(() => props.report, refresh, { deep: true })
 
 <template>
   <section
-    class="chart-panel expense-dimension-panel"
+    class="chart-panel report-dimension-panel"
     :aria-label="title"
   >
     <header>
       <div>
         <p class="eyebrow">
-          支出分析
+          {{ eyebrow }}
         </p>
         <h2>{{ title }}</h2>
       </div>
@@ -56,32 +69,32 @@ watch(() => props.report, refresh, { deep: true })
     </header>
 
     <div
-      v-if="report.qualityRule"
+      v-if="qualityRule"
       class="quality-rule"
     >
-      <strong>规则 {{ report.qualityRule.version }}</strong>
-      <span>高价：过去 {{ report.qualityRule.priceWindowDays }} 天至少 {{ report.qualityRule.minimumPriceSamples }} 条，超过中位数 {{ Number(report.qualityRule.highPriceMultiplier) * 100 - 100 }}%</span>
-      <span>重复：同商品、金额和资金渠道在 {{ report.qualityRule.duplicateWindowMinutes }} 分钟内再次出现</span>
+      <strong>规则 {{ qualityRule.version }}</strong>
+      <span>高价：过去 {{ qualityRule.priceWindowDays }} 天至少 {{ qualityRule.minimumPriceSamples }} 条，超过中位数 {{ Number(qualityRule.highPriceMultiplier) * 100 - 100 }}%</span>
+      <span>重复：同商品、金额和资金渠道在 {{ qualityRule.duplicateWindowMinutes }} 分钟内再次出现</span>
       <small>只提示线索，不会修改、合并或删除账目。</small>
     </div>
 
     <div
-      v-if="!isQuality && report.points.length"
+      v-if="!isQuality && points.length"
       ref="host"
-      class="chart-canvas expense-ranking-chart"
+      class="chart-canvas report-ranking-chart"
       aria-hidden="true"
     />
 
     <div
-      v-if="report.points.length"
+      v-if="points.length"
       class="dimension-ranking"
       aria-label="可下钻排行"
     >
       <button
-        v-for="point in report.points"
-        :key="`${point.group}:${point.value}:${point.warning ?? ''}`"
+        v-for="point in points"
+        :key="`${point.group}:${point.value}:${warning(point) ?? ''}`"
         type="button"
-        :class="{ 'quality-clue': point.warning }"
+        :class="{ 'quality-clue': warning(point) }"
         @click="emit('select', point)"
       >
         <span class="dimension-rank-main">
@@ -90,10 +103,10 @@ watch(() => props.report, refresh, { deep: true })
           <span>{{ point.detail }}</span>
         </span>
         <span class="dimension-rank-value">
-          <em v-if="point.warning">{{ point.warning }}</em>
+          <em v-if="warning(point)">{{ warning(point) }}</em>
           <strong>{{ displayValue(point) }}</strong>
           <small v-if="point.sharePercent">{{ point.sharePercent }}% · {{ point.itemCount }} 条</small>
-          <small v-else>{{ point.itemCount }} 条 · 查看明细</small>
+          <small v-else>{{ isCount ? '查看明细' : `${point.itemCount} 条 · 查看明细` }}</small>
         </span>
       </button>
     </div>

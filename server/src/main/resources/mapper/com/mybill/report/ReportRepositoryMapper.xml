@@ -307,4 +307,64 @@
       baseline_value,actual_value,entry_id,NULL::date AS drill_start_date,NULL::date AS drill_end_date
     FROM issues ORDER BY business_time DESC,created_at DESC,entry_id,issue_type LIMIT #{p.limit}
   </select>
+
+  <sql id="filteredIncomes">
+    SELECT l.*
+    FROM ledger_entry l
+    WHERE l.tenant_id=current_setting('app.tenant_id')::uuid
+      AND l.entry_type='INCOME' AND l.lifecycle_status='ACTIVE'
+      AND l.business_date BETWEEN #{p.startDate} AND #{p.endDate}
+      <if test="p.fundingChannelId != null">AND l.funding_channel_id=#{p.fundingChannelId}</if>
+      <if test="p.keyword != null">
+        AND concat_ws(' ',l.income_name,l.payer_name_snapshot,l.income_category_name_snapshot,
+          l.funding_channel_name_snapshot,l.note) ILIKE #{p.keyword} ESCAPE '\'
+      </if>
+      <include refid="incomeFilters"/>
+  </sql>
+
+  <select id="incomeDimension" resultType="map">
+    WITH incomes AS (<include refid="filteredIncomes"/>), dimension_rows AS (
+    <choose>
+      <when test="p.dimension == 'CATEGORY'">
+        SELECT '收入分类' AS group_name,
+          (array_agg(income_category_name_snapshot ORDER BY business_time DESC,id DESC))[1] AS label,
+          income_category_id::text AS value,
+          sum(income_amount) AS amount,count(*) AS item_count,sum(income_amount) AS total_amount,
+          max(business_date) AS latest_date
+        FROM incomes GROUP BY income_category_id
+      </when>
+      <when test="p.dimension == 'FUNDING_CHANNEL'">
+        SELECT '收款方式' AS group_name,
+          (array_agg(funding_channel_name_snapshot ORDER BY business_time DESC,id DESC))[1] AS label,
+          funding_channel_id::text AS value,
+          sum(income_amount) AS amount,count(*) AS item_count,sum(income_amount) AS total_amount,
+          max(business_date) AS latest_date
+        FROM incomes GROUP BY funding_channel_id
+      </when>
+      <when test="p.dimension == 'PAYER'">
+        SELECT '付款方' AS group_name,
+          (array_agg(payer_name_snapshot ORDER BY business_time DESC,id DESC))[1] AS label,
+          payer_id::text AS value,
+          sum(income_amount) AS amount,count(*) AS item_count,sum(income_amount) AS total_amount,
+          max(business_date) AS latest_date
+        FROM incomes GROUP BY payer_id
+      </when>
+      <when test="p.dimension == 'NAME'">
+        SELECT '收入名称' AS group_name,income_name AS label,income_name AS value,
+          sum(income_amount) AS amount,count(*) AS item_count,sum(income_amount) AS total_amount,
+          max(business_date) AS latest_date
+        FROM incomes GROUP BY income_name
+      </when>
+      <otherwise>
+        SELECT '收入频次' AS group_name,income_name AS label,income_name AS value,
+          count(*)::numeric AS amount,count(*) AS item_count,sum(income_amount) AS total_amount,
+          max(business_date) AS latest_date
+        FROM incomes GROUP BY income_name
+      </otherwise>
+    </choose>
+    )
+    SELECT * FROM dimension_rows
+    ORDER BY amount DESC,label,value
+    LIMIT #{p.limit}
+  </select>
 </mapper>

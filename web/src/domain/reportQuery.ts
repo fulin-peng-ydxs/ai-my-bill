@@ -1,15 +1,20 @@
 import type { LocationQuery, LocationQueryRaw } from 'vue-router'
 
 import type { LedgerDateRange } from '../api/ledgerEntries'
-import type { ExpenseReportDimension, ReportFilters, ReportScope, ReportTimeGrain, ReportTimeMetric } from '../api/reports'
+import type { ExpenseReportDimension, IncomeReportDimension, ReportFilters, ReportScope,
+  ReportTimeGrain, ReportTimeMetric } from '../api/reports'
 
-export type ReportDimension = 'OVERVIEW' | 'TIME' | ExpenseReportDimension
+export type ReportDimension = 'OVERVIEW' | 'TIME' | ExpenseReportDimension | IncomeReportDimension
 export interface ReportPresentation { dimension: ReportDimension, grain: ReportTimeGrain, metric: ReportTimeMetric }
 
 const SCOPES: readonly ReportScope[] = ['ALL', 'EXPENSE', 'INCOME']
 const RANGES: readonly LedgerDateRange[] = ['TODAY', 'THIS_WEEK', 'THIS_MONTH', 'LAST_MONTH', 'THIS_YEAR', 'CUSTOM']
 const UUID = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i
 const DATE = /^\d{4}-\d{2}-\d{2}$/
+const EXPENSE_DIMENSIONS: readonly ExpenseReportDimension[] = [
+  'CATEGORY', 'PRODUCT', 'FUNDING_CHANNEL', 'PURCHASE_CHANNEL', 'LOCATION', 'HABIT', 'PRICE', 'FREQUENCY', 'QUALITY',
+]
+const INCOME_DIMENSIONS: readonly IncomeReportDimension[] = ['CATEGORY', 'FUNDING_CHANNEL', 'PAYER', 'NAME', 'FREQUENCY']
 const UUID_KEYS = [
   'fundingChannelId', 'primaryCategoryId', 'secondaryCategoryId', 'productId',
   'purchaseChannelId', 'locationLabelId', 'incomeCategoryId', 'payerId',
@@ -66,10 +71,10 @@ export function adaptiveGrain(filters: ReportFilters): ReportTimeGrain {
 }
 
 export function parseReportPresentation(query: LocationQuery, filters: ReportFilters): ReportPresentation {
-  const expenseDimensions: ExpenseReportDimension[] = [
-    'CATEGORY', 'PRODUCT', 'FUNDING_CHANNEL', 'PURCHASE_CHANNEL', 'LOCATION', 'HABIT', 'PRICE', 'FREQUENCY', 'QUALITY',
+  const dimensions: ReportDimension[] = ['OVERVIEW', 'TIME',
+    ...(filters.scope === 'EXPENSE' ? EXPENSE_DIMENSIONS : []),
+    ...(filters.scope === 'INCOME' ? INCOME_DIMENSIONS : []),
   ]
-  const dimensions: ReportDimension[] = ['OVERVIEW', 'TIME', ...(filters.scope === 'EXPENSE' ? expenseDimensions : [])]
   const grains: ReportTimeGrain[] = ['DAY', 'WEEK', 'MONTH', 'QUARTER', 'YEAR']
   const metrics: ReportTimeMetric[] = ['TOTAL_INCOME', 'GROSS_EXPENSE', 'ADJUSTMENT', 'NET_EXPENSE', 'BALANCE']
   const rawDimension = one(query.dimension) as ReportDimension
@@ -85,8 +90,12 @@ export function parseReportPresentation(query: LocationQuery, filters: ReportFil
   }
 }
 
-export function isExpenseDimension(dimension: ReportDimension): dimension is ExpenseReportDimension {
-  return !['OVERVIEW', 'TIME'].includes(dimension)
+export function isExpenseDimension(dimension: ReportDimension, scope: ReportScope): dimension is ExpenseReportDimension {
+  return scope === 'EXPENSE' && EXPENSE_DIMENSIONS.includes(dimension as ExpenseReportDimension)
+}
+
+export function isIncomeDimension(dimension: ReportDimension, scope: ReportScope): dimension is IncomeReportDimension {
+  return scope === 'INCOME' && INCOME_DIMENSIONS.includes(dimension as IncomeReportDimension)
 }
 
 export function reportPresentationQuery(filters: ReportFilters, presentation: ReportPresentation): LocationQueryRaw {

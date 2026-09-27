@@ -8,6 +8,8 @@ export type ReportTimeGrain = components['schemas']['ReportTimeGrain']
 export type ReportTimeMetric = components['schemas']['ReportTimeMetric']
 export type ExpenseReport = components['schemas']['ExpenseReport']
 export type ExpenseReportDimension = components['schemas']['ExpenseReportDimension']
+export type IncomeReport = components['schemas']['IncomeReport']
+export type IncomeReportDimension = components['schemas']['IncomeReportDimension']
 
 export interface ReportFilters {
   query: string
@@ -60,4 +62,14 @@ export function getExpenseReport(
   const params = reportParams(filters)
   params.set('dimension', dimension)
   return apiRequest(`/reports/expenses?${params}`, { signal })
+}
+
+export function getIncomeReport(
+  filters: ReportFilters,
+  dimension: IncomeReportDimension,
+  signal?: AbortSignal,
+): Promise<IncomeReport> {
+  const params = reportParams(filters)
+  params.set('dimension', dimension)
+  return apiRequest(`/reports/incomes?${params}`, { signal })
 }

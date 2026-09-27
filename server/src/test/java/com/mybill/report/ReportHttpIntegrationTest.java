@@ -47,6 +47,9 @@ class ReportHttpIntegrationTest {
     private static final UUID FUNDING = uuid("20400000-0000-4000-8000-000000000004");
     private static final UUID PAYER = uuid("20400000-0000-4000-8000-000000000005");
     private static final UUID INCOME_CATEGORY = uuid("20400000-0000-4000-8000-000000000006");
+    private static final UUID STOPPED_PAYER = uuid("20400000-0000-4000-8000-000000000009");
+    private static final UUID STOPPED_INCOME_CATEGORY = uuid("20400000-0000-4000-8000-000000000010");
+    private static final UUID STOPPED_FUNDING = uuid("20400000-0000-4000-8000-000000000011");
     private static final String PASSWORD = "T20-Formal-Password-2026";
 
     @Autowired MockMvc mockMvc;
@@ -67,7 +70,7 @@ class ReportHttpIntegrationTest {
         user(USER, "t20-user", "USER", TENANT);
         jdbc.sql("UPDATE app_user SET created_at='2024-01-01T00:00:00Z' WHERE id=:id").param("id", USER).update();
         user(ADMIN, "t20-admin", "ADMIN", null);
-        tenantDatabase.execute(TENANT, () -> { dictionaries(); expense(EXPENSE, "团队午餐", "100.00"); income(); adjustment(); excludedAdjustments();
+        tenantDatabase.execute(TENANT, () -> { dictionaries(); expense(EXPENSE, "团队午餐", "100.00"); income(); incomeDimensions(); adjustment(); excludedAdjustments();
             comparisonHistory(); qualityHistory(); trashedIncome(); return null; });
         tenantDatabase.execute(OTHER, () -> { foreignIncome(); return null; });
     }
@@ -120,6 +123,10 @@ class ReportHttpIntegrationTest {
         mockMvc.perform(get("/api/v1/reports/expenses").queryParam("dimension", "PRODUCT"))
                 .andExpect(status().isUnauthorized());
         mockMvc.perform(get("/api/v1/reports/expenses").cookie(login("t20-admin")).queryParam("dimension", "PRODUCT"))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(get("/api/v1/reports/incomes").queryParam("dimension", "PAYER"))
+                .andExpect(status().isUnauthorized());
+        mockMvc.perform(get("/api/v1/reports/incomes").cookie(login("t20-admin")).queryParam("dimension", "PAYER"))
                 .andExpect(status().isForbidden());
     }
 
@@ -216,6 +223,34 @@ class ReportHttpIntegrationTest {
                 .andExpect(jsonPath("$.items[0].id").value(DUPLICATE_ENTRY.toString()));
     }
 
+    @Test @Order(10) void returnsEveryIncomeDimensionWithSnapshotLabelsAndExactDrillValues() throws Exception {
+        Cookie cookie = login("t20-user");
+        Map<String, String> range = Map.of("range", "CUSTOM", "startDate", "2026-07-01", "endDate", "2026-07-31");
+        for (String dimension : new String[]{"CATEGORY", "FUNDING_CHANNEL", "PAYER", "NAME", "FREQUENCY"}) {
+            JsonNode report = incomes(cookie, dimension, range);
+            assertThat(report.path("points").isEmpty()).as(dimension).isFalse();
+            assertThat(report.path("points").get(0).path("value").asText()).as(dimension).isNotBlank();
+        }
+        JsonNode payer = incomes(cookie, "PAYER", range);
+        JsonNode stoppedPayer = java.util.stream.StreamSupport.stream(payer.path("points").spliterator(), false)
+                .filter(point -> point.path("value").asText().equals(STOPPED_PAYER.toString())).findFirst().orElseThrow();
+        assertThat(stoppedPayer.path("label").asText()).isEqualTo("公司乙");
+        assertThat(stoppedPayer.path("amount").asText()).isEqualTo("2200.00");
+        assertThat(stoppedPayer.path("itemCount").asLong()).isEqualTo(2);
+        assertThat(payer.path("points").findValuesAsText("value").stream()
+                .filter(STOPPED_PAYER.toString()::equals)).hasSize(1);
+        JsonNode frequency = incomes(cookie, "FREQUENCY", range);
+        assertThat(frequency.path("measureLabel").asText()).isEqualTo("收入明细数");
+        assertThat(frequency.path("points").get(0).path("label").asText()).isEqualTo("月度工资");
+        assertThat(frequency.path("points").get(0).path("amount").asText()).isEqualTo("2.00");
+        assertThat(frequency.path("points").get(0).path("detail").asText())
+                .contains("累计收入 ¥2200.00").contains("最近记录 2026-07-02");
+        mockMvc.perform(get("/api/v1/ledger-entries").cookie(cookie).queryParam("type", "INCOME")
+                .queryParam("range", "CUSTOM").queryParam("startDate", "2026-07-01").queryParam("endDate", "2026-07-31")
+                .queryParam("incomeName", "月度工资"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.items.length()").value(2));
+    }
+
     private JsonNode summary(Cookie cookie, Map<String, String> params) throws Exception {
         var request = get("/api/v1/reports/summary").cookie(cookie);
         params.forEach(request::queryParam);
@@ -230,6 +265,12 @@ class ReportHttpIntegrationTest {
 
     private JsonNode expenses(Cookie cookie, String dimension, Map<String, String> params) throws Exception {
         var request = get("/api/v1/reports/expenses").cookie(cookie).queryParam("dimension", dimension);
+        params.forEach(request::queryParam);
+        return objectMapper.readTree(mockMvc.perform(request).andExpect(status().isOk()).andReturn().getResponse().getContentAsByteArray());
+    }
+
+    private JsonNode incomes(Cookie cookie, String dimension, Map<String, String> params) throws Exception {
+        var request = get("/api/v1/reports/incomes").cookie(cookie).queryParam("dimension", dimension);
         params.forEach(request::queryParam);
         return objectMapper.readTree(mockMvc.perform(request).andExpect(status().isOk()).andReturn().getResponse().getContentAsByteArray());
     }
@@ -250,6 +291,9 @@ class ReportHttpIntegrationTest {
         dictionary("expense_category", CATEGORY, "餐饮"); dictionary("unit", UNIT, "次");
         dictionary("funding_channel", FUNDING, "银行卡"); dictionary("payer", PAYER, "客户甲");
         dictionary("income_category", INCOME_CATEGORY, "奖金");
+        dictionary("payer", STOPPED_PAYER, "公司乙");
+        dictionary("income_category", STOPPED_INCOME_CATEGORY, "工资");
+        dictionary("funding_channel", STOPPED_FUNDING, "支付宝");
         jdbc.sql("INSERT INTO product(tenant_id,id,display_name,normalized_name,status) VALUES(current_setting('app.tenant_id')::uuid,:id,'团队午餐','团队午餐','ACTIVE')").param("id", PRODUCT).update();
         jdbc.sql("INSERT INTO product(tenant_id,id,display_name,normalized_name,status) VALUES(current_setting('app.tenant_id')::uuid,:id,'历史支出','历史支出','ACTIVE')").param("id", HISTORY_PRODUCT).update();
         jdbc.sql("INSERT INTO product(tenant_id,id,display_name,normalized_name,status) VALUES(current_setting('app.tenant_id')::uuid,:id,'品质咖啡','品质咖啡','ACTIVE')").param("id", QUALITY_PRODUCT).update();
@@ -273,6 +317,24 @@ class ReportHttpIntegrationTest {
                 VALUES(current_setting('app.tenant_id')::uuid,'20300000-0000-4000-8000-000000000002','INCOME','2026-09-07T13:00:00+08:00','2026-09-07',
                   '项目奖金',:payer,'客户甲',:category,'奖金',250.00,:funding,'银行卡','到账')
                 """).param("payer", PAYER).param("category", INCOME_CATEGORY).param("funding", FUNDING).update();
+    }
+
+    private void incomeDimensions() {
+        jdbc.sql("""
+                INSERT INTO ledger_entry(tenant_id,id,entry_type,business_time,business_date,income_name,payer_id,payer_name_snapshot,
+                  income_category_id,income_category_name_snapshot,income_amount,funding_channel_id,funding_channel_name_snapshot,note)
+                VALUES(current_setting('app.tenant_id')::uuid,'20300000-0000-4000-8000-000000000050','INCOME','2026-07-01T09:00:00+08:00','2026-07-01',
+                    '月度工资',:payer,'公司乙旧称',:category,'工资旧分类',1000.00,:funding,'旧收款方式','六月工资'),
+                  (current_setting('app.tenant_id')::uuid,'20300000-0000-4000-8000-000000000051','INCOME','2026-07-02T09:00:00+08:00','2026-07-02',
+                    '月度工资',:payer,'公司乙',:category,'工资',1200.00,:funding,'支付宝','补发工资'),
+                  (current_setting('app.tenant_id')::uuid,'20300000-0000-4000-8000-000000000052','INCOME','2026-07-03T09:00:00+08:00','2026-07-03',
+                    '礼金',:activePayer,'客户甲',:activeCategory,'奖金',300.00,:activeFunding,'银行卡','节日礼金')
+                """).param("payer", STOPPED_PAYER).param("category", STOPPED_INCOME_CATEGORY)
+                .param("funding", STOPPED_FUNDING).param("activePayer", PAYER)
+                .param("activeCategory", INCOME_CATEGORY).param("activeFunding", FUNDING).update();
+        jdbc.sql("UPDATE payer SET status='INACTIVE' WHERE id=:id").param("id", STOPPED_PAYER).update();
+        jdbc.sql("UPDATE income_category SET status='INACTIVE' WHERE id=:id").param("id", STOPPED_INCOME_CATEGORY).update();
+        jdbc.sql("UPDATE funding_channel SET status='INACTIVE' WHERE id=:id").param("id", STOPPED_FUNDING).update();
     }
 
     private void adjustment() {

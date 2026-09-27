@@ -19,10 +19,12 @@ import java.util.UUID;
 public class ReportController {
     private final ReportService service;
     private final ExpenseReportService expenseService;
+    private final IncomeReportService incomeService;
 
-    ReportController(ReportService service, ExpenseReportService expenseService) {
+    ReportController(ReportService service, ExpenseReportService expenseService, IncomeReportService incomeService) {
         this.service = service;
         this.expenseService = expenseService;
+        this.incomeService = incomeService;
     }
 
     @GetMapping("/summary")
@@ -86,5 +88,21 @@ public class ReportController {
             @RequestParam(required = false) UUID locationLabelId) {
         return expenseService.report(principal, dimension, range, startDate, endDate, query, fundingChannelId,
                 primaryCategoryId, secondaryCategoryId, productId, purchaseChannelId, locationLabelId);
+    }
+
+    @GetMapping("/incomes")
+    ReportContracts.IncomeReport incomes(
+            @AuthenticationPrincipal CurrentPrincipal principal,
+            @RequestParam ReportContracts.IncomeDimension dimension,
+            @RequestParam(defaultValue = "THIS_MONTH") BusinessDateRange range,
+            @RequestParam(required = false) LocalDate startDate,
+            @RequestParam(required = false) LocalDate endDate,
+            @RequestParam(defaultValue = "") @Size(max = 200) String query,
+            @RequestParam(required = false) UUID fundingChannelId,
+            @RequestParam(required = false) UUID incomeCategoryId,
+            @RequestParam(required = false) UUID payerId,
+            @RequestParam(required = false) @Size(max = 100) String incomeName) {
+        return incomeService.report(principal, dimension, range, startDate, endDate, query, fundingChannelId,
+                incomeCategoryId, payerId, incomeName);
     }
 }

@@ -53,6 +53,12 @@ class ReportRepository {
                 .map(ReportRepository::mapExpense).list();
     }
 
+    List<IncomeRow> incomeDimension(ReportFilter filter, ReportContracts.IncomeDimension dimension, int limit) {
+        return bind(operations.select(mapper::incomeDimension), filter)
+                .param("dimension", dimension.name()).param("limit", limit)
+                .map(ReportRepository::mapIncome).list();
+    }
+
     private static MybatisOperations.SelectSpec bind(MybatisOperations.SelectSpec call, ReportFilter filter) {
         return call
                 .param("scope", filter.scope().name())
@@ -96,6 +102,12 @@ class ReportRepository {
                 row.getObject("drill_start_date", LocalDate.class), row.getObject("drill_end_date", LocalDate.class));
     }
 
+    private static IncomeRow mapIncome(DatabaseRow row, int rowNumber) throws SQLException {
+        return new IncomeRow(row.getString("group_name"), row.getString("label"), row.getString("value"),
+                row.getBigDecimal("amount"), row.getLong("item_count"),
+                row.getBigDecimal("total_amount"), row.getObject("latest_date", LocalDate.class));
+    }
+
     private static String escapeLike(String value) {
         return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_");
     }
@@ -114,4 +126,6 @@ class ReportRepository {
                       BigDecimal averageIntervalDays, String issueType, BigDecimal baselineValue,
                       BigDecimal actualValue, UUID entryId, LocalDate drillStartDate,
                       LocalDate drillEndDate) { }
+    record IncomeRow(String group, String label, String value, BigDecimal amount, long itemCount,
+                     BigDecimal totalAmount, LocalDate latestDate) { }
 }

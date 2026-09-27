@@ -11,6 +11,7 @@ final class ReportContracts {
     enum TimeGrain { DAY, WEEK, MONTH, QUARTER, YEAR }
     enum TimeMetric { TOTAL_INCOME, GROSS_EXPENSE, ADJUSTMENT, NET_EXPENSE, BALANCE }
     enum ExpenseDimension { CATEGORY, PRODUCT, FUNDING_CHANNEL, PURCHASE_CHANNEL, LOCATION, HABIT, PRICE, FREQUENCY, QUALITY }
+    enum IncomeDimension { CATEGORY, FUNDING_CHANNEL, PAYER, NAME, FREQUENCY }
 
     record Summary(
             String totalIncome,
@@ -54,4 +55,11 @@ final class ReportContracts {
     record ExpenseReport(ExpenseDimension dimension, String measureLabel,
                          List<ExpensePoint> points, boolean truncated,
                          QualityRule qualityRule) { }
+
+    /** 收入排行同样使用稳定业务值下钻；展示标签始终来自账目快照。 */
+    record IncomePoint(String group, String label, String value, String amount,
+                       long itemCount, String sharePercent, String detail) { }
+
+    record IncomeReport(IncomeDimension dimension, String measureLabel,
+                        List<IncomePoint> points, boolean truncated) { }
 }
