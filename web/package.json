@@ -9,10 +9,12 @@
   },
   "scripts": {
     "dev": "vite --port ${MY_BILL_WEB_PORT:-5174}",
+    "preview": "vite preview",
     "build": "vue-tsc -b && vite build",
     "typecheck": "vue-tsc -b --pretty false",
     "lint": "eslint . --max-warnings=0",
     "test": "vitest run",
+    "test:e2e": "playwright test",
     "contract:lint": "redocly lint --config ../contracts/redocly.yaml ../contracts/openapi.yaml",
     "contract:generate": "openapi-typescript ../contracts/openapi.yaml -o src/api/generated/schema.ts",
     "contract:check": "npm run contract:lint && npm run contract:generate && git diff --exit-code -- src/api/generated/schema.ts",
@@ -27,6 +29,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.37.0",
+    "@playwright/test": "^1.61.1",
     "@redocly/cli": "^2.54.3",
     "@types/node": "^24.7.2",
     "@vitejs/plugin-vue": "^6.0.9",

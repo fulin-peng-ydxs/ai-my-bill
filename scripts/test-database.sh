@@ -25,10 +25,20 @@ TEST_LOG="${TEST_ROOT}/postgres.log"
 TEST_ADMIN="my_bill_test_admin"
 TEST_DATABASE="my_bill_t2_test"
 TEST_PORT=""
+SERVER_PID=""
+WEB_PID=""
 
 cleanup() {
   local exit_code=$?
   trap - EXIT HUP INT TERM
+  if [[ -n "${WEB_PID}" ]]; then
+    kill "${WEB_PID}" >/dev/null 2>&1 || true
+    wait "${WEB_PID}" >/dev/null 2>&1 || true
+  fi
+  if [[ -n "${SERVER_PID}" ]]; then
+    kill "${SERVER_PID}" >/dev/null 2>&1 || true
+    wait "${SERVER_PID}" >/dev/null 2>&1 || true
+  fi
   if [[ -s "${TEST_DATA}/postmaster.pid" ]]; then
     pg_ctl -D "${TEST_DATA}" -m fast stop >/dev/null 2>&1 || true
   fi
@@ -70,6 +80,80 @@ if [[ "${role_flags}" != "my_bill_app:true:false:false:false:false:false,my_bill
 fi
 
 cd "${PROJECT_ROOT}"
+if [[ "${MY_BILL_DATABASE_TEST_SUITE:-regression}" == "e2e" ]]; then
+  database_fingerprint="$(psql -h 127.0.0.1 -p "${TEST_PORT}" -U "${TEST_ADMIN}" -d "${TEST_DATABASE}" -tAc \
+    "SELECT current_database() || '|' || inet_server_addr()::text || '|' || inet_server_port()::text || '|' || pg_postmaster_start_time()::text")"
+  if [[ -z "${database_fingerprint}" ]]; then
+    echo "E2E 数据库指纹为空，拒绝写入 fixture。" >&2
+    exit 1
+  fi
+
+  if MY_BILL_E2E_WRITE=1 MY_BILL_E2E_EXPECTED_DB_FINGERPRINT="invalid-${database_fingerprint}" \
+    ./mvnw -B -pl server \
+      -Dtest=E2eFixtureSeederTest \
+      -Dmybill.e2e.enabled=true \
+      -Dmybill.test.jdbc-url="jdbc:postgresql://127.0.0.1:${TEST_PORT}/${TEST_DATABASE}" \
+      test >"${TEST_ROOT}/guard-negative.log" 2>&1; then
+    echo "E2E 错误数据库指纹未被拒绝。" >&2
+    exit 1
+  fi
+  schema_after_rejection="$(psql -h 127.0.0.1 -p "${TEST_PORT}" -U "${TEST_ADMIN}" -d "${TEST_DATABASE}" -tAc \
+    "SELECT to_regclass('public.flyway_schema_history') IS NOT NULL")"
+  if [[ "${schema_after_rejection}" != "f" ]]; then
+    echo "E2E 门禁拒绝前已经产生 schema 写入。" >&2
+    exit 1
+  fi
+
+  MY_BILL_E2E_WRITE=1 MY_BILL_E2E_EXPECTED_DB_FINGERPRINT="${database_fingerprint}" \
+    ./mvnw -B -pl server \
+      -Dtest=E2eFixtureSeederTest \
+      -Dmybill.e2e.enabled=true \
+      -Dmybill.test.jdbc-url="jdbc:postgresql://127.0.0.1:${TEST_PORT}/${TEST_DATABASE}" \
+      test
+
+  ./mvnw -B -pl server -DskipTests package
+  MY_BILL_BUILD_ID=e2e npm --prefix web run build
+  server_jar="$(find server/target -maxdepth 1 -type f -name '*.jar' ! -name '*.original' | head -1)"
+  if [[ -z "${server_jar}" ]]; then
+    echo "E2E 未找到可启动的服务端 jar。" >&2
+    exit 1
+  fi
+  server_port="$(node -e "const s=require('node:net').createServer();s.listen(0,'127.0.0.1',()=>{console.log(s.address().port);s.close()})")"
+  web_port="$(node -e "const s=require('node:net').createServer();s.listen(0,'127.0.0.1',()=>{console.log(s.address().port);s.close()})")"
+
+  MY_BILL_DB_HOST=127.0.0.1 MY_BILL_DB_PORT="${TEST_PORT}" MY_BILL_DB_NAME="${TEST_DATABASE}" \
+    MY_BILL_DB_APP_USER=my_bill_app MY_BILL_DB_APP_PASSWORD=app_test \
+    MY_BILL_DB_MIGRATION_USER=my_bill_migration MY_BILL_DB_MIGRATION_PASSWORD=migration_test \
+    MY_BILL_SERVER_PORT="${server_port}" MY_BILL_AUTH_RATE_LIMIT_PEPPER=t28-e2e-rate-limit-pepper \
+    MY_BILL_EXPORT_DIRECTORY="${TEST_ROOT}/exports" MY_BILL_JOB_POLL_DELAY_MS=60000 \
+    java -jar "${server_jar}" >"${TEST_ROOT}/server.log" 2>&1 &
+  SERVER_PID=$!
+  MY_BILL_SERVER_PORT="${server_port}" npm --prefix web run preview -- --host 127.0.0.1 --port "${web_port}" \
+    >"${TEST_ROOT}/web.log" 2>&1 &
+  WEB_PID=$!
+
+  for attempt in {1..90}; do
+    if curl --fail --silent "http://127.0.0.1:${server_port}/api/v1/health" >/dev/null \
+      && curl --fail --silent "http://127.0.0.1:${web_port}/login" >/dev/null; then
+      break
+    fi
+    if ((attempt == 90)); then
+      echo "E2E 服务未在等待窗口内就绪。" >&2
+      sed -n '1,240p' "${TEST_ROOT}/server.log" >&2
+      sed -n '1,160p' "${TEST_ROOT}/web.log" >&2
+      exit 1
+    fi
+    sleep 1
+  done
+
+  if ! MY_BILL_E2E_BASE_URL="http://127.0.0.1:${web_port}" npm --prefix web run test:e2e; then
+    sed -n '1,240p' "${TEST_ROOT}/server.log" >&2
+    sed -n '1,160p' "${TEST_ROOT}/web.log" >&2
+    exit 1
+  fi
+  exit 0
+fi
+
 if [[ "${MY_BILL_DATABASE_TEST_SUITE:-regression}" == "performance" ]]; then
   ./mvnw -B -pl server \
     -Dtest=PerformanceBaselineIntegrationTest \
