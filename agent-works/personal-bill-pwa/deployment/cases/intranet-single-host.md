@@ -106,6 +106,14 @@ Trivy 0.74.0 官方校验和核对后，在目标机执行 OS 包扫描，结果
 
 仍未完成：上述镜像漏洞处置、目标终端 CA 信任/手机 PWA 与启动表现、管理页实际展示、证书失败补偿与告警故障演练、目标环境完整数据/文件恢复及 RTO、最终验收。注销审计保全/重放工具已有本地实现与隔离测试：91 项 HTTP/业务测试通过，CLI 保全、全库恢复、非空条数/精确金额对账、旧快照注销账号与文件清理及重复执行通过，恢复环节约 10 秒；目标容器运行与完整恢复仍需验证，不以本地测试冒充目标恢复通过。
 
+## 离线恢复工具目标机演练
+
+源码 `83c6c1f` 已在目标机独立构建为 `my-bill-recovery:83c6c1f`，镜像 ID `sha256:c54c4abf7c1ba3d5d715efa9f6de7926a449653c7cd47b09a275e0a8ce21e7e8`；来源目录 `/opt/my-bill/releases/recovery-83c6c1f`。这是一次性维护镜像，常驻 app 仍是 d7ce73d，未将恢复操作指向线上库。
+
+以 `/var/backups/my-bill/daily/2026-09-28.cms` 执行 `verify-recovery-tool.sh`：SHA256 成功，独立 internal 网络/无宿主端口临时 PG 恢复数据库原授权和导出目录，工具以随机 app 凭据完成 preserve、replay、再次 replay。耗时 87 秒，账目条数/金额前后一致，临时容器、网络、明文目录已清理。备份账目为零，脚本输出 LIMIT；这不是代表性业务 RTO 通过，也没有把副本中的审计当作覆盖前最新注销事实。
+
+恢复镜像另行 Trivy OS 复扫：CRITICAL/HIGH 均为 0，MEDIUM 38、LOW 4；结果 `/opt/my-bill/scans/recovery-83c6c1f.json`。数据库和迁移镜像此前高危命中仍未处置。证书签发上传的暂存叶文件已清除，正式证书仍在 `/etc/my-bill/tls`。
+
 ## 后续维护入口
 
 在 /opt/my-bill/current 按通用手册定义bill_compose后，查看ps/logs与选择性容器状态；备份查看timer/service日志和last-success。新版本升级先保全旧制品及备份，按手册维护窗口操作，完成后更新本案例。当前未登记已演练的旧版业务回退制品，不承诺一键回滚。

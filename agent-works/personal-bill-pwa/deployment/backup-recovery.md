@@ -116,3 +116,11 @@ docker run --rm --network RECOVERY_INTERNAL_NETWORK --read-only \
 ```
 
 `preserve` 使用 `MY_BILL_RECOVERY_ACTION=preserve`、当前库的应用 URL 和 secret、可写保全目录，省略预期指纹；必须先停止写入端，且输出文件不得已存在。`replay` 的实时指纹查询与 `RecoveryAuditMapper.xml` 的 `fingerprint` 保持完全一致，用应用角色、同一连接地址从恢复库取得；数据库重启后须重新核对。容器不发布端口、不挂 Docker socket、不挂线上导出卷、不持有管理员或迁移凭据。失败退出后保留审计源与恢复副本，修复失败原因并重新执行；只有业务核验通过后才制定切换步骤。
+
+### 目标宿主隔离容器演练
+
+目标主机 root 执行 `bash deploy/scripts/verify-recovery-tool.sh /var/backups/my-bill/daily/YYYY-MM-DD.cms my-bill-recovery:已核对源码提交号`。先从对应源码用 `docker build -f server/Dockerfile --target app -t my-bill-recovery:提交号 .` 构建工具镜像并记录镜像 ID；镜像标签只接受 7—40 位十六进制提交号。
+
+脚本校验归档 SHA256，解密数据库及同一归档的 exports 到 0700 临时目录，建立独立 internal 网络、无宿主端口的临时 PG 与随机凭据；保留对象原所有权和授权，应用仅用 app 角色连接恢复库。随后运行保全、重放及重复重放，核对账目条数和金额，退出清除本次容器、网络及明文目录。最多使用 PG 768MiB 与工具 768MiB 内存、PG 2GiB tmpfs；不足时失败，不能直接切向线上资源。运行期间短暂消耗额外资源，应避开宿主其他业务高峰。
+
+这里保全的是**归档恢复副本**中的审计，用于验证目标宿主的工具链与权限，不证明已保全备份后新发生的注销；真实恢复仍须先从维护窗口中的当前库保全最新审计。若归档没有账目，脚本明确输出 LIMIT，不将空库验证计作代表性业务恢复或 RTO 达标。匿名审计会使恢复副本应删数据减少，若前后总额变化，脚本中止自动通过并要求按重放结果人工对账；不得改为忽略差异。
