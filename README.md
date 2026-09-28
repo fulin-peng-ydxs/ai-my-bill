@@ -4,7 +4,7 @@
 
 一期使用内网 IP + HTTPS。实际地址、服务器和上线验收状态见[内网案例](agent-works/personal-bill-pwa/deployment/cases/intranet-single-host.md)。系统不提供账户余额、转账和离线记账。
 
-手机安装使用 PWA 的“添加到主屏幕”，无需下载 IPA/APK；iPhone/iPad 的内部 CA 信任、Safari 安装步骤及待验收项目见[内网案例安装指引](agent-works/personal-bill-pwa/deployment/cases/intranet-single-host.md#iphone--ipad-安装与待验收步骤)。
+手机安装使用 PWA 的“添加到主屏幕”，无需下载 IPA/APK；iPhone/iPad 的内部 CA 信任、Safari 安装步骤及验收记录见[内网案例安装指引](agent-works/personal-bill-pwa/deployment/cases/intranet-single-host.md#iphone--ipad-安装与待验收步骤)。
 
 ## 快速开始
 
