@@ -1,60 +1,53 @@
-# 个人账单 PWA 工程基线决策
+# 总体架构与工程契约
 
-## 1. 运行时与依赖基线
+## 范围与结论
 
-- 前端锁定 Node.js 24.11.1 与 npm 11.6.2，使用 Vue 3、Vite、TypeScript、Pinia、Vue Router、ECharts 和 Lucide Vue Next。依赖由 `web/package-lock.json` 固化，CI 使用 `npm ci`。
-- 后端锁定 Java 21 LTS、Spring Boot 3.5.16、MyBatis-Plus 3.5.17 与 Maven Wrapper。生产 Java 只调用 Mapper 方法，参数化 SQL、动态条件、锁和批量语句集中在 XML；架构测试禁止 Spring JDBC/JPA 与 Java 内嵌 SQL 回流。
-- PostgreSQL 开发基线为 16 或更高受支持版本，生产镜像固定为 PostgreSQL 16.14。当前已固化 Flyway 11.7.2、独立 bootstrap/迁移/应用角色、16 张租户表的强制 RLS 与生产应用只读版本门禁；预期 schema 版本为 `012`。`job_run` 支持有限重试、租约、合作式取消、批次幂等和到时可领取，商品具备显式排序、合并留痕和默认字典规范化约束，注销匿名审计固定保留 180 天。
-- V012 的注销审计不保存账目、用户名、用户 ID 或租户 ID，仅保存匿名编号、执行元数据和带用途域的不可逆主体指纹。历史管理员用户审计按目标索引匿名化；个人导出文件先在受控根目录内原子移入隔离名，数据库回滚时恢复，提交成功后同步物理删除。若进程在隔离后中断，应用启动时按租户 RLS 查询原路径的导出记录：记录仍在则恢复，记录已删除则完成物理清理，避免事务失败或进程崩溃留下半注销状态。该指纹专用于备份恢复重放：T29 的恢复流程必须在覆盖数据库前独立保全尚未过期的注销审计，恢复并升级 schema 后重新导入，再匹配恢复出的普通用户并重放删除；未完成脚本和演练前不得宣称备份恢复满足注销策略。
+面向开发与运维，描述当前单仓库 Vue PWA、Spring Boot 模块化单体和 PostgreSQL 的组成。2026-09-28 按源码静态核对；运行与阶段验收分别见 [部署案例](../deployment/cases/intranet-single-host.md) 和 [计划](../plan.md)。不将架构存在等同于完成上线验收。
 
-## 2. 应用与模块边界
+```mermaid
+flowchart LR
+  Browser[Vue PWA] -->|同源 HTTPS| Proxy[Caddy 静态资源与反向代理]
+  Proxy -->|/api/v1| App[Spring Boot 单体]
+  App --> Auth[身份与租户事务]
+  Auth --> DB[(PostgreSQL)]
+  App --> Jobs[数据库任务协调器]
+  Jobs --> DB
+  Jobs --> Files[个人导出卷]
+  Migration[一次性 Flyway] --> DB
+```
 
-- 采用单仓库、Vue 单页应用、Spring Boot 模块化单体和 PostgreSQL，同源接口前缀固定为 `/api/v1`。
-- 当前后端领域包为 `auth`、`admin`、`dictionary`、`preference`、`job`、`ledger`、`report`，公共 MyBatis-Plus 字段映射位于 `persistence`，Mapper XML 位于 `server/src/main/resources/mapper`，公共契约和跨领域日期范围位于 `shared`。跨领域写操作只经应用服务，查询只能消费明确的只读接口或投影。
-- T1-T10 已建立工程、安全、应用外壳、共享组件、管理员与字典治理、偏好和账号隔离草稿；T11-T16 已实现收支填报、日常模板、统一明细、编辑及退款/报销。T17 接入有效/回收站完整生命周期与 30 天到期任务；T18 接入当前筛选/完整数据导出；T19 接入本人/管理员注销、在线数据及导出文件即时删除、全会话失效和 180 天匿名安全审计；T20 接入统一报表筛选、精确摘要、基础图表与可恢复下钻。T21-T23 扩展报表、运行概况和审计查询仍未实施。
+## 技术选择与模块关系
 
-## 3. HTTP 与数据契约
+| 层 | 实现与入口 | 依赖边界 |
+|---|---|---|
+| 前端 | Node 24.11.1、Vue 3、Vite、TypeScript、Pinia、Vue Router；web/package.json | 只调用同源 API；报表使用 ECharts；不保存认证令牌到本地存储 |
+| 接口 | contracts/openapi.yaml、web/src/api/generated/schema.ts | OpenAPI 为接口契约；生成类型不能手工修订 |
+| 服务端 | Java 21、Spring Boot 3.5.16、MyBatis-Plus 3.5.17；server/pom.xml | Controller → 应用服务 → Repository/Mapper；跨领域写入通过应用服务 |
+| 持久化 | PostgreSQL 16+；生产镜像 16.14-bookworm、Flyway 11.7.2 | 应用不拥有 schema；迁移一次性执行，prod 启动只读核验版本 012 |
+| 异步 | job_run、JobCoordinator、JobPoller | 同一服务内数据库任务，无 Redis、消息队列或独立调度服务 |
+| 发布 | server/Dockerfile、deploy/compose*.yaml | db/app/proxy 常驻；provision/migrate/bootstrap-admin 短生命周期 |
 
-- API 事实源为 `contracts/openapi.yaml`，生成的 TypeScript 类型提交到仓库并由契约检查保证无漂移。
-- 错误对象固定包含 `code`、`message`、`fieldErrors`、`traceId`、`retryable`。HTTP 状态表达协议结果，不使用 HTTP 200 包装业务失败。
-- 用户名固定为 3–64 位可见 ASCII；备注去除首尾空白后最多 500 个 Unicode code point。
-- 金额以十进制字符串传输，Java 使用 `BigDecimal`，PostgreSQL 使用 `numeric`。人民币金额上限为 `999,999,999.99`，通用金额最多两位小数。
-- 业务时间使用带偏移的 ISO 8601 时间；服务端以接收时间为权威，并按 `Asia/Shanghai` 生成业务日期。CSV 的业务和生命周期时间列显式输出 `+08:00`，下载响应文件名也由服务端按上海业务日期生成，不得依赖设备、JVM 或数据库会话时区。
-- 支出创建与导出创建必须携带 1-128 字符幂等键；请求摘要使用规范化业务内容，相同键与等价内容返回既有结果，不同内容冲突。撤销刚保存支出必须回传同一幂等键，只能删除对应且尚无调整或模板关联的记录；导出成功、失败或取消终态后，前端下一次操作必须轮换幂等键。
+具体机制分见 [前端](frontend-pwa.md)、[后端](backend-domains.md)、[数据库](database-migrations.md)、[任务](jobs-export-deletion.md)。不引入账户余额、转账、地图服务；地点仅为个人标签。
 
-## 4. 前端页面登记与复用判断
+## 核心数据与 HTTP 契约
 
-- `web/src/app/pageRegistry.ts` 是页面元数据的代码事实源，字段固定为 `pageKey/path/role/navigation/archetype/prototype/states`。
-- 路由从页面登记生成，契约测试双向比对 `DESIGN.md` 的 Page Registry，避免未登记受保护路由和孤立登记。
-- T1 六页共用 `PlaceholderView`，因为当前差异仅是页面元数据和阶段说明；提前复制六个页面会制造无业务价值的结构分叉。正式业务组件在对应阶段按 DESIGN 组件清单落地。
+- 金额通过十进制字符串传输，Java BigDecimal、PostgreSQL numeric 计算；前端业务计算用精确金额工具。人民币金额上限 `999,999,999.99`，通用金额最多两位小数。图表显示转换不作为业务金额计算。
+- 日期按 `Asia/Shanghai`；发生时间使用带偏移 ISO 8601，服务端校验不能超出当前时间 5 分钟。报表日期由 BusinessDateRange 统一解析；CSV 时间显式带 `+08:00`。
+- 错误固定为 `code/message/fieldErrors/traceId/retryable`，HTTP 状态表达失败，不以 200 包装失败；不得返回堆栈、凭据或租户标识。
+- 用户名 3–64 位可见 ASCII；备注去首尾空白后最多 500 Unicode code point。详见 LedgerWritePolicy、AuthDtos 和 contracts。
+- 支出与导出创建使用 1–128 字符幂等键，规范化内容摘要相同才返回原结果，键相同内容不同则冲突。导出终态后的新操作必须换键。
+- 身份与租户只从服务端认证上下文取得，ADMIN 不具备个人账目读取能力。完整链路见 [认证与租户](auth-tenant.md)。
 
-## 5. 本地启动与持续集成
+## 开发接入与验证
 
-- `npm run dev` 使用仓库内 `.local/postgres` 数据目录启动隔离的本地 PostgreSQL，再并行启动后端和前端；脚本拒绝外部主机、非法连接参数、低于 16 的 PostgreSQL 以及被其他数据集群占用的端口，退出命令时仅停止本次启动的进程。
-- 本地开发由 bootstrap 账号 `my_bill_dev` 只负责建库/建角，非超级迁移所有者 `my_bill_migration` 执行 Flyway，后端连接非超级用户 `my_bill_app`；生产内嵌 Flyway 固定关闭，启动时只读核对 schema 版本 `012`。
-- `npm run check:database` 使用系统已有 PostgreSQL 16+ 可执行程序创建一次性隔离集群，不连接本项目开发库、`ai-stocks` 或其他项目数据库，也不探测/依赖 Docker 或 Testcontainers。同一临时集群先运行认证、管理、字典、偏好、收支、明细、调整、回收站和导出 HTTP 集成测试，再重建空 schema 运行 migration、RLS、任务和回滚测试；退出时只清理 `mktemp` 生成的该集群。
-- Compose 将长驻数据库、一次性角色 provision、一次性 migrate 和长驻 app 分开；数据库只挂 bootstrap secret，provision 短时挂三类 secret，migrate 只挂迁移 secret，app 只挂运行 secret。app 的个人导出文件位于独立持久卷，目录和保留期使用非密钥环境变量配置；前端静态服务和反向代理仍属于 T29。
-- CI 分别执行前端 typecheck、lint、unit、OpenAPI 校验/类型漂移检查与后端 Maven verify；本地单独验证后端统一使用 `npm run check:server` 解析系统已有 Java 21。
-- 本地缺少目标工具链时立即失败并提示所需版本，不静默降级到 Node 18 或 Java 8。
+新增功能先查相同领域服务、共享组件和既有 SQL。接口变更同步 OpenAPI → 生成类型 → API 封装 → 调用者与契约测试。SQL 变更区分运行 Mapper 与 schema 迁移，不在 Java 内嵌 SQL。
 
-## 6. 认证、会话与租户上下文
+入口命令与环境前提见根目录 [README](../../../README.md)。`npm run check` 组合前端检查/构建、Maven verify 和隔离数据库集成；结构约束由 ModuleBoundaryTest、PersistenceSourceBoundaryTest、HttpContractTest 和前端页面登记契约测试覆盖。本次文档不构成浏览器或手机验收，测试结果见 README 的验证说明。
 
-- Spring Security 采用无服务器 HTTP session 的 Cookie 认证链：只显式放行 `GET /api/v1/health` 与 `POST /api/v1/auth/login`，未登记 `/api/v1/**` 默认拒绝。临时密码会话只能读取当前会话、退出和设置首次正式密码。
-- 密码使用 BCrypt（生产 strength 12）；正式密码要求 15-64 Unicode code point，并在服务端用 NFKC+小写归一后查离线拒绝表。校验不向任何外部密码服务发送候选值。
-- 会话令牌由 32 字节 `SecureRandom` 生成，浏览器仅以 `HttpOnly`/`SameSite=Lax` Cookie 保存，生产额外强制 `Secure`，数据库仅保存 SHA-256 摘要。改密通过凭据版本乐观冲突保护，并撤销该账号全部旧会话后签发新会话。
-- 变更请求采用同源 XSRF Cookie/Header 校验。登录限流在 PostgreSQL 中持久化，主体使用服务端 pepper 的 HMAC-SHA256 摘要；生产 pepper 仅通过 app 专用 secret 文件提供，不写入非密钥 env 模板、日志或数据库。
-- `CurrentPrincipal` 仅由服务端会话查询构建，对外 DTO 不返回租户 ID 或令牌。`TenantTransactionExecutor` 仅接受有租户的普通用户，并在与业务 SQL 同一事务内使用 `set_config('app.tenant_id', ..., true)`；上下文缺失、设置失败或事务回滚均默认拒绝。
-- 前端身份状态只存在于一个 Pinia session store，统一 API 客户端负责 Cookie、CSRF、`no-store` 与标准错误解析。T4 在此基础上接入正式登录、退出后 CSRF 刷新、安全回跳、角色外壳与导航；主题和安装分别由唯一 Pinia store 供登录页与“我的”复用。
+## 风险与限制
 
-## 7. 审计与后台任务边界
-
-- 管理审计只能通过 `AdminAuditService` 追加：策略显式声明稳定动作、对象类型和最多 32 个顶层白名单字段，仅保存真正变化的 before/after；嵌套密码、令牌、凭据、会话、精确地址和坐标递归剔除，并限制摘要深度、集合规模和文本长度。运行角色对 `admin_audit_log` 没有 `UPDATE/DELETE` 权限。
-- 具体业务的成功审计应加入同一业务事务；拒绝或失败结果在业务回滚后调用同一入口独立落库。T6 不开放审计查询 HTTP API，管理员只读筛选与详情属于 T24。
-- 后台任务实现 `JobDefinition`，必须声明租户/全局作用域、可取消、可重试和最大尝试次数，并以幂等、有界小批次执行。租户任务每批通过共享 `TenantDatabaseExecutor` 在独立事务设置 RLS 上下文；全局任务不得读取租户业务数据。
-- `job_run` 是任务协调事实源：非空批次键幂等，任务只在 `available_at` 到达后由 `FOR UPDATE SKIP LOCKED` 原子领取，默认 30 秒有限租约；长批次主动续租使用独立新事务立即提交，不能被业务批次长事务遮蔽。每次领取前收敛过期租约，未耗尽且允许重试则回到 `PENDING`，否则进入 `FAILED`。轮询器默认每次最多处理 20 个任务，并按已注册任务类型逐轮领取，避免单一类型长期占满队列；上限通过 `MY_BILL_JOB_MAX_TASKS_PER_POLL` 配置且限制为 1-100。`PURGE_EXPIRED_LEDGER` 按租户与到期分钟合并调度、每批最多处理 100 条；`GENERATE_PERSONAL_EXPORT` 使用 MyBatis Cursor 与 200 行 fetch size 流式写入同租户临时文件，完成后原子替换，运行中取消可在终态提交竞态中胜出并补偿删除已提交文件；`PURGE_EXPIRED_EXPORT` 到期删除文件并收敛状态。导出 API 不暴露文件路径，下载重新校验当前用户与租户；CSV 使用 UTF-8 BOM、统一引号转义和公式防护。不引入 Redis、消息队列或独立任务服务。
-
-## 8. PWA 与主题边界
-
-- Service Worker 只缓存带内容哈希的同源静态资源和无个人数据离线页；API、下载、个性化导航和非哈希资源始终直连网络。所有 `/api/v1/**` 响应统一 `Cache-Control: no-store`，离线不承诺提交或展示账目数据。
-- 首屏内联脚本只恢复合法的本地 `system/light/dark` 安全值并同步 `theme-color`，运行时由唯一主题 store 接管。登录后的服务端偏好权威、失败回退和跨设备恢复由 T10 偏好接口闭环，不在 T4 伪造服务端保存。
-- T4 使用明确标记的临时 SVG 安装图标；正式品牌图标、启动图、目标移动浏览器系统安装框和独立窗口验收保留到 T29。
+| 类型 | 当前事实 | 影响与处理 |
+|---|---|---|
+| 已知限制 | 一期单机 Compose，无高可用切换 | 主机故障影响服务；恢复能力按部署方案与案例分别评价 |
+| 证据缺口 | 手机 PWA、证书续期、完整恢复等仍未最终验收 | 保持 T29 进行中，不用已有代码代替环境实测 |
+| 实现边界 | 管理概况备份状态固定 UNCONFIGURED | 与宿主备份 timer 尚未集成，见部署案例 |
