@@ -10,6 +10,7 @@ describe('PWA install state', () => {
     expect(detectInstallPlatform('Mozilla/5.0 (iPhone)')).toBe('ios')
     expect(detectInstallPlatform('Mozilla/5.0 (Linux; Android 15)')).toBe('android')
     expect(detectInstallPlatform('Mozilla/5.0 (Macintosh)')).toBe('desktop')
+    expect(detectInstallPlatform('Mozilla/5.0 (Macintosh)', 5)).toBe('ios')
   })
 
   it('shows a real action only after receiving a browser install prompt', async () => {

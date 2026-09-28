@@ -47,7 +47,7 @@ journalctl -u my-bill-backup.service -n 50 --no-pager
 
 先核对宿主时区 Asia/Shanghai；OnCalendar 用宿主本地时间，脚本里的 TZ 只影响归档日期，不能替代 timer 时区。其他业务依赖宿主时区时，不擅自全局修改，应为定时配置设计独立时区方案并验证。
 
-保留最近7个日历日和最近4个ISO周内的成功副本，各最多7/4个；不是“永远至少7份”。断电后 Persistent=true 补触发；失败仅有日志，当前无已验证消息告警。last-success 是最后成功记录，失败不会改成失败标记，必须同时检查新鲜度和服务结果；管理概况尚未接入该状态。
+保留最近7个日历日和最近4个ISO周内的成功副本，各最多7/4个；不是“永远至少7份”。断电后 Persistent=true 补触发；失败仅有日志，通过本机 journald/systemd 告警，外部消息渠道未配置。last-success 是最后成功记录，失败不会改成失败标记，必须同时检查新鲜度和服务结果；管理概况通过独立只读状态目录接入最近尝试结果与成功时间；应用不访问备份归档或密钥。
 
 ## 隔离恢复验证能证明什么
 
@@ -74,4 +74,10 @@ verify-backup-restore.sh 校验路径和checksum，在 --network none、无宿�
 | 整机丢失 | 同机副本和解密密钥可能同时丢失 | 只有另行确认并实现异机副本/密钥托管后，才可承诺灾备 |
 | 在线备份 | 数据库与导出非一致快照 | 恢复验证文件状态，重要维护采用受控写入/任务暂停方案 |
 | 保留策略 | 7日/4周无法代替180天注销审计恢复策略 | 覆盖前独立保全未过期注销事实，恢复后重放 |
-| 可观测性 | 只有本机日志/最后成功文件 | 接入实际告警与管理概况并演练失败、新鲜度过期 |
+| 可观测性 | 本机日志、巡检单元和管理概况；无外部通知 | 每 15 分钟检查服务、磁盘、证书及备份新鲜度；告警需运维查看 |
+
+## 状态与本机告警部署
+
+以 root 创建 `/var/lib/my-bill/operations`（0755，root 所有），由备份脚本原子发布 0644 的 `backup.properties`。应用仅只读挂载这个目录。首次接入先成功运行一次备份，再重建 app 容器。管理页成功只代表归档校验，不能替代完整恢复演练。
+
+将 `deploy/systemd/my-bill-monitor.service` 和 `.timer` 安装到 `/etc/systemd/system/` 后执行 `systemctl daemon-reload`、`systemctl enable --now my-bill-monitor.timer`、`systemctl start my-bill-monitor.service`。用 `journalctl -u my-bill-monitor.service` 和 `journalctl -t my-bill-monitor` 查看检查与告警；非零退出令巡检单元标为失败，后续成功检查恢复。每 15 分钟检查容器、备份文件系统 85% 水位、叶证书 30 天到期阈值和备份 26 小时新鲜度。该巡检不读取个人账目，也不自动重启服务或删除数据。

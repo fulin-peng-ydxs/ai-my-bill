@@ -34,8 +34,11 @@ services:
     environment:
       TZ: Asia/Shanghai
       JAVA_OPTS: -Xms128m -Xmx512m -XX:MaxDirectMemorySize=128m
+      MY_BILL_BACKUP_STATUS_FILE: /run/my-bill-operations/backup.properties
       MY_BILL_JOB_POLL_DELAY_MS: ${MY_BILL_JOB_POLL_DELAY_MS:-5000}
       MY_BILL_JOB_MAX_TASKS_PER_POLL: ${MY_BILL_JOB_MAX_TASKS_PER_POLL:-20}
+    volumes:
+      - /var/lib/my-bill/operations:/run/my-bill-operations:ro
   proxy:
     <<: *runtime
     image: my-bill-proxy

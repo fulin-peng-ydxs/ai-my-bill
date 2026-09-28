@@ -1,13 +1,15 @@
 <script setup lang="ts">
 import { Archive, Database, HeartPulse, RefreshCw, ShieldCheck, Users } from 'lucide-vue-next'
-import { onMounted } from 'vue'
+import { computed, onMounted } from 'vue'
 
 import { getAdminOverview } from '../../api/adminOperations'
 import AppStateBlock from '../../components/AppStateBlock.vue'
 import { useLatestRequest } from '../../composables/useLatestRequest'
-import { formatAdminBytes, formatAdminTime } from '../../domain/adminPresentation'
+import { adminBackupPresentation, formatAdminBytes, formatAdminTime } from '../../domain/adminPresentation'
 
 const { data, status, error, staleWarning, refreshing, execute } = useLatestRequest<Awaited<ReturnType<typeof getAdminOverview>>>()
+
+const backup = computed(() => adminBackupPresentation(data.value?.backup.status ?? 'UNAVAILABLE'))
 
 async function load(refresh = false): Promise<void> {
   await execute((signal) => getAdminOverview(signal), { intent: refresh ? 'silent' : 'replace' })
@@ -109,7 +111,7 @@ onMounted(() => void load())
 
         <article
           class="admin-metric-card"
-          data-tone="warning"
+          :data-tone="backup.tone"
         >
           <div class="admin-metric-icon">
             <Archive
@@ -118,8 +120,9 @@ onMounted(() => void load())
             />
           </div>
           <p>生产备份</p>
-          <strong>未配置</strong>
-          <small>接入真实备份任务前不展示虚假成功状态。</small>
+          <strong>{{ backup.label }}</strong>
+          <small>{{ backup.detail }}</small>
+          <small>最近成功：{{ formatAdminTime(data.backup.latestCompletedAt) }}</small>
         </article>
 
         <article class="admin-metric-card">

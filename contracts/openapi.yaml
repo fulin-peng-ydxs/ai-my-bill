@@ -2153,7 +2153,7 @@ components:
       enum: [HEALTHY]
     AdminBackupStatus:
       type: string
-      enum: [UNCONFIGURED]
+      enum: [UNCONFIGURED, SUCCEEDED, FAILED, RUNNING, STALE, UNAVAILABLE]
     AdminAccountOverview:
       type: object
       additionalProperties: false

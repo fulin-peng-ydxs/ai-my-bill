@@ -150,3 +150,7 @@ secret 文件模式 0600；app/migrate 使用 UID/GID 10001，文件属主必须
 ## 验证边界
 
 配置验证分三层：静态检查变量是否被入口消费；在隔离环境测试实际生效与拒绝路径；在目标实例核验挂载/权限/启动结果。既有执行证据见验收记录与部署案例，不能用变量表存在代替轮换演练。备份脚本硬编码数据库/容器/路径，迁移到新模式时必须逐项核对，不能只换 env 就声称支持。
+
+## 备份运行状态
+
+`MY_BILL_BACKUP_STATUS_FILE` 指向宿主原子发布的 `backup.properties`；默认空值表示未配置。内网 Compose 将 `/var/lib/my-bill/operations` 只读挂到 `/run/my-bill-operations`，只包含状态与时间，不包含归档、私钥或 Docker socket。生产者使用 UTC 时间，运行概况最多读 4KiB；缺失/损坏返回 UNAVAILABLE，成功超过 26 小时或运行超过 1 小时返回 STALE，最近失败不得被历史成功覆盖。配置修改后重建 app 容器，状态文件更新无需重启。

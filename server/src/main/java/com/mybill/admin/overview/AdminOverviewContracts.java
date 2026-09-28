@@ -6,7 +6,7 @@ final class AdminOverviewContracts {
     private AdminOverviewContracts() { }
 
     enum HealthStatus { HEALTHY }
-    enum BackupStatus { UNCONFIGURED }
+    enum BackupStatus { UNCONFIGURED, SUCCEEDED, FAILED, RUNNING, STALE, UNAVAILABLE }
 
     record AccountOverview(long total, long active, long pendingFirstLogin,
                            long disabled, long deletionPending, long activeSessions,
@@ -14,7 +14,7 @@ final class AdminOverviewContracts {
 
     record ServiceOverview(HealthStatus status, Instant checkedAt) { }
 
-    /** T29 接入真实备份运行状态前只能明确返回未配置。 */
+    /** 宿主备份状态及最后成功时间；成功不代表已完成业务恢复验收。 */
     record BackupOverview(BackupStatus status, Instant latestCompletedAt) { }
 
     record StorageOverview(long databaseBytes) { }

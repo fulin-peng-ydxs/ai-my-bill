@@ -1576,7 +1576,7 @@ export interface components {
         /** @enum {string} */
         AdminHealthStatus: "HEALTHY";
         /** @enum {string} */
-        AdminBackupStatus: "UNCONFIGURED";
+        AdminBackupStatus: "UNCONFIGURED" | "SUCCEEDED" | "FAILED" | "RUNNING" | "STALE" | "UNAVAILABLE";
         AdminAccountOverview: {
             /** Format: int64 */
             total: number;

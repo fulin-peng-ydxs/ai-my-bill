@@ -8,8 +8,6 @@ import java.time.Instant;
 
 import static com.mybill.admin.overview.AdminOverviewContracts.AccountOverview;
 import static com.mybill.admin.overview.AdminOverviewContracts.AdminOverview;
-import static com.mybill.admin.overview.AdminOverviewContracts.BackupOverview;
-import static com.mybill.admin.overview.AdminOverviewContracts.BackupStatus;
 import static com.mybill.admin.overview.AdminOverviewContracts.HealthStatus;
 import static com.mybill.admin.overview.AdminOverviewContracts.ServiceOverview;
 import static com.mybill.admin.overview.AdminOverviewContracts.StorageOverview;
@@ -18,10 +16,12 @@ import static com.mybill.admin.overview.AdminOverviewContracts.StorageOverview;
 class AdminOverviewService {
     private final AdminOverviewRepository repository;
     private final Clock clock;
+    private final BackupStatusReader backups;
 
-    AdminOverviewService(AdminOverviewRepository repository, Clock clock) {
+    AdminOverviewService(AdminOverviewRepository repository, Clock clock, BackupStatusReader backups) {
         this.repository = repository;
         this.clock = clock;
+        this.backups = backups;
     }
 
     @Transactional(readOnly = true)
@@ -32,7 +32,7 @@ class AdminOverviewService {
                 new AccountOverview(row.total(), row.active(), row.pendingFirstLogin(), row.disabled(),
                         row.deletionPending(), row.activeSessions(), row.lastActiveAt()),
                 new ServiceOverview(HealthStatus.HEALTHY, checkedAt),
-                new BackupOverview(BackupStatus.UNCONFIGURED, null),
+                backups.read(),
                 new StorageOverview(row.databaseBytes()));
     }
 }

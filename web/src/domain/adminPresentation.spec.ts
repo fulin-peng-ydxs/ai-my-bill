@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import {
   adminActionLabel,
+  adminBackupPresentation,
   adminObjectLabel,
   auditChanges,
   formatAdminBytes,
@@ -9,6 +10,13 @@ import {
 } from './adminPresentation'
 
 describe('admin presentation', () => {
+  it('distinguishes successful, failed, stale and unavailable backups', () => {
+    expect(adminBackupPresentation('SUCCEEDED').tone).toBe('success')
+    for (const state of ['FAILED', 'STALE', 'RUNNING', 'UNCONFIGURED', 'UNAVAILABLE', 'unknown']) {
+      expect(adminBackupPresentation(state).tone).toBe('warning')
+    }
+    expect(adminBackupPresentation('FAILED').label).toBe('备份失败')
+  })
   it('formats operational values without depending on the browser time zone', () => {
     expect(formatAdminTime('2026-09-27T06:30:00Z')).toContain('14:30')
     expect(formatAdminTime()).toBe('尚无记录')

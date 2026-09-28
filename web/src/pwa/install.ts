@@ -6,8 +6,8 @@ export type InstallPlatform = 'ios' | 'android' | 'desktop'
 let deferredPrompt: BeforeInstallPromptEvent | undefined
 let listenersInstalled = false
 
-export function detectInstallPlatform(userAgent: string): InstallPlatform {
-  if (/iphone|ipad|ipod/i.test(userAgent)) return 'ios'
+export function detectInstallPlatform(userAgent: string, maxTouchPoints = 0): InstallPlatform {
+  if (/iphone|ipad|ipod/i.test(userAgent) || /Macintosh/i.test(userAgent) && maxTouchPoints > 1) return 'ios'
   if (/android/i.test(userAgent)) return 'android'
   return 'desktop'
 }
@@ -34,7 +34,7 @@ export const usePwaInstallStore = defineStore('pwa-install', {
   actions: {
     initialize(): void {
       if (typeof window === 'undefined') return
-      this.platform = detectInstallPlatform(window.navigator.userAgent)
+      this.platform = detectInstallPlatform(window.navigator.userAgent, window.navigator.maxTouchPoints)
       if (isStandaloneDisplay()) {
         this.status = 'installed'
       } else if (this.status === 'detecting') {

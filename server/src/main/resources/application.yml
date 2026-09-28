@@ -57,6 +57,8 @@ management:
         http.server.requests: 100ms,250ms,1s,3s
 
 my-bill:
+  backup:
+    status-file: ${MY_BILL_BACKUP_STATUS_FILE:}
   schema:
     validation-enabled: false
     expected-version: "012"

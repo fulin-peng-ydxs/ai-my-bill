@@ -57,3 +57,15 @@ function displayValue(value: unknown): string {
   if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') return String(value)
   return JSON.stringify(value)
 }
+
+/** 运行概况统一消费服务端状态，不以存在历史成功时间掩盖本次失败。 */
+export function adminBackupPresentation(status: string): { label: string, tone: string, detail: string } {
+  switch (status) {
+    case 'SUCCEEDED': return { label: '备份成功', tone: 'success', detail: '加密归档已校验；恢复能力以演练结果为准。' }
+    case 'FAILED': return { label: '备份失败', tone: 'warning', detail: '最近一次备份失败，请检查主机备份服务日志。' }
+    case 'RUNNING': return { label: '备份中', tone: 'warning', detail: '正在生成并校验归档。' }
+    case 'STALE': return { label: '备份已超时', tone: 'warning', detail: '成功记录超过 26 小时或任务运行超过 1 小时，请检查调度。' }
+    case 'UNCONFIGURED': return { label: '未配置', tone: 'warning', detail: '尚未接入备份状态。' }
+    default: return { label: '状态不可用', tone: 'warning', detail: '无法读取有效状态，请检查主机备份服务。' }
+  }
+}
