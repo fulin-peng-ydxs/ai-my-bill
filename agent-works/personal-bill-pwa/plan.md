@@ -2,22 +2,23 @@
 
 ## 1. 需求来源与目标
 
-- 需求文档：`agent-works/personal-bill-pwa/requirement.md`，已完整读取 592 行。
+- 需求文档：`agent-works/personal-bill-pwa/requirement.md`。
 - 上游事实源：`agent-works/personal-bill-pwa/requirement-closure.md`。
 - 设计事实源：`DESIGN.md`。
-- 原型依据：已完整读取 `agent-works/personal-bill-pwa/prototypes/login.html`、`expense-entry.html`、`reports.html`、`bill-details.html`、`profile-settings.html`、`admin-console.html`；共享样式与交互事实源为同目录 `prototype.css`、`prototype.js`。
-- 功能目标：从当前“需求、设计和静态原型”仓库建设一套手机优先、可安装、仅受控内网访问、按单用户单租户隔离的个人收支 PWA，闭环支出、收入、退款/报销调整、字典、明细、报表、管理、导出、注销、部署和备份。
+- 原型依据： `agent-works/personal-bill-pwa/prototypes/login.html`、`expense-entry.html`、`reports.html`、`bill-details.html`、`profile-settings.html`、`admin-console.html`；共享样式与交互事实源为同目录 `prototype.css`、`prototype.js`。
+- 功能目标：建设一套手机优先、可安装、仅受控内网访问、按单用户单租户隔离的个人收支 PWA，闭环支出、收入、退款/报销调整、字典、明细、报表、管理、导出、注销、部署和备份。
 - 已确认技术基线：用户已确认采用 Vue 3 + Vite + TypeScript + Pinia + Vue Router；Java LTS + Spring Boot + Spring Security；PostgreSQL + Flyway；ECharts；Docker Compose。
 - 关键实现取舍：用户已确认采用单机同源部署；后端采用模块化单体和关系型精确数据模型；金额使用 Java `BigDecimal` 与 PostgreSQL `numeric`；第一期不引入 Redis、消息队列、微服务或地图服务；共享状态通过 PostgreSQL 和应用事务闭环。该选择以更可控的中国大陆访问、服务端 Cookie 会话和单一部署边界换取主机、补丁和备份运维责任。
 - 本次不做：R25-R38、R57、R69 对应的后续或明确排除能力；不重新生成或替换已确认 HTML 原型；不把原型演示数据当成生产 seed。
 - 计划输出目录：`agent-works/personal-bill-pwa/`。
-- 计划启动状态：T1-T28 已完成；T29 已完成内网部署和目标机代表性恢复，手机基础安装与使用及离线/更新/横竖屏专项已由用户确认通过，T29本次内网验收完成。T3-T28 已通过系统既有 IntelliJ Java 21、nvm Node 和项目隔离 PostgreSQL 16.14 验证；T4-T25 的页面阶段使用 Codex 内置浏览器，T28 使用 Playwright 隔离 Chromium，不依赖 Docker，也未接管用户个人浏览器。原候选 `568062a258e086ae3dd98f130910790f94ff6c2e` 已被审查修复替代，新候选固定为 `8b12a7737b41465f8e88a8ea81d7a5ada0022b43`，摘要见部署前报告；Compose 镜像、容器 secret、正式图标、独立窗口及当前未连接的 iOS/Android 实机抽样仍属于 T29 目标环境补证项。T22 数据质量规则已由用户确认并以 `expense-quality-v1` 固化；其他未实施能力维持原范围状态。
+- 当前完成状态：T1–T29 已按一期内网范围完成；后续建议和排除项仍按 §3/§6 处理。
+- 证据入口：T1–T28 的测试与候选见[部署前报告](pre-release-test-report.md)；T29 服务器、浏览器和用户 iOS 实机确认见[验收报告](test-report.md)。实际源码/镜像/前端制品分别以[部署案例](deployment/cases/intranet-single-host.md)为准，不混用历史候选摘要。
 
 ## 2. 当前项目依据
 
 ### 2.1 仓库现状
 
-- 当前已完成 T1-T28：除前述业务、页面、性能和安全能力外，已增加受环境/写开关/实时数据库指纹三重保护的确定性 fixture、打包产物真实联调的 Playwright 关键链路、CI 发布门禁和不可变候选摘要。运行概况只读取账号、有效会话和服务元数据；备份在 T29 接入前明确为未配置，管理审计查询只读且不返回敏感摘要字段。
+- 业务、安全和页面能力已落地；备份由宿主定时执行，管理概况消费只读状态文件，注销恢复重放使用离线维护入口。部署为模块化单体、同源反向代理和 PostgreSQL；自动化测试依旧使用隔离数据库，不连接生产。
 - 当前 Git 分支为 `main`；每阶段均按实际 Git diff 确认改动边界，不把后续待实现能力描述为当前事实。
 - 原型基线命令及结果：
   - `node agent-works/personal-bill-pwa/prototypes/design-contract.test.mjs`：通过。
@@ -31,7 +32,7 @@
 - 正式前端不采用整套通用 UI 框架覆盖视觉契约；优先实现项目语义组件。图标统一使用 Vue SVG 图标库，图表统一使用 ECharts，二者均通过封装组件消费主题 token。
 - 必须落地并复用：`AppShell`、`ThemeModeControl`、`BottomNavigation`、`EntryTypeSwitch`、`DailyEntryPicker`、`LedgerContextActions`、`MoneySummary`、`ProductCombobox`、`FormField`、`FormSection`、`FundingChannelPicker`、`PayerCombobox`、`LocationLabelPicker`、`LedgerListItem`、`GlobalLedgerSearch`、`AppliedFilterBar`、`SegmentedControl`、`FilterSheet`、`IncrementalLedgerList`、`SettingsDisclosureList`、`AppDataTable`、`ChartPanel`、`AppStateBlock`、`AppDialog`、`AppDrawer`、`Toast`、`PwaInstallPrompt`。
 - P1-P5 先按 360/390px 手机视口实现和验收，再向平板、桌面渐进增强；桌面布局不得反向决定手机信息顺序或操作入口。P6 管理端桌面优先，但手机/窄屏使用摘要列表和底部操作面板，不压缩桌面宽表。
-- 页面路由事实源在正式实现后迁移到 `web/src/router/index.ts`；同步建立 `web/src/app/pageRegistry.ts` 的轻量类型化页面登记，维护 `pageKey/path/role/navigation/archetype/prototype/states`，与路由及 `DESIGN.md` Page Registry 做双向契约校验，不建设运行时可配置布局平台。
+- 页面路由事实源为 `web/src/router/index.ts`；`web/src/app/pageRegistry.ts` 提供轻量类型化页面登记，维护 `pageKey/path/role/navigation/archetype/prototype/states`，与路由及 `DESIGN.md` Page Registry 做双向契约校验，不建设运行时可配置布局平台。
 
 ### 2.3 后端、数据与部署依据
 
@@ -271,7 +272,7 @@ Flyway 高权限凭据边界：
 - 首位管理员不以明文 SQL seed 密码创建；提供一次性 bootstrap 命令，从安全输入读取用户名并只显示一次临时密码，成功后禁用 bootstrap 开关。
 - 已确认的默认收入分类可由 migration seed 初始化，稳定键冲突时只跳过、不覆盖已有行；后续更正使用独立 Flyway migration、精确旧值前置条件和审计/回滚说明。其他默认字典内容未被需求确认，不从原型示例推断。管理员在创建普通用户前通过 P6 配置，测试使用独立 fixture。
 - 本地和 E2E 写入 fixture 必须同时满足显式 `dev/test` 环境、`MY_BILL_E2E_WRITE=1` 和 `MY_BILL_E2E_EXPECTED_DB_FINGERPRINT` 与后端实时 PostgreSQL 指纹匹配；清理仅删除本次生成的稳定前缀/UUID 数据。生产启动拒绝或清除 E2E 写开关，未取得指纹时禁止物理清理。
-- 正式产品名、图标、启动图在 T29 发布门禁前替换；开发期资产标记为非正式，不改变页面结构。
+- 正式名称“我的账单”和PNG/Apple图标已部署；平台启动与安装使用现有manifest及Apple配置，不改变页面结构。
 
 ## 5. 性能与安全技术方案
 
@@ -300,7 +301,7 @@ Flyway 高权限凭据边界：
 | R4、R53 管理员窥探 | 管理 DTO 与账目域 | 管理模块不依赖账目内容 repository；DTO 白名单；接口和日志断言无账目字段 | admin | T7、T24、T27 | 序列化快照、SQL/依赖审查、普通用户 403 | 数据库超级用户仍属运维高权限，需最小授权 |
 | R39 重复入账 | 客户端重试与服务端事务 | 幂等键+请求摘要+唯一约束；相同请求返回原结果，不同请求冲突；提交按钮防重复 | ledger/idempotency | T2、T11、T12、T27 | 并发重复、超时重试、键复用不同 payload | 到期后极晚重试需由保留期覆盖常见窗口 |
 | R13 导出与 CSV | 文件、下载授权、表格工具 | 当前用户筛选快照、短期下载授权、到期删除、CSV 公式注入防护、UTF-8 | export | T18、T27 | 跨租户/过期/公式字符/日志负例 | 用户下载后的本地文件由用户负责 |
-| R44、R45 永久删除 | 业务数据、备份、审计 | 二次确认、可审计 job、在线数据按状态机清理；备份按生命周期过期；失败保持未完成状态 | ledger/job/backup | T17、T19、T29 | 中断、重跑、关联调整、恢复演练 | 在线删除与 180 天匿名审计已确认并实现；备份恢复重放仍为 T29 发布门禁 |
+| R44、R45 永久删除 | 业务数据、备份、审计 | 二次确认、可审计 job、在线数据按状态机清理；备份按生命周期过期；失败保持未完成状态 | ledger/job/backup | T17、T19、T29 | 中断、重跑、关联调整、恢复演练 | 在线删除与 180 天匿名审计已确认并实现；备份恢复重放已在 T29 实现并完成隔离演练 |
 | 用户输入/XSS | 名称、备注、图表 tooltip、CSV | DTO 长度/类型白名单、Vue 默认转义、禁止 `v-html` 展示业务文本、ECharts formatter 编码、CSP | web/api | T5、T27 | 恶意 HTML/URL/公式输入和 CSP 检查 | 第三方图表库漏洞依赖版本治理 |
 | 运维机密 | 数据库口令、TLS、备份密钥 | 环境机密、最小权限、日志脱敏、备份加密与恢复授权；仓库不存真实密钥 | deploy | T27、T29 | secret scan、容器环境/日志检查、恢复授权 | 单机管理员权限集中，需主机加固与审计 |
 
@@ -335,7 +336,7 @@ Flyway 高权限凭据边界：
 | 必须实现 | R19 | 填报与范围偏好 | 保存、消费、安全回退和重置 | T10 | 已完成 | 一致 | T10 已验证服务端权威保存、P2/P5 消费、同账号重登、保存失败、非法/停用值回退和恢复默认 |
 | 必须实现 | R20 | 管理员默认字典 | 五类默认字典和新用户复制 | T9、T24 | 已完成 | 一致 | T9 已完成五类新增、排序、停复、权限、审计和新用户事务快照；T24 只在完整管理台复验入口与日志查询 |
 | 必须实现 | R21 | 管理员操作日志 | 追加审计、筛选详情、敏感字段白名单 | T6、T19、T24 | 已完成 | 一致 | T6-T19 已完成高影响动作追加与脱敏；T24 已完成管理员/动作/对象/结果/上海业务日时间筛选、分页、只读详情、权限与敏感字段负向断言 |
-| 必须实现 | R22 | 页面与独立区四态 | 共享组件并逐页接入 | T4、T5、T25 | 已完成 | 一致 | T4/T5 建立共享能力，后续页面逐阶段接入；T25 已以真实 loading/empty/error/permission、恢复入口和七视口浏览器矩阵关闭本地页面验收，iOS/Android 实机抽样保留 T29 补证 |
+| 必须实现 | R22 | 页面与独立区四态 | 共享组件并逐页接入 | T4、T5、T25 | 已完成 | 一致 | T4/T5 建立共享能力，后续页面逐阶段接入；T25 已以真实 loading/empty/error/permission、恢复入口和七视口浏览器矩阵关闭本地页面验收，iOS实机由用户确认通过；Android真机未验证 |
 | 必须实现 | R23 | 内网 IP HTTPS 部署 | Compose、受信任内部 CA/IP 证书续期、访问边界、健康检查、迁移说明 | T29 | 已完成 | 按本次内网例外验收 | 部署、HTTPS、资源边界及回退已验证，宿主与镜像残余风险按本次内网例外登记；终端信任与PWA独立打开已由用户确认，离线/更新专项已由用户 iOS 真机确认通过；公网及备案移出一期 |
 | 必须实现 | R24 | 地点文本标签 | 字典、填报、筛选和报表，不含坐标 | T8、T11、T22 | 已完成 | 一致 | T8/T11 完成维护与填报，T22 完成地点/未指定聚合、筛选和精确下钻；无定位、地图或坐标能力 |
 | 建议实现 | R25 | CSV 历史导入 | 本次不纳入 | - | 跳过 | 未覆盖 | 规则未关闭 |
@@ -358,7 +359,7 @@ Flyway 高权限凭据边界：
 | 必须实现 | R42 | 购买渠道字典 | 个人维护、填报筛选报表 | T8、T11、T22 | 已完成 | 一致 | T8/T11 完成稳定 ID 维护、填报与最近值；T22 完成筛选、未指定分组、报表和精确下钻 |
 | 必须实现 | R43 | 常用地点字典 | 文本标签维护和历史保护 | T8 | 已完成 | 一致 | T8 已验证只含文本标签、停用候选、跨租户和历史快照保护，无定位/地图/坐标能力 |
 | 必须实现 | R44 | 支出软删恢复 | 30 天回收站、撤销、恢复、清理 | T2、T17 | 已完成 | 一致 | 已验证软删、即时撤销、回收站恢复、永久清理、到期任务与有效明细退出/重入；T20 已复验删除记录退出正式报表 |
-| 必须实现 | R45 | 账号注销 | 二次确认、会话失效、job 和审计 | T19、T24 | 已完成（环境恢复证据待 T29） | 一致 | 本人/管理员入口、在线物理删除、导出清理、全部会话失效、180 天匿名审计、本地账号命名空间清理已完成；T29 已完成离线重放及目标机隔离样本演练 |
+| 必须实现 | R45 | 账号注销 | 二次确认、会话失效、job 和审计 | T19、T24 | 已完成 | 一致 | 本人/管理员入口、在线物理删除、导出清理、全部会话失效、180 天匿名审计、本地账号命名空间清理已完成；T29 已完成离线重放及目标机隔离样本演练 |
 | 必须实现 | R46 | 分类报表 | 一级汇总、二级下钻、未选二级 | T22 | 已完成 | 一致 | 一级汇总、已筛一级后的二级/未选二级分组及精确下钻已验证 |
 | 必须实现 | R47 | 支付方式报表 | 金额/明细数/占比/趋势 | T22 | 已完成 | 一致 | 金额、消费明细数、占比和稳定 ID 下钻已验证；趋势复用 T21 同筛选时间维度 |
 | 必须实现 | R48 | 购买渠道报表 | 未指定分组及多指标 | T22 | 已完成 | 一致 | 稳定 ID 与未指定哨兵分离，明细和导出均支持精确空值过滤 |
@@ -389,6 +390,8 @@ Flyway 高权限凭据边界：
 
 ## 7. 详细实施步骤与进度追踪
 
+各任务的操作/完成标准是该阶段契约，实际落地记录描述阶段完成时的证据；其中“留待T29”等是历史边界，当前总状态以§6映射、T29结果和验收报告为准。
+
 ### T1：工程基线与契约固化
 
 - 状态：已完成
@@ -401,7 +404,11 @@ Flyway 高权限凭据边界：
 - 影响范围与边界异常：影响全工程目录、构建和接口合同；不实现业务，不引入 Redis/MQ/地图，不替换原型。
 - 验证：前端 typecheck/lint/unit 空基线、后端编译/测试、OpenAPI 校验、依赖锁文件，以及未登记受保护路由/孤立页面登记的失败用例。
 - 完成标准：本地一条命令启动前后端和 PostgreSQL，健康检查通过，契约可生成客户端类型。
-- 实际落地情况：已建立 Node 24.11.1/npm 11.6.2 与 Java 21/Spring Boot 3.5.16/Maven Wrapper 基线；前端落地 Vue/Vite/TypeScript/Pinia/Router、主题 token、共享空壳、六页类型化页面登记与路由/DESIGN 双向契约；后端落地 PostgreSQL 数据源、仅开放已登记的 Actuator 健康检查、服务端 traceId、统一错误和模块无环依赖测试；OpenAPI 固化用户名 3-64 位可见 ASCII、备注 500 Unicode code point、人民币金额和上海时区合同并生成 TypeScript 类型；CI、`.env.example`、项目协作约束和架构决策已同步。`npm run dev` 已实际启动项目隔离 PostgreSQL 16.14、前端和后端，健康检查为 `UP`，退出后三个服务端口均释放；本地启动同时校验 PostgreSQL 版本、连接参数和数据集群归属。前端 typecheck/lint/4 项单测/OpenAPI 校验与生成漂移检查/生产构建通过，后端 6 项测试及打包通过；浏览器在 360×800、390×844 验证页面登记、路由、四态元数据、普通用户导航点击、登录/管理菜单隔离、明暗主题、44px 触摸目标、无横向溢出和无控制台错误，截图保存在本地忽略目录 `.local/audit/t1/`。未实现业务表、认证、业务页面或 T2 以后能力。
+- 实际落地情况：
+  - 已建立 Node 24.11.1/npm 11.6.2 与 Java 21/Spring Boot 3.5.16/Maven Wrapper 基线；前端落地 Vue/Vite/TypeScript/Pinia/Router、主题 token、共享空壳、六页类型化页面登记与路由/DESIGN 双向契约；后端落地 PostgreSQL 数据源、仅开放已登记的 Actuator 健康检查、服务端 traceId、统一错误和模块无环依赖测试；OpenAPI 固化用户名 3-64 位可见 ASCII、备注 500 Unicode code point、人民币金额和上海时区合同并生成 TypeScript 类型；CI、`.env.example`、项目协作约束和架构决策已同步。
+  - `npm run dev` 已实际启动项目隔离 PostgreSQL 16.14、前端和后端，健康检查为 `UP`，退出后三个服务端口均释放；本地启动同时校验 PostgreSQL 版本、连接参数和数据集群归属。
+  - 前端 typecheck/lint/4 项单测/OpenAPI 校验与生成漂移检查/生产构建通过，后端 6 项测试及打包通过；浏览器在 360×800、390×844 验证页面登记、路由、四态元数据、普通用户导航点击、登录/管理菜单隔离、明暗主题、44px 触摸目标、无横向溢出和无控制台错误，截图保存在本地忽略目录 `.local/audit/t1/`。
+  - 未实现业务表、认证、业务页面或 T2 以后能力。
 
 ### T2：数据库模型、约束、迁移与 seed
 
@@ -415,7 +422,14 @@ Flyway 高权限凭据边界：
 - 影响范围与边界异常：影响全部持久化模型和后续任务；不从原型示例推断生产默认字典，重复启动/升级不得覆盖管理员修改，生产 migration 采用 forward-only。
 - 验证：空库和升级库迁移、重复 migrate、migration 失败后的应用版本门禁、管理员修改默认项后升级保持不变；复合租户外键负例、运行角色权限快照、RLS 上下文缺失/跨租户读写/伪造租户/直接 SQL 负例、并发唯一/调整累计/模板 upsert、索引定义与预定访问路径覆盖；静态检查 Compose 服务、镜像内容和 secret 声明，并以入口脚本进程测试证明常驻应用拒绝 migration 环境变量及空 secret。镜像构建、容器挂载和 `docker compose run --rm migrate` 的运行证据归 T29；代表性业务查询的 `EXPLAIN` 在对应 repository SQL 落地后的 T14/T20/T26 验证，不在 T2 构造尚不存在的查询。
 - 完成标准：所有实体和 B2/B3/B4/B6-B9 可由数据库或事务测试证明；运行角色不能关闭或绕过 RLS；应用制品、入口脚本和 Compose 声明不向常驻应用提供迁移凭据。真实容器的环境与挂载检查属于 T29 部署验收。
-- 实际落地情况：已落地 25 张业务/身份/任务表；T2 建立的 7 个 migration/rollback 基线在 T6、T8、T9、T17、T19 追加 V008-U012 后现为 12 个。金额采用无损 `numeric` + `scale`/范围 CHECK 拒绝超精度或缺失必填金额，字段形状约束要求引用与名称快照成对，分类触发器限制最多两级，租户对象使用复合主键/外键，账目按上海时区校验业务日期，账目与调整的 `version` 字段声明 MyBatis-Plus 乐观锁映射，调整触发器锁定原支出并原子校验累计额且联动冻结/恢复，模板以 `(tenant_id,type,normalized_name)` 唯一。生产数据库访问现统一为 MyBatis-Plus 3.5.17 Mapper/XML，包含动态白名单表选择、`FOR SHARE/FOR UPDATE`、游标导出和 UUID 批量参数处理；架构测试禁止 Spring JDBC/JPA 与 Java 内嵌 SQL 回流。16 张租户业务表已 `ENABLE/FORCE RLS`，provision 每次强制把已有同名迁移/运行角色收敛为最小权限；默认收入分类以 8 个稳定键 `DO NOTHING` seed。生产 profile 关闭内嵌 Flyway并只读核对当前版本 `012`；V011 扩展任务延迟领取，V012 增加注销匿名审计，均不修改既有业务 seed。迁移整改后 `npm run check` 全量通过，T26 最终 `npm run check:database` 复用系统 PostgreSQL 16.14 创建一次性集群并以 86 项 HTTP/业务集成测试和 7 项 schema/RLS/任务测试零失败通过，覆盖空库/升级/重复迁移、seed 不覆盖、角色降权、RLS、复合归属、业务约束、任务租约/延迟领取、注销审计、启动版本门禁及 U012→U001 回滚；脚本退出后临时集群与端口均清理。完整容器运行证据仍归 T29，不要求额外安装容器运行时。
+- 实际落地情况：
+  - 已落地 25 张业务/身份/任务表；T2 建立的 7 个 migration/rollback 基线在 T6、T8、T9、T17、T19 追加 V008-U012 后现为 12 个。
+  - 金额采用无损 `numeric` + `scale`/范围 CHECK 拒绝超精度或缺失必填金额，字段形状约束要求引用与名称快照成对，分类触发器限制最多两级，租户对象使用复合主键/外键，账目按上海时区校验业务日期，账目与调整的 `version` 字段声明 MyBatis-Plus 乐观锁映射，调整触发器锁定原支出并原子校验累计额且联动冻结/恢复，模板以 `(tenant_id,type,normalized_name)` 唯一。
+  - 生产数据库访问现统一为 MyBatis-Plus 3.5.17 Mapper/XML，包含动态白名单表选择、`FOR SHARE/FOR UPDATE`、游标导出和 UUID 批量参数处理；架构测试禁止 Spring JDBC/JPA 与 Java 内嵌 SQL 回流。
+  - 16 张租户业务表已 `ENABLE/FORCE RLS`，provision 每次强制把已有同名迁移/运行角色收敛为最小权限；默认收入分类以 8 个稳定键 `DO NOTHING` seed。
+  - 生产 profile 关闭内嵌 Flyway并只读核对当前版本 `012`；V011 扩展任务延迟领取，V012 增加注销匿名审计，均不修改既有业务 seed。
+  - 迁移整改后 `npm run check` 全量通过，T26 最终 `npm run check:database` 复用系统 PostgreSQL 16.14 创建一次性集群并以 86 项 HTTP/业务集成测试和 7 项 schema/RLS/任务测试零失败通过，覆盖空库/升级/重复迁移、seed 不覆盖、角色降权、RLS、复合归属、业务约束、任务租约/延迟领取、注销审计、启动版本门禁及 U012→U001 回滚；脚本退出后临时集群与端口均清理。
+  - 完整容器运行证据仍归 T29，不要求额外安装容器运行时。
 
 ### T3：认证、会话与租户安全上下文
 
@@ -429,7 +443,15 @@ Flyway 高权限凭据边界：
 - 影响范围与边界异常：影响所有受保护接口与页面；不区分“账号不存在/密码错误”，停用和改密使旧会话失效，客户端无租户切换能力。
 - 验证：认证集成测试、Cookie/CSRF、限流、会话撤销、请求上下文缺失/认证存储故障、全部 Controller 路由清单、对象 ID 猜测、跨租户 repository 契约，以及同一连接先后服务 A/B 租户和事务回滚后的上下文清理测试。
 - 完成标准：匿名、普通用户、管理员三类访问矩阵通过。
-- 实际落地情况：已实现 Spring Security 默认拒绝链和 `/api/v1/auth/login|session|logout|first-password|password`；密码使用 BCrypt，正式密码按 15-64 Unicode code point 及离线弱/泄露密码表校验。会话使用 256 bit 随机不透明令牌，数据库仅保存 SHA-256 摘要；Cookie 统一 `HttpOnly`/`SameSite=Lax`，生产强制 `Secure`，变更请求校验 Cookie/Header CSRF。登录失败以服务端 pepper HMAC 主体摘要写入 PostgreSQL 限流，生产 pepper 仅由 app 专用 secret 文件读取；T3 自审补齐跨固定窗口的未到期锁校验，并以真实 PostgreSQL 用例防止窗口切换绕过。停用账号/租户、临时密码过期、凭据版本变化和会话过期均 fail-closed，改密撤销全部旧会话并签发新会话。`CurrentPrincipal` 是服务端唯一身份来源，`TenantTransactionExecutor` 在同一事务首条业务 SQL 前执行事务级 `set_config`；真实 PostgreSQL 测试已验证 A/B 租户切换、缺失上下文、管理员拒绝和回滚清理。前端新增共享 API 客户端、唯一 Pinia 会话 store 和角色/首次改密路由守卫，没有提前实现 T4 登录表单、PWA、主题或导航。本阶段未新增 SQL/migration、seed、菜单或权限表；仅同步 OpenAPI、认证配置和 app 专用 pepper secret 声明。验证已通过前端 11 项单测、Maven verify、真实 PostgreSQL 9 项认证与 6 项 schema 集成测试，以及真实本地联调的浏览器截图/交互：在 360×800 和 390×844 下，未登录访问 `/entry` 与 `/admin` 均保留目标路径并转到 `/login`，页面无横向溢出和 console warning/error。
+- 实际落地情况：
+  - 已实现 Spring Security 默认拒绝链和 `/api/v1/auth/login|session|logout|first-password|password`；密码使用 BCrypt，正式密码按 15-64 Unicode code point 及离线弱/泄露密码表校验。
+  - 会话使用 256 bit 随机不透明令牌，数据库仅保存 SHA-256 摘要；Cookie 统一 `HttpOnly`/`SameSite=Lax`，生产强制 `Secure`，变更请求校验 Cookie/Header CSRF。
+  - 登录失败以服务端 pepper HMAC 主体摘要写入 PostgreSQL 限流，生产 pepper 仅由 app 专用 secret 文件读取；T3 自审补齐跨固定窗口的未到期锁校验，并以真实 PostgreSQL 用例防止窗口切换绕过。
+  - 停用账号/租户、临时密码过期、凭据版本变化和会话过期均 fail-closed，改密撤销全部旧会话并签发新会话。
+  - `CurrentPrincipal` 是服务端唯一身份来源，`TenantTransactionExecutor` 在同一事务首条业务 SQL 前执行事务级 `set_config`；真实 PostgreSQL 测试已验证 A/B 租户切换、缺失上下文、管理员拒绝和回滚清理。
+  - 前端新增共享 API 客户端、唯一 Pinia 会话 store 和角色/首次改密路由守卫，没有提前实现 T4 登录表单、PWA、主题或导航。
+  - 本阶段未新增 SQL/migration、seed、菜单或权限表；仅同步 OpenAPI、认证配置和 app 专用 pepper secret 声明。
+  - 验证已通过前端 11 项单测、Maven verify、真实 PostgreSQL 9 项认证与 6 项 schema 集成测试，以及真实本地联调的浏览器截图/交互：在 360×800 和 390×844 下，未登录访问 `/entry` 与 `/admin` 均保留目标路径并转到 `/login`，页面无横向溢出和 console warning/error。
 
 ### T4：PWA、主题与应用外壳
 
@@ -443,7 +465,15 @@ Flyway 高权限凭据边界：
 - 影响范围与边界异常：影响所有页面外壳、首屏和安装产物；离线不承诺提交账目，网页模式完整可用，开发图标不得当正式品牌资产。
 - 验证：主题无闪烁、manifest/SW、支持/拒绝/不支持/已安装、独立窗口、双角色导航；逐项检查 Cache Storage 和离线网络请求，断言 API、账目响应、下载和个性化 HTML 从不进入 SW/HTTP 缓存。
 - 完成标准：P1/P5 共享同一安装和主题状态源。
-- 实际落地情况：已落地 `manifest.webmanifest`、生产态 Service Worker、无个人数据离线页、版本化静态缓存和缓存策略单测；API/下载与个性化导航保持网络直连，后端 `/api/v1/**` 统一返回 `Cache-Control: no-store`。新增共享主题 store/首屏内联恢复、`ThemeModeControl`、共享 PWA 安装 store/`PwaInstallPrompt`、`AppStateBlock`、`AppShell`、四项 `BottomNavigation`、正式登录页和 T4 范围内的“我的”设置承接；普通用户与管理员使用不同外壳，安全回跳拒绝外部、未知和角色不匹配路径。两轮自审已修复退出失败时错误清空本地身份、成功退出后 CSRF Cookie 未刷新导致同浏览器无法切换账号、无功能菜单图标误导、`appinstalled` 与安装选择结果的状态竞态、首次会话检查网络失败后登录缺少新 CSRF Cookie、用户与管理员退出流程重复且管理员可重复提交、前后端 Unicode 密码长度口径不一致，以及移动端产品介绍挤压登录首屏；退出流程现统一复用并有防重复测试。未实现 T5 通用业务组件、T10 偏好 API、任何字典/账单/报表业务，也未新增 migration、SQL、seed、权限表或部署配置。全量 `npm run check` 通过：前端 typecheck/lint/25 项单测/OpenAPI 漂移检查/生产构建、后端 Maven verify、真实 PostgreSQL 9 项认证与 6 项 schema 集成测试均成功；真实浏览器完成必填、错误凭据、普通用户四项导航、主题持久化、安装检测与网页降级、退出后账号切换、管理员独立外壳及控制台无警告错误验证，360×800、390×844 登录页和 390×844 管理页均确认 `scrollWidth` 等于视口宽度。复审再次在 390×844 完成普通用户登录/退出、管理员角色路由和窄屏截图，登录表单顶边为 279px；生产构建经 Chromium 检查 manifest 与 installability 均无错误，Service Worker 已接管且 Cache Storage 仅含无数据的 `/offline.html`。截图保存在本地忽略目录 `.local/audit/t4/`。正式产品图标、系统安装框、独立窗口和目标移动浏览器状态栏仍按计划留给 T29，R1/R54/R22 因跨阶段验收保持“进行中”。
+- 实际落地情况：
+  - 已落地 `manifest.webmanifest`、生产态 Service Worker、无个人数据离线页、版本化静态缓存和缓存策略单测；API/下载与个性化导航保持网络直连，后端 `/api/v1/**` 统一返回 `Cache-Control: no-store`。
+  - 新增共享主题 store/首屏内联恢复、`ThemeModeControl`、共享 PWA 安装 store/`PwaInstallPrompt`、`AppStateBlock`、`AppShell`、四项 `BottomNavigation`、正式登录页和 T4 范围内的“我的”设置承接；普通用户与管理员使用不同外壳，安全回跳拒绝外部、未知和角色不匹配路径。
+  - 两轮自审已修复退出失败时错误清空本地身份、成功退出后 CSRF Cookie 未刷新导致同浏览器无法切换账号、无功能菜单图标误导、`appinstalled` 与安装选择结果的状态竞态、首次会话检查网络失败后登录缺少新 CSRF Cookie、用户与管理员退出流程重复且管理员可重复提交、前后端 Unicode 密码长度口径不一致，以及移动端产品介绍挤压登录首屏；退出流程现统一复用并有防重复测试。
+  - 未实现 T5 通用业务组件、T10 偏好 API、任何字典/账单/报表业务，也未新增 migration、SQL、seed、权限表或部署配置。
+  - 全量 `npm run check` 通过：前端 typecheck/lint/25 项单测/OpenAPI 漂移检查/生产构建、后端 Maven verify、真实 PostgreSQL 9 项认证与 6 项 schema 集成测试均成功；真实浏览器完成必填、错误凭据、普通用户四项导航、主题持久化、安装检测与网页降级、退出后账号切换、管理员独立外壳及控制台无警告错误验证，360×800、390×844 登录页和 390×844 管理页均确认 `scrollWidth` 等于视口宽度。
+  - 复审再次在 390×844 完成普通用户登录/退出、管理员角色路由和窄屏截图，登录表单顶边为 279px；生产构建经 Chromium 检查 manifest 与 installability 均无错误，Service Worker 已接管且 Cache Storage 仅含无数据的 `/offline.html`。
+  - 截图保存在本地忽略目录 `.local/audit/t4/`。
+  - 正式产品图标、系统安装框、独立窗口和目标移动浏览器状态栏仍按计划留给 T29，R1/R54/R22 因跨阶段验收保持“进行中”。
 
 ### T5：共享前端组件、状态与 API 契约
 
@@ -457,7 +487,14 @@ Flyway 高权限凭据边界：
 - 影响范围与边界异常：影响六页共享 UI、状态和交互；不建设低代码配置平台，第二次出现的同类逻辑必须复用。
 - 验证：组件状态、初载/保留旧值刷新/主动操作失败/静默刷新失败、乱序响应、取消不报错、键盘、焦点、44px、主题、减少动态和 axe 定向检查。
 - 完成标准：后续页面不维护私有主题色或重复四态组件。
-- 实际落地情况：已建立 `FormField`、`FormSection`、`SegmentedControl`、`MoneySummary`、`AppDialog`、`AppDrawer`、`SettingsDisclosureList`、`GlobalLedgerSearch`、`AppliedFilterBar`、`FilterSheet` 和 `LedgerContextActions` 基础契约；现有登录页、主题控件和“我的”页已真实消费表单字段、分段选择、Dialog、Drawer 与披露列表，没有加入模拟账单或提前实现后续业务页。`AppStateBlock` 补齐 loading 的 `aria-busy`。金额 helper 只接受十进制字符串，使用 `BigInt` 定点计算和 `ROUND_HALF_UP`，覆盖已确认的单价、数量与金额上限；服务端后续仍以 `BigDecimal` 重复校验。共享查询能力支持 300ms 默认防抖、Enter/清空立即查询、作用域销毁取消、AbortController、单调代次丢弃晚响应、首次/替换/保留旧值刷新/静默刷新差异以及取消不报错；API 客户端新增 15 秒默认超时并把标准错误、字段错误、断网、超时和取消归一化。T5 自审进一步修复调用方自定义取消原因可能被当作普通错误、调用方取消后超时计时器可能改写错误类型、请求源自行取消后区域停留在 loading、中文输入法组词时 Enter 被提前提交、异常 CSRF Cookie 在浏览器本地抛错，以及设置列表语义和金额摘要末行重复分隔线；对应取消竞态、异常 Cookie 与状态恢复回归测试已补齐。定向和全量验证通过，前端共 47 项单测；360×800 与 390×844 真实 Chromium 验证登录帮助 Dialog、“我的”设置 Drawer、按钮/Esc 关闭、焦点进入与恢复、主题即时切换、网页安装降级、辅助技术列表语义和无横向溢出，控制台无 warning/error，截图保存在 `.local/audit/t5/`。本阶段未新增后端接口、SQL、migration、seed、菜单、权限表或部署配置；未实现字典候选、真实账单列表、图表、后台表格、Toast 和未保存草稿守卫，这些继续由 T7-T25 对应真实消费阶段交付。
+- 实际落地情况：
+  - 已建立 `FormField`、`FormSection`、`SegmentedControl`、`MoneySummary`、`AppDialog`、`AppDrawer`、`SettingsDisclosureList`、`GlobalLedgerSearch`、`AppliedFilterBar`、`FilterSheet` 和 `LedgerContextActions` 基础契约；现有登录页、主题控件和“我的”页已真实消费表单字段、分段选择、Dialog、Drawer 与披露列表，没有加入模拟账单或提前实现后续业务页。
+  - `AppStateBlock` 补齐 loading 的 `aria-busy`。
+  - 金额 helper 只接受十进制字符串，使用 `BigInt` 定点计算和 `ROUND_HALF_UP`，覆盖已确认的单价、数量与金额上限；服务端后续仍以 `BigDecimal` 重复校验。
+  - 共享查询能力支持 300ms 默认防抖、Enter/清空立即查询、作用域销毁取消、AbortController、单调代次丢弃晚响应、首次/替换/保留旧值刷新/静默刷新差异以及取消不报错；API 客户端新增 15 秒默认超时并把标准错误、字段错误、断网、超时和取消归一化。
+  - T5 自审进一步修复调用方自定义取消原因可能被当作普通错误、调用方取消后超时计时器可能改写错误类型、请求源自行取消后区域停留在 loading、中文输入法组词时 Enter 被提前提交、异常 CSRF Cookie 在浏览器本地抛错，以及设置列表语义和金额摘要末行重复分隔线；对应取消竞态、异常 Cookie 与状态恢复回归测试已补齐。
+  - 定向和全量验证通过，前端共 47 项单测；360×800 与 390×844 真实 Chromium 验证登录帮助 Dialog、“我的”设置 Drawer、按钮/Esc 关闭、焦点进入与恢复、主题即时切换、网页安装降级、辅助技术列表语义和无横向溢出，控制台无 warning/error，截图保存在 `.local/audit/t5/`。
+  - 本阶段未新增后端接口、SQL、migration、seed、菜单、权限表或部署配置；未实现字典候选、真实账单列表、图表、后台表格、Toast 和未保存草稿守卫，这些继续由 T7-T25 对应真实消费阶段交付。
 
 ### T6：审计与后台任务基础
 
@@ -471,7 +508,15 @@ Flyway 高权限凭据边界：
 - 影响范围与边界异常：影响所有高影响管理操作及后台任务；不记录密码、令牌、账目内容和精确位置，任务中断可重跑。
 - 验证：追加不可改、未变化字段不入审计、嵌套敏感输入脱敏、并发 runner 只执行一次、进程中断和启动恢复、不可取消阶段拒绝取消。
 - 完成标准：T7、T17-T19、T24 可复用而不自建日志/调度。
-- 实际落地情况：已新增 `admin.audit` 追加服务及稳定动作/对象/结果契约，只有管理员身份可写；白名单仅生成实际变化字段，递归移除密码、令牌、凭据、会话、精确地址/坐标等敏感键，并以失败关闭方式限制深度、节点数、集合规模和文本长度。成功动作可加入现有事务，拒绝/失败动作可在业务回滚后独立落库；运行角色继续只有审计表 `SELECT/INSERT` 权限，并输出按动作/结果区分的 Micrometer 计数。已新增可注册的幂等小批次任务契约、租户/全局作用域校验、事务级 RLS 租户执行器、类型级取消/重试策略、数据库 `SKIP LOCKED` 原子领取、30 秒可续租租约（续租以独立新事务立即提交）、有限重试、合作式取消、成功/继续/失败终态、每次领取及应用启动时最多 100 条一批的过期租约确定性恢复，以及执行/恢复指标；多实例同时发现同一过期租约时，只有条件更新实际命中的实例计入恢复数量和指标。执行完成或失败回写时若已失去租约，当前实例只记录 `lease_lost` 指标，不再二次改写任务或让调度调用异常退出。尚未注册任何具体业务任务，也未启用周期调度。V008 为 `job_run` 增加尝试次数、最大次数、租约持有者/到期和取消请求字段及幂等/领取/过期索引，生产回退采用 forward-fix；U008 仅允许无任务记录的首次部署失败环境撤销。单元测试验证未变化字段不入审计、嵌套敏感输入脱敏、异常消息不写任务记录、重试耗尽收敛、双实例恢复计数、终态租约丢失及续租事务边界；系统 PostgreSQL 16.14 一次性集群验证 migration/rollback、全局批次幂等、两个 runner 仅一方领取、不可取消类型拒绝、运行中合作式取消、同一过期租约只可恢复一次和审计不可修改。本阶段没有页面改动；未新增菜单、权限配置表、seed、业务 API、具体清理/导出/注销/备份任务、Redis、消息队列、Docker 依赖或调度器。
+- 实际落地情况：
+  - 已新增 `admin.audit` 追加服务及稳定动作/对象/结果契约，只有管理员身份可写；白名单仅生成实际变化字段，递归移除密码、令牌、凭据、会话、精确地址/坐标等敏感键，并以失败关闭方式限制深度、节点数、集合规模和文本长度。
+  - 成功动作可加入现有事务，拒绝/失败动作可在业务回滚后独立落库；运行角色继续只有审计表 `SELECT/INSERT` 权限，并输出按动作/结果区分的 Micrometer 计数。
+  - 已新增可注册的幂等小批次任务契约、租户/全局作用域校验、事务级 RLS 租户执行器、类型级取消/重试策略、数据库 `SKIP LOCKED` 原子领取、30 秒可续租租约（续租以独立新事务立即提交）、有限重试、合作式取消、成功/继续/失败终态、每次领取及应用启动时最多 100 条一批的过期租约确定性恢复，以及执行/恢复指标；多实例同时发现同一过期租约时，只有条件更新实际命中的实例计入恢复数量和指标。
+  - 执行完成或失败回写时若已失去租约，当前实例只记录 `lease_lost` 指标，不再二次改写任务或让调度调用异常退出。
+  - 尚未注册任何具体业务任务，也未启用周期调度。
+  - V008 为 `job_run` 增加尝试次数、最大次数、租约持有者/到期和取消请求字段及幂等/领取/过期索引，生产回退采用 forward-fix；U008 仅允许无任务记录的首次部署失败环境撤销。
+  - 单元测试验证未变化字段不入审计、嵌套敏感输入脱敏、异常消息不写任务记录、重试耗尽收敛、双实例恢复计数、终态租约丢失及续租事务边界；系统 PostgreSQL 16.14 一次性集群验证 migration/rollback、全局批次幂等、两个 runner 仅一方领取、不可取消类型拒绝、运行中合作式取消、同一过期租约只可恢复一次和审计不可修改。
+  - 本阶段没有页面改动；未新增菜单、权限配置表、seed、业务 API、具体清理/导出/注销/备份任务、Redis、消息队列、Docker 依赖或调度器。
 
 ### T7：管理员用户管理
 
@@ -657,7 +702,13 @@ Flyway 高权限凭据边界：
 - 影响范围与边界异常：影响支出净额、明细和全部相关报表；无独立入口，收入/调整/回收站拒绝，并发超额只有合法事务成功。
 - 验证：部分/多次/恰好全额/超额/并发/撤销和总览口径。
 - 完成标准：不存在悬空或累计超额有效调整。
-- 实际落地情况：已新增当前租户普通用户专用的调整创建、详情和撤销 API，OpenAPI 与生成类型同步；创建入口仅出现在有效支出的上下文操作，收入和调整记录不提供创建入口，来源由路径中的支出 ID 锁定且不能在表单改选。服务层在租户事务/RLS 内先锁定有效原支出，再汇总有效调整并校验累计上限；金额继续使用服务端 `BigDecimal` 与前端 `BigInt` 定点逻辑，支持部分、多次和恰好全额，超额返回带当前剩余额度的 409，并由既有数据库触发器作为并发防线。创建和撤销均使用请求内容摘要与幂等记录；撤销使用版本条件原子更新为 `REVOKED`，记录、时间和版本保留，且立即退出统一有效明细、恢复原支出净额。统一明细扩展为有效支出、收入和有效调整的稳定游标集合，调整可按专属类型筛选和搜索，原支出显示累计调整、净支出及全额状态；调整本身仍不计作收入。仓储继续复用 T2 已建 `expense_adjustment` 表、复合外键、RLS、状态约束、累计校验触发器和查询索引，因此本阶段没有新增 migration 或 seed；仅同步普通用户接口授权配置和数据库测试清单，没有新增菜单或部署配置。T17 的软删除、来源冻结/恢复、回收站和永久清理，T18 导出及 T20 正式报表产生端均未提前实现。
+- 实际落地情况：
+  - 已新增当前租户普通用户专用的调整创建、详情和撤销 API，OpenAPI 与生成类型同步；创建入口仅出现在有效支出的上下文操作，收入和调整记录不提供创建入口，来源由路径中的支出 ID 锁定且不能在表单改选。
+  - 服务层在租户事务/RLS 内先锁定有效原支出，再汇总有效调整并校验累计上限；金额继续使用服务端 `BigDecimal` 与前端 `BigInt` 定点逻辑，支持部分、多次和恰好全额，超额返回带当前剩余额度的 409，并由既有数据库触发器作为并发防线。
+  - 创建和撤销均使用请求内容摘要与幂等记录；撤销使用版本条件原子更新为 `REVOKED`，记录、时间和版本保留，且立即退出统一有效明细、恢复原支出净额。
+  - 统一明细扩展为有效支出、收入和有效调整的稳定游标集合，调整可按专属类型筛选和搜索，原支出显示累计调整、净支出及全额状态；调整本身仍不计作收入。
+  - 仓储继续复用 T2 已建 `expense_adjustment` 表、复合外键、RLS、状态约束、累计校验触发器和查询索引，因此本阶段没有新增 migration 或 seed；仅同步普通用户接口授权配置和数据库测试清单，没有新增菜单或部署配置。
+  - T17 的软删除、来源冻结/恢复、回收站和永久清理，T18 导出及 T20 正式报表产生端均未提前实现。
 
   自审覆盖需求/计划偏离、正确性、性能、安全、权限、租户隔离、数据一致性、异常处理、测试和业务闭环；补充了匿名 401、管理员 403 的接口负例，确认跨租户来源统一 404、来源行锁与数据库触发器共同保证并发累计不超额，统一查询复用既有 `idx_adjustment_source_status`/`idx_adjustment_report` 索引且没有引入应用缓存一致性问题。自审同时发现详情合同提前暴露 T17 的冻结/回收站状态会导致当前 UI 误标为“已撤销”，现已把 T16 详情可见状态和 OpenAPI 枚举收敛为 `EFFECTIVE/REVOKED`，由 T17 再随完整生命周期扩展。前端复用 `FormField`、`FormSection`、`SegmentedControl`、`MoneySummary`、`EntrySaveBar`、`AppDrawer`、`AppDialog`、`AppToast`、共享请求/幂等/未保存守卫和统一明细组件，没有形成第二套表单、金额或弹层实现。
 
@@ -817,7 +868,7 @@ Flyway 高权限凭据边界：
 
 ### T25：六页状态、权限、响应式与无障碍验收
 
-- 状态：已完成（iOS/Android 实机抽样因当前无连接设备未执行，保留为 T29 目标环境补证）
+- 状态：已完成（本阶段完成本地矩阵；后续 T29 已获用户 iOS 真机确认，Android 真机未验证）
 - 依赖：T4-T24 对应页面完成。
 - 输入：六页正式实现、DESIGN、六个 HTML 原型及原型契约测试。
 - 涉及文件：六页、共享组件、浏览器关键链路测试、DESIGN Page Registry。
@@ -845,7 +896,12 @@ Flyway 高权限凭据边界：
 - 影响范围与边界异常：影响索引、查询、资源配置和运行指标；不为模板补缓存，未达到目标先优化或限制范围，不隐藏结果。
 - 验证：EXPLAIN ANALYZE、负载脚本、前端 profile、任务中断和资源曲线。
 - 完成标准：无 N+1、无无限集合/缓存、无一次性大对象，结果可复现。
-- 实际落地情况：新增 `npm run check:performance`，复用系统 PostgreSQL 16.14 可执行程序创建和销毁一次性隔离集群，以 2,000 个商品、40,000 条有效支出、10,000 条有效收入和 1,000 条到期回收站记录建立可复现基线。候选、明细和分类报表除等价 SQL 的 `EXPLAIN ANALYZE` 外，还通过带真实会话、Spring Security、应用服务、MyBatis-Plus/Mapper XML 与 RLS 的正式 HTTP 链路验证；关键明细索引探针和到期清理领取分别命中 `idx_ledger_active_cursor`、`idx_ledger_purge_due`。本机单次观测中正式 HTTP 候选 107.987ms、明细首批 112.994ms、分类报表 79.052ms；对应 SQL 探针分别为 0.902ms、0.040ms、31.284ms，清理领取 0.067ms。51,000 行正式 CSV 游标导出以 fetch size 200 在 1,150ms 完成，1,000 行清理在 60ms 内严格按最多 100 行分批并以第 11 次空批收敛。数值只作为同机回退基线，不冒充生产 SLA；现有索引已满足结构性门槛，故没有新增 migration 或写放大索引。
+- 实际落地情况：
+  - 新增 `npm run check:performance`，复用系统 PostgreSQL 16.14 可执行程序创建和销毁一次性隔离集群，以 2,000 个商品、40,000 条有效支出、10,000 条有效收入和 1,000 条到期回收站记录建立可复现基线。
+  - 候选、明细和分类报表除等价 SQL 的 `EXPLAIN ANALYZE` 外，还通过带真实会话、Spring Security、应用服务、MyBatis-Plus/Mapper XML 与 RLS 的正式 HTTP 链路验证；关键明细索引探针和到期清理领取分别命中 `idx_ledger_active_cursor`、`idx_ledger_purge_due`。
+  - 本机单次观测中正式 HTTP 候选 107.987ms、明细首批 112.994ms、分类报表 79.052ms；对应 SQL 探针分别为 0.902ms、0.040ms、31.284ms，清理领取 0.067ms。
+  - 51,000 行正式 CSV 游标导出以 fetch size 200 在 1,150ms 完成，1,000 行清理在 60ms 内严格按最多 100 行分批并以第 11 次空批收敛。
+  - 数值只作为同机回退基线，不冒充生产 SLA；现有索引已满足结构性门槛，故没有新增 migration 或写放大索引。
 
   Actuator 新增受管理员权限保护的 `/api/v1/metrics` 与 `/api/v1/prometheus`，公开面仍只有不展示详情的 `/api/v1/health`。标准指标覆盖 HTTP 状态/耗时直方图、JVM/进程/磁盘及 Hikari；现有任务/审计指标之外，补充不含用户名、租户、账目文本或金额的登录结果与幂等结果有限基数计数。Hikari 最大连接数、最小空闲和获取超时改为带安全默认值的环境配置，并同步本地/生产示例及 Compose 透传。`deploy/monitoring/prometheus-alerts.yml` 已配置可用性、持续 5xx、连接等待、任务失败和磁盘不足规则；当前未部署采集器/通知渠道、未执行真实告警触发和目标主机资源曲线，明确保留 T29。
 
@@ -863,7 +919,10 @@ Flyway 高权限凭据边界：
 - 影响范围与边界异常：影响认证、授权、输入输出、日志、依赖和部署配置；测试只用合成数据，不得把攻击载荷写入生产日志。
 - 验证：自动化正反向测试、运行角色直接 SQL、连接池复用、Cache Storage/响应头、本地存储快照、共享设备账号切换和配置审查。
 - 完成标准：高风险失败全部为安全默认拒绝，无未解释严重项。
-- 实际落地情况：已新增 `npm run check:security`，对当前工作区与完整 Git 历史执行高置信 secret/敏感文件扫描，并把 npm 锁文件、Maven compile/runtime/provided/test 依赖及 `verify/package` 实际执行的 Maven 插件链统一提交 OSV 批量查询；扫描网络或数据异常即失败，不把“无法查询”当通过。首次扩大到 npm 测试工具链后发现 9 个漏洞记录，现已升级 Redocly CLI、Vite、Vue 插件和 Vitest，并以 `js-yaml 4.3.2+` override 收敛旧 OpenAPI 工具传递依赖；自审补扫 Maven 插件链后又发现 11 个漏洞记录，现已固定资源、编译、测试、打包和 Enforcer 稳定版，并用插件级依赖覆盖收敛 Spring Boot 3.5.16 与插件传递项，最终 360 个去重依赖零命中。离线弱密码表已固定到 SecLists 指定 commit，从 100,000 高频凭据中派生出符合 15-64 字符正式策略的条目并保留 MIT 许可和项目特定变体；登录限流新增用户名与直连来源两个独立 HMAC 主体，轮换用户名或伪造 `X-Forwarded-For` 均不能绕过来源总量阈值，应用默认不信任转发头。
+- 实际落地情况：
+  - 已新增 `npm run check:security`，对当前工作区与完整 Git 历史执行高置信 secret/敏感文件扫描，并把 npm 锁文件、Maven compile/runtime/provided/test 依赖及 `verify/package` 实际执行的 Maven 插件链统一提交 OSV 批量查询；扫描网络或数据异常即失败，不把“无法查询”当通过。
+  - 首次扩大到 npm 测试工具链后发现 9 个漏洞记录，现已升级 Redocly CLI、Vite、Vue 插件和 Vitest，并以 `js-yaml 4.3.2+` override 收敛旧 OpenAPI 工具传递依赖；自审补扫 Maven 插件链后又发现 11 个漏洞记录，现已固定资源、编译、测试、打包和 Enforcer 稳定版，并用插件级依赖覆盖收敛 Spring Boot 3.5.16 与插件传递项，最终 360 个去重依赖零命中。
+  - 离线弱密码表已固定到 SecLists 指定 commit，从 100,000 高频凭据中派生出符合 15-64 字符正式策略的条目并保留 MIT 许可和项目特定变体；登录限流新增用户名与直连来源两个独立 HMAC 主体，轮换用户名或伪造 `X-Forwarded-For` 均不能绕过来源总量阈值，应用默认不信任转发头。
 
   Spring Security 现为全部响应增加 CSP、`no-referrer`、最小 Permissions Policy，并继续保留 `nosniff`、拒绝 framing、API `no-store` 和默认拒绝 `/api/v1/**`；真实 PostgreSQL 认证测试新增匿名/普通用户未知 API 拒绝、普通用户访问管理端 403、管理员访问普通用户偏好 403 及安全头精确断言。现有双租户接口负例、复合外键、16 张租户表 FORCE RLS、运行角色最小权限、同连接租户切换/回滚、后台任务 scope、CSRF、限流、会话撤销、下载归属、CSV 公式防护、日志脱敏、Vue 无 `v-html`/危险 DOM 写入、ECharts HTML 编码、SW/API/下载缓存边界、草稿字段白名单/16 KiB/7 天 TTL/账号隔离/注销清理均完成整体复核，详见 `security-test.md`。
 
@@ -938,8 +997,8 @@ Flyway 高权限凭据边界：
 | `server/src/main/resources/db/migration/V012__account_deletion_audit.sql` | 增加不含租户外键的注销匿名安全审计、运行角色最小权限和不可篡改保护 | V011 完成后、T19 注销能力启用前 | 本人/管理员注销留痕及 180 天清理任务 | 生产使用兼容 forward-fix；仅无注销审计记录的首次部署失败环境可执行 U012 |
 | `server/src/main/resources/db/rollback/U012__account_deletion_audit.sql` | 空审计环境撤销 V012 对象、触发器与授权，检测到注销审计即拒绝 | 只限注销能力尚未启用的首次部署失败环境 | 注销匿名审计结构 | 修复后重跑 V012；已有审计记录时保留结构并新增 forward-fix migration |
 | `scripts/test-performance.sh`、`server/src/test/java/com/mybill/ledger/PerformanceBaselineIntegrationTest.java` | 在一次性 PostgreSQL 集群生成固定 UUID 合成数据，执行正式 HTTP/导出/清理链路与等价 SQL 查询计划；临时 JSON 仅写入 `server/target` | T26 基线及后续性能回归时显式执行 `npm run check:performance` | 仅 `mktemp` 隔离集群；不连接开发库、共享库或其他项目数据库 | 脚本退出时仅停止并删除自建隔离集群；测试类默认禁用，必须由专用系统属性开启 |
-| `server/src/main/resources/application.yml` | 配置 schema、默认安全值、上海时区、Cookie/任务参数、Hikari 资源边界及 Actuator/Micrometer 观测面 | 构建时随包 | 所有环境结构 | 应用镜像回退；不含真实机密；Prometheus 自动采集授权在 T29 配置 |
-| `deploy/monitoring/prometheus-alerts.yml` | T26 提供服务不可用、持续 5xx、连接池等待、任务失败和磁盘不足告警规则 | T29 接入真实 Prometheus 后复核阈值并启用 | 应用与主机运行告警，不包含租户或账目标签 | 停用对应规则组并回退配置；不得通过关闭健康/权限边界恢复采集 |
+| `server/src/main/resources/application.yml` | 配置 schema、默认安全值、上海时区、Cookie/任务参数、Hikari 资源边界及 Actuator/Micrometer 观测面 | 构建时随包 | 所有环境结构 | 应用镜像回退；不含真实机密；当前未部署 Prometheus 采集器；后续接入须单独配置采集授权 |
+| `deploy/monitoring/prometheus-alerts.yml` | T26 提供服务不可用、持续 5xx、连接池等待、任务失败和磁盘不足告警规则 | 可选 Prometheus 接入时复核阈值；本次采用宿主巡检和本机告警 | 应用与主机运行告警，不包含租户或账目标签 | 停用对应规则组并回退配置；不得通过关闭健康/权限边界恢复采集 |
 | `server/src/main/resources/application-prod.yml` | 生产非机密覆盖和安全 fail-fast；固定 `spring.flyway.enabled: false`，常驻应用只读校验预期 schema 版本 | 常驻 `app` 服务启动 | 生产应用与 Flyway 权限边界 | 回退上一镜像/配置版本；不得临时打开应用内 Flyway |
 | `server/src/test/java/com/mybill/e2e/E2eFixtureSeederTest.java`、`server/src/test/resources/application-test.yml`、`scripts/test-e2e.sh` | 限制确定性 fixture 与 E2E 物理写入；在 Spring/Flyway 前校验 `test`、`MY_BILL_E2E_WRITE=1`、`MY_BILL_E2E_EXPECTED_DB_FINGERPRINT` 与实时 PostgreSQL 指纹 | T28 及后续本地或 CI E2E 写入前；全部内容仅存在于 test source set，生产包不注册调试入口 | 只写脚本自建的一次性测试集群；退出时停止应用并删除整座临时集群，不影响正式业务 API | 回退测试工具不回退安全门禁；停用 E2E 时删除测试入口，绝不通过放宽生产校验恢复 |
 | `server/src/main/resources/auth/common-passwords.txt` | 离线拒绝常见或已泄露密码，避免校验时向外网传输候选密码 | T3 构建时随包，安全更新时换版 | 首次改密、用户改密与后续管理员重置 | 回退到上一已审核词表；不得回退到关闭密码安全校验 |
@@ -953,13 +1012,27 @@ Flyway 高权限凭据边界：
 | `server/Dockerfile` 的 `migrate` 构建目标 | 构建只含 Flyway CLI、JDBC 驱动和 migration 的一次性镜像，不含 Spring Web/业务启动入口 | T2 构建；T29 每次发布 migration 前 | 数据库 schema 变更执行面 | 回退到与目标 migration 匹配的上一镜像；已执行数据库变更遵循 forward-fix |
 | `deploy/scripts/run-flyway.sh` | 从 `MY_BILL_MIGRATION_DB_PASSWORD_FILE=/run/secrets/migration_db_password` 读取密码并 `exec flyway migrate`，禁止打印环境或命令展开 | `migrate` 一次性服务启动时 | 迁移凭据在短生命周期容器内的传递 | 容器退出即卸载 secret；脚本失败不启动新应用，修复后重跑同一兼容 migration |
 | `deploy/scripts/run-app.sh` | 从 app 数据库密码和认证限流 pepper 两个独立 secret 文件验证配置后启动 Java；拒绝任何 `MY_BILL_MIGRATION_DB_*` 环境变量，不导出 pepper 内容 | 常驻 `app` 服务每次启动 | 应用运行凭据、认证 pepper 和迁移凭据隔离 | 回退上一应用镜像/脚本；不得通过挂载 migration secret 或内联真实 pepper 恢复启动 |
-| `deploy/compose.yaml` | T2 定义长驻 `db/app`、一次性 `provision/migrate`、内部网络和三类数据库 secret；T3 只为长驻 `app` 增加独立认证 pepper secret；T27 透传来源登录失败阈值。`web/proxy` 与受控内网入口由 T29 补齐 | T2 建迁移链路，T3/T27 补认证配置；T29 执行真实容器验收 | 数据库、应用、内部网络和凭据暴露边界 | 使用上一镜像和配置；数据库不自动降级，迁移与认证 pepper secret 不得挂到无需要的服务 |
+| `deploy/compose.yaml` | T2 定义长驻 `db/app`、一次性 `provision/migrate`、内部网络和三类数据库 secret；T3 只为长驻 `app` 增加独立认证 pepper secret；T27 透传来源登录失败阈值。静态资源由 `proxy` 服务提供，受控内网入口由 `compose.intranet.yaml` 补齐 | T2 建迁移链路，T3/T27 补认证配置；T29 执行真实容器验收 | 数据库、应用、内部网络和凭据暴露边界 | 使用上一镜像和配置；数据库不自动降级，迁移与认证 pepper secret 不得挂到无需要的服务 |
 | `deploy/Caddyfile` | 同源静态资源/API 反向代理、TLS 与安全响应头 | T29 常驻服务启动 | 受控内网入口 | 回退上一配置；数据库不受影响 |
 | `deploy/backup/*`、`deploy/restore/*` | PostgreSQL/导出文件备份、校验与恢复 | 定时及演练 | 备份存储 | 恢复前创建当前快照；演练在隔离环境 |
 
 SQL 约束：所有脚本必须有总体、对象/字段、执行前置、影响范围和回滚注释；生产不依赖 destructive undo。可执行 migration 必须放在 `server/src/main/resources/db/` 供 Flyway 打包和校验，这是相对技能默认 `agent-works/{feature-slug}/*.sql` 的明确工程化偏离；不在 `agent-works` 复制第二份 SQL，避免双事实源，开发留痕与测试报告改为引用真实 migration。普通 seed 只能插入缺失稳定键，禁止使用 `ON CONFLICT ... DO UPDATE` 覆盖管理员或用户维护值；特殊数据修正必须使用独立 Flyway 版本、精确旧身份/旧值条件、影响计数校验和回滚/forward-fix 说明。菜单采用前端路由和服务端角色授权，无数据库菜单 seed；权限采用代码枚举和 Spring Security，不新增可漂移的权限配置表。第一期没有地图、币种、预算、账户余额或转账配置。
 
+### 部署阶段新增实现与SQL边界
+
+| 文件 | 用途与执行位置 | 数据/权限边界 |
+|---|---|---|
+| `deploy/scripts/backup-local.sh`、`check-operations.sh` | 宿主备份、原子状态和本机巡检 | 应用只读状态文件，不访问归档/密钥/Docker |
+| `deploy/tls/internal-ca.sh`、`activate-certificate.sh` | 签发端签发；目标端校验加载/回退 | CA私钥不进入业务服务器，叶密钥只供proxy |
+| `RecoveryAuditRunner`、`RecoveryAuditMapper.xml` | 离线保全/恢复重放，SQL仍位于Mapper XML | 重放需专用恢复库及实时指纹，普通入口拒绝恢复变量 |
+| `deploy/scripts/verify-recovery-tool.sh`、`verify-recovery-http.py` | 目标机隔离数据/文件/入口业务演练 | 随机临时secret、无公开端口、不覆盖线上库，结束清理 |
+| `server/src/test/resources/recovery/recovery-business-fixture.sql` | 合成样本，只在空账目专用临时库且显式标记时执行 | 不是生产seed；公开测试账号仅在销毁式演练使用，临时容器销毁即清理 |
+
+本阶段未新增migration、默认seed、数据库角色授权、菜单或业务API；schema保持012。稳定配置与启动参数见[环境架构](architecture/environment-configuration.md)，部署工具入口见[deploy/README.md](../../deploy/README.md)。
+
 ## 9. 测试与验证计划
+
+以下保留T1–T28验证分工与当时结果；目标环境补验已由T29完成，见[test-report.md](test-report.md)。不将早期“未验证”说明解释为当前仍阻塞，也不将后续通过追写为早期已执行。
 
 - 单元测试：金额/数量精度、ROUND_HALF_UP、名称规范化、筛选序列化、报表公式、模板白名单、状态机、密码规则和 CSV 转义。完成情况：T3 已验证密码 Unicode 长度、离线弱密码拒绝与合法密码；T5 已验证十进制字符串解析、BigInt 定点乘法、ROUND_HALF_UP、单价/数量/金额边界和 CNY 格式化；其他领域规则随对应实现任务验证。
 - 数据库测试：仅复用系统 PostgreSQL 16+ 可执行程序创建并销毁一次性隔离集群，不安装数据库、不复用本项目开发库或 其他项目数据库，不探测或依赖 Docker/Testcontainers。完成情况：T26 最终回归中 86 项真实 HTTP/业务集成测试与 7 项 schema/migration/RLS/任务测试通过；另有 1 项专用性能测试在 2,000 个商品、51,000 条账目数据上通过，覆盖正式候选/明细/报表 HTTP 链路、导出、清理及查询计划。
@@ -995,8 +1068,8 @@ SQL 约束：所有脚本必须有总体、对象/字段、执行前置、影响
 ## 10. 发布与回滚
 
 - 发布前检查：T28 的全部部署前必须项证据和不可变候选摘要；明确列出留待 T29 的 R23/R55 与生产环境证据；技术版本和依赖扫描；migration 备份；机密和 Cookie/TLS；正式品牌资产；内网访问边界/主机容量/内部 CA 与终端信任；RPO/RTO；注销保留期；数据质量阈值；容量与告警。
-- 发布步骤：备份并校验 → 使用 T28 锁定的 `migrate` 镜像执行 `docker compose run --rm migrate` → 核对 Flyway schema 版本和校验和 → 确认 migration 容器已退出且常驻应用不可见其 secret → 部署 `app/web/proxy` → 健康检查 → 冒烟登录、填报、明细、报表、管理 → 内网访问边界和 PWA 实测 → 开启后台调度 → 观察指标。migration 失败或 schema 版本不符时停止发布，不启动新应用镜像。
-- 配置/环境变量：`deploy/env/production.env.example` 分别声明 `MY_BILL_MIGRATION_DB_URL`、`MY_BILL_MIGRATION_DB_USERNAME`、`MY_BILL_MIGRATION_DB_PASSWORD_FILE` 和 `MY_BILL_APP_DB_URL`、`MY_BILL_APP_DB_USERNAME`、`MY_BILL_APP_DB_PASSWORD_FILE`；真实密码以 Compose secret 文件放在 `/etc/my-bill/secrets/`，迁移密码只挂载到一次性 `migrate`，运行密码只挂载到常驻 `app`。其余配置包括会话密钥/生命周期、允许主机、Cookie 域、任务开关/批量、导出目录、备份位置/加密、日志级别和告警目标；本地测试可使用 `MY_BILL_E2E_WRITE=1` 与 `MY_BILL_E2E_EXPECTED_DB_FINGERPRINT`，生产配置禁止携带或启用；真实值不进入 Git、镜像、构建参数或日志。
+- 发布步骤：备份并校验 → 使用当前已验证候选对应的 `migrate` 镜像执行 `docker compose run --rm --no-deps -T migrate < /dev/null` → 核对 Flyway schema 版本和校验和 → 确认 migration 容器已退出且常驻应用不可见其 secret → 交付前端 dist 并启动 `app/proxy` → 健康检查 → 冒烟登录、填报、明细、报表、管理 → 内网访问边界和 PWA 实测 → 核对随应用启动的后台轮询与宿主timer → 观察指标。migration 失败或 schema 版本不符时停止发布，不启动新应用镜像。
+- 配置/环境变量：模板与实际消费链以[环境架构](architecture/environment-configuration.md)为准；运行、迁移、初始化凭据分发遵循 Compose 白名单。备份状态仅挂载非敏感状态目录，恢复参数仅由维护入口接受；不把标准 Spring 属性或未实现开关描述为管理能力。生产禁止 E2E 参数和真实机密入库。
 - 应用回滚：回退上一不可变镜像和配置；Service Worker 使用可控版本更新，避免旧前端调用不兼容 API。
 - 数据库回滚：migration 必须向后兼容至少一个应用版本；有数据后不执行破坏性 undo，使用 forward-fix；发布前备份，严重问题从备份恢复到隔离环境验证后再决策。
 - 功能降级：可停用导出/清理调度、限制报表最大范围或隐藏尚未发布维度；不得绕过租户、会话、金额和生命周期规则。
@@ -1010,19 +1083,19 @@ SQL 约束：所有脚本必须有总体、对象/字段、执行前置、影响
 - 复杂报表、全局搜索和多维下钻可能成为 PostgreSQL 热点；首期以索引和参数化聚合验证，不提前引入缓存。
 - 浏览器 PWA 安装能力差异较大；安装属于渐进增强，网页功能不可依赖安装事件。
 - 单机低成本部署降低运维成本但存在主机级故障域；R55 当前按用户要求只做同机副本，恢复演练仍是上线必要条件，但无法抵御整机/磁盘损坏。
-- 注销在线删除与 180 天匿名审计策略已确认并解除 T19 阻塞；备份恢复重放仍与主机安全/终端信任、RPO/RTO 一并限制 T29 正式运营结论。数据质量阈值已在 T22 确认并以 `expense-quality-v1` 落地，不再构成阻塞。
+- 注销在线删除与 180 天匿名审计策略已确认并解除 T19 阻塞；备份恢复重放及目标机隔离业务恢复已通过，主机/容器残余风险按本次内网例外登记。数据质量阈值已在 T22 确认并以 `expense-quality-v1` 落地，不再构成阻塞。
 
 ### 11.2 假设
 
 - 技术基线已由用户确认；采用 Java LTS 和实施时受支持的 Spring Boot 稳定版本，精确小版本在 T1 锁定。
 - 第一阶段是单区域、少量用户、单应用实例起步，但数据库幂等、任务租约和会话设计不依赖进程内状态，为后续扩容保留路径。
 - 除已确认的收入分类候选外，原型中的“餐饮、交通、微信、商超”等仅为演示数据，不直接进入生产 seed。
-- 备注 500 Unicode code point、用户名 3-64 位可见 ASCII 是接口阶段推荐合同；如产品需调整，在 T1 固化前修改，不影响业务主流程或 R 编号。
+- 备注500 Unicode code point、用户名3–64位可见ASCII已由接口校验固化；后续改变须同步契约与测试。
 - 数据质量阈值以服务端常量和响应中的 `expense-quality-v1` 版本说明实现；具体值已在 T22 开始前确认，后续改变规则必须升级版本并同步测试与文档。
 
 ### 11.3 阶段性阻塞决策与确认时机
 
-以下事项会改变接口行为、数据处理、上线步骤或验收标准，按 `auto-plan-dev` 规则均作为阻塞处理。它们不阻塞 T1 工程基线启动，但当前计划不能被描述为“无阻塞”，对应任务在确认前不得开始或关闭。
+以下是影响开发与部署门禁的已确认决策，当前均已关闭；表中保留其范围和后续变更约束。新需求改变这些决策时重新评估，不沿用本次实例例外。
 
 | 阻塞事项 | 当前状态 | 阻塞任务/范围 | 必须确认的内容 | 未确认时处理 |
 | --- | --- | --- | --- | --- |
@@ -1033,7 +1106,7 @@ SQL 约束：所有脚本必须有总体、对象/字段、执行前置、影响
 | RPO/RTO 与保留期 | 已确认，目标机隔离恢复及告警验收通过 | T29；R55 | 每日一次，7 个日备份 + 4 个周备份；仅服务器副本，RPO 24h/RTO 4h 限主机/磁盘可读的逻辑恢复 | 不把同机备份描述为整机灾备；需调度/校验/轮转/恢复/告警真实证据 |
 | 正式产品名称、图标和启动图 | 正式资产已部署，用户实机确认通过 | T29；R1 最终发布验收 | 正式名称及完整 PWA 图标/启动图资产 | 可使用明确标记的临时资产开发，但不得关闭正式 PWA 发布验收 |
 
-启动边界：T1-T28 已完成，候选源码已锁定；T29 的公网/域名/备案前置已因一期内网范围移除，仍需落实目标主机安全与容量、已确认独立 CA 的终端信任、已确认同机备份策略的实施与正式品牌资产。用户已授权实际部署并接受当前 CentOS 7 内网例外，容量与访问范围已确认。Docker 镜像构建、一次性 migration 服务以及 secret/容器退出边界的真实运行验证属于 T29，不作为 T28 本地验证前置。T29 已进入部署准备；实际启动前落实剩余条件，仅采用用户明确批准的主机例外，不以配置准备宣称生产验收完成。
+完成边界：T1–T29 本次内网交付已验收。Docker镜像、凭据隔离、证书、备份和用户iOS确认均有对应证据；新主机或公网部署必须重新核对准入、配置与验收，不因本案例通过而自动放行。
 
 ### 当前内网部署决策（2026-09-28）
 

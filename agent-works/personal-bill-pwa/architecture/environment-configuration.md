@@ -153,7 +153,7 @@ secret 文件模式 0600；app/migrate 使用 UID/GID 10001，文件属主必须
 
 ## 备份运行状态
 
-`MY_BILL_BACKUP_STATUS_FILE` 指向宿主原子发布的 `backup.properties`；默认空值表示未配置。内网 Compose 将 `/var/lib/my-bill/operations` 只读挂到 `/run/my-bill-operations`，只包含状态与时间，不包含归档、私钥或 Docker socket。生产者使用 UTC 时间，运行概况最多读 4KiB；缺失/损坏返回 UNAVAILABLE，成功超过 26 小时或运行超过 1 小时返回 STALE，最近失败不得被历史成功覆盖。配置修改后重建 app 容器，状态文件更新无需重启。
+`MY_BILL_BACKUP_STATUS_FILE` 是应用进程内的文件路径，指向宿主原子发布并只读挂载的 `backup.properties`；默认空值表示未配置。内网覆盖文件固定为 `/run/my-bill-operations/backup.properties`，只在env模板添加同名键不会改写该固定值。内网 Compose 将 `/var/lib/my-bill/operations` 只读挂到 `/run/my-bill-operations`，只包含状态与时间，不包含归档、私钥或 Docker socket。生产者只写RUNNING/SUCCEEDED/FAILED及UTC时间，原子替换文件；状态目录需以root持有并允许应用只读访问。运行概况最多读4KiB；缺失/损坏返回 UNAVAILABLE，成功超过 26 小时或运行超过 1 小时返回 STALE，最近失败不得被历史成功覆盖。配置修改后重建 app 容器，状态文件更新无需重启。
 
 ## 离线恢复工具配置
 

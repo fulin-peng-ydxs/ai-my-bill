@@ -24,9 +24,9 @@ flowchart TD
 | report | /reports | summary/time、支出和收入维度分析；读相同有效账目口径，不另存冗余总额 |
 | admin/user | /admin/users | 创建普通用户及租户、状态/临时密码管理、委托 account 注销；不会赋予管理员账目权限 |
 | admin/dictionary | /admin/default-dictionaries | 系统默认字典治理；不覆盖个人字典历史 |
-| admin/overview | /admin/overview | 账号、会话、健康和存储元数据；禁止业务金额聚合 |
+| admin/overview | /admin/overview | 账号、会话、健康、只读备份状态和存储元数据；禁止业务金额聚合 |
 | admin/audit | /admin/audit-logs | 脱敏审计筛选与详情；只读查询，追加经统一审计服务 |
-| account、job | 注销和后台执行 | 见任务专题；不用 Controller 内长循环替代任务 |
+| account、job | 注销、离线恢复维护和后台执行 | 见任务专题；不用 Controller 内长循环替代任务 |
 
 API 的精确字段、枚举和状态以 [OpenAPI](../../../contracts/openapi.yaml) 为准；上述前缀用于定位，不代替契约。
 

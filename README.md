@@ -188,7 +188,7 @@ npm run dev
 │   │   ├── dictionary/、preference/   个人字典与偏好
 │   │   ├── report/                   摘要、时间趋势和维度聚合
 │   │   ├── admin/                    user/dictionary/overview/audit管理能力
-│   │   ├── account/                  账号注销、匿名审计与文件补偿
+│   │   ├── account/                  账号注销、匿名审计、离线恢复重放与文件补偿
 │   │   ├── job/                      数据库任务领取、租约、重试与调度
 │   │   ├── persistence/              实体映射、MyBatis配置、schema门禁
 │   │   └── shared/                   API错误、时间范围、事务/Mapper工具
@@ -204,8 +204,8 @@ npm run dev
 │   ├── compose*.yaml                 服务编排、内网覆盖、一次性管理员初始化
 │   ├── Caddyfile、Dockerfile.proxy    HTTPS/静态资源/API代理
 │   ├── env/、postgres/               非密钥配置模板与数据库角色初始化
-│   ├── scripts/                      预检、容器入口、备份/隔离恢复
-│   ├── tls/、systemd/、monitoring/     CA签发、备份定时、告警规则
+│   ├── scripts/                      预检、容器入口、备份/隔离恢复、证书激活与巡检
+│   ├── tls/、systemd/、monitoring/     CA签发、备份/巡检定时、本机告警与可选监控规则
 ├── agent-works/personal-bill-pwa/
 │   ├── requirement*.md、plan.md       需求、确认依据、阶段与验收状态
 │   ├── architecture/                 当前技术与环境配置说明

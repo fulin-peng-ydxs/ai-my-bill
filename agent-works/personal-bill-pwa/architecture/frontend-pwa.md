@@ -2,7 +2,7 @@
 
 ## 范围与组成
 
-面向前端开发，覆盖 web/src、Vite 构建和浏览器状态；不定义业务计算口径或服务器权限。2026-09-28 按当前源码静态核对，实机安装未验证。
+面向前端开发，覆盖 web/src、Vite 构建和浏览器状态；不定义业务计算口径或服务器权限。当前机制以源码为准；目标环境执行证据与用户实机确认见[验收报告](../test-report.md)。
 
 ```mermaid
 flowchart LR
@@ -48,7 +48,7 @@ flowchart LR
 
 ## 会话与偏好流程
 
-守卫等待唯一 session store 初始化 → 认证失败去登录 → 临时密码去首次改密 → 角色外壳渲染。`api/http.ts` 统一 Cookie、XSRF、no-store 和错误解析；浏览器不自行构造租户身份。登出/切换账号需清理账号范围草稿；accountStorage 的作用域不能退化为全局共享键。
+守卫等待唯一 session store 初始化 → 认证失败去登录 → 临时密码去首次改密 → 角色外壳渲染。`api/http.ts` 统一 Cookie、XSRF、no-store 和错误解析；浏览器不自行构造租户身份。登出清理当前内存会话/偏好；未过期草稿按不可逆账号命名空间和收支类型保留供同账号恢复，换账号不能读取其他账号草稿。账号注销成功后清理其本地数据；不能把作用域退化为全局共享键。
 
 主题首屏只恢复合法 `system/light/dark` 值，随后由 theme store 接管；登录后的服务端偏好为权威，本地仅回退。新增偏好要同步 Preference API 与 store，不能用额外 localStorage 取代跨设备保存。
 
@@ -58,12 +58,18 @@ flowchart LR
 
 前端 build 产物为 web/dist，包含 sw.js；生产不能用 Vite dev/preview 承担部署入口。接口类型源自 OpenAPI，不手改 generated/schema.ts。新增页面影响登记、路由、设计契约、权限、导航与测试；新增 API 影响后端契约与 Cookie/CSRF 统一客户端。
 
+## 安装资产与更新机制
+
+正式名称为“我的账单”，manifest 的 display 为 standalone，start_url 为 `/entry`；普通用户和管理员仍由认证角色路由决定落点。图标使用源SVG生成的192/512 PNG、maskable512和Apple180，Apple入口由 `web/index.html` 声明，不提供IPA/APK包。安装检测覆盖iOS/iPadOS桌面UA的触摸识别，安装不可用时保留完整网页使用能力。
+
+生产构建注册模块型 `/sw.js`。install预取无数据离线页并skipWaiting；activate删除旧版本 `my-bill-static-*` 缓存并clients.claim。当前没有“发现新版”提示按钮；页面导航始终走网络，加载新页面取得新资源，断网只显示离线页。旧页面可能仍持有旧哈希资源，交付需兼顾资源保留与API兼容，不能把SW接管当作所有打开页面已刷新。
+
 ## 验证与限制
 
 `npm --prefix web run check` 覆盖 typecheck、lint、Vitest、OpenAPI 漂移和构建；位于 stores/router/domain/pwa 的测试用于行为边界。命令也由根 `npm run check` 调用。自动化检查不能代替目标设备上的安装、系统信任与独立窗口验收。
 
 | 类型 | 证据状态 | 限制及验证方式 |
 |---|---|---|
-| PWA 发布 | 未验证 | 真实 iOS/Android 安装、独立窗口、CA 系统信任仍需目标终端验收 |
+| PWA 发布 | 按环境验收 | 当前内网iOS由用户确认通过，浏览器机制补验见验收报告；Android真机未验证，新环境不得复用结论 |
 | 离线 | 已确认代码边界 | 只提供静态离线提示；不能从缓存显示个人账目或声称离线提交成功 |
 | 发布资源 | 已确认 | 旧页面可能持有旧资源地址，更新时保留上一版哈希资源并验证 SW 更新 |

@@ -294,7 +294,22 @@ Key Characteristics：
 | `Toast` | 短暂动作反馈和撤销 | 保存、删除成功等；失败若影响区域可用性，还必须保留页内错误态 |
 | `PwaInstallPrompt` | 登录页与“我的”的安装能力引导 | 复用同一检测状态源；只有浏览器提供安装事件时显示真实安装动作，否则显示分平台步骤或已安装状态 |
 
-T5/T7 代码事实：登录页真实消费 `FormField` 与 `AppDialog`，主题控件消费 `SegmentedControl`，“我的”页消费 `SettingsDisclosureList` 与 `AppDrawer`；T7 用户管理页真实消费 `FormField`、`AppStateBlock`、`AppDialog`、`AppDrawer`、`useLatestRequest`，并新增复用型 `AppDataTable` 与 `AppToast`。T8/T9 的个人字典和默认字典页面共享 `DictionaryToolbar`、`DictionaryItemList`、四态和浮层，默认字典在管理端桌面侧栏与窄屏页头均有入口，并明确“只影响后续新增用户”的作用域。T10 的“记一笔”入口真实消费 `EntryTypeSwitch` 和服务端最近类型偏好，“我的”页真实消费资金渠道、明细范围、报表范围与主题偏好；路由、刷新/关闭、退出和账号变化共享单一未保存内容守卫，账目草稿只通过不可逆账号命名空间和类型白名单读写。T11/T12 收支表单复用 `FormField`、`FormSection`、`MoneySummary`、`FundingChannelPicker`、账号隔离草稿、失败重试幂等键跟踪和带撤销动作的 `AppToast`；支出另消费商品与地点组件，收入提供最近名称、付款方快捷新增及收入专属连续录入清空规则，收支切换保持两类草稿隔离；编辑已有有效调整的支出时，金额说明和 `paidAmount` 原位错误必须展示服务端返回的累计调整下限。T13 的 `DailyEntryPicker` 真实复用 `AppDrawer`、`EntryTypeSwitch` 与 `AppStateBlock`，两类表单共享 `DailyTemplateFallbackNotice`；选择只回填白名单、更新本次时间、清空备注并继续走普通保存校验，类型请求与投递均有竞态保护。T14-T17 的明细页真实消费 `GlobalLedgerSearch`、`AppliedFilterBar`、`FilterSheet`、`SegmentedControl`、`AppStateBlock`、`LedgerContextActions`、`AppToast` 与共享请求代次/幂等能力，并落地 `LedgerListItem`、`IncrementalLedgerList`；有效/回收站使用同一状态切换、日期分组和上下文面板，回收站行显示剩余天数及关联清理影响，删除成功由 Toast 提供即时恢复，永久清理使用 `AppDialog` 二次确认。T18 的 P4 页头与 P5 数据设置真实复用 `DataExportAction`、统一导出 API/轮询/取消/下载状态和既有 `AppToast`；图标态保持 44×44px，设置态保持整行披露结构。T20 的报表页真实复用共享搜索、筛选、分段选择、金额摘要和四态，并新增 `ChartPanel`；T21 新增 `TimeTrendPanel`；T22-T23 共用 `ReportDimensionPanel`，九个支出维度和五个收入维度共享排行、空态、截断、键盘/触摸下钻，并以 tone/文案显式区分收支语义色。三类报表组件共享 `useReportChart` 的 ECharts SVG、非零尺寸初始化、ResizeObserver、主题 token 与减少动态。筛选草稿在应用前不影响展示，scope 切换清理不兼容条件，下钻与返回恢复同一 URL 上下文。
+共享组件消费关系按页面维护，不按开发阶段堆叠记录：
+
+| 页面/能力 | 共享消费与稳定边界 |
+|---|---|
+| 登录与主题 | FormField、AppDialog、SegmentedControl；安装引导消费单一PWA状态源 |
+| 我的与字典 | SettingsDisclosureList、AppDrawer；个人/默认字典共享DictionaryToolbar、DictionaryItemList、四态与浮层；默认项只影响后续新增用户 |
+| 管理用户 | FormField、AppStateBlock、AppDialog、AppDrawer、useLatestRequest、AppDataTable、AppToast；桌面表格与窄屏摘要共享状态和动作 |
+| 收支表单 | FormField、FormSection、MoneySummary、FundingChannelPicker、账号隔离草稿、失败重试幂等与可撤销AppToast；收入/支出草稿互不覆盖 |
+| 支出及收入差异 | 支出使用商品/地点组件；收入提供最近名称、付款方快捷新增及收入专属连续录入规则；支出编辑展示累计调整下限及paidAmount原位错误 |
+| 日常模板 | DailyEntryPicker复用AppDrawer、EntryTypeSwitch、AppStateBlock，两类表单共用DailyTemplateFallbackNotice；只回填白名单、更新时间、清空备注并复验，请求/投递有竞态保护 |
+| 明细与回收站 | GlobalLedgerSearch、AppliedFilterBar、FilterSheet、SegmentedControl、AppStateBlock、LedgerContextActions、AppToast、LedgerListItem、IncrementalLedgerList；共享日期分组、请求代次/幂等、上下文和状态切换 |
+| 删除及恢复反馈 | 回收站行显示剩余天数和关联清理影响；删除Toast提供即时恢复，永久清理经AppDialog二次确认 |
+| 导出 | P4页头与P5数据设置共用DataExportAction、API/轮询/取消/下载状态和AppToast；图标44×44px、设置整行披露 |
+| 报表 | ChartPanel、TimeTrendPanel、ReportDimensionPanel共用useReportChart的ECharts SVG、非零尺寸初始化、ResizeObserver、主题token和减少动态；九类支出、五类收入维度共享排行/空态/截断/键盘与触摸下钻 |
+| 跨页状态 | 最近收支类型来自服务端偏好；资金渠道/明细范围/报表范围/主题在“我的”统一维护；路由、刷新、退出和账号变化共用未保存守卫；报表筛选只在应用后生效，scope切换清理不兼容条件，下钻保持URL上下文 |
+
 
 ### 4.3 按钮与输入
 
@@ -546,8 +561,24 @@ T5/T7 代码事实：登录页真实消费 `FormField` 与 `AppDialog`，主题�
 
 ## 10. Known Gaps
 
-- 前端工程已锁定 Vue 3 + Vite + TypeScript + Pinia + Vue Router，图表采用 ECharts，SVG 图标采用 Lucide Vue Next；不引入覆盖本设计契约的整套通用 UI 框架，优先实现本文定义的项目语义组件，不得据技术选型改变已确认视觉与交互契约。
-- 正式工程当前已实现登录页、主题/PWA 共享状态、普通用户四项导航、管理员外壳、T5 共享基础、T7 已开放的管理员账号管理、T8 个人字典治理、T9 商品合并和五类默认字典管理、T10 服务端偏好/类型切换/账号隔离草稿/统一未保存内容守卫、T11/T12 收支填报与连续录入、T13 日常模板选择/回填/失效提示/移除、T14-T17 统一明细查询、账目编辑、退款/报销及有效/回收站完整生命周期、T18 当前筛选/完整数据导出、T19 本人/管理员注销、T20 报表统一筛选、精确摘要、基础图表和可恢复下钻、T21 日/周/月/季/年时间趋势、累计、环比同比和指标一致下钻、T22-T23 支出/收入多维分析、T24 管理运行概况和只读审计日志检索，以及 T25 六页本地状态/权限/响应式/无障碍验收。首次会话校验在角色未知时使用中性 loading，确认完成前不挂载账号页面或管理数据；普通用户访问管理地址时在原地址显示 permission 状态且不挂载管理页面。个人字典在“我的”只保留一个入口，索引展示八类真实数量；商品合并通过目标搜索、影响预览和危险确认完成。默认字典从管理导航独立进入并明确修改只作用于后续新增用户。收支页在手机视口使用分组表单和底部固定双保存动作，候选、失败、校验、金额摘要、模板抽屉与撤销均在原上下文反馈；明细页在手机和桌面使用相同的信息顺序、日期分组和上下文动作，短按查看/编辑，低频操作由左滑、长按、右键或 `Shift+F10` 打开统一面板；回收站只出现恢复和永久清理动作，行级反馈、剩余天数、即时撤销及关联调整影响均在原上下文表达。报表页在手机和桌面保持搜索、已应用条件、摘要、维度和图表的阅读顺序，图表按主题 token 渲染并提供键盘下钻；收支维度使用相同阅读顺序和可访问下钻。调整创建抽屉锁定来源并复用既有表单、金额、弹层和保存组件，撤销经危险确认后保留已撤销轨迹。P4 页头导出保持 44×44px 图标并原位切换取消，P5“数据与安全”以设置行承载完整导出，两处共用状态组件且完成后直接下载。P5 注销与 P6 用户注销复用既有弹层/操作抽屉，危险确认必须完整呈现即时删除、180 天匿名审计和备份恢复重放边界；P5 只有收到注销成功响应后才清理当前账号命名空间并返回登录页；失败或结果不明保留本地数据，不能依据会话失效推断注销成功。P6-F1 在桌面使用稳定数据表格，在 `≤833px` 使用带状态色轨的账号摘要卡和底部操作抽屉。P6-F3 备份卡片消费宿主只读状态，区分成功、失败、执行中、超时、未配置和不可读，并展示最近成功时间；不以旧成功掩盖当前失败。T25 已以七个 DESIGN 关键视口验证无整页横向溢出、至少 44px 命中区、键盘焦点、抽屉滚动/关闭/焦点恢复、背景锁滚动、低高度和双主题；当前无连接 iOS/Android 设备，实机抽样仍待目标环境补证。移动端 Toast 位于底部导航上方且不使用装饰阴影。
-- 正式名称为“我的账单”；安装图标复用 Action Blue 背景与白色票据符号，SVG 为源，提供 192/512 PNG、maskable 512 与 Apple 180 图标。启动表现仍需 iOS 实机验收，不以图标补齐代替启动屏验证。
-- 正式工程已接入 Manifest、Service Worker、真实浏览器安装事件、拒绝/不支持/已安装状态和分平台手动引导；正式图标、启动图、目标移动浏览器系统安装框、独立窗口与状态栏表现仍需在 T29 目标环境复验。
-- 管理后台是否需要独立桌面域名或路径属于技术与部署决策，不影响当前设计系统。
+### 稳定实现与交互边界
+
+- 前端使用Vue3、Vite、TypeScript、Pinia、Vue Router、ECharts和Lucide Vue Next；不以通用UI框架覆盖设计契约。
+- 首次会话校验在角色未知时使用中性 loading，确认完成前不挂载账号页面或管理数据；普通用户访问管理地址时在原地址显示 permission 状态且不挂载管理页面。
+- 个人字典在“我的”只保留一个入口，索引展示八类真实数量；商品合并通过目标搜索、影响预览和危险确认完成。
+- 默认字典从管理导航独立进入并明确修改只作用于后续新增用户。
+- 收支页在手机视口使用分组表单和底部固定双保存动作，候选、失败、校验、金额摘要、模板抽屉与撤销均在原上下文反馈；明细页在手机和桌面使用相同的信息顺序、日期分组和上下文动作，短按查看/编辑，低频操作由左滑、长按、右键或 `Shift+F10` 打开统一面板；回收站只出现恢复和永久清理动作，行级反馈、剩余天数、即时撤销及关联调整影响均在原上下文表达。
+- 报表页在手机和桌面保持搜索、已应用条件、摘要、维度和图表的阅读顺序，图表按主题 token 渲染并提供键盘下钻；收支维度使用相同阅读顺序和可访问下钻。
+- 调整创建抽屉锁定来源并复用既有表单、金额、弹层和保存组件，撤销经危险确认后保留已撤销轨迹。
+- P4 页头导出保持 44×44px 图标并原位切换取消，P5“数据与安全”以设置行承载完整导出，两处共用状态组件且完成后直接下载。
+- P5 注销与 P6 用户注销复用既有弹层/操作抽屉，危险确认必须完整呈现即时删除、180 天匿名审计和备份恢复重放边界；P5 只有收到注销成功响应后才清理当前账号命名空间并返回登录页；失败或结果不明保留本地数据，不能依据会话失效推断注销成功。
+- P6-F1 在桌面使用稳定数据表格，在 `≤833px` 使用带状态色轨的账号摘要卡和底部操作抽屉。
+- P6-F3 备份卡片消费宿主只读状态，区分成功、失败、执行中、超时、未配置和不可读，并展示最近成功时间；不以旧成功掩盖当前失败。
+- 移动端 Toast 位于底部导航上方且不使用装饰阴影。
+
+### 品牌与PWA约束
+
+- 正式名称为“我的账单”；安装图标使用Action Blue背景和白色票据符号，SVG为源，提供192/512 PNG、maskable512及Apple180。
+- 安装能力使用Manifest、Service Worker、浏览器安装事件和分平台手动引导；检测、拒绝、不支持、已安装状态由共享状态源管理，网页使用不依赖安装。
+- 不以图标齐全代替启动、独立窗口或平台状态栏验收。发布到新环境时验证目标设备证书信任、安装、离线与更新；具体实例结果只维护在[验收报告](agent-works/personal-bill-pwa/test-report.md)和[部署案例](agent-works/personal-bill-pwa/deployment/cases/README.md)。
+- 没有原生IPA/APK和离线记账能力；当前SW自动接管并清理旧静态缓存，没有新版提示按钮，不设计与实际能力不符的入口。

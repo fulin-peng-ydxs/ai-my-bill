@@ -5,7 +5,7 @@
 - [部署导航与模式](../agent-works/personal-bill-pwa/deployment/README.md)
 - [首次部署、升级和运维手册](../agent-works/personal-bill-pwa/deployment/runbook.md)
 - [持续构建与发布链路](../agent-works/personal-bill-pwa/deployment/continuous-delivery.md)
-- [备份恢复方案与当前缺口](../agent-works/personal-bill-pwa/deployment/backup-recovery.md)
+- [备份恢复方案与验证边界](../agent-works/personal-bill-pwa/deployment/backup-recovery.md)
 - [环境变量与配置加载](../agent-works/personal-bill-pwa/architecture/environment-configuration.md)
 - [当前内网部署案例](../agent-works/personal-bill-pwa/deployment/cases/intranet-single-host.md)
 
@@ -19,8 +19,11 @@
 | env/production.env.example | 非密钥配置示例；含当前实例取值，使用前按案例核对替换 |
 | scripts/preflight-host.sh | 首次目标主机只读准入检查 |
 | scripts/run-*.sh、postgres/ | 应用/迁移/角色/管理员初始化入口 |
-| tls/internal-ca.sh | 内部CA与IP叶证书签发 |
-| scripts/backup-local.sh、verify-backup-restore.sh、systemd/ | 同机加密备份、隔离数据库恢复检查与定时 |
+| tls/internal-ca.sh、activate-certificate.sh | 签发端建立CA/签发IP叶证书；目标端校验、加载及失败回退 |
+| scripts/backup-local.sh、verify-backup-restore.sh | 同机加密备份、基础隔离数据库恢复检查 |
+| scripts/verify-recovery-tool.sh、verify-recovery-http.py | 注销审计保全/重放、隔离样本恢复与应用/入口验证 |
+| scripts/check-operations.sh、systemd/ | 备份定时、容器/证书/磁盘/备份状态本机巡检 |
+| Dockerfile.postgres | 固定PostgreSQL16.14，构建安装发行版补丁的数据库镜像 |
 | monitoring/ | 待实际接入验证的监控告警规则 |
 
-当前基础内网实例可运行，T29仍未最终验收。具体地址、例外、凭据位置、镜像摘要和验证结果只维护在案例中；不能把方案命令当作已执行证据。
+当前内网实例已按本次范围完成T29，证据汇总见[验收报告](../agent-works/personal-bill-pwa/test-report.md)。具体地址、例外、凭据位置、镜像摘要和验证结果只维护在案例中；不能把方案命令当作已执行证据。
