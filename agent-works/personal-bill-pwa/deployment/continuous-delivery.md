@@ -26,7 +26,7 @@ push 与 pull_request 触发 ubuntu-latest 作业，checkout 全历史用于 sec
 | check:security | 工作区/Git历史高置信secret、npm/Maven依赖OSV | 容器OS包和宿主漏洞 |
 | check:e2e | 受控临时库及独立 Chromium 关键路径 | 手机系统安装/CA信任、全部视觉状态 |
 
-CI YAML 存在只证明配置，不等于某次远端作业成功。每次发布保存对应提交的实际执行结果；本次文档未触发 GitHub 运行。
+CI YAML 存在只证明配置，不等于某次远端作业成功。每次发布保存对应提交的实际执行结果。
 
 ## 发布候选构建
 
@@ -38,7 +38,7 @@ npm run build:release -- "$(git rev-parse HEAD)"
 
 脚本拒绝非 HEAD 和未提交改动（仅保留已明确的 .gitignore 例外），先 Maven package -DskipTests，再设置 MY_BILL_BUILD_ID=提交号构建前端，写 `.local/release-candidate/<完整提交>/manifest.txt`。构建跳过测试不代表测试已通过，必须先满足上述发布关卡。manifest 与源码同一提交，保存到发布记录，不把 .local 整体入库。
 
-本次文档整理没有执行 build:release（文档工作区正在修改）；本次 npm run check 的前端/后端构建不是新的部署候选声明。
+普通检查生成的JAR/dist不自动成为发布候选；只有干净提交、完整关卡、manifest和目标镜像记录形成对应关系后才可交付。
 
 ## 交付产物与可追溯性
 
@@ -60,4 +60,4 @@ npm run build:release -- "$(git rev-parse HEAD)"
 
 失败按最早关卡停止：检查失败不出候选；校验失败不解包；迁移失败不启动新 app；健康/安全失败不放入口。回退依赖旧制品和 schema兼容性，见部署手册；不要通过跳过测试、关闭TLS/CSRF/RLS或删除数据库“修复发布”。
 
-本次验证：工程 check 与临时空库开发起停已执行，生产环境只读检查；依赖安装修复后，前端检查、安全扫描363个依赖及3条隔离Chromium E2E重新通过；性能专项、镜像扫描及升级回退在本次文档工作未重跑。既有测试记录和当前部署验收分别见功能记录及案例。
+验证记录必须区分本地检查、远端CI、镜像扫描和部署验收，并关联同一候选。历史命令结果见[验收记录](../pre-release-test-report.md)，目标环境结果见[案例](cases/README.md)；没有执行的关卡保持未验证。

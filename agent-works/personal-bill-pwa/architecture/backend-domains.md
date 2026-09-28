@@ -30,6 +30,23 @@ flowchart TD
 
 API 的精确字段、枚举和状态以 [OpenAPI](../../../contracts/openapi.yaml) 为准；上述前缀用于定位，不代替契约。
 
+## 分层名称对应什么工作
+
+“模块化单体”表示一个Java进程内按领域组织代码，不是为auth、ledger、report分别启动服务。仓库Maven的server模块产出一个业务JAR，领域包之间通过Java调用协作，共享同一个数据库和事务体系。
+
+| 代码层 | 以支出为例 | 负责什么 |
+|---|---|---|
+| Controller | ExpenseController | 声明HTTP路径、绑定/验证请求、取得CurrentPrincipal并调用服务 |
+| Service | ExpenseService | 业务规则、字典归属、幂等、事务边界与跨模块协调 |
+| Repository | ExpenseRepository | 面向领域的数据读写操作及结果映射 |
+| Mapper接口 | ExpenseRepositoryMapper | 声明与XML语句对应的方法，不放业务流程 |
+| Mapper XML | resources/mapper/com/mybill/ledger/ExpenseRepositoryMapper.xml | 参数绑定、查询/锁/插入/更新语句；SQL性能与隔离的重要检查点 |
+| 共享事务 | TenantTransactionExecutor | 将认证主体的租户放入同一数据库事务，供RLS读取 |
+
+该分层让HTTP参数变化不必影响SQL细节，数据库读取方式变化也不要求页面知道表结构。新增业务规则优先放在所属服务；跨领域不能因为“同一个JAR”就随意写别人的表。
+
+GlobalExceptionHandler将预期业务异常转换为统一错误；TraceIdFilter提供请求关联标识。调试按Controller→Service→Mapper跟踪，并用traceId关联日志；不要在全局异常处理里吞掉失败，也不要向客户端返回内部堆栈。
+
 ## 代表性业务闭环
 
 普通用户提交支出 → 身份上下文及 USER 角色 → ExpenseService 校验金额、时间、个人字典可用性与幂等键 → 同事务设置租户上下文 → Mapper 保存条目与快照 → 返回已保存结果。重试相同键和规范化内容得到原结果，内容冲突返回冲突；不存在或不属于本人的引用不越权解析。
@@ -48,7 +65,7 @@ ReportService 解析 BusinessDateRange，统一筛选与金额口径，在租户
 
 ## 验证与风险
 
-后端单元/架构测试由 `npm run check:server` 执行；真实数据库业务入口由 `npm run check:database` 在一次性集群中执行（也是全量 check 的一部分）。Expense/Income/Adjustment/Lifecycle/Report/AdminUser 等 HttpIntegrationTest 覆盖相关链路；具体本次结果见 README，不将默认跳过数据库测试算为通过。
+后端单元/架构测试由 `npm run check:server` 执行；真实数据库业务入口由 `npm run check:database` 在一次性集群中执行（也是全量 check 的一部分）。Expense/Income/Adjustment/Lifecycle/Report/AdminUser 等 HttpIntegrationTest 覆盖相关链路；具体执行结果见验收记录，不将默认跳过数据库测试算为通过。
 
 | 类型 | 证据状态 | 风险与处理 |
 |---|---|---|

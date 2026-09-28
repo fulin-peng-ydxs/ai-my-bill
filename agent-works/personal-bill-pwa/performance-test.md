@@ -14,7 +14,7 @@
 npm run check:performance
 ```
 
-脚本只复用系统已经安装的 PostgreSQL 16+ 可执行程序，在 `mktemp` 目录创建一次性集群，建立最小权限的 `my_bill_migration`/`my_bill_app` 角色，完成后停止并删除集群。它不连接本项目开发库、`ai-stocks` 数据库、Docker 或任何共享数据库。
+脚本只复用系统已经安装的 PostgreSQL 16+ 可执行程序，在 `mktemp` 目录创建一次性集群，建立最小权限的 `my_bill_migration`/`my_bill_app` 角色，完成后停止并删除集群。它不连接本项目开发库、其他项目数据库、Docker 或任何共享数据库。
 
 固定合成数据：
 

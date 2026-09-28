@@ -2,7 +2,7 @@
 
 ## 范围与加载模型
 
-本文是环境变量、配置文件、secret、生效与轮换的技术入口，面向开发和运维。按 ai-stocks 的分层说明方式组织，内容依据本项目源码在 2026-09-28 核对；本项目没有其 YAML/app_config 动态覆盖机制，也没有 JWT、Redis 或 DuckDB 配置。
+本文说明环境变量从哪里读取、如何进入进程、何时生效，以及密钥如何分发和轮换。开发使用Shell变量与application.yml，部署使用Compose配置和secret文件；用户偏好另存业务数据库，不属于基础设施配置。
 
 ```mermaid
 flowchart TD
@@ -28,6 +28,31 @@ flowchart TD
 | user_preference、个人字典 | 业务服务 | 当前账号数据，不覆盖基础设施参数，不构成全局环境变量管理中心 |
 
 `web/vite.config.ts` 直接读取 process.env，不调用 loadEnv 加载根目录模板。前端没有自定义 VITE_* 密钥/连接配置；API 固定同源 /api/v1。MY_BILL_BUILD_ID 只决定构建缓存名，不能运行时通过服务器 env 改已构建资源。
+
+## 用两个例子理解配置实际如何生效
+
+### 开发端口
+
+调用 `MY_BILL_SERVER_PORT=18080 MY_BILL_WEB_PORT=15174 npm run dev` 时，Shell把两个变量传给dev.sh；脚本启动的Maven/Java和npm/Vite继承环境。Java从application.yml占位符取得18080，Vite从process.env取得同一个18080作为代理目标，前端开发命令使用15174。只修改浏览器URL不能修改Java端口；只在某个独立前端终端设置变量，也不会改变已经运行的后端。
+
+### 生产数据库密码
+
+`MY_BILL_APP_DB_PASSWORD_HOST_FILE=/etc/my-bill/secrets/app_db_password` 是宿主路径；Compose把该文件挂到app里的 `/run/secrets/app_db_password`。run-app.sh根据容器内的MY_BILL_APP_DB_PASSWORD_FILE读取内容，再向Java子进程提供SPRING_DATASOURCE_PASSWORD。Java连接数据库，浏览器和proxy都拿不到该密码。
+
+因此有三个不同的值：配置里的宿主路径、容器看到的路径、文件内真正的密码。env示例只保存路径；不能把密码写进“路径变量”，也不能把宿主路径原样当作容器路径。secret名称本身不会加密宿主文件，文件权限和Docker管理权限仍然关键。
+
+### 修改后需要做什么
+
+| 改动 | 需要的动作 | 原因 |
+|---|---|---|
+| 开发Shell变量 | 停止并重新启动对应进程 | 已启动进程不会读取另一个终端的新环境 |
+| Compose env/挂载参数 | config校验后重新创建受影响容器 | restart复用原容器配置，不重新装配environment |
+| 数据库密码文件 | 先协调数据库角色密码，再替换文件并重建消费者 | 文件内容和数据库实际密码必须一致；现有连接池可能暂时掩盖不一致 |
+| TLS叶证书 | 校验新文件、替换、Caddy reload并从客户端核验 | 文件更新不代表进程已经加载 |
+| MY_BILL_BUILD_ID | 重新构建并交付前端 | 这是构建时缓存版本，不是运行期网页参数 |
+| 用户偏好 | 通过本人偏好API保存 | 属于业务数据，按业务请求读取，不重启服务 |
+
+操作前后要核对受影响消费者，而不是只确认“文件已经改了”。
 
 ## 开发与工具链变量
 
@@ -105,9 +130,9 @@ YAML 中未额外定义专名环境变量的固定属性包括会话 Cookie 名/
 
 ## npm源与代理
 
-安装还受用户级 `~/.npmrc` 影响。registry是包仓库，不是HTTP CONNECT代理，不能把仓库服务地址直接填入proxy/https-proxy。本机已观察到此误配置；单次命令 `NPM_CONFIG_USERCONFIG=/dev/null npm_config_registry=https://registry.npmjs.org npm run bootstrap` 可隔离用户配置，未改全局设置。组织网络需要真实代理时由运维提供受控配置，不一律删除用户设置。
+安装还受用户级 `~/.npmrc` 影响。registry是包仓库，不是HTTP CONNECT代理，不能把仓库服务地址直接填入proxy/https-proxy。单次命令 `NPM_CONFIG_USERCONFIG=/dev/null npm_config_registry=https://registry.npmjs.org npm run bootstrap` 可隔离用户配置而不修改全局设置。组织网络需要真实代理时由运维提供受控配置，不一律删除用户设置。
 
-锁文件的version、resolved目标版本和integrity必须对应同一发布包；本次修复三项Playwright下载地址指向1.61.1而版本/校验和属于1.63.0的差异，未移除完整性校验。先比对可信HTTPS源元数据，不能靠清缓存或删integrity掩盖源包不一致。
+锁文件的version、resolved目标版本和integrity必须对应同一发布包。先比对可信HTTPS源元数据，不能靠清缓存或删integrity掩盖源包不一致。
 
 ## 文件权限、轮换与故障定位
 
@@ -124,4 +149,4 @@ secret 文件模式 0600；app/migrate 使用 UID/GID 10001，文件属主必须
 
 ## 验证边界
 
-本次静态核对上述入口与变量引用，并验证工具链、依赖可用性、工程检查和临时空库启动；未进行生产变量轮换或新增配置加载行为。Compose、入口拒绝边界的既有测试及实例运行证据见部署案例。备份脚本硬编码数据库/容器/路径，迁移到新模式时必须逐项核对，不能只换 env 就声称支持。
+配置验证分三层：静态检查变量是否被入口消费；在隔离环境测试实际生效与拒绝路径；在目标实例核验挂载/权限/启动结果。既有执行证据见验收记录与部署案例，不能用变量表存在代替轮换演练。备份脚本硬编码数据库/容器/路径，迁移到新模式时必须逐项核对，不能只换 env 就声称支持。

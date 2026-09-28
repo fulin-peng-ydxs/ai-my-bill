@@ -25,6 +25,21 @@ AuthenticationService 校验账号与 BCrypt 摘要，生成 32 字节随机令�
 
 LoginRateLimiter 把账号/来源失败状态存 PostgreSQL，RateLimitSubjectHasher 使用服务端 pepper 做 HMAC-SHA256。默认账号失败阈值 5、来源阈值 50、窗口/锁定 15min；配置见 [环境架构](environment-configuration.md)。当前 Caddy 去掉转发头，应用按代理地址做共享来源限流，不能声称已按每台终端独立限流。
 
+## Cookie、CSRF、角色和RLS各自解决什么
+
+| 机制 | 回答的问题 | 具体例子 |
+|---|---|---|
+| Cookie会话 | 这个请求是谁发出的 | 令牌匹配服务端会话，账号已禁用或会话撤销则拒绝 |
+| CSRF | 携带登录Cookie的写请求是否符合本站约定 | 浏览器读取XSRF-TOKEN并通过X-XSRF-TOKEN发送，缺失/不匹配拒绝 |
+| 角色守卫 | 这个身份能调用哪类功能 | USER能记账，ADMIN能管理用户；管理员不是全数据超级用户 |
+| 租户事务 | 本次SQL属于哪个数据空间 | 从CurrentPrincipal取得租户，在事务内设置app.tenant_id |
+| PostgreSQL RLS | 数据库行是否允许当前事务读写 | 其他租户行不可见/不可修改，SQL遗漏过滤条件也不能自动跨租户 |
+| 复合归属校验 | 请求关联的商品/账目是否确实属于本人 | 不能拿另一个租户的UUID建立跨租户引用 |
+
+这些机制互补：登录成功不代表能访问任何接口；接口有权限不代表能访问其他用户数据；RLS不能替代字段校验和业务规则。前端router用于正确展示，真正授权由服务端和数据库共同执行。
+
+登录排障时，先检查session接口与Cookie是否存在、是否同源，再区分CSRF错误与角色拒绝，最后检查服务端租户上下文。不要通过向请求增加tenantId或使用超级数据库账号解决权限错误。
+
 ## 数据边界与错误路径
 
 CurrentPrincipal 只能由会话查询构建，DTO 不返回租户 ID 或令牌。TenantTransactionExecutor 仅接受含租户的普通用户；TenantDatabaseExecutor 在同一事务通过 Mapper 调用 `set_config('app.tenant_id', ..., true)`。V007/V010 的 FORCE RLS 同时约束读与写；无上下文默认不可见，事务结束不向连接池遗留租户。
@@ -41,7 +56,7 @@ InitialAdminBootstrap 只在独立 bootstrap profile 下运行，锁账号表并
 
 ## 验证与限制
 
-AuthHttpIntegrationTest、AdminUserHttpIntegrationTest、PostgresSchemaIntegrationTest、DeploymentBoundaryTest、InitialAdminBootstrapTest 分别覆盖认证、账号管理、RLS、生产配置边界和初始化；真实数据库运行入口为 `npm run check:database`，初始化入口为 `bash scripts/test-initial-admin.sh`（先构建 JAR）。后者在本次文档整理未重跑，既有运行结果记录于案例。
+AuthHttpIntegrationTest、AdminUserHttpIntegrationTest、PostgresSchemaIntegrationTest、DeploymentBoundaryTest、InitialAdminBootstrapTest 分别覆盖认证、账号管理、RLS、生产配置边界和初始化；真实数据库运行入口为 `npm run check:database`，初始化入口为 `bash scripts/test-initial-admin.sh`（先构建 JAR）。初始化测试使用一次性数据库，不连接业务库；实际运行结果记录于验收材料和案例。
 
 | 类型 | 证据状态 | 限制与处理 |
 |---|---|---|

@@ -166,3 +166,9 @@ T28 部署前门禁通过，候选源码已锁定为提交 `8b12a7737b41465f8e88
 安装验证发现用户级.npmrc把包仓库误用为HTTP代理，HTTPS返回501；另有@playwright/test、playwright、playwright-core的version/integrity属于1.63.0，resolved却指向1.61.1。比对官方HTTPS元数据后仅修正三条resolved，不变更版本/校验和。使用 `NPM_CONFIG_USERCONFIG=/dev/null npm_config_registry=https://registry.npmjs.org npm run bootstrap` 安装成功，未更改用户全局npm配置。重新安装后的前端check通过；安全扫描363个依赖无OSV命中。安装对应Chromium后，npm run check:e2e在隔离数据库完成3条关键流程，全部通过；测试自动清理自身集群与服务。
 
 架构/入口结构校验、相对链接/锚点、命令块Bash语法和git diff --check通过。性能专项、生产升级回退、页面截图、手机PWA及T29其他待验收项本次未验证；部署前历史记录不能代替新实例验收。
+
+## 10. 开发指南操作核验（2026-09-28）
+
+仅文档修改，未重新部署或改变业务实现。新增操作在本机临时数据库my_bill_docs_debug验证：总启动使用前端15174/后端18080，health UP、登录页200；MAVEN_ARGS传递Spring Boot JVM参数，JDWP仅监听127.0.0.1:5005并完成握手。独立Maven bootstrap-admin入口在临时空账号库创建管理员后退出，HTTP登录成功且passwordChangeRequired为true。Ctrl+C清理验证进程，删除该临时库及自建明文密码/pepper文件，原PG进程保留。
+
+单独前端命令 `bash scripts/run-frontend.sh dev -- --host 127.0.0.1` 启动成功、登录页200，随后Ctrl+C停止。IDE界面Attach按钮/断点操作未验证，文档提供连接参数与使用说明，不声称完成IDE交互验收。未重复完整构建/测试、页面截图、实机和生产演练；此前结果保留原适用范围。

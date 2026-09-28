@@ -42,7 +42,7 @@ flowchart LR
 
 新增功能先查相同领域服务、共享组件和既有 SQL。接口变更同步 OpenAPI → 生成类型 → API 封装 → 调用者与契约测试。SQL 变更区分运行 Mapper 与 schema 迁移，不在 Java 内嵌 SQL。
 
-入口命令与环境前提见根目录 [README](../../../README.md)。`npm run check` 组合前端检查/构建、Maven verify 和隔离数据库集成；结构约束由 ModuleBoundaryTest、PersistenceSourceBoundaryTest、HttpContractTest 和前端页面登记契约测试覆盖。本次文档不构成浏览器或手机验收，测试结果见 README 的验证说明。
+入口命令与环境前提见根目录 [README](../../../README.md)。`npm run check` 组合前端检查/构建、Maven verify 和隔离数据库集成；结构约束由 ModuleBoundaryTest、PersistenceSourceBoundaryTest、HttpContractTest 和前端页面登记契约测试覆盖。浏览器与手机验收需独立记录设备、版本、场景及结果，架构说明不能代替实测。
 
 ## 风险与限制
 
