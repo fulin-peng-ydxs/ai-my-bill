@@ -169,6 +169,55 @@ fi
   -Dmybill.test.jdbc-url="jdbc:postgresql://127.0.0.1:${TEST_PORT}/${TEST_DATABASE}" \
   test
 
+# 完整恢复演练复用本脚本的一次性集群与合成业务样本，不接受外部数据库地址。
+if [[ "${MY_BILL_DATABASE_TEST_SUITE:-regression}" == "recovery" ]]; then
+  recovery_started=$(date +%s)
+  restore_database=my_bill_restore_drill
+  snapshot_query="SELECT count(*) || '|' || coalesce(sum(paid_amount),0)::text FROM ledger_entry"
+  before_restore=$(psql -h 127.0.0.1 -p "$TEST_PORT" -U "$TEST_ADMIN" -d "$TEST_DATABASE" -tAc "$snapshot_query")
+  [[ "${before_restore%%|*}" -gt 0 ]] || { echo "恢复样本为空，拒绝宣称业务演练通过" >&2; exit 1; }
+  pg_dump -h 127.0.0.1 -p "$TEST_PORT" -U "$TEST_ADMIN" -d "$TEST_DATABASE" -Fc -f "$TEST_ROOT/database.dump"
+  printf '%s' 'isolated-recovery-pepper-with-at-least-32-characters' > "$TEST_ROOT/pepper"
+  recovery_jar=$(find server/target -maxdepth 1 -name 'my-bill-server-*.jar' -print -quit)
+  [[ -n "$recovery_jar" ]]
+  run_recovery() {
+    MY_BILL_DB_HOST=127.0.0.1 MY_BILL_DB_PORT="$TEST_PORT" MY_BILL_DB_NAME="$1" \
+    MY_BILL_DB_APP_PASSWORD=app_test MY_BILL_AUTH_RATE_LIMIT_PEPPER_FILE="$TEST_ROOT/pepper" \
+    MY_BILL_RECOVERY_ACTION="$2" MY_BILL_RECOVERY_AUDIT_FILE="$TEST_ROOT/deletion-audit.jsonl" \
+    MY_BILL_RECOVERY_EXPECTED_DB_FINGERPRINT="${3:-}" MY_BILL_EXPORT_DIRECTORY="$TEST_ROOT/exports" \
+      java -jar "$recovery_jar" --recovery-tool > "$TEST_ROOT/recovery-$2.log" 2>&1 || { tail -50 "$TEST_ROOT/recovery-$2.log"; return 1; }
+  }
+  run_recovery "$TEST_DATABASE" preserve
+  createdb -h 127.0.0.1 -p "$TEST_PORT" -U "$TEST_ADMIN" -O my_bill_migration "$restore_database"
+  pg_restore -h 127.0.0.1 -p "$TEST_PORT" -U "$TEST_ADMIN" -d "$restore_database" --exit-on-error "$TEST_ROOT/database.dump"
+  after_restore=$(psql -h 127.0.0.1 -p "$TEST_PORT" -U "$TEST_ADMIN" -d "$restore_database" -tAc "$snapshot_query")
+  [[ "$before_restore" == "$after_restore" ]]
+  restore_fingerprint=$(psql -h 127.0.0.1 -p "$TEST_PORT" -U "$TEST_ADMIN" -d "$restore_database" -tAc \
+    "SELECT current_database() || '|' || inet_server_addr()::text || '|' || inet_server_port()::text || '|' || pg_postmaster_start_time()::text")
+  # 在恢复副本中重建旧快照仍含已注销主体的情景，原库与保全审计保持不变。
+  restored_export="$TEST_ROOT/exports/19100000-0000-4000-8000-000000000001/19300000-0000-4000-8000-000000000001.csv"
+  mkdir -p "$(dirname "$restored_export")"
+  printf '%s' 'isolated restored export' > "$restored_export"
+  psql -h 127.0.0.1 -p "$TEST_PORT" -U "$TEST_ADMIN" -d "$restore_database" -v ON_ERROR_STOP=1 -v export_file="$restored_export" <<'SQL' >/dev/null
+-- 仅本脚本创建的一次性恢复库：模拟旧快照中的已注销身份与导出，退出即销毁整个集群。
+INSERT INTO tenant(id) VALUES('19100000-0000-4000-8000-000000000001');
+INSERT INTO app_user(id,tenant_id,username,password_digest,role)
+VALUES('19200000-0000-4000-8000-000000000001','19100000-0000-4000-8000-000000000001','restore-deleted-fixture','unusable-test-password','USER');
+INSERT INTO export_job(tenant_id,id,user_id,filter_snapshot,status,file_location,expires_at)
+VALUES('19100000-0000-4000-8000-000000000001','19300000-0000-4000-8000-000000000001','19200000-0000-4000-8000-000000000001','{}','SUCCEEDED',:'export_file',now()+interval '1 day');
+SQL
+  retained_users=$(psql -h 127.0.0.1 -p "$TEST_PORT" -U "$TEST_ADMIN" -d "$restore_database" -tAc "SELECT count(*) FROM app_user")
+  run_recovery "$restore_database" replay "$restore_fingerprint"
+  run_recovery "$restore_database" replay "$restore_fingerprint"
+  [[ ! -e "$restored_export" ]]
+  remaining_users=$(psql -h 127.0.0.1 -p "$TEST_PORT" -U "$TEST_ADMIN" -d "$restore_database" -tAc "SELECT count(*) FROM app_user")
+  [[ "$remaining_users" -eq $((retained_users-1)) ]]
+  after_replay=$(psql -h 127.0.0.1 -p "$TEST_PORT" -U "$TEST_ADMIN" -d "$restore_database" -tAc "$snapshot_query")
+  [[ "$after_replay" == "$before_restore" ]]
+  echo "PASS: isolated business database dump/restore, count and exact amount comparison, audit preservation and repeat replay; elapsed=$(( $(date +%s)-recovery_started ))s"
+  exit 0
+fi
+
 # 认证集成测试已完成后重建隔离 schema，让 T2 空库迁移测试仍从真正的零版本开始。
 psql -h 127.0.0.1 -p "${TEST_PORT}" -U "${TEST_ADMIN}" -d "${TEST_DATABASE}" -v ON_ERROR_STOP=1 \
   -c "DROP SCHEMA public CASCADE" \

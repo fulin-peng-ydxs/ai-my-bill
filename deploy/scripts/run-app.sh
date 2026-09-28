@@ -1,9 +1,15 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# 唯一受控维护参数；不接受任意 Spring 参数或命令注入。
+[[ $# == 0 || $# == 1 && "$1" == --recovery-tool ]] || exit 2
 # 常驻应用入口：拒绝任何 migration 变量，并只读取运行角色 secret。
 # 使用变量名循环避免 pipefail 与 grep 提前退出组合时漏判超大环境中的敏感变量。
 while IFS= read -r environment_name; do
+  if [[ "${environment_name}" == MY_BILL_RECOVERY_* && "${1:-}" != --recovery-tool ]]; then
+    echo "常驻应用禁止携带恢复维护参数。" >&2
+    exit 1
+  fi
   if [[ "${environment_name}" == MY_BILL_BOOTSTRAP_* ]]; then
     echo "常驻应用禁止携带初始化凭据。" >&2
     exit 1
@@ -50,4 +56,4 @@ java_options=()
 if [[ -n "${JAVA_OPTS:-}" ]]; then
   read -r -a java_options <<<"${JAVA_OPTS}"
 fi
-exec java "${java_options[@]}" -jar /app/my-bill-server.jar --spring.profiles.active=prod
+exec java "${java_options[@]}" -jar /app/my-bill-server.jar --spring.profiles.active=prod "$@"

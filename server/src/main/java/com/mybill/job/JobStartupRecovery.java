@@ -12,8 +12,12 @@ import org.springframework.core.annotation.Order;
 @EnableConfigurationProperties(JobRunnerProperties.class)
 final class JobStartupRecovery implements ApplicationRunner {
     private final JobCoordinator coordinator;
+    private final org.springframework.core.env.Environment environment;
 
-    JobStartupRecovery(JobCoordinator coordinator) { this.coordinator = coordinator; }
+    JobStartupRecovery(JobCoordinator coordinator, org.springframework.core.env.Environment environment) { this.coordinator = coordinator;
+        this.environment = environment; }
 
-    @Override public void run(ApplicationArguments args) { coordinator.recoverExpired(); }
+    @Override public void run(ApplicationArguments args) {
+        if (!environment.acceptsProfiles(org.springframework.core.env.Profiles.of("recovery"))) coordinator.recoverExpired();
+    }
 }

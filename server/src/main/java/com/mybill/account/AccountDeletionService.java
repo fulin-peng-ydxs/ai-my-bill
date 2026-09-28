@@ -77,6 +77,20 @@ public class AccountDeletionService {
         return new DeletionResult(reference, now, expiresAt);
     }
 
+    /** 仅供离线恢复工具使用；沿用原匿名审计，不延长保留期，不生成新的用户身份。 */
+    @Transactional
+    void replayDeletion(UUID userId, UUID auditReference) {
+        var restored = repository.lockUser(userId);
+        if (restored.isEmpty()) return;
+        var user = restored.get();
+        tenantDatabase.execute(user.tenantId(), () -> {
+            var locations = repository.exportLocations(user.id());
+            repository.eraseTenant(user.tenantId(), user.id(), auditReference);
+            exportFiles.deleteFilesAfterCommit(locations, auditReference);
+            return null;
+        });
+    }
+
     private AccountDeletionRepository.UserRow requireUser(UUID userId) {
         return repository.lockUser(userId).orElseThrow(() -> new ApiException(
                 HttpStatus.NOT_FOUND, "USER_NOT_FOUND", "用户不存在。", false));

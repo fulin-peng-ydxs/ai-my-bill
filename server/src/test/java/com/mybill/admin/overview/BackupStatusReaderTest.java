@@ -20,7 +20,7 @@ class BackupStatusReaderTest {
         BackupStatusReader reader = new BackupStatusReader(file.toString(), clock);
         assertEquals(BackupStatus.UNAVAILABLE, reader.read().status());
         for (String value : new String[]{"password=secret", "x".repeat(4097),
-                "status=SUCCEEDED\nattemptedAt=2026-09-28T12:00:00Z", 
+                "status=SUCCEEDED\nattemptedAt=2026-09-28T12:00:00Z",
                 "status=SUCCEEDED\nattemptedAt=2027-01-01T00:00:00Z\nlatestCompletedAt=2027-01-01T00:00:00Z"}) {
             Files.writeString(file, value);
             assertEquals(BackupStatus.UNAVAILABLE, reader.read().status());

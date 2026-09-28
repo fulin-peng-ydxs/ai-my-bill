@@ -6,6 +6,7 @@ import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 
 /** 在后台任务开始轮询前收敛上一次进程中断的导出文件隔离状态。 */
+@org.springframework.context.annotation.Profile("!recovery")
 @Component
 @Order(110)
 final class AccountDeletionFileStartupRecovery implements ApplicationRunner {

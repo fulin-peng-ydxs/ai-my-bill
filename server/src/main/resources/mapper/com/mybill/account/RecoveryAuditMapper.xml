@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.mybill.account.RecoveryAuditMapper">
+  <select id="fingerprint" resultType="string">
+    SELECT current_database() || '|' || coalesce(inet_server_addr()::text,'local') || '|' || coalesce(inet_server_port()::text,'local') || '|' || pg_postmaster_start_time()::text
+  </select>
+  <select id="databaseName" resultType="string">SELECT current_database()</select>
+  <select id="exportPage" resultType="string">
+    SELECT row_to_json(a)::text FROM account_deletion_audit a
+    WHERE status='SUCCEEDED' AND expires_at &gt; #{now} AND id &gt; #{after}
+    ORDER BY id LIMIT 100
+  </select>
+  <!-- 只恢复匿名审计，重复输入不覆盖原记录；到期审计由工具拒绝重放。 -->
+  <insert id="importAudit">
+    INSERT INTO account_deletion_audit
+    SELECT * FROM json_populate_record(NULL::account_deletion_audit, CAST(#{json} AS json))
+    ON CONFLICT (id) DO NOTHING
+  </insert>
+  <select id="auditDigest" resultType="string">SELECT subject_digest FROM account_deletion_audit WHERE id=#{id} AND status='SUCCEEDED'</select>
+  <select id="restoredUsers" resultType="java.util.UUID">
+    SELECT id FROM app_user WHERE role='USER'
+      AND encode(sha256(convert_to('my-bill/account-deletion/v1/' || id::text,'UTF8')),'hex')=#{digest}
+    ORDER BY id LIMIT 2
+  </select>
+</mapper>

@@ -122,7 +122,7 @@ MY_BILL_*_PASSWORD_FILE（容器路径）与 *_PASSWORD_HOST_FILE（宿主路径
 | MY_BILL_AUTH_RATE_LIMIT_PEPPER_FILE | app/bootstrap 认证文件 | 常驻 app 可读，其他不相关服务不可挂载 |
 | MY_BILL_BOOTSTRAP_USERNAME、MY_BILL_BOOTSTRAP_PASSWORD_FILE | compose.bootstrap 固定 admin 与 initial_admin_password 文件 | 只在空账号库初始化；常驻 app 拒绝 MY_BILL_BOOTSTRAP_* |
 | MY_BILL_ALLOW_EOL_CENTOS7 | preflight 无默认放行 | 唯一已授权实例例外，见案例；不是通用部署开关 |
-| MY_BILL_DATABASE_TEST_SUITE | test-database.sh：regression/e2e/performance | 隔离集群测试分支，不进入运行 app |
+| MY_BILL_DATABASE_TEST_SUITE | test-database.sh：regression/e2e/performance/recovery | 隔离集群测试分支，不进入运行 app |
 | MY_BILL_E2E_WRITE、MY_BILL_E2E_EXPECTED_DB_FINGERPRINT | 隔离 E2E seed 写入授权与库指纹 | 错误指纹拒绝写；生产 run-app 拒绝全部 MY_BILL_E2E_* |
 | MY_BILL_E2E_BASE_URL | Playwright 临时服务地址 | 只指向受控测试环境，禁止生产 |
 
@@ -154,3 +154,15 @@ secret 文件模式 0600；app/migrate 使用 UID/GID 10001，文件属主必须
 ## 备份运行状态
 
 `MY_BILL_BACKUP_STATUS_FILE` 指向宿主原子发布的 `backup.properties`；默认空值表示未配置。内网 Compose 将 `/var/lib/my-bill/operations` 只读挂到 `/run/my-bill-operations`，只包含状态与时间，不包含归档、私钥或 Docker socket。生产者使用 UTC 时间，运行概况最多读 4KiB；缺失/损坏返回 UNAVAILABLE，成功超过 26 小时或运行超过 1 小时返回 STALE，最近失败不得被历史成功覆盖。配置修改后重建 app 容器，状态文件更新无需重启。
+
+## 离线恢复工具配置
+
+这些变量仅供 `run-app --recovery-tool`，常驻入口发现 `MY_BILL_RECOVERY_*` 即拒绝启动。数据库仍只使用 app 角色；不扩大发布端口、数据库权限或挂载范围。
+
+| 变量 | 必填与用途 | 边界 |
+|---|---|---|
+| MY_BILL_RECOVERY_ACTION | 必填，preserve 或 replay | 保全当前库匿名审计，或在专用恢复库重放 |
+| MY_BILL_RECOVERY_AUDIT_FILE | 必填，容器内文件绝对路径 | preserve 只创建新文件；replay 只读，64MiB 上限，输入来自受控运维 |
+| MY_BILL_RECOVERY_EXPECTED_DB_FINGERPRINT | replay 必填 | 必须与当前连接实时指纹完全一致，且库名以 my_bill_restore_ 开头 |
+
+后台轮询与启动任务恢复在 recovery profile 下关闭；回环随机 HTTP 端口强制覆盖普通配置，仅为复用现有 Spring 依赖装配，不发布给宿主。应用上下文在工具结束后关闭，失败以非零退出，禁止把失败进程当作可用服务。运行步骤、写入阻断、文件挂载与失败重试见 [备份恢复](../deployment/backup-recovery.md)。

@@ -61,6 +61,8 @@ class AccountDeletionHttpIntegrationTest {
     @Autowired PasswordEncoder passwordEncoder;
     @Autowired TenantDatabaseExecutor tenantDatabase;
     @Autowired AccountDeletionFileRecovery fileRecovery;
+    @Autowired RecoveryAuditMapper recoveryMapper;
+    @Autowired AccountDeletionService deletionService;
     private Cookie firstSession;
     private Cookie secondSession;
     private Cookie adminSession;
@@ -150,6 +152,32 @@ class AccountDeletionHttpIntegrationTest {
         assertThat(audit.toString()).doesNotContain(USER.toString(), TENANT.toString(), USERNAME, "private export");
         assertThat(jdbc.sql("SELECT count(*) FROM job_run WHERE job_type='PURGE_ACCOUNT_DELETION_AUDIT'")
                 .query(Long.class).single()).isGreaterThanOrEqualTo(1);
+    }
+
+    @Test @Order(4)
+    void replaysPreservedDeletionAgainstRestoredIdentityAndFileIdempotently() throws Exception {
+        String digest = AccountDeletionFingerprint.of(USER);
+        String audit = recoveryMapper.exportPage(new UUID(0, 0), Instant.now()).stream()
+                .filter(line -> line.contains(digest)).findFirst().orElseThrow();
+        UUID reference = UUID.fromString(mapper.readTree(audit).get("id").asText());
+        assertThat(recoveryMapper.importAudit(audit)).isZero();
+        assertThat(recoveryMapper.auditDigest(reference)).isEqualTo(digest);
+        jdbc.sql("INSERT INTO tenant(id) VALUES(:id)").param("id", TENANT).update();
+        insertUser(USER, TENANT, USERNAME, "USER");
+        Files.createDirectories(exportFile.getParent());
+        Files.writeString(exportFile, "restored export");
+        tenantDatabase.execute(TENANT, () -> {
+            jdbc.sql("INSERT INTO export_job(tenant_id,id,user_id,filter_snapshot,status,file_location,expires_at) VALUES(current_setting('app.tenant_id')::uuid,:id,:user,'{}','SUCCEEDED',:file,now()+interval '1 day')")
+                    .param("id", EXPORT).param("user", USER).param("file", exportFile.toString()).update();
+            return null;
+        });
+        assertThat(recoveryMapper.restoredUsers(digest)).containsExactly(USER);
+        deletionService.replayDeletion(USER, reference);
+        deletionService.replayDeletion(USER, reference);
+        assertThat(recoveryMapper.restoredUsers(digest)).isEmpty();
+        assertThat(exportFile).doesNotExist();
+        assertThat(jdbc.sql("SELECT count(*) FROM app_user WHERE id=:id").param("id", ADMIN).query(Long.class).single()).isOne();
+        assertThat(recoveryMapper.auditDigest(reference)).isEqualTo(digest);
     }
 
     @AfterAll
