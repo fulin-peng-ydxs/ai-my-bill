@@ -106,7 +106,7 @@ openssl x509 -in .local/intranet-pki/issued-new/server.crt -noout -dates -ext su
 bill_compose exec -T proxy caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile
 ```
 
-bill_compose 见下一节。reload 失败保留日志、还原上一对叶文件并 reload，再从客户端校验证书。当前没有自动续签、到期告警或失败恢复演练；上线验收需补齐这些证据。
+bill_compose 见下一节。reload 失败保留日志、还原上一对叶文件并 reload，再从客户端校验证书。当前采用受控人工签发、30天到期巡检和失败恢复工具；自动签发未实现。每个部署实例必须实际演练并记录，不将其他案例的通过结果套用到本机。
 
 ## 4. 镜像、迁移和首管理员
 
@@ -128,14 +128,16 @@ bill_compose ps
 等待 db healthy 后，逐条执行，任一失败即停止后续步骤：
 
 ```bash
-bill_compose run --rm --no-deps provision
-bill_compose run --rm --no-deps migrate
+bill_compose run --rm --no-deps -T provision < /dev/null
+bill_compose run --rm --no-deps -T migrate < /dev/null
 docker compose --env-file /etc/my-bill/production.env \
   -f deploy/compose.yaml -f deploy/compose.intranet.yaml -f deploy/compose.bootstrap.yaml \
-  run --rm --no-deps bootstrap-admin
+  run --rm --no-deps -T bootstrap-admin < /dev/null
 bill_compose up -d app
 bill_compose ps
 ```
+
+一次性工具使用 `-T` 并将标准输入接到 `/dev/null`，避免通过 SSH 标准输入执行多行脚本时，Compose 消费后续命令。自动发布更推荐先保存脚本文件再执行，并在未走到最终健康确认时返回非零；不可把正常 EOF 当作发布成功。
 
 provision 创建/收敛数据库角色并设置密码；重复执行会重设角色密码，不在运行中随意执行。migrate 成功执行/校验12个版本后退出。bootstrap 只在空账号库成功，锁表、写 ADMIN 及审计，初始密码24h且首次必须修改；数据库已有账号时拒绝，不在升级步骤重跑。
 
@@ -151,7 +153,7 @@ app healthy 后再 `bill_compose up -d proxy`。服务器初始密码文件只�
 | 容器与 secret | 使用选择性 inspect 检查 Mounts/User/ReadonlyRootfs/PortBindings，不输出整个环境；app 无迁移/管理员密码 |
 | PWA | 实机信任、安装、独立窗口、版本更新、离线提示及无个人数据缓存 |
 | 备份与恢复 | 按备份手册启用、检查副本与隔离恢复；完整注销重放/RTO另验 |
-| 监控 | 日志、容量、连接池、任务、5xx；Prometheus 规则文件需接入采集与告警接收方并触发演练 |
+| 监控 | systemctl/journald 核对15分钟本机巡检：容器、备份新鲜度、证书30天阈值与磁盘85%水位；按隔离故障注入验证。Prometheus 规则仅为后续可选接入模板 |
 
 日常用 `bill_compose logs --tail=100 app proxy db` 定位，不输出 secret。`/api/v1/metrics` 与 `/api/v1/prometheus` 仅管理员可访问；当前没有已配置机器采集凭据，不能为监控将端点改成匿名。启动可用 `bill_compose up -d app proxy`；维护停止 `bill_compose stop proxy app`；db 单独管理，禁止 down -v 或 docker system prune。
 

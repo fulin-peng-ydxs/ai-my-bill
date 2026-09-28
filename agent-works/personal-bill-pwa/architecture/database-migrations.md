@@ -11,7 +11,7 @@
 | 账目 | ledger_entry、expense_adjustment、daily_entry_template | 普通用户租户资产；字典引用与历史快照并存 |
 | 支持 | user_preference、idempotency_record、export_job、job_run | 偏好、幂等、文件任务与协调；按表定义明确租户或全局范围 |
 | 审计 | admin_audit_log、account_deletion_job、account_deletion_audit | 管理审计追加写；注销匿名审计 180 天 |
-| 备份占位 | backup_run | 已有表不表示宿主备份已接入；当前概况仍未配置 |
+| 备份占位 | backup_run | 该表当前未接入宿主调度；概况从只读 backup.properties 获取状态，不以该表记录作为备份事实 |
 
 ## SQL 分层与角色
 

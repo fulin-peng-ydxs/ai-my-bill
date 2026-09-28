@@ -53,7 +53,7 @@ app1GiB/1CPU、db768MiB/1CPU、proxy128MiB/0.5CPU；app JVM Xmx512MiB。当前�
 
 - CA SHA256指纹：`E0:A6:29:12:BB:BA:E0:33:67:8B:D7:EB:0A:6B:FD:66:17:51:62:F0:D2:79:05:47:76:5B:B0:03:AE:C8:24:AD`。
 - 叶证书SAN为IP10.100.101.104，到期 `2026-12-27 23:38:55 Asia/Shanghai`；受控人工签发/加载已演练，30天到期巡检已部署；未实现自动签发。
-- 首管理员admin；临时凭据通过本地 `/Users/pengshuaifeng/ai-my-bill/.local/deployment/initial-admin.json`（0600）交付。本文不保存密码；24h首次改密有效期，是否已改密未验证。
+- 首管理员admin；临时凭据通过本地 `/Users/pengshuaifeng/ai-my-bill/.local/deployment/initial-admin.json`（0600）交付。本文不保存密码；初始临时凭据已失效；本次以用户提供的当前凭据验证认证成功，`passwordChangeRequired=false`，未将当前密码写入文档。
 - 初始化成功并验证登录后，服务器 `/etc/my-bill/secrets/initial_admin_password` 已删除。后续不再执行bootstrap；普通记账账号从管理页创建。
 - 命令行显式CA验证通过；电脑/手机系统信任安装与PWA独立窗口未验证。
 
@@ -104,7 +104,7 @@ Trivy 0.74.0 官方校验和核对后，在目标机执行 OS 包扫描，结果
 
 数量为漏洞与包的命中数，非唯一 CVE 数。数据库镜像有未提供修复版本的高危项；libpcre2 已有 `10.42-1+deb12u1` 修复。迁移镜像的 GnuPG/OpenSSL 有修复版本。扫描完成不等于安全通过，仍需升级可修复包、复扫并对剩余项按可达性处置，不能套用宿主 CentOS 7 例外豁免容器风险。
 
-仍未完成：上述镜像漏洞处置、目标终端 CA 信任/手机 PWA 与启动表现、管理页实机展示、人工入口切换及更大规模恢复时间、最终验收。注销审计保全/重放工具已有本地实现与隔离测试：91 项 HTTP/业务测试通过，CLI 保全、全库恢复、非空条数/精确金额对账、旧快照注销账号与文件清理及重复执行通过，恢复环节约 10 秒；目标容器运行与完整恢复仍需验证，不以本地测试冒充目标恢复通过。
+仍未完成：上述镜像漏洞处置、目标终端 CA 信任/手机 PWA 与启动表现、管理页实机展示、人工入口切换及更大规模恢复时间、最终验收。注销审计保全/重放工具已有本地实现与隔离测试：91 项 HTTP/业务测试通过，CLI 保全、全库恢复、非空条数/精确金额对账、旧快照注销账号与文件清理及重复执行通过，恢复环节约 10 秒；目标机工具与三万条代表性样本恢复证据见后；其他规模和人工切换仍独立验收。
 
 ## 离线恢复工具目标机演练
 
@@ -116,7 +116,7 @@ Trivy 0.74.0 官方校验和核对后，在目标机执行 OS 包扫描，结果
 
 ## 后续维护入口
 
-在 /opt/my-bill/current 按通用手册定义bill_compose后，查看ps/logs与选择性容器状态；备份查看timer/service日志和last-success。新版本升级先保全旧制品及备份，按手册维护窗口操作，完成后更新本案例。当前未登记已演练的旧版业务回退制品，不承诺一键回滚。
+在 /opt/my-bill/current 按通用手册定义bill_compose后，查看ps/logs与选择性容器状态；备份查看timer/service日志和last-success。新版本升级先保全旧制品及备份，按手册维护窗口操作，完成后更新本案例。本次切换曾触发回退并恢复健康，保留 `/opt/my-bill/releases/before-security-4f0af93` 及 `before-security-4f0af93` 镜像标签；该回退仅针对本次无 schema 变化的发布，不能泛化到破坏性迁移。
 
 ## 9月29日补丁与代表性恢复验收
 
@@ -135,6 +135,24 @@ Trivy 0.74.0 官方校验和核对后，在目标机执行 OS 包扫描，结果
 | CVE-2026-8376 | [Debian说明](https://security-tracker.debian.org/tracker/CVE-2026-8376)限定32位 Perl 构建；候选 `perl -V:ptrsize` 为8字节，32位触发条件不成立。 |
 | libxml2 等其他未修复项 | [CVE-2026-6653](https://security-tracker.debian.org/tracker/CVE-2026-6653)仍由 Debian 延后修复。仓库生产查询未发现 XMLParse/XPath/PLPerl/SQLite 调用；线上扩展仅 plpgsql，数据库无宿主发布端口。只能说明当前接口未发现这些调用路径，不能宣称全部不可利用；未做漏洞利用验证，未添加扫描忽略规则。 |
 
-补丁候选的构建/扫描/恢复证据不替代部署，实际切换及最终镜像记录另行回填。宿主 CentOS7 例外不自动覆盖上述残余容器风险。
+下述补丁已实际切换。2026-09-29 用户明确接受上述已记录残余风险，作为本次内网部署例外。该授权仅适用于本案例主机 `10.100.101.104` 和上述数据库补丁镜像 `sha256:b44b1638299c22cf46c39815995cdaf69b55eaa3d24c09d2ea8d58bc5822e3b8` 的本次扫描基线；安全门禁按“已接受风险例外”记录，不记为扫描无漏洞或利用验证通过。后续发现新增风险、提供修复版本、变更镜像或开放公网时须重新评估；不降低 HTTPS、鉴权、租户隔离、密钥及备份要求。
 
 迁移补丁候选 `sha256:4fcd72a27a88a010d8eb812f854ad8fc6d0ca103579a74485a0c6ec86cf73b8d` 复扫为 CRITICAL0/HIGH0/MEDIUM13/LOW16，原13个高危命中清除。另只读评估官方 `postgres:16.14-trixie`，原始扫描为 CRITICAL13/HIGH113/MEDIUM169/LOW147/UNKNOWN6；未经补丁构建/主机兼容测试，不作为当前替代制品，也不能据此承诺换发行版会清零。
+
+### 实际切换结果
+
+部署源码为 `4f0af93e588391ecbc5ce380db66dde0037d105e`。当前数据库使用上述 b44b1638 补丁镜像；app 使用已构建验证的 `83c6c1f` 代码制品 `sha256:c54c4abf7c1ba3d5d715efa9f6de7926a449653c7cd47b09a275e0a8ce21e7e8`（4f0af93 未改变 Java 或 app 入口）；migrate 使用上述4fcd72a2，proxy保持9b490fbc；前端仍为d7ce73d构建资产。
+
+运行 JAR SHA256 `8e0a0bf68b1327f19f0e6bfa3307f4bf87b83d5f295175c29287ff0cfcbbf2c8`；首页 `3cece33eae27758b468483493197c36a3a6a2dec280bab0dd5bb321a78db9ce8`。PostgreSQL服务端/客户端均16.14，12个迁移校验一致且无需执行新SQL。
+
+最终代码隔离演练再次通过（含 NOINHERIT 角色），耗时68秒。发布前加密备份成功，最新状态时间 `2026-09-28T16:27:03Z`；旧源码目录和镜像保留。第一次通过 SSH 标准输入执行时，Compose 一次性任务消费了后续输入，虽迁移正常退出0，发布未走到完成标记而回退旧服务，健康恢复。随后改为服务器脚本文件执行，迁移使用 `-T < /dev/null`，再次切换成功；手册同步防止复现。
+
+切换后：db/app healthy、HTTPS health UP、monitor Result=success；常驻app无法读取迁移/管理员secret，无法写备份状态文件；真实管理员认证后概况返回 SUCCEEDED（上述新时间），退出后管理API401。manifest名称、三个PNG图标及Apple图标均通过受信任CA的HTTP校验。根盘约51GiB可用；所有本次恢复临时容器/网络已清理。iPhone/iPad上的页面、安装与启动仍未验证。
+
+### iPhone / iPad 安装与待验收步骤
+
+1. 设备接入能访问此内网IP的网络。通过 AirDrop 等受控方式传入签发端 `.local/intranet-pki/ca/ca.crt` 公钥证书，核对本案例记录的 CA 指纹；不要传输 ca.key。
+2. 安装该证书描述文件后，在“设置 → 通用 → 关于本机 → 证书信任设置”中启用该根证书的完全信任。手动安装不会自动取得 TLS 信任，见 [Apple说明](https://support.apple.com/en-ie/102390)。
+3. Safari 打开 `https://10.100.101.104:18443`，先确认没有证书警告。通过“分享 → 添加到主屏幕”；系统若显示“作为网页App打开”，保持启用。操作入口见 [Apple说明](https://support.apple.com/guide/iphone/open-as-web-app-iphea86e5236/27/ios/27)。本项目为PWA，没有IPA/APK下载包。
+4. 从桌面“我的账单”图标启动，检查图标、独立窗口、初次启动和横竖屏；登录后检查管理概况备份状态。临时断网时应提示无法访问/重试，不应显示缓存个人账目；恢复网络后应可继续。
+5. 把设备/系统版本及上述结果回填本案例，异常保持待验收。当前服务端资源HTTP通过不能代替手机实测。
