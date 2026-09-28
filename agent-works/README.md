@@ -13,6 +13,7 @@
 | [prototypes/](personal-bill-pwa/prototypes/) | 需求页面原型 | 需求/交互变更时；不是实际页面验收证据 |
 | [screenshot/](personal-bill-pwa/screenshot/) | 已有截图材料 | 只保存真实生成且注明场景的截图 |
 | [pre-release-test-report.md](personal-bill-pwa/pre-release-test-report.md) | 部署前候选及验证证据 | 候选变更或补充验证时，保留版本边界 |
+| [test-report.md](personal-bill-pwa/test-report.md) | T29目标环境验收结果与剩余边界 | 部署或补验后，区分用户实机与隔离验证 |
 | [performance-test.md](personal-bill-pwa/performance-test.md)、[security-test.md](personal-bill-pwa/security-test.md) | 性能/安全专项口径和证据 | 相关风险或验证结果改变时 |
 | [DESIGN.md](../DESIGN.md) | 页面登记、组件、视觉与响应式契约 | 页面/组件/设计变更时 |
 | [contracts/openapi.yaml](../contracts/openapi.yaml) | API机器契约 | 接口改变时，同步生成类型与测试 |

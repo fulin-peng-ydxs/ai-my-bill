@@ -89,24 +89,56 @@ chmod 0600 /etc/my-bill/secrets/*
 
 管理员 DB secret 由 root 持有；app/migrate/bootstrap 用到的文件属主10001。初始管理员密码通过受控私有文件单独交付，勿粘进终端日志。每个 secret 独立随机；备份密钥在备份章节另建。
 
-签发端创建独立 CA（仅首次）与叶证书（每次新目录）：
+### 3.1 先确定三个位置
 
-```bash
-bash deploy/tls/internal-ca.sh init .local/intranet-pki/ca
-bash deploy/tls/internal-ca.sh issue .local/intranet-pki/ca "$BILL_BIND_IP" .local/intranet-pki/issued-new
-openssl x509 -in .local/intranet-pki/ca/ca.crt -noout -fingerprint -sha256
-openssl x509 -in .local/intranet-pki/issued-new/server.crt -noout -dates -ext subjectAltName
-```
+签发端保管 CA 私钥并运行签发脚本；业务主机运行 Caddy，只接收服务器叶证书和叶私钥；手机/电脑只安装 CA 公钥。签发端不参与线上请求，不需要一直开机。当前实例恰好由开发电脑签发，不是项目绑定该电脑；详见[证书职责](architecture.md#证书信任链与签发端职责)。
 
-脚本拒绝覆盖目录与公网 IP；CA10年、叶证书90天。在目标先用 `install -d -o 10001 -g 10001 -m 0700 /etc/my-bill/tls` 创建目录；签发端通过已核对的SSH连接分别scp叶证书与叶私钥至此，随后在目标执行 `chown 10001:10001 /etc/my-bill/tls/server.*`、`chmod 0644 /etc/my-bill/tls/server.crt`、`chmod 0600 /etc/my-bill/tls/server.key`。只传这两个叶文件，不复制整个CA目录。CA 私钥留签发端并受控备份；客户端仅安装 ca.crt，核对指纹后在电脑/手机启用信任，浏览器无警告才通过。命令行 `--cacert` 成功不代表操作系统/手机已安装信任。
+### 3.2 在另一套独立内网首次部署
 
-续期先签发新目录，校验 SAN、有效期及证书/密钥公钥摘要一致，保全当前叶文件后替换已挂载目录中的文件，再执行：
+以下是未绑定具体主机的操作模板；新环境仍须完成前两节的主机、构建和配置准备，不复制旧环境数据库口令或 CentOS7 风险例外。
 
-```bash
-bill_compose exec -T proxy caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile
-```
+1. 确定固定 RFC1918 内网 IPv4、HTTPS 端口、访问范围和负责续签的运维人员。选择受控签发端，准备项目脚本、Bash、支持 `req -addext` 的 OpenSSL 与 Python3。业务主机按通用部署基线准备。
+2. 在**签发端项目根目录**设置该环境专用目录并创建 CA。下面的 IP 是示例，必须替换。目录应位于仅运维可访问且不会入 Git/制品的位置；脚本拒绝覆盖已有 CA 或签发输出目录。
 
-bill_compose 见下一节。reload 失败保留日志、还原上一对叶文件并 reload，再从客户端校验证书。当前采用受控人工签发、30天到期巡检和失败恢复工具；自动签发未实现。每个部署实例必须实际演练并记录，不将其他案例的通过结果套用到本机。
+   ```bash
+   umask 077
+   BILL_BIND_IP=192.168.20.10
+   BILL_PKI_ROOT="$HOME/my-bill-pki/environment-b"
+   BILL_LEAF_DIR="$BILL_PKI_ROOT/issued-$(date +%Y%m%d-%H%M%S)"
+   bash deploy/tls/internal-ca.sh init "$BILL_PKI_ROOT/ca"
+   bash deploy/tls/internal-ca.sh issue "$BILL_PKI_ROOT/ca" "$BILL_BIND_IP" "$BILL_LEAF_DIR"
+   openssl x509 -in "$BILL_PKI_ROOT/ca/ca.crt" -noout -fingerprint -sha256
+   openssl x509 -in "$BILL_LEAF_DIR/server.crt" -noout -dates -ext subjectAltName
+   ```
+
+   根证书有效期10年，叶证书90天；CA剩余有效期不足93天时脚本拒绝签发。每次签发生成新的叶私钥与随机序列号。`init` 只做一次，续期只执行 `issue`，不能重新 `init` 当作续期。
+3. 在**业务主机以 root** 创建 `/etc/my-bill/tls`，属主 `10001:10001`、权限0700。使用已核对主机身份的 SSH/SCP，将签发端的 `server.crt`、`server.key` 分别传到该目录；将公钥 `ca.crt` 传到 `/etc/my-bill/ca.crt` 供健康校验使用。不要传输整个 CA 目录或 `ca.key`。
+
+   ```bash
+   install -d -o 10001 -g 10001 -m 0700 /etc/my-bill/tls
+   # 完成受控传输后执行：
+   chown 10001:10001 /etc/my-bill/tls/server.crt /etc/my-bill/tls/server.key
+   chmod 0644 /etc/my-bill/tls/server.crt /etc/my-bill/ca.crt
+   chmod 0600 /etc/my-bill/tls/server.key
+   ```
+
+4. 在目标机 `/etc/my-bill/production.env` 配好该实例的 IP、端口、来源范围及 TLS 目录，按第4节启动 Caddy。使用 `curl --cacert /etc/my-bill/ca.crt https://实际IP:实际端口/api/v1/health`，应返回健康结果；失败先查 IP SAN、有效期、文件权限和 Caddy 日志，不使用 `-k` 作为通过证据。
+5. 给**该环境的客户端**分发 `ca.crt`，核对本环境指纹后安装并完全信任，再用 Safari/浏览器验证 HTTPS 和主屏幕安装。iPhone/iPad 菜单操作见[案例安装指引](cases/intranet-single-host.md#iphone--ipad-安装与待验收步骤)，其中的旧主机地址、路径和指纹不能照搬到新环境。
+6. 启用巡检定时器并建立本环境案例，登记 CA 指纹、CA/叶证书有效期、签发端保管人和路径、目标路径、客户端验收与下次轮换安排。私钥本身不得写入文档。跨环境 CA 名称可能相同，靠指纹识别。
+
+### 3.3 后续续签、更换与异常处理
+
+正式流程统一使用文末[内部 CA 叶证书轮换](#内部-ca-叶证书轮换)，不与手动覆盖流程混用。巡检每15分钟检查，叶证书距到期30天以内会在宿主日志告警；不会自动调用签发端或发送外部通知，运维需查看并执行轮换。
+
+| 场景 | 运维处理 | 客户端影响 |
+|---|---|---|
+| 同 IP 叶证书即将到期 | 用原 CA 在新的输出目录执行 `issue`，传输新叶文件，再运行激活脚本 | CA没变，通常无需重装信任 |
+| 更换业务 IP | 用原 CA 为新 IP 签发，同时更新实例配置及访问地址 | 信任无需重装，原主屏幕入口可能需按新地址重新添加 |
+| 签发端换电脑 | 受控迁移同一 CA 的公钥和私钥、核对指纹，恢复仅授权人员可读权限并更新案例 | 信任不变，服务器不用因此重签 |
+| CA 私钥丢失且无可用备份 | 无法继续沿用该 CA 签发；建立新 CA、重签并安排信任迁移 | 所有客户端需安装新 CA |
+| CA 私钥疑似泄露或根证书将到期 | 更换 CA、叶证书和密钥，安排终端移除旧信任；当前无自动撤销分发机制 | 需要协调客户端更新，不可只替换服务器文件 |
+
+CA 私钥依靠目录/文件权限和受控备份保管；当前脚本生成的私钥没有口令加密，不应放到共享盘、Git、镜像或普通文件同步目录。保管方案应包含可恢复的受控备份，不能把“电脑暂时离线不影响访问”误解为“电脑丢失也不影响续签”。
 
 ## 4. 镜像、迁移和首管理员
 
@@ -159,7 +191,7 @@ app healthy 后再 `bill_compose up -d proxy`。服务器初始密码文件只�
 
 ## 6. 备份接入
 
-完整准备、systemd 操作和恢复边界见 [备份恢复](backup-recovery.md)。备份脚本依赖固定容器名、库名、路径及运行中的 app；先备份再停止 app，不能停 app 后直接执行依赖 docker cp 的日常备份。主机 timer 与管理页面状态尚未打通。
+完整准备、systemd 操作和恢复边界见 [备份恢复](backup-recovery.md)。备份脚本依赖固定容器名、库名、路径及运行中的 app；先备份再停止 app，不能停 app 后直接执行依赖 docker cp 的日常备份。主机 timer 的执行结果通过只读状态文件接入管理概况，应用不能读取备份归档或密钥。
 
 ## 7. 升级、失败与回退
 
@@ -176,4 +208,4 @@ app healthy 后再 `bill_compose up -d proxy`。服务器初始密码文件只�
 
 CA 私钥继续只在受控签发端。执行 `bash deploy/tls/internal-ca.sh issue <CA目录> <内网IP> <新的输出目录>` 签发，向服务器受控暂存目录传送叶证书、叶私钥和 CA 公钥。不要上传 CA 私钥。
 
-目标机 root 执行 `bash deploy/tls/activate-certificate.sh <叶证书暂存目录> <CA公钥路径> <内网IP>`。脚本校验证书链、IP、剩余有效期和密钥匹配，保留旧叶证书，更新后 reload Caddy 并验证 HTTPS；失败恢复旧文件并尝试 reload，回滚 reload 失败写错误日志。成功后清理自己创建的暂存目录。巡检提前 30 天提示轮换；本方案不依赖 CA 私钥常驻服务器，当前为受控人工触发轮换，不承诺无人值守签发。
+目标机 root 执行 `bash deploy/tls/activate-certificate.sh <叶证书暂存目录> <CA公钥路径> <内网IP>`。脚本校验证书链、IP、剩余有效期和密钥匹配，保留旧叶证书，更新后 reload Caddy 并验证 HTTPS；失败恢复旧文件并尝试 reload，回滚 reload 失败写错误日志。激活脚本只清理自身创建的旧证书临时备份，不删除调用者传入的叶证书暂存目录；成功后由运维确认并清理该暂存目录。巡检提前 30 天提示轮换；本方案不依赖 CA 私钥常驻服务器，当前为受控人工触发轮换，不承诺无人值守签发。

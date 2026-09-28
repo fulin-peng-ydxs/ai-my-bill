@@ -15,6 +15,9 @@ name="my-bill-recovery-drill-$$"; network="$name-net"
 network_owned=false; db_owned=false
 cleanup() {
   result=$?
+  for unit in app proxy; do
+    if [[ -s "$work/$unit.cid" ]]; then docker rm -f "$(cat "$work/$unit.cid")" >/dev/null 2>&1 || result=1; fi
+  done
   if [[ -s "$work/tool.cid" ]]; then docker rm -f "$(cat "$work/tool.cid")" >/dev/null 2>&1 || true; fi
   if [[ "$db_owned" == true ]]; then docker rm -f "$name" >/dev/null || result=1; fi
   if [[ "$network_owned" == true ]]; then docker network rm "$network" >/dev/null || result=1; fi
@@ -136,6 +139,33 @@ if [[ "$synthetic" == --synthetic ]]; then
   (cd "$work/exports" && sha256sum -c "$work/remaining-exports.sha256") >/dev/null
   deleted=$(docker exec "$name" psql -U postgres -d my_bill_restore_drill -tAc "SELECT count(*) FROM app_user WHERE id=md5('recovery-user-3')::uuid")
   [[ "$deleted" == 0 ]]
+  # 普通生产入口连接隔离恢复库，不挂载任何生产 secret，不发布端口。
+  docker run -d --cidfile "$work/app.cid" --network "$network" --network-alias restored-app --read-only \
+    --tmpfs /tmp:rw,noexec,nosuid,size=64m --cap-drop ALL --security-opt no-new-privileges:true \
+    --memory 768m --cpus 1 --pids-limit 256 -e JAVA_OPTS=-Xmx384m \
+    -e MY_BILL_APP_DB_URL=jdbc:postgresql://recovery-db:5432/my_bill_restore_drill \
+    -e MY_BILL_APP_DB_USERNAME=my_bill_app -e MY_BILL_EXPORT_DIRECTORY=/var/lib/my-bill/exports \
+    -e MY_BILL_AUTH_RATE_LIMIT_PEPPER_FILE=/run/secrets/auth_rate_limit_pepper \
+    -v "$work/app-password:/run/secrets/app_db_password:ro" \
+    -v "$work/pepper:/run/secrets/auth_rate_limit_pepper:ro" \
+    -v "$work/exports:/var/lib/my-bill/exports" "$image" >/dev/null
+  app=$(cat "$work/app.cid")
+  ready=false
+  for attempt in {1..90}; do
+    if docker exec "$app" curl -fsS http://localhost:8080/api/v1/health >/dev/null 2>&1; then ready=true; break; fi
+    sleep 1
+  done
+  [[ "$ready" == true ]] || { docker logs --tail 60 "$app"; exit 1; }
+  mkdir "$work/proxy"
+  printf ':8080 {\n reverse_proxy 127.0.0.1:1\n}\n' > "$work/proxy/Caddyfile"
+  chmod 0755 "$work/proxy"
+  chmod 0644 "$work/proxy/Caddyfile"
+  docker run -d --cidfile "$work/proxy.cid" --network "$network" --network-alias drill-proxy \
+    --memory 128m --cpus 0.5 --pids-limit 100 --security-opt no-new-privileges:true \
+    --read-only --cap-drop ALL --tmpfs /config:uid=10001,gid=10001,size=16m --tmpfs /data:uid=10001,gid=10001,size=16m \
+    -v "$work/proxy:/etc/caddy:ro" my-bill-proxy >/dev/null
+  if command -v python3 >/dev/null 2>&1; then probe_python=python3; else probe_python=python; fi
+  timeout 180 "$probe_python" -E "$project_root/deploy/scripts/verify-recovery-http.py" "$app" "$(cat "$work/proxy.cid")" "$work/proxy/Caddyfile"
   before=$after
   echo 'PASS: 30000-row snapshot restored; deletion after snapshot replayed; 20000 surviving rows, exact amounts, export hashes and two-tenant RLS verified.'
 fi

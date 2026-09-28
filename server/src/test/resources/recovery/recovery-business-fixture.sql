@@ -1,5 +1,6 @@
 -- T29 合成恢复样本：仅由 verify-recovery-tool.sh 在刚创建的无端口临时库执行。
 -- 影响：3 个合成租户，各 10000 条支出、1 个导出；测试退出销毁整个容器，不提供线上回滚。
+-- 公开测试密码 RecoveryFixtureOnly-2026! 仅用于销毁式隔离 HTTP 验收，禁止真实账号复用。
 -- 前置：专用库名、空业务库及显式会话标记；禁止在生产连接上手动运行。
 DO $$ BEGIN
   IF current_database() <> 'my_bill_restore_drill'
@@ -21,7 +22,7 @@ BEGIN
     e := md5('recovery-export-' || i)::uuid;
     INSERT INTO tenant(id) VALUES(t);
     INSERT INTO app_user(id,username,password_digest,role,tenant_id)
-      VALUES(u,'recovery-fixture-' || i,'unusable-synthetic-password','USER',t);
+      VALUES(u,'recovery-fixture-' || i,'$2y$10$bWPe.CRYa9D.FqM16KAN7OLB1.7.pPM.fiBiQMGCz1D7XBt2svAAW','USER',t);
     INSERT INTO expense_category(tenant_id,id,display_name,normalized_name,status) VALUES(t,c,'恢复分类','恢复分类','ACTIVE');
     INSERT INTO unit(tenant_id,id,display_name,normalized_name,status) VALUES(t,n,'件','件','ACTIVE');
     INSERT INTO funding_channel(tenant_id,id,display_name,normalized_name,status) VALUES(t,f,'恢复钱包','恢复钱包','ACTIVE');
@@ -33,6 +34,9 @@ BEGIN
       SELECT t,md5('recovery-entry-' || i || '-' || x)::uuid,'EXPENSE',now(),(now() AT TIME ZONE 'Asia/Shanghai')::date,
       p,'恢复商品',c,'恢复分类',n,'件',12.34,2,24.68,24.68,f,'恢复钱包','合成恢复样本' FROM generate_series(1,10000) x;
     INSERT INTO export_job(tenant_id,id,user_id,filter_snapshot,status,file_location,expires_at)
-      VALUES(t,e,u,'{}','SUCCEEDED','/var/lib/my-bill/exports/' || t || '/' || e || '.csv',now()+interval '1 day');
+      VALUES(t,e,u,'{"scope":"ALL_DATA"}','SUCCEEDED','/var/lib/my-bill/exports/' || t || '/' || e || '.csv',now()+interval '1 day');
+    -- 下载所需的完成任务元数据随快照恢复。
+    INSERT INTO job_run(id,tenant_id,job_type,batch_key,status,started_at,finished_at,processed_count)
+      VALUES(md5('recovery-export-job-' || i)::uuid,t,'GENERATE_PERSONAL_EXPORT',e::text,'SUCCEEDED',now(),now(),1);
   END LOOP;
 END $$;
