@@ -55,7 +55,7 @@ verify-backup-restore.sh 校验路径和checksum，在 --network none、无宿�
 
 该验证证明数据库归档可解析、对象和数据可读；不恢复导出文件、不保留生产所有者/权限（--no-owner/--no-privileges）、不验证应用登录/租户样本、不重放注销。数据超过tmpfs或资源限制时需另行规划隔离演练资源，不能调低校验掩盖失败。
 
-## 真实业务恢复操作方案（尚未完整实施）
+## 真实业务恢复操作方案
 
 1. 确认事故范围、恢复点、允许数据损失和维护窗口，阻断新写入；保全现库和导出卷用于追查，不能先覆盖唯一副本。
 2. **覆盖数据库前**，独立保全尚未过期的 account_deletion_audit。若现库损坏导致无法取得，必须从独立可靠来源恢复注销事实；使用下述离线工具；若没有可靠的最新审计来源，仍存在已注销用户数据复活风险，禁止开放恢复库。
@@ -65,7 +65,7 @@ verify-backup-restore.sh 校验路径和checksum，在 --network none、无宿�
 6. 用至少两租户业务样本核验条数、金额、报表口径、下载、回收站、注销、权限和任务幂等，检查任务启动恢复；记录实际恢复时间，满足RTO后再放入口。
 7. 新建备份、验证告警、记录案例的新恢复点与证据，保留事故原始副本到确认可清理。
 
-以上是验收要求与实施顺序，不是已验证的一键生产恢复命令。尚缺目标环境完整数据/文件一致性恢复和RTO验收，属于当前阶段未完成项。
+以上是验收要求与实施顺序，不是已验证的一键生产恢复命令。已增加目标宿主三租户/三万条账目与文件的隔离恢复证据；人工切换及更大数据规模的恢复时间仍需按实例测量，属于当前阶段未完成项。
 
 ## 风险与后续模式
 
@@ -105,6 +105,7 @@ docker run --rm --network RECOVERY_INTERNAL_NETWORK --read-only \
   --security-opt no-new-privileges:true --memory 1g --cpus 1 \
   -e MY_BILL_APP_DB_URL=jdbc:postgresql://RECOVERY_DB:5432/my_bill_restore_CASE \
   -e MY_BILL_APP_DB_USERNAME=my_bill_app \
+  -e MY_BILL_EXPORT_DIRECTORY=/var/lib/my-bill/exports \
   -e MY_BILL_RECOVERY_ACTION=replay \
   -e MY_BILL_RECOVERY_AUDIT_FILE=/recovery/audit.jsonl \
   -e MY_BILL_RECOVERY_EXPECTED_DB_FINGERPRINT='经独立查询并确认的实时指纹' \
@@ -124,3 +125,15 @@ docker run --rm --network RECOVERY_INTERNAL_NETWORK --read-only \
 脚本校验归档 SHA256，解密数据库及同一归档的 exports 到 0700 临时目录，建立独立 internal 网络、无宿主端口的临时 PG 与随机凭据；保留对象原所有权和授权，应用仅用 app 角色连接恢复库。随后运行保全、重放及重复重放，核对账目条数和金额，退出清除本次容器、网络及明文目录。最多使用 PG 768MiB 与工具 768MiB 内存、PG 2GiB tmpfs；不足时失败，不能直接切向线上资源。运行期间短暂消耗额外资源，应避开宿主其他业务高峰。
 
 这里保全的是**归档恢复副本**中的审计，用于验证目标宿主的工具链与权限，不证明已保全备份后新发生的注销；真实恢复仍须先从维护窗口中的当前库保全最新审计。若归档没有账目，脚本明确输出 LIMIT，不将空库验证计作代表性业务恢复或 RTO 达标。匿名审计会使恢复副本应删数据减少，若前后总额变化，脚本中止自动通过并要求按重放结果人工对账；不得改为忽略差异。
+
+追加 `--synthetic` 可演练固定业务规模，例如：
+
+```bash
+bash deploy/scripts/verify-recovery-tool.sh /var/backups/my-bill/daily/YYYY-MM-DD.cms my-bill-recovery:提交号 --synthetic
+```
+
+此模式只在本脚本创建的专用临时库中执行 `server/src/test/resources/recovery/recovery-business-fixture.sql`；库名、空账目与显式会话标记均须满足。创建三个合成租户、各一万条支出和一个导出文件，保存数据库/文件快照，模拟快照之后发生的第三租户注销并独立保全审计，再重建临时库、还原文件、核对哈希、验证两租户 RLS，最后重放注销两次。断言保留两万条支出、金额 493600.00、两个原样导出文件及已注销账号不存在。常驻业务库没有写入。
+
+这证明该样本规模下的数据/文件恢复及注销链路，不证明所有未来数据量、收入/调整/回收站页面或人工入口切换耗时。实际运行须同时记录样本规模、自动化耗时、异常和最终健康，不能只报一个“RTO 已通过”。恢复容器必须显式设置 `MY_BILL_EXPORT_DIRECTORY` 与挂载路径一致；缺失配置会触发路径保护，不能关闭保护规避。
+
+备份脚本将历史 `last-success` 的宿主偏移时间规范成 UTC 后发布状态，RUNNING/FAILED 同样携带可解析的最近成功时间。巡检允许最近成功未超过 26 小时、当前运行未超过一小时的 RUNNING；失败、过期或未来时间仍告警，避免正常备份期间误报。

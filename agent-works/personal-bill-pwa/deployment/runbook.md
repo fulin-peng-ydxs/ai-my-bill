@@ -118,7 +118,7 @@ bill_compose() {
     -f deploy/compose.yaml -f deploy/compose.intranet.yaml "$@"
 }
 bill_compose config --quiet
-bill_compose build app migrate proxy
+bill_compose build --pull db app migrate proxy
 # name: my-bill 下 app 默认构建标签即 my-bill-app，bootstrap 使用此标签。
 docker image inspect my-bill-app --format '{{.Id}}'
 bill_compose up -d db

@@ -16,7 +16,7 @@ cleanup() {
 trap cleanup EXIT
 docker run -d --name "$name" --network none --memory 768m --cpus 1 --pids-limit 200 \
   --security-opt no-new-privileges:true --tmpfs /var/lib/postgresql/data:size=2g \
-  -e POSTGRES_HOST_AUTH_METHOD=trust postgres:16.14-bookworm >/dev/null
+  -e POSTGRES_HOST_AUTH_METHOD=trust my-bill-postgres:16.14-bookworm >/dev/null
 owned=true
 ready=false
 for attempt in {1..60}; do

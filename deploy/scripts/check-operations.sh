@@ -25,7 +25,10 @@ try:
         stamp=calendar.timegm(time.strptime(completed,'%Y-%m-%dT%H:%M:%SZ'))
     else:
         raise ValueError('unsupported timestamp')
-    assert d['status']=='SUCCEEDED' and -300<=time.time()-stamp<=26*3600
+    now=time.time()
+    attempt=calendar.timegm(time.strptime(d['attemptedAt'],'%Y-%m-%dT%H:%M:%SZ'))
+    assert -300<=now-stamp<=26*3600 and stamp<=attempt<=now+300
+    assert d['status']=='SUCCEEDED' or (d['status']=='RUNNING' and now-attempt<=3600)
 except Exception:
     raise SystemExit(1)
 PY

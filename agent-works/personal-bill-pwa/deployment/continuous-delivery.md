@@ -50,7 +50,7 @@ npm run build:release -- "$(git rev-parse HEAD)"
 
 目标端运行 `sha256sum -c SHA256SUMS` 后解包。不要打包开发库、secret、CA 私钥和 node_modules。macOS 附加 ._ 文件会干扰迁移扫描，归档必须禁用附加元数据；目标 tar 使用 --no-same-owner。
 
-当前 Dockerfile 会在 Maven builder 中重新编译 JAR，不是消费本地 build:release JAR；因此目标镜像中的 JAR 摘要必须单独记录并与目标源码对应，不能宣称两次构建字节必然相同。proxy 镜像不包含 dist，需同时保全对应 dist 包。至少记录：源码 SHA、JAR SHA256、前端 manifest/入口摘要、app/proxy/migrate 镜像 ID、PostgreSQL RepoDigest、Compose/环境非敏感版本、schema版本。
+当前 Dockerfile 会在 Maven builder 中重新编译 JAR，不是消费本地 build:release JAR；因此目标镜像中的 JAR 摘要必须单独记录并与目标源码对应，不能宣称两次构建字节必然相同。proxy 镜像不包含 dist，需同时保全对应 dist 包。至少记录：源码 SHA、JAR SHA256、前端 manifest/入口摘要、app/proxy/migrate 镜像 ID、PostgreSQL 上游 RepoDigest 与派生镜像 ID、Compose/环境非敏感版本、schema版本。
 
 现有默认镜像标签可变，不能用 my-bill-app 代替版本证据；发布前为上一版本保存专用标签并保留镜像。若接入 registry，需新增登录 secret、目标平台构建、不可变提交标签/digest、签名或来源证明、扫描门禁和拉取策略；这些当前未实现。
 
@@ -61,3 +61,5 @@ npm run build:release -- "$(git rev-parse HEAD)"
 失败按最早关卡停止：检查失败不出候选；校验失败不解包；迁移失败不启动新 app；健康/安全失败不放入口。回退依赖旧制品和 schema兼容性，见部署手册；不要通过跳过测试、关闭TLS/CSRF/RLS或删除数据库“修复发布”。
 
 验证记录必须区分本地检查、远端CI、镜像扫描和部署验收，并关联同一候选。历史命令结果见[验收记录](../pre-release-test-report.md)，目标环境结果见[案例](cases/README.md)；没有执行的关卡保持未验证。
+
+系统包补丁通过重新构建镜像落地：数据库由 `deploy/Dockerfile.postgres` 派生，锁定 PostgreSQL 服务端和客户端 16.14 后安装其余发行版更新；迁移目标安装发行版更新。首次/补丁发布构建 `db app migrate proxy`，记录实际镜像摘要并运行 OS 复扫。`provision` 与两个恢复验证脚本复用数据库派生镜像，防止正常运行已修复、恢复工具却继续使用旧镜像。不能在运行容器内临时 apt upgrade，也不能仅凭构建成功宣称漏洞已清零。切换数据库镜像前先完成隔离恢复和备份，保留旧镜像及同一数据库卷，验证失败恢复旧镜像；禁止 down -v。

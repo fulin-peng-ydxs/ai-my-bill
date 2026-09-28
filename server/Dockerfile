@@ -24,6 +24,8 @@ FROM flyway/flyway:11.7.2 AS migrate
 COPY server/src/main/resources/db/migration /flyway/sql
 COPY deploy/scripts/run-flyway.sh /usr/local/bin/run-flyway
 USER root
+# 一次性迁移镜像也必须安装发行版安全更新，不豁免系统包扫描。
+RUN apt-get update && apt-get upgrade -y && rm -rf /var/lib/apt/lists/*
 RUN chmod 0555 /usr/local/bin/run-flyway && chmod -R a-w /flyway/sql
 WORKDIR /tmp
 USER 10001:10001

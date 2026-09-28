@@ -9,12 +9,16 @@ mkdir -p "$backup_root/daily" "$backup_root/weekly"
 exec 9>"$backup_root/backup.lock"
 flock -n 9 || exit 0
 status_root=/var/lib/my-bill/operations
-install -d -m 0755 "$status_root"
+install -d -m 0755 -o root -g root "$status_root"
 # 状态目录仅 root 可写，应用只读挂载；不得放入备份正文或密钥。
 started_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 latest_completed=''
 if [[ -f "$backup_root/last-success" ]]; then
   latest_completed=$(awk '$1 == "SUCCEEDED" {print $2}' "$backup_root/last-success")
+  # last-success 使用宿主偏移格式；状态协议统一 UTC，失败/RUNNING 也必须可被 Java 解析。
+  if [[ -n "$latest_completed" ]]; then
+    latest_completed=$(date -u -d "$latest_completed" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || true)
+  fi
 fi
 publish_status() {
   local state="$1" temporary
