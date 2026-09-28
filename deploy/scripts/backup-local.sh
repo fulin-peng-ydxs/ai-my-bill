@@ -1,0 +1,58 @@
+#!/usr/bin/env bash
+set -euo pipefail
+umask 077
+export TZ=Asia/Shanghai
+# 仅 root 调度；明文暂存目录 0700，归档加密后删除。只保留本项目服务器副本。
+[[ $(id -u) == 0 ]] || exit 1
+backup_root=/var/backups/my-bill
+mkdir -p "$backup_root/daily" "$backup_root/weekly"
+exec 9>"$backup_root/backup.lock"
+flock -n 9 || exit 0
+work_dir=$(mktemp -d "$backup_root/.pending.XXXXXX")
+cleanup() {
+  result=$?
+  rm -rf -- "$work_dir"
+  if (( result != 0 )); then logger -t my-bill-backup 'FAILED: backup or verification failed'; fi
+  exit "$result"
+}
+trap cleanup EXIT
+stamp=$(date +%F)
+# 数据库管理员仅在数据库容器内经本地 socket 使用；应用不可见其凭据。
+docker exec my-bill-db-1 pg_dump -U my_bill_admin -d my_bill -Fc > "$work_dir/database.dump"
+docker exec -i my-bill-db-1 pg_restore --list < "$work_dir/database.dump" > /dev/null
+mkdir "$work_dir/exports"
+docker cp my-bill-app-1:/var/lib/my-bill/exports/. "$work_dir/exports/"
+printf 'created_at=%s\n' "$(date -Is)" > "$work_dir/manifest"
+docker inspect --format '{{.Name}} {{.Image}}' my-bill-db-1 my-bill-app-1 my-bill-proxy-1 >> "$work_dir/manifest"
+tar -C "$work_dir" -czf - database.dump exports manifest |
+  openssl cms -encrypt -binary -stream -outform DER -aes256 \
+    -out "$work_dir/archive.cms" /etc/my-bill/backup-encryption.crt
+# 完整解密并检查 gzip/tar，验证私钥匹配和归档未截断；不将明文写出目录。
+openssl cms -decrypt -binary -inform DER -in "$work_dir/archive.cms" \
+  -recip /etc/my-bill/backup-encryption.crt -inkey /etc/my-bill/backup-encryption.key |
+  tar -tzf - > /dev/null
+mv "$work_dir/archive.cms" "$backup_root/daily/$stamp.cms"
+(cd "$backup_root/daily" && sha256sum "$stamp.cms" > "$stamp.sha256")
+# 每个 ISO 周保留最新成功副本；硬链接避免日/周重复占用空间。
+week=$(date +%G-W%V)
+ln -f "$backup_root/daily/$stamp.cms" "$backup_root/weekly/$week.cms"
+(cd "$backup_root/weekly" && sha256sum "$week.cms" > "$week.sha256")
+python - "$backup_root" <<'PY'
+import os,re,sys,datetime
+root=sys.argv[1]
+today=datetime.date.today()
+cutoffs={"daily":(today-datetime.timedelta(days=6)).isoformat(),
+         "weekly":(today-datetime.timedelta(days=today.weekday()+21)).strftime("%G-W%V")}
+for part,keep,pattern in [('daily',7,r'^\d{4}-\d{2}-\d{2}\.cms$'),('weekly',4,r'^\d{4}-W\d{2}\.cms$')]:
+    directory=os.path.join(root,part)
+    names=sorted(n for n in os.listdir(directory) if re.match(pattern,n))
+    expired=set(names[:-keep])
+    expired.update(n for n in names if n[:-4] < cutoffs[part])
+    for name in sorted(expired):
+        os.unlink(os.path.join(directory,name))
+        checksum=os.path.join(directory,name[:-4]+'.sha256')
+        if os.path.exists(checksum):os.unlink(checksum)
+PY
+printf 'SUCCEEDED %s\n' "$(date -Is)" > "$backup_root/last-success"
+logger -t my-bill-backup 'SUCCEEDED: encrypted local backup verified'
+echo 'Encrypted local backup verified.'

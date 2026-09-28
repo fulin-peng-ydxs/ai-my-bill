@@ -1,0 +1,27 @@
+# 仅初始化时叠加；执行 run --rm bootstrap-admin，退出后删除初始密码的服务器副本。
+services:
+  bootstrap-admin:
+    image: my-bill-app
+    restart: "no"
+    user: "10001:10001"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 768m
+    cpus: 1.0
+    tmpfs: ["/tmp:size=128m,mode=1777"]
+    environment:
+      MY_BILL_APP_DB_URL: ${MY_BILL_APP_DB_URL}
+      MY_BILL_APP_DB_USERNAME: ${MY_BILL_APP_DB_USERNAME}
+      MY_BILL_APP_DB_PASSWORD_FILE: /run/secrets/app_db_password
+      MY_BILL_AUTH_RATE_LIMIT_PEPPER_FILE: /run/secrets/auth_rate_limit_pepper
+      MY_BILL_BOOTSTRAP_USERNAME: admin
+      MY_BILL_BOOTSTRAP_PASSWORD_FILE: /run/secrets/initial_admin_password
+    secrets: [app_db_password, auth_rate_limit_pepper, initial_admin_password]
+    volumes:
+      - ./scripts/run-bootstrap-admin.sh:/usr/local/bin/run-bootstrap-admin:ro
+    entrypoint: ["/usr/local/bin/run-bootstrap-admin"]
+    networks: [database]
+secrets:
+  initial_admin_password:
+    file: /etc/my-bill/secrets/initial_admin_password

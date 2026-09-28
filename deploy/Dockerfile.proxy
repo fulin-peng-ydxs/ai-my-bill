@@ -1,0 +1,5 @@
+FROM caddy:2.11.4-alpine
+# HTTPS 在非特权端口 8443 监听；移除镜像自带文件能力，兼容 cap_drop ALL。
+USER root
+RUN setcap -r /usr/bin/caddy
+USER 10001:10001

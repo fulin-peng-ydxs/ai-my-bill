@@ -86,6 +86,11 @@ class DeploymentBoundaryTest {
             assertThat(e2eInProduction.exitCode()).isNotZero();
             assertThat(e2eInProduction.output()).contains("生产应用禁止出现 MY_BILL_E2E_*");
 
+            ScriptResult bootstrapInProduction = runScript("deploy/scripts/run-app.sh", Map.of(
+                    "MY_BILL_BOOTSTRAP_PASSWORD_FILE", "/not-mounted"));
+            assertThat(bootstrapInProduction.exitCode()).isNotZero();
+            assertThat(bootstrapInProduction.output()).contains("常驻应用禁止携带初始化凭据");
+
             ScriptResult leakedMigrationVariable = runScript("deploy/scripts/run-app.sh", Map.of(
                     "MY_BILL_APP_DB_URL", "jdbc:postgresql://invalid/my_bill",
                     "MY_BILL_APP_DB_USERNAME", "my_bill_app",

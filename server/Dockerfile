@@ -4,7 +4,6 @@ WORKDIR /workspace
 COPY pom.xml mvnw ./
 COPY .mvn .mvn
 COPY server/pom.xml server/pom.xml
-RUN ./mvnw -B -pl server -am dependency:go-offline
 COPY server/src server/src
 RUN ./mvnw -B -pl server -am package -DskipTests
 

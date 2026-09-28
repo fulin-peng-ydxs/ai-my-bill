@@ -15,6 +15,10 @@ fail() { echo "FAIL: $*"; failures=$((failures+1)); }
 source /etc/os-release
 case "$ID:$VERSION_ID" in
   ubuntu:22.04|ubuntu:24.04|debian:12|debian:13|rocky:9*|rocky:10*|almalinux:9*|almalinux:10*|rhel:9*|rhel:10*) echo "OK: OS $ID $VERSION_ID" ;;
+  centos:7*)
+    if [[ "${MY_BILL_ALLOW_EOL_CENTOS7:-}" == 1 && "$bind_ip" == 10.100.101.104 ]]; then
+      echo "EXCEPTION: 用户允许当前 CentOS 7 内网主机；不代表安全补丁验收通过。"
+    else fail "CentOS 7 仅允许已确认的 10.100.101.104 内网例外，需显式 MY_BILL_ALLOW_EOL_CENTOS7=1。"; fi ;;
   *) fail "未在受维护的目标 OS 基线中: $ID $VERSION_ID；需核实支持状态，不能通过容器替代宿主补丁。" ;;
 esac
 if ! ip -4 -o addr show | awk '{print $4}' | cut -d/ -f1 | grep -Fxq "$bind_ip"; then

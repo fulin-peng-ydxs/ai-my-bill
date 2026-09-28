@@ -11,6 +11,8 @@ x-runtime: &runtime
 services:
   db:
     <<: *runtime
+    environment:
+      TZ: Asia/Shanghai
     mem_limit: 768m
     cpus: 1.0
     pids_limit: 200
@@ -30,12 +32,16 @@ services:
     cpus: 1.0
     pids_limit: 200
     environment:
+      TZ: Asia/Shanghai
       JAVA_OPTS: -Xms128m -Xmx512m -XX:MaxDirectMemorySize=128m
       MY_BILL_JOB_POLL_DELAY_MS: ${MY_BILL_JOB_POLL_DELAY_MS:-5000}
       MY_BILL_JOB_MAX_TASKS_PER_POLL: ${MY_BILL_JOB_MAX_TASKS_PER_POLL:-20}
   proxy:
     <<: *runtime
-    image: caddy:2.11.4-alpine
+    image: my-bill-proxy
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.proxy
     restart: unless-stopped
     user: "10001:10001"
     read_only: true

@@ -4,6 +4,10 @@ set -euo pipefail
 # 常驻应用入口：拒绝任何 migration 变量，并只读取运行角色 secret。
 # 使用变量名循环避免 pipefail 与 grep 提前退出组合时漏判超大环境中的敏感变量。
 while IFS= read -r environment_name; do
+  if [[ "${environment_name}" == MY_BILL_BOOTSTRAP_* ]]; then
+    echo "常驻应用禁止携带初始化凭据。" >&2
+    exit 1
+  fi
   if [[ "${environment_name}" == MY_BILL_E2E_* ]]; then
     echo "生产应用禁止出现 MY_BILL_E2E_*。" >&2
     exit 1

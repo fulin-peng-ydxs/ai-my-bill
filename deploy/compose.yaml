@@ -2,7 +2,7 @@ name: my-bill
 
 services:
   db:
-    image: postgres:16.14-alpine
+    image: postgres:16.14-bookworm
     restart: unless-stopped
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-my_bill}
@@ -21,7 +21,7 @@ services:
       retries: 20
 
   provision:
-    image: postgres:16.14-alpine
+    image: postgres:16.14-bookworm
     restart: "no"
     depends_on:
       db:

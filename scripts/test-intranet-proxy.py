@@ -75,7 +75,7 @@ def verify_proxy(binary, temporary, backend_port):
             *extra, f'https://10.0.0.10:{tls_port}{path}',
         ], capture_output=True, text=True, timeout=5)
 
-    for allowed in ['127.0.0.1/32', '192.0.2.1/32']:
+    for allowed in ['127.0.0.1/32', '0.0.0.0/0 ::/0', '192.0.2.1/32']:
         log_path = temporary / 'caddy.log'
         with log_path.open('w') as log:
             process = subprocess.Popen([
@@ -90,7 +90,7 @@ def verify_proxy(binary, temporary, backend_port):
                         raise AssertionError(log_path.read_text())
                     time.sleep(0.1)
                 assert response.returncode == 0, (response.stderr, log_path.read_text())
-                if allowed == '127.0.0.1/32':
+                if allowed != '192.0.2.1/32':
                     assert '200 OK' in response.stdout and 'my-bill-probe' in response.stdout
                     assert 'Content-Security-Policy:' in response.stdout
                     assert 'Cache-Control: no-cache' in response.stdout

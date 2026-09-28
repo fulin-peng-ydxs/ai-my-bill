@@ -1,0 +1,10 @@
+[Unit]
+Description=Daily My Bill backup at 03:00 Asia/Shanghai (host timezone)
+
+[Timer]
+OnCalendar=*-*-* 03:00:00
+Persistent=true
+Unit=my-bill-backup.service
+
+[Install]
+WantedBy=timers.target

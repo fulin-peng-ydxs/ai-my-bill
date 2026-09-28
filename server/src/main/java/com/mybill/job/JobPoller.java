@@ -5,6 +5,7 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 /** 轻量任务轮询器；多实例由数据库 SKIP LOCKED 与租约保证同一任务只被一个实例执行。 */
+@org.springframework.context.annotation.Profile("!bootstrap")
 @Component
 @EnableScheduling
 final class JobPoller {
