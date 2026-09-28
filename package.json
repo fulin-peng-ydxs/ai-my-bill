@@ -10,6 +10,9 @@
   "scripts": {
     "bootstrap": "bash scripts/bootstrap.sh",
     "dev": "bash scripts/dev.sh",
+    "dev:db": "bash scripts/dev-db.sh",
+    "dev:backend": "bash scripts/run-backend.sh",
+    "dev:frontend": "bash scripts/run-frontend.sh dev -- --host 127.0.0.1",
     "check": "bash scripts/check.sh",
     "check:server": "bash scripts/check-server.sh",
     "check:database": "bash scripts/test-database.sh",

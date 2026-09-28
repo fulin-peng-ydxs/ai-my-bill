@@ -36,6 +36,52 @@ flowchart LR
 - PostgreSQL 16+ 可执行工具位于 PATH，包括 initdb、postgres、pg_ctl、pg_isready、createdb、psql、dropdb。不需要预先运行系统的 PostgreSQL 服务。
 - 本地首次账号初始化需要 OpenSSL；数据库集成验证还需 Python3。无需 Redis 或其他项目的数据库。
 
+#### macOS 安装示例
+
+以下示例使用 Homebrew 和 nvm；已由公司工具链统一安装时，只需保证后面的版本检查通过，不要重复安装：
+
+```bash
+brew install nvm openjdk@21 postgresql@16 openssl@3 python@3
+mkdir -p "$HOME/.nvm"
+export NVM_DIR="$HOME/.nvm"
+source "$(brew --prefix nvm)/nvm.sh"
+nvm install 24.11.1
+nvm use 24.11.1
+npm install --global npm@11.6.2
+export JAVA_HOME="$(brew --prefix openjdk@21)/libexec/openjdk.jdk/Contents/Home"
+export PATH="$(brew --prefix postgresql@16)/bin:$JAVA_HOME/bin:$PATH"
+```
+
+Apple Silicon 与 Intel Homebrew 路径不同，因此使用 `brew --prefix`，不要把 `/opt/homebrew` 写死。需要每次打开终端自动生效时，将 NVM_DIR、nvm加载、JAVA_HOME 和 PATH 配置放入自己的Shell启动文件；先在当前终端验证无误再持久化。
+
+#### Ubuntu 24.04 安装示例
+
+Ubuntu 24.04 官方仓库提供本项目所需的Java21和PostgreSQL16。先按 nvm 官方或组织批准方式安装 nvm，再执行：
+
+```bash
+sudo apt-get update
+sudo apt-get install --yes openjdk-21-jdk postgresql-16 postgresql-client-16 openssl python3
+export NVM_DIR="$HOME/.nvm"
+source "$NVM_DIR/nvm.sh"
+nvm install 24.11.1
+nvm use 24.11.1
+npm install --global npm@11.6.2
+export PATH="/usr/lib/postgresql/16/bin:$PATH"
+```
+
+Ubuntu 22.04、Debian及其他发行版若默认仓库没有Java21或PostgreSQL16，应使用该系统官方支持的仓库或组织镜像；不要为了通过检查降级版本。安装后统一核对：
+
+```bash
+node --version
+npm --version
+java -version
+javac -version
+postgres --version
+pg_ctl --version
+openssl version
+python3 --version
+```
+
 安装公开依赖可使用以下已验证方式，单次隔离用户级npm源/代理，不修改全局设置：
 
 ```bash
@@ -124,10 +170,34 @@ npm run dev
 只有想单独运行前端、且后端/数据库已经由其他受控方式运行时才执行：
 
 ```bash
-bash scripts/run-frontend.sh dev -- --host 127.0.0.1
+npm run dev:frontend
 ```
 
 该命令只起 Vite，不建库、不起 Java。若 Java 用非默认端口，调用前传相同 MY_BILL_SERVER_PORT。与总启动命令二选一，避免重复占端口；Ctrl+C 只停止该前端。
+
+### 分开启动数据库、后端和前端
+
+需要在IDE中只重启Java，或希望前后端使用不同终端时，可以使用三个独立入口。三个终端必须传入相同的数据库名、数据库端口和后端端口；默认配置可直接执行：
+
+```bash
+# 终端1：初始化并后台启动本项目的本地数据库；重复执行安全复用同一集群。
+npm run dev:db -- start
+npm run dev:db -- status
+
+# 终端2：以前台进程启动后端；Ctrl+C 只停止后端。
+npm run dev:backend
+
+# 终端3：以前台进程启动前端；Ctrl+C 只停止前端。
+npm run dev:frontend
+```
+
+结束调试后，如不再需要数据库进程：
+
+```bash
+npm run dev:db -- stop
+```
+
+数据库管理脚本只操作 `.local/postgres`，停止不会删除数据；若配置端口被其他PostgreSQL集群占用会拒绝操作。`dev:backend` 不会隐式启动或停止数据库，数据库未就绪时后端会启动失败。仍推荐日常完整联调使用 `npm run dev`，它会在退出时停止本次启动的前后端，以及本次新启动的数据库；运行前已经存在的本项目数据库会保留。
 
 ### 后端断点调试
 
@@ -238,6 +308,19 @@ npm run dev
 ## 部署与排查
 
 开发的Vite不用于正式部署。生产只有三个常驻容器：Caddy提供前端文件/HTTPS并转发API，Java执行后端，PostgreSQL保存数据。角色初始化、迁移、首管理员是一次性工具；备份是宿主定时任务，具体区别见[部署架构](agent-works/personal-bill-pwa/deployment/architecture.md)。
+
+### 前后端代码更新如何发布
+
+当前采用“CI门禁 + 本地候选构建 + 人工受控部署”，还不是自动CD：
+
+1. 提交推送后，GitHub Actions执行前端检查/构建、后端验证、临时数据库、性能、安全和浏览器关键链路；通过只代表候选具备发布资格，不会自动部署。
+2. 在干净HEAD执行 `npm run build:release -- "$(git rev-parse HEAD)"`。脚本构建后端JAR和带提交号缓存版本的 `web/dist`，并在 `.local/release-candidate/<提交>/manifest.txt` 记录摘要。
+3. 按发布手册生成白名单源码包与前端dist包，计算摘要并传到目标服务器。当前没有镜像仓库推送或自动SSH发布脚本。
+4. 目标机校验摘要后，从同一提交构建数据库、后端、迁移和代理镜像；升级只执行migrate，不重跑provision或首管理员初始化。
+5. 维护窗口内先保全旧制品和备份、停止入口，再执行迁移、启动新app、确认healthy，最后启动proxy并验证HTTPS、登录、业务读写、租户边界和PWA。
+6. 前端由宿主 `web/dist` 只读挂载到proxy，后端在app镜像内；切换新的发布目录后需重建相应容器，不能只改符号链接或只重启旧容器。
+
+详细机制见[持续构建与发布](agent-works/personal-bill-pwa/deployment/continuous-delivery.md)、[首次部署、升级与运维手册](agent-works/personal-bill-pwa/deployment/runbook.md)和[部署支持边界](agent-works/personal-bill-pwa/deployment/architecture.md#10-支持范围与待验收边界)。当前已有候选构建脚本、Compose和分阶段部署辅助脚本，但没有一键发布、自动流量切换、零停机或自动回滚脚本。
 
 | 现象 | 检查顺序 |
 |---|---|
