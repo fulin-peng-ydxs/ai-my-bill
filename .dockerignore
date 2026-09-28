@@ -1,0 +1,15 @@
+# 构建上下文白名单：不发送 .git、.local、凭据、依赖缓存或其他个人文件。
+**
+!pom.xml
+!mvnw
+!.mvn/
+!.mvn/**
+!server/
+!server/pom.xml
+!server/Dockerfile
+!server/src/
+!server/src/**
+!deploy/
+!deploy/scripts/
+!deploy/scripts/run-app.sh
+!deploy/scripts/run-flyway.sh

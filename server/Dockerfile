@@ -16,6 +16,7 @@ RUN apt-get update \
 COPY --from=build /workspace/server/target/my-bill-server-*.jar /app/my-bill-server.jar
 COPY deploy/scripts/run-app.sh /usr/local/bin/run-app
 RUN chmod 0555 /usr/local/bin/run-app && chmod 0444 /app/my-bill-server.jar
+RUN mkdir -p /var/lib/my-bill/exports && chown 10001:10001 /var/lib/my-bill/exports
 USER 10001:10001
 ENTRYPOINT ["/usr/local/bin/run-app"]
 

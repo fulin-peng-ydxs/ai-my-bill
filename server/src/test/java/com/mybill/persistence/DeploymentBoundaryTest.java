@@ -81,6 +81,11 @@ class DeploymentBoundaryTest {
             assertThat(emptyMigration.exitCode()).isNotZero();
             assertThat(emptyMigration.output()).contains("迁移密码 secret 不能为空");
 
+            ScriptResult e2eInProduction = runScript("deploy/scripts/run-app.sh", Map.of(
+                    "MY_BILL_E2E_WRITE", "1"));
+            assertThat(e2eInProduction.exitCode()).isNotZero();
+            assertThat(e2eInProduction.output()).contains("生产应用禁止出现 MY_BILL_E2E_*");
+
             ScriptResult leakedMigrationVariable = runScript("deploy/scripts/run-app.sh", Map.of(
                     "MY_BILL_APP_DB_URL", "jdbc:postgresql://invalid/my_bill",
                     "MY_BILL_APP_DB_USERNAME", "my_bill_app",
