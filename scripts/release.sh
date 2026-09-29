@@ -170,10 +170,10 @@ build_release() {
   [[ -f "${manifest_file}" ]] || fail "候选 manifest 不存在：${manifest_file}"
   mkdir -p "${RELEASE_DIRECTORY}"
   staging="$(mktemp -d "${RELEASE_DIRECTORY}/.${commit}.staging.XXXXXX")"
-  git archive --format=tar "${commit}" .dockerignore .mvn mvnw pom.xml server deploy scripts > "${staging}/source.tar"
-  # macOS archive tools may invoke Perl for extended-attribute handling. Force the
-  # portable POSIX locale so an inherited Linux-only C.UTF-8 locale cannot break
-  # the otherwise platform-neutral candidate packaging step.
+  # macOS archive tools may invoke Perl for path/extended-attribute handling.
+  # Force the portable POSIX locale on both archive commands so an inherited
+  # Linux-only C.UTF-8 locale cannot break candidate packaging.
+  LC_ALL=C LANG=C COPYFILE_DISABLE=1 git archive --format=tar "${commit}" .dockerignore .mvn mvnw pom.xml server deploy scripts > "${staging}/source.tar"
   LC_ALL=C LANG=C COPYFILE_DISABLE=1 tar --no-xattrs -czf "${staging}/web-dist.tar.gz" web/dist
   cp "${manifest_file}" "${staging}/manifest.txt"
   cp deploy/scripts/apply-release.sh "${staging}/apply-release.sh"
