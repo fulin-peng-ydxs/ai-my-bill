@@ -171,7 +171,10 @@ build_release() {
   mkdir -p "${RELEASE_DIRECTORY}"
   staging="$(mktemp -d "${RELEASE_DIRECTORY}/.${commit}.staging.XXXXXX")"
   git archive --format=tar "${commit}" .dockerignore .mvn mvnw pom.xml server deploy scripts > "${staging}/source.tar"
-  COPYFILE_DISABLE=1 tar --no-xattrs -czf "${staging}/web-dist.tar.gz" web/dist
+  # macOS archive tools may invoke Perl for extended-attribute handling. Force the
+  # portable POSIX locale so an inherited Linux-only C.UTF-8 locale cannot break
+  # the otherwise platform-neutral candidate packaging step.
+  LC_ALL=C LANG=C COPYFILE_DISABLE=1 tar --no-xattrs -czf "${staging}/web-dist.tar.gz" web/dist
   cp "${manifest_file}" "${staging}/manifest.txt"
   cp deploy/scripts/apply-release.sh "${staging}/apply-release.sh"
   chmod 0750 "${staging}/apply-release.sh"
