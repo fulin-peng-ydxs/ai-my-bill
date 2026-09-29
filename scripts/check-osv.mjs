@@ -29,7 +29,10 @@ for (const [path, metadata] of Object.entries(lock.packages ?? {})) {
 
 const mavenCoordinates = await readFile(mavenListPath, 'utf8')
 for (const line of mavenCoordinates.split(/\r?\n/u)) {
-  const parts = line.trim().split(':')
+  // Maven 4 appends JPMS diagnostics (" -- module ...") to dependency:list output.
+  // Strip that display-only suffix so runtime/test coordinates are not silently skipped.
+  const coordinate = line.trim().replace(/\s+--\s+module\s+.*$/u, '')
+  const parts = coordinate.split(':')
   const scope = parts.at(-1)
   if (![5, 6].includes(parts.length) || !['compile', 'runtime', 'provided', 'test'].includes(scope)) continue
   const version = parts.length === 5 ? parts[3] : parts[4]
@@ -58,7 +61,7 @@ const pluginDependencyOverrides = new Map([
     ['io.airlift:aircompressor', '2.0.3'],
   ])],
   ['org.springframework.boot:spring-boot-maven-plugin', new Map([
-    ['com.fasterxml.jackson.core:jackson-databind', '2.21.5'],
+    ['com.fasterxml.jackson.core:jackson-databind', '2.21.6'],
     ['org.apache.commons:commons-lang3', '3.20.0'],
     ['org.apache.httpcomponents.client5:httpclient5', '5.6.3'],
     ['org.apache.httpcomponents.core5:httpcore5', '5.4.3'],
