@@ -4,6 +4,8 @@
 
 本文说明环境变量从哪里读取、如何进入进程、何时生效，以及密钥如何分发和轮换。开发使用Shell变量与application.yml，部署使用Compose配置和secret文件；用户偏好另存业务数据库，不属于基础设施配置。
 
+持续更新的“目标描述”不是生产运行配置：`.local/deploy-targets/<目标>.env` 只保存SSH连接、既有路径、健康地址和备份service，由 `scripts/release.sh` 白名单解析且不进入Git；它指向目标机 `/etc/my-bill/production.env`，不会替代或复制其中的运行变量与secret。字段契约见 `deploy/targets/README.md`。
+
 ```mermaid
 flowchart TD
   Shell[Shell 已导出的变量] --> Dev[scripts/dev.sh]

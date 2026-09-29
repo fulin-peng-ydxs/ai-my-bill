@@ -311,16 +311,16 @@ npm run dev
 
 ### 前后端代码更新如何发布
 
-当前采用“CI门禁 + 本地候选构建 + 人工受控部署”，还不是自动CD：
+当前采用“CI门禁 + 本地持续构建更新入口”。GitHub Actions 仍只做检查，不会自动连接服务器；经授权的运维人员在本机显式执行发布入口：
 
 1. 提交推送后，GitHub Actions执行前端检查/构建、后端验证、临时数据库、性能、安全和浏览器关键链路；通过只代表候选具备发布资格，不会自动部署。
-2. 在干净HEAD执行 `npm run build:release -- "$(git rev-parse HEAD)"`。脚本构建后端JAR和带提交号缓存版本的 `web/dist`，并在 `.local/release-candidate/<提交>/manifest.txt` 记录摘要。
-3. 按发布手册生成白名单源码包与前端dist包，计算摘要并传到目标服务器。当前没有镜像仓库推送或自动SSH发布脚本。
-4. 目标机校验摘要后，从同一提交构建数据库、后端、迁移和代理镜像；升级只执行migrate，不重跑provision或首管理员初始化。
-5. 维护窗口内先保全旧制品和备份、停止入口，再执行迁移、启动新app、确认healthy，最后启动proxy并验证HTTPS、登录、业务读写、租户边界和PWA。
-6. 前端由宿主 `web/dist` 只读挂载到proxy，后端在app镜像内；切换新的发布目录后需重建相应容器，不能只改符号链接或只重启旧容器。
+2. 在干净HEAD执行 `npm run release -- build`。入口自动执行完整检查、候选构建、白名单归档和摘要，生成 `.local/releases/<提交>/`；已校验的同提交制品会直接复用。
+3. 具体机器只在本机 `.local/deploy-targets/<目标>.env` 描述。先用 `npm run release -- plan intranet-main` 查看无敏感值的计划，用 `npm run release -- deploy intranet-main` 更新一个位置，也可列出多个目标或使用 `--all` 串行更新。
+4. 更新入口自动上传并校验同一候选，在目标机保留旧目录/旧镜像、执行维护前备份，构建 app/migrate/proxy，停止入口和应用，执行迁移，原子切换 `current`，依次启动 app/proxy 并验证 HTTPS。升级不执行 provision、首管理员初始化或数据库镜像替换。
+5. `npm run release -- status intranet-main` 只读查看版本、Compose状态和HTTPS健康。任一目标失败后不会继续后续位置；迁移已尝试时不会盲目自动回滚，须按迁移兼容性和恢复手册判断。
+6. 前端由宿主 `web/dist` 只读挂载到proxy，后端在app镜像内；发布通过重建容器应用新版本，不只替换符号链接或重启旧容器。
 
-详细机制见[持续构建与发布](agent-works/personal-bill-pwa/deployment/continuous-delivery.md)、[首次部署、升级与运维手册](agent-works/personal-bill-pwa/deployment/runbook.md)和[部署支持边界](agent-works/personal-bill-pwa/deployment/architecture.md#10-支持范围与待验收边界)。当前已有候选构建脚本、Compose和分阶段部署辅助脚本，但没有一键发布、自动流量切换、零停机或自动回滚脚本。
+该入口只负责已有环境的持续构建更新，不安装Docker、不创建运行配置/secret/TLS/首管理员，也不把当前内网方案扩展成公网部署。目标配置契约见 [`deploy/targets`](deploy/targets/README.md)。详细机制见[持续构建与发布](agent-works/personal-bill-pwa/deployment/continuous-delivery.md)、[首次部署、升级与运维手册](agent-works/personal-bill-pwa/deployment/runbook.md)和[部署支持边界](agent-works/personal-bill-pwa/deployment/architecture.md#10-支持范围与待验收边界)。当前不承诺零停机或数据库自动回滚。
 
 | 现象 | 检查顺序 |
 |---|---|

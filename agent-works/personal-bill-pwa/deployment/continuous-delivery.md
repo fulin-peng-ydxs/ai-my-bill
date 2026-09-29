@@ -2,15 +2,16 @@
 
 ## 当前能力与职责
 
-2026-09-28 按 .github/workflows/ci.yml、package.json、scripts/build-release-candidate.sh 核对。当前 GitHub Actions 提供持续检查，发布候选脚本生成本地制品摘要；没有自动推送镜像仓库、SSH 部署、环境审批或回滚流水线。本文给出开发到运维的交付链路，实际案例记录所使用提交与摘要。
+当前 GitHub Actions 提供持续检查，但不会自动连接环境。经授权的运维人员通过 `npm run release -- ...` 显式执行持续构建更新：统一入口负责本地关卡、候选封装、SSH交付、逐实例更新和健康检查；目标机器信息与通用流程分离。没有自动推送镜像仓库、自动审批、零停机或数据库自动回滚。
 
 ```mermaid
 flowchart LR
   Commit[提交与 PR] --> CI[CI 检查]
   CI --> Candidate[干净 HEAD 构建候选]
-  Candidate --> Manifest[JAR / dist 摘要与提交]
-  Manifest --> Images[目标架构镜像构建与扫描]
-  Images --> Release[按部署手册执行]
+  Candidate --> Manifest[源码 / dist / 摘要与提交]
+  Manifest --> Target[选择一个或多个本机目标]
+  Target --> Images[目标机构建 app / migrate / proxy]
+  Images --> Release[备份 / 迁移 / 原子切换]
   Release --> Verify[目标环境验收]
   Verify --> Case[更新部署案例和计划]
 ```
@@ -28,38 +29,58 @@ push 与 pull_request 触发 ubuntu-latest 作业，checkout 全历史用于 sec
 
 CI YAML 存在只证明配置，不等于某次远端作业成功。每次发布保存对应提交的实际执行结果。
 
+## 统一入口与目标分层
+
+```bash
+npm run release -- targets
+npm run release -- plan intranet-main
+npm run release -- build
+npm run release -- deploy intranet-main
+npm run release -- deploy intranet-a intranet-b
+npm run release -- deploy --all
+npm run release -- status intranet-main
+```
+
+`scripts/release.sh` 是唯一操作入口。`deploy/scripts/apply-release.sh` 是随候选上传的目标端更新器。两者只包含通用步骤；字段契约在 `deploy/targets/example.env`，具体实例写入被 Git 忽略的 `.local/deploy-targets/<目标>.env`。`--all` 从同目录 `targets.list` 读取顺序，串行执行，首个失败即停止。解析器只接受白名单字段和字面 `KEY=value`，不会 `source` 配置，也不会把运行 secret 输出到计划或日志。
+
+目标配置只保存连接和既有路径：SSH身份/known_hosts、发布根、服务器环境文件、CA公钥、HTTPS健康地址、备份service/状态文件和Compose覆盖文件。密码、TLS私钥、CA私钥及生产变量仍只存在目标机 `/etc/my-bill`。仓库示例不是可直接部署的真实实例。
+
 ## 发布候选构建
 
 在干净的候选仓库根目录执行，源码修改必须先提交：
 
 ```bash
-npm run build:release -- "$(git rev-parse HEAD)"
+npm run release -- build
 ```
 
-脚本拒绝非 HEAD 和未提交改动（仅保留已明确的 .gitignore 例外），先 Maven package -DskipTests，再设置 MY_BILL_BUILD_ID=提交号构建前端，写 `.local/release-candidate/<完整提交>/manifest.txt`。构建跳过测试不代表测试已通过，必须先满足上述发布关卡。manifest 与源码同一提交，保存到发布记录，不把 .local 整体入库。
+入口拒绝未提交改动，并依次执行 `check`、`check:performance`、`check:security`、`check:e2e` 和 `build:release`。随后生成白名单 `source.tar`、`web-dist.tar.gz`、manifest、构建记录、目标端更新器及 `SHA256SUMS`，保存到 `.local/releases/<完整提交>/`。相同提交仅在全部摘要重新校验通过后复用；不存在跳过门禁开关。manifest 与源码同一提交，不把 `.local` 入库。
 
 普通检查生成的JAR/dist不自动成为发布候选；只有干净提交、完整关卡、manifest和目标镜像记录形成对应关系后才可交付。
 
 ## 交付产物与可追溯性
 
-采用 [手册](runbook.md) 的白名单源码包 + dist 包。生成上传摘要时在交付目录使用相对文件名，目标同目录核对：
-
-```bash
-(cd .local/delivery && shasum -a 256 source.tar web-dist.tar.gz > SHA256SUMS)
-```
-
-目标端运行 `sha256sum -c SHA256SUMS` 后解包。不要打包开发库、secret、CA 私钥和 node_modules。macOS 附加 ._ 文件会干扰迁移扫描，归档必须禁用附加元数据；目标 tar 使用 --no-same-owner。
+入口采用 [手册](runbook.md) 的白名单源码包 + dist 包，摘要只使用相对文件名。目标端先运行 `sha256sum -c`，再检查 tar 不含绝对路径和 `..` 越界项后解包。制品不含开发库、secret、CA 私钥和 node_modules；macOS 附加元数据被禁用，目标解包使用 `--no-same-owner`。
 
 当前 Dockerfile 会在 Maven builder 中重新编译 JAR，不是消费本地 build:release JAR；因此目标镜像中的 JAR 摘要必须单独记录并与目标源码对应，不能宣称两次构建字节必然相同。proxy 镜像不包含 dist，需同时保全对应 dist 包。至少记录：源码 SHA、JAR SHA256、前端 manifest/入口摘要、app/proxy/migrate 镜像 ID、PostgreSQL 上游 RepoDigest 与派生镜像 ID、Compose/环境非敏感版本、schema版本。
 
-现有默认镜像标签可变，不能用 my-bill-app 代替版本证据；发布前为上一版本保存专用标签并保留镜像。若接入 registry，需新增登录 secret、目标平台构建、不可变提交标签/digest、签名或来源证明、扫描门禁和拉取策略；这些当前未实现。
+现有默认镜像标签可变，更新器会在构建前给旧 app/proxy 镜像增加 `before-<提交>-<时间>` 标签，并把新 app/migrate/proxy 镜像 ID 写入目标版本 `deployment.properties`。数据库镜像升级不属于常规代码持续更新；涉及 `Dockerfile.postgres` 时按数据库维护方案单独执行。若接入 registry，仍需新增登录 secret、目标平台构建、不可变提交标签/digest、签名或来源证明、扫描门禁和拉取策略；这些当前未实现。
+
+## 单目标更新闭环
+
+`deploy` 在没有本提交制品时先自动执行完整 `build`，有制品时重新校验摘要。随后上传到目标的 `incoming/<提交>`，目标端依次完成：校验归档 → 独立释放目录 → Compose配置检查 → 保留旧镜像 → 构建 app/migrate/proxy → systemd维护前备份并核对本次完成时间 → 停止proxy/app → 执行migrate → 原子切换current → app健康 → proxy启动 → CA校验的HTTPS健康 → 记录版本、JAR/镜像ID、schema和配置摘要。不会执行首次部署的 provision、bootstrap、secret/TLS生成或数据库容器切换。
+
+这是维护窗口更新，不是零停机。每个目标独立完成后才进入下一个目标；因此同批目标可能短时间运行不同版本。`status` 是只读检查，不上传或修改文件。
 
 ## 发布职责与失败处理
 
 开发负责候选、契约/迁移兼容性、测试与摘要；运维负责主机、秘密、入口、备份和实例执行；验收负责真实 HTTPS、角色/租户、PWA、恢复与告警。没有完整证据不得把计划状态更新为完成。
 
-失败按最早关卡停止：检查失败不出候选；校验失败不解包；迁移失败不启动新 app；健康/安全失败不放入口。回退依赖旧制品和 schema兼容性，见部署手册；不要通过跳过测试、关闭TLS/CSRF/RLS或删除数据库“修复发布”。
+失败按最早关卡停止：检查失败不出候选；校验失败不解包；备份失败不停服务；迁移失败不启动新 app；健康失败不放入口。停止服务后但迁移尚未开始的失败会尝试恢复旧 app/proxy；迁移一旦尝试，不自动回切应用或数据库，保持入口状态并按 schema 兼容性、错误证据和恢复手册人工判断。不要通过跳过测试、关闭TLS/CSRF/RLS或删除数据库“修复发布”。
 
 验证记录必须区分本地检查、远端CI、镜像扫描和部署验收，并关联同一候选。历史命令结果见[验收记录](../pre-release-test-report.md)，目标环境结果见[案例](cases/README.md)；没有执行的关卡保持未验证。
 
-系统包补丁通过重新构建镜像落地：数据库由 `deploy/Dockerfile.postgres` 派生，锁定 PostgreSQL 服务端和客户端 16.14 后安装其余发行版更新；迁移目标安装发行版更新。首次/补丁发布构建 `db app migrate proxy`，记录实际镜像摘要并运行 OS 复扫。`provision` 与两个恢复验证脚本复用数据库派生镜像，防止正常运行已修复、恢复工具却继续使用旧镜像。不能在运行容器内临时 apt upgrade，也不能仅凭构建成功宣称漏洞已清零。切换数据库镜像前先完成隔离恢复和备份，保留旧镜像及同一数据库卷，验证失败恢复旧镜像；禁止 down -v。
+系统包补丁通过重新构建镜像落地，但容器 OS 包扫描与风险审批仍是独立安全门禁：`check:security` 只覆盖依赖与secret，不应被描述为容器扫描。常规持续更新构建 app/migrate/proxy，不替换数据库镜像；数据库补丁发布仍按专项流程构建 `db app migrate proxy`、执行OS复扫、隔离恢复和备份，并保留旧镜像及同一数据库卷。不能在运行容器内临时 apt upgrade，也不能仅凭构建成功宣称漏洞已清零；禁止 `down -v`。
+
+## 明确不包含
+
+持续更新入口要求目标已经按首次部署手册准备完成。它不安装/升级宿主或Docker，不创建目录权限、生产env、secret、TLS、systemd、数据库角色或首管理员，不首次启动空环境，不签发/轮换证书，不自动建设公网入口，也不自动写案例和计划完成状态。首次部署、数据库镜像升级、容器OS扫描处置、破坏性迁移恢复和公网模式分别走对应方案。

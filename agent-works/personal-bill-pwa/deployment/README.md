@@ -9,11 +9,13 @@
 | 1 | [部署架构与模式](architecture.md) | 服务、网络、数据、资源、支持边界 |
 | 2 | [环境配置架构](../architecture/environment-configuration.md) | 加载链路、变量表、secret 与生效方式 |
 | 3 | [首次部署与运维手册](runbook.md) | 构建交付、主机预检、TLS、初始化、起停、升级和回退 |
-| 4 | [持续构建与发布](continuous-delivery.md) | 当前 CI、候选产物、发布关卡及尚未自动化的步骤 |
+| 4 | [持续构建与发布](continuous-delivery.md) | CI、统一更新入口、目标配置、候选产物与失败边界 |
 | 5 | [备份与恢复](backup-recovery.md) | 备份实施、隔离演练、真实恢复要求与缺口 |
 | 6 | [案例目录](cases/README.md) | 现有内网环境；后续公网实例单独登记 |
 
 操作手册中的 `/opt/my-bill`、`/etc/my-bill`、`/var/backups/my-bill` 为现有脚本约定路径，不是任意占位符。IP、SSH 身份、存储容量、版本摘要和验收结果只能从目标案例取得。需要改路径/项目名时，必须同步脚本与 systemd，不能仅修改文档或 env。
+
+持续更新按“通用流程 + 具体目标”分层：仓库中的 `scripts/release.sh` 和 `deploy/scripts/apply-release.sh` 实现可复用流程，`deploy/targets/example.env` 定义字段；具体机器放在本机 `.local/deploy-targets`，不进入 Git。该入口不会建设新环境。
 
 证书入门先看[签发端与信任链](architecture.md#证书信任链与签发端职责)，新内网部署按[首次签发流程](runbook.md#32-在另一套独立内网首次部署)，本次手机操作看案例。目标环境验证汇总见[验收报告](../test-report.md)。
 
