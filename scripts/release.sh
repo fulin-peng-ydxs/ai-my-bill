@@ -134,7 +134,7 @@ resolve_targets() {
 
 sha256_check() {
   local directory="$1"
-  (cd "${directory}" && shasum -a 256 -c SHA256SUMS >/dev/null)
+  (cd "${directory}" && LC_ALL=C LANG=C shasum -a 256 -c SHA256SUMS >/dev/null)
 }
 
 build_release() {
@@ -170,9 +170,9 @@ build_release() {
   [[ -f "${manifest_file}" ]] || fail "候选 manifest 不存在：${manifest_file}"
   mkdir -p "${RELEASE_DIRECTORY}"
   staging="$(mktemp -d "${RELEASE_DIRECTORY}/.${commit}.staging.XXXXXX")"
-  # macOS archive tools may invoke Perl for path/extended-attribute handling.
-  # Force the portable POSIX locale on both archive commands so an inherited
-  # Linux-only C.UTF-8 locale cannot break candidate packaging.
+  # macOS archive/checksum tools may invoke Perl for path or digest handling.
+  # Force the portable POSIX locale so an inherited Linux-only C.UTF-8 locale
+  # cannot break candidate packaging or subsequent artifact verification.
   LC_ALL=C LANG=C COPYFILE_DISABLE=1 git archive --format=tar "${commit}" .dockerignore .mvn mvnw pom.xml server deploy scripts > "${staging}/source.tar"
   LC_ALL=C LANG=C COPYFILE_DISABLE=1 tar --no-xattrs -czf "${staging}/web-dist.tar.gz" web/dist
   cp "${manifest_file}" "${staging}/manifest.txt"
@@ -183,7 +183,7 @@ build_release() {
     echo "builtAt=$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
     echo "gates=check,check:performance,check:security,check:e2e,build:release"
   } > "${staging}/build.properties"
-  (cd "${staging}" && shasum -a 256 source.tar web-dist.tar.gz manifest.txt apply-release.sh build.properties > SHA256SUMS)
+  (cd "${staging}" && LC_ALL=C LANG=C shasum -a 256 source.tar web-dist.tar.gz manifest.txt apply-release.sh build.properties > SHA256SUMS)
   mv "${staging}" "${output}"
   echo "持续构建完成：${output}"
 }
