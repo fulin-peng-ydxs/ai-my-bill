@@ -4,6 +4,8 @@
 
 本手册面向授权运维人员，描述当前单机内网方案。命令与当前脚本相对应；执行前按案例填写参数，执行后记录退出状态和检查结果，新环境需要独立验收。所有宿主写操作在目标环境身份和备份确认后进行，禁止对其他项目全局清理或重启 Docker。
 
+新空环境优先使用[首次环境初始化自动化](environment-bootstrap.md)：`npm run environment -- configure <目标>` 交互生成具体实例，`preflight` 只读准入，`bootstrap` 执行本手册可自动化部分，失败后用同一提交 `resume`。本手册后续章节仍是脚本实现、人工验收和故障处置的事实依据，不要求运维重复手工执行已经由脚本成功完成的步骤。
+
 准备两端：构建/签发端安装项目 Node、Java、PostgreSQL 工具链和 OpenSSL；目标宿主由运维提供受支持且完成更新核查的 Linux、Docker Engine/Compose v2、bash、OpenSSL CMS、flock、tar、sha256sum、Python（现有备份命令名为 python）、systemd。引擎安装/升级须按该宿主运维制度执行，不能在已有业务机器直接套用重装命令。
 
 | 参数 | 来源 | 约束 |

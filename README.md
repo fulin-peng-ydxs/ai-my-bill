@@ -309,6 +309,20 @@ npm run dev
 
 开发的Vite不用于正式部署。生产只有三个常驻容器：Caddy提供前端文件/HTTPS并转发API，Java执行后端，PostgreSQL保存数据。角色初始化、迁移、首管理员是一次性工具；备份是宿主定时任务，具体区别见[部署架构](agent-works/personal-bill-pwa/deployment/architecture.md)。
 
+### 新服务器如何初始化
+
+已具备受支持Linux、Docker/Compose、Python、systemd等宿主前提的空服务器，可使用交互式入口：
+
+```bash
+npm run environment -- configure intranet-main
+npm run environment -- plan intranet-main
+npm run environment -- preflight intranet-main
+npm run environment -- bootstrap intranet-main
+npm run environment -- verify intranet-main
+```
+
+向导以安装程序式问答收集机器、路径、网段和TLS来源，不要求输入生产密码；初始化入口自动运行持续构建、生成服务器secret、建立数据库角色/schema/首管理员、启动服务并配置备份巡检。失败可用同一提交 `resume`，完成首登改密后用 `finalize` 删除服务器初始密码副本。当前只实现单机内网profile；公网模式仅保留契约且会拒绝执行，须先完成域名/ACME或边缘源站认证、真实客户端IP、管理入口、异机备份和外部告警方案。详见[首次环境初始化自动化](agent-works/personal-bill-pwa/deployment/environment-bootstrap.md)。
+
 ### 前后端代码更新如何发布
 
 当前采用“CI门禁 + 本地持续构建更新入口”。GitHub Actions 仍只做检查，不会自动连接服务器；经授权的运维人员在本机显式执行发布入口：

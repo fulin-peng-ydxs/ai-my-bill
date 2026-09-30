@@ -28,109 +28,7 @@ require_command() {
   command -v "$1" >/dev/null 2>&1 || fail "缺少命令：$1"
 }
 
-validate_target_id() {
-  [[ "$1" =~ ^[a-zA-Z0-9][a-zA-Z0-9._-]*$ ]] || fail "目标名称不合法：$1"
-}
-
-reset_target() {
-  BILL_TARGET_ID=""
-  BILL_HOST=""
-  BILL_SSH_USER="root"
-  BILL_SSH_PORT="22"
-  BILL_IDENTITY_FILE=""
-  BILL_KNOWN_HOSTS_FILE="${HOME}/.ssh/known_hosts"
-  BILL_REMOTE_ROOT="/opt/my-bill"
-  BILL_ENV_FILE="/etc/my-bill/production.env"
-  BILL_CA_FILE="/etc/my-bill/ca.crt"
-  BILL_HEALTH_URL=""
-  BILL_BACKUP_SERVICE="my-bill-backup.service"
-  BILL_BACKUP_STATUS_FILE="/var/lib/my-bill/operations/backup.properties"
-  BILL_COMPOSE_OVERLAY="deploy/compose.intranet.yaml"
-  BILL_HEALTH_TIMEOUT_SECONDS="180"
-}
-
-assign_target_value() {
-  local key="$1"
-  local value="$2"
-  case "${key}" in
-    BILL_TARGET_ID) BILL_TARGET_ID="${value}" ;;
-    BILL_HOST) BILL_HOST="${value}" ;;
-    BILL_SSH_USER) BILL_SSH_USER="${value}" ;;
-    BILL_SSH_PORT) BILL_SSH_PORT="${value}" ;;
-    BILL_IDENTITY_FILE) BILL_IDENTITY_FILE="${value}" ;;
-    BILL_KNOWN_HOSTS_FILE) BILL_KNOWN_HOSTS_FILE="${value}" ;;
-    BILL_REMOTE_ROOT) BILL_REMOTE_ROOT="${value}" ;;
-    BILL_ENV_FILE) BILL_ENV_FILE="${value}" ;;
-    BILL_CA_FILE) BILL_CA_FILE="${value}" ;;
-    BILL_HEALTH_URL) BILL_HEALTH_URL="${value}" ;;
-    BILL_BACKUP_SERVICE) BILL_BACKUP_SERVICE="${value}" ;;
-    BILL_BACKUP_STATUS_FILE) BILL_BACKUP_STATUS_FILE="${value}" ;;
-    BILL_COMPOSE_OVERLAY) BILL_COMPOSE_OVERLAY="${value}" ;;
-    BILL_HEALTH_TIMEOUT_SECONDS) BILL_HEALTH_TIMEOUT_SECONDS="${value}" ;;
-    *) fail "目标配置包含未知字段：${key}" ;;
-  esac
-}
-
-validate_absolute_path() {
-  [[ "$2" == /* && "$2" != *$'\n'* ]] || fail "$1 必须是绝对路径"
-}
-
-load_target() {
-  local requested_id="$1"
-  local config_file="${TARGET_DIRECTORY}/${requested_id}.env"
-  local line key value
-
-  validate_target_id "${requested_id}"
-  [[ -f "${config_file}" ]] || fail "找不到目标配置：${config_file}"
-  reset_target
-  while IFS= read -r line || [[ -n "${line}" ]]; do
-    line="${line%$'\r'}"
-    [[ -z "${line}" || "${line}" == \#* ]] && continue
-    [[ "${line}" == *=* ]] || fail "${config_file} 存在无效行：${line}"
-    key="${line%%=*}"
-    value="${line#*=}"
-    [[ "${key}" =~ ^[A-Z][A-Z0-9_]*$ ]] || fail "${config_file} 存在无效字段名：${key}"
-    assign_target_value "${key}" "${value}"
-  done < "${config_file}"
-
-  [[ "${BILL_TARGET_ID}" == "${requested_id}" ]] || fail "${config_file} 的 BILL_TARGET_ID 必须等于 ${requested_id}"
-  [[ "${BILL_HOST}" =~ ^[a-zA-Z0-9][a-zA-Z0-9.-]*$ ]] || fail "${requested_id} 的 BILL_HOST 不合法（当前支持主机名或 IPv4）"
-  [[ "${BILL_SSH_USER}" =~ ^[a-zA-Z_][a-zA-Z0-9._-]*$ ]] || fail "${requested_id} 的 BILL_SSH_USER 不合法"
-  [[ "${BILL_SSH_PORT}" =~ ^[0-9]+$ && "${BILL_SSH_PORT}" -ge 1 && "${BILL_SSH_PORT}" -le 65535 ]] || fail "${requested_id} 的 BILL_SSH_PORT 不合法"
-  validate_absolute_path BILL_REMOTE_ROOT "${BILL_REMOTE_ROOT}"
-  validate_absolute_path BILL_ENV_FILE "${BILL_ENV_FILE}"
-  validate_absolute_path BILL_CA_FILE "${BILL_CA_FILE}"
-  validate_absolute_path BILL_BACKUP_STATUS_FILE "${BILL_BACKUP_STATUS_FILE}"
-  validate_absolute_path BILL_KNOWN_HOSTS_FILE "${BILL_KNOWN_HOSTS_FILE}"
-  [[ -z "${BILL_IDENTITY_FILE}" ]] || validate_absolute_path BILL_IDENTITY_FILE "${BILL_IDENTITY_FILE}"
-  [[ "${BILL_HEALTH_URL}" == https://* && "${BILL_HEALTH_URL}" != *[$'\r\n\t ']* ]] || fail "${requested_id} 的 BILL_HEALTH_URL 必须是无空白的 https:// 地址"
-  [[ "${BILL_COMPOSE_OVERLAY}" =~ ^[a-zA-Z0-9][a-zA-Z0-9._/-]*$ && "${BILL_COMPOSE_OVERLAY}" != /* && "${BILL_COMPOSE_OVERLAY}" != *".."* ]] || fail "${requested_id} 的 BILL_COMPOSE_OVERLAY 不合法"
-  [[ "${BILL_BACKUP_SERVICE}" =~ ^[a-zA-Z0-9@._-]+\.service$ ]] || fail "${requested_id} 的 BILL_BACKUP_SERVICE 不合法"
-  [[ "${BILL_HEALTH_TIMEOUT_SECONDS}" =~ ^[0-9]+$ && "${BILL_HEALTH_TIMEOUT_SECONDS}" -ge 30 && "${BILL_HEALTH_TIMEOUT_SECONDS}" -le 900 ]] || fail "${requested_id} 的健康等待秒数必须在 30 到 900 之间"
-}
-
-resolve_targets() {
-  SELECTED_TARGETS=()
-  [[ "$#" -gt 0 ]] || fail "至少指定一个目标，或使用 --all"
-  if [[ "$1" == "--all" ]]; then
-    [[ "$#" -eq 1 ]] || fail "--all 不能与其他目标混用"
-    [[ -f "${TARGET_LIST}" ]] || fail "找不到目标顺序文件：${TARGET_LIST}"
-    local line
-    while IFS= read -r line || [[ -n "${line}" ]]; do
-      line="${line%$'\r'}"
-      [[ -z "${line}" || "${line}" == \#* ]] && continue
-      validate_target_id "${line}"
-      SELECTED_TARGETS+=("${line}")
-    done < "${TARGET_LIST}"
-    [[ "${#SELECTED_TARGETS[@]}" -gt 0 ]] || fail "${TARGET_LIST} 没有可部署目标"
-  else
-    local target
-    for target in "$@"; do
-      validate_target_id "${target}"
-      SELECTED_TARGETS+=("${target}")
-    done
-  fi
-}
+source "${PROJECT_ROOT}/scripts/lib/deploy-target.sh"
 
 sha256_check() {
   local directory="$1"
@@ -177,29 +75,17 @@ build_release() {
   LC_ALL=C LANG=C COPYFILE_DISABLE=1 tar --no-xattrs -czf "${staging}/web-dist.tar.gz" web/dist
   cp "${manifest_file}" "${staging}/manifest.txt"
   cp deploy/scripts/apply-release.sh "${staging}/apply-release.sh"
-  chmod 0750 "${staging}/apply-release.sh"
+  cp deploy/scripts/bootstrap-environment.sh "${staging}/bootstrap-environment.sh"
+  cp deploy/scripts/preflight-host.sh "${staging}/preflight-host.sh"
+  chmod 0750 "${staging}/apply-release.sh" "${staging}/bootstrap-environment.sh" "${staging}/preflight-host.sh"
   {
     echo "commit=${commit}"
     echo "builtAt=$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
     echo "gates=check,check:performance,check:security,check:e2e,build:release"
   } > "${staging}/build.properties"
-  (cd "${staging}" && LC_ALL=C LANG=C shasum -a 256 source.tar web-dist.tar.gz manifest.txt apply-release.sh build.properties > SHA256SUMS)
+  (cd "${staging}" && LC_ALL=C LANG=C shasum -a 256 source.tar web-dist.tar.gz manifest.txt apply-release.sh bootstrap-environment.sh preflight-host.sh build.properties > SHA256SUMS)
   mv "${staging}" "${output}"
   echo "持续构建完成：${output}"
-}
-
-ssh_arguments() {
-  SSH_ARGS=(-p "${BILL_SSH_PORT}" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=${BILL_KNOWN_HOSTS_FILE}")
-  SCP_ARGS=(-P "${BILL_SSH_PORT}" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=${BILL_KNOWN_HOSTS_FILE}")
-  if [[ -n "${BILL_IDENTITY_FILE}" ]]; then
-    SSH_ARGS+=(-i "${BILL_IDENTITY_FILE}")
-    SCP_ARGS+=(-i "${BILL_IDENTITY_FILE}")
-  fi
-}
-
-validate_local_connection_files() {
-  [[ -f "${BILL_KNOWN_HOSTS_FILE}" ]] || fail "${BILL_TARGET_ID} 的 known_hosts 不存在：${BILL_KNOWN_HOSTS_FILE}"
-  [[ -z "${BILL_IDENTITY_FILE}" || -f "${BILL_IDENTITY_FILE}" ]] || fail "${BILL_TARGET_ID} 的 SSH 私钥不存在：${BILL_IDENTITY_FILE}"
 }
 
 print_plan() {
@@ -238,7 +124,8 @@ deploy_target() {
   echo "[${BILL_TARGET_ID}] 上传并校验候选 ${commit}"
   scp "${SCP_ARGS[@]}" \
     "${artifact}/source.tar" "${artifact}/web-dist.tar.gz" "${artifact}/manifest.txt" \
-    "${artifact}/apply-release.sh" "${artifact}/build.properties" "${artifact}/SHA256SUMS" \
+    "${artifact}/apply-release.sh" "${artifact}/bootstrap-environment.sh" "${artifact}/preflight-host.sh" \
+    "${artifact}/build.properties" "${artifact}/SHA256SUMS" \
     "${destination}:${remote_incoming}/"
   printf -v remote_command 'bash %q --commit %q --incoming-dir %q --release-root %q --env-file %q --ca-file %q --health-url %q --backup-service %q --backup-status-file %q --compose-overlay %q --health-timeout %q' \
     "${remote_incoming}/apply-release.sh" "${commit}" "${remote_incoming}" "${BILL_REMOTE_ROOT}" \

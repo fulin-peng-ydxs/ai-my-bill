@@ -20,6 +20,7 @@
     "check:performance": "bash scripts/test-performance.sh",
     "check:security": "bash scripts/check-security.sh",
     "build:release": "bash scripts/build-release-candidate.sh",
+    "environment": "bash scripts/environment.sh",
     "release": "bash scripts/release.sh",
     "contracts:generate": "bash scripts/run-frontend.sh contract:generate"
   }

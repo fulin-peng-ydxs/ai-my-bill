@@ -3,6 +3,7 @@
 部署方案与实例分开维护：
 
 - [部署导航与模式](../agent-works/personal-bill-pwa/deployment/README.md)
+- [首次环境初始化自动化](../agent-works/personal-bill-pwa/deployment/environment-bootstrap.md)
 - [首次部署、升级和运维手册](../agent-works/personal-bill-pwa/deployment/runbook.md)
 - [持续构建与发布链路](../agent-works/personal-bill-pwa/deployment/continuous-delivery.md)
 - [备份恢复方案与验证边界](../agent-works/personal-bill-pwa/deployment/backup-recovery.md)
@@ -18,6 +19,9 @@
 | compose.bootstrap.yaml | 首次空账号库管理员初始化，完成后退出 |
 | env/production.env.example | 非密钥配置示例；含当前实例取值，使用前按案例核对替换 |
 | scripts/preflight-host.sh | 首次目标主机只读准入检查 |
+| scripts/bootstrap-environment.sh | 目标端首次初始化、状态续跑、验证与初始密码收尾 |
+| profiles/ | 部署模式能力契约；当前内网已实现，公网模式明确预留但拒绝执行 |
+| targets/ | 通用目标字段契约；具体机器配置只在本机 `.local/deploy-targets` |
 | scripts/run-*.sh、postgres/ | 应用/迁移/角色/管理员初始化入口 |
 | tls/internal-ca.sh、activate-certificate.sh | 签发端建立CA/签发IP叶证书；目标端校验、加载及失败回退 |
 | scripts/backup-local.sh、verify-backup-restore.sh | 同机加密备份、基础隔离数据库恢复检查 |

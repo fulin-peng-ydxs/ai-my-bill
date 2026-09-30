@@ -41,9 +41,9 @@ npm run release -- deploy --all
 npm run release -- status intranet-main
 ```
 
-`scripts/release.sh` 是唯一操作入口。`deploy/scripts/apply-release.sh` 是随候选上传的目标端更新器。两者只包含通用步骤；字段契约在 `deploy/targets/example.env`，具体实例写入被 Git 忽略的 `.local/deploy-targets/<目标>.env`。`--all` 从同目录 `targets.list` 读取顺序，串行执行，首个失败即停止。解析器只接受白名单字段和字面 `KEY=value`，不会 `source` 配置，也不会把运行 secret 输出到计划或日志。
+`scripts/release.sh` 是持续更新操作入口。`deploy/scripts/apply-release.sh` 是随候选上传的目标端更新器。它与[首次环境初始化入口](environment-bootstrap.md)共用目标字段解析器，但生命周期互不替代；具体实例写入被Git忽略的 `.local/deploy-targets/<目标>.env`。`--all` 从同目录 `targets.list` 读取顺序，串行执行，首个失败即停止。解析器只接受白名单字段和字面 `KEY=value`，不会 `source` 配置，也不会把运行secret输出到计划或日志。
 
-目标配置只保存连接和既有路径：SSH身份/known_hosts、发布根、服务器环境文件、CA公钥、HTTPS健康地址、备份service/状态文件和Compose覆盖文件。密码、TLS私钥、CA私钥及生产变量仍只存在目标机 `/etc/my-bill`。仓库示例不是可直接部署的真实实例。
+持续更新只消费目标配置中的SSH身份/known_hosts、发布根、服务器环境文件、CA公钥、HTTPS健康地址、备份service/状态文件和Compose覆盖文件。首次初始化还消费绑定地址、允许网段及本机TLS材料来源路径；密码和生产变量不进入目标文件，叶私钥正文只在受控本机文件和目标机存在，CA私钥不上传。仓库示例不是可直接部署的真实实例。
 
 ## 发布候选构建
 
