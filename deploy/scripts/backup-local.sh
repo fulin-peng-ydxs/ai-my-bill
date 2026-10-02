@@ -6,7 +6,7 @@ export TZ=Asia/Shanghai
 [[ $(id -u) == 0 ]] || exit 1
 python_command=python3
 command -v "${python_command}" >/dev/null 2>&1 || python_command=python
-"${python_command}" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 8) else 1)'
+command -v "${python_command}" >/dev/null 2>&1 || { echo 'Python command is required for backup rotation.' >&2; exit 1; }
 backup_root=/var/backups/my-bill
 mkdir -p "$backup_root/daily" "$backup_root/weekly"
 exec 9>"$backup_root/backup.lock"

@@ -191,9 +191,13 @@ app healthy 后再 `bill_compose up -d proxy`。服务器初始密码文件只�
 
 日常用 `bill_compose logs --tail=100 app proxy db` 定位，不输出 secret。`/api/v1/metrics` 与 `/api/v1/prometheus` 仅管理员可访问；当前没有已配置机器采集凭据，不能为监控将端点改成匿名。启动可用 `bill_compose up -d app proxy`；维护停止 `bill_compose stop proxy app`；db 单独管理，禁止 down -v 或 docker system prune。
 
+日常执行优先使用[统一运维入口](operations.md)的 `npm run ops -- status|health|logs|start|stop|restart`，由脚本加载目标、Compose覆盖、CA与路径并执行确认和健康等待。上面的底层命令保留用于理解和异常处置，不应在正常工作中重新拼接长命令。
+
 ## 6. 备份接入
 
 完整准备、systemd 操作和恢复边界见 [备份恢复](backup-recovery.md)。备份脚本依赖固定容器名、库名、路径及运行中的 app；先备份再停止 app，不能停 app 后直接执行依赖 docker cp 的日常备份。主机 timer 的执行结果通过只读状态文件接入管理概况，应用不能读取备份归档或密钥。
+
+日常手工触发使用 `npm run ops -- backup <目标>`，成功后会自动拉取并复核异机加密副本；不要只执行服务器备份而长期忽略异机副本和解密材料托管。
 
 ## 7. 升级、失败与回退
 

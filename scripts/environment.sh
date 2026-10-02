@@ -153,7 +153,7 @@ configure_target() {
   [[ -r /dev/tty ]] || fail "configure 需要交互式终端"
   local requested_id="${1:-}" target_id config_file profile_choice host_choice package_choice tls_choice generate_tls=false
   local host ssh_user ssh_port identity_file known_hosts bind_ip https_port allowed_cidrs
-  local remote_root env_file ca_file health_url cert_source key_source ca_source admin_output allow_eol=0
+  local remote_root env_file ca_file health_url cert_source key_source ca_source admin_output offsite_backup offsite_key allow_eol=0
   local host_profile package_source pki_root leaf_root temporary backup_file
 
   echo "我的账单首次环境安装向导"
@@ -227,6 +227,12 @@ EOF
   [[ "${remote_root}" == /opt/my-bill && "${env_file}" == /etc/my-bill/production.env && "${ca_file}" == /etc/my-bill/ca.crt ]] || fail "当前初始化实现只支持向导显示的固定服务器路径"
   health_url="$(prompt_value 'HTTPS健康地址' "https://${bind_ip}:${https_port}/api/v1/health")"
   admin_output="$(prompt_value '本机初始管理员凭据输出文件' "${PROJECT_ROOT}/.local/deployment/${target_id}-initial-admin.json")"
+  offsite_backup="$(prompt_value '异机加密备份目录' "${PROJECT_ROOT}/.local/offsite-backups/${target_id}")"
+  offsite_key="$(prompt_value '备份解密材料暂存目录（应继续转存组织密钥库）' "${PROJECT_ROOT}/.local/backup-keys/${target_id}")"
+  validate_absolute_path BILL_OFFSITE_BACKUP_DIRECTORY "${offsite_backup}"
+  validate_absolute_path BILL_OFFSITE_KEY_DIRECTORY "${offsite_key}"
+  [[ "${offsite_backup}" != / && "${offsite_backup}" != "${HOME}" && "$(dirname "${offsite_backup}")" != / && "${offsite_key}" != / && "${offsite_key}" != "${HOME}" && "$(dirname "${offsite_key}")" != / ]] || fail "异机落点不能是顶层目录或用户主目录"
+  [[ "${offsite_backup}" != "${offsite_key}" ]] || fail "异机备份和解密材料目录不能相同"
 
   cat >/dev/tty <<'EOF'
 TLS材料：
@@ -268,6 +274,8 @@ EOF
   发布根：${remote_root}
   TLS证书：${cert_source}
   初始管理员凭据：${admin_output}
+  异机备份：${offsite_backup}
+  解密材料暂存：${offsite_key}
 EOF
   confirm "确认生成目标配置？" false || fail "已取消"
 
@@ -301,6 +309,8 @@ EOF
     echo "BILL_HEALTH_URL=${health_url}"
     echo "BILL_BACKUP_SERVICE=my-bill-backup.service"
     echo "BILL_BACKUP_STATUS_FILE=/var/lib/my-bill/operations/backup.properties"
+    echo "BILL_OFFSITE_BACKUP_DIRECTORY=${offsite_backup}"
+    echo "BILL_OFFSITE_KEY_DIRECTORY=${offsite_key}"
     echo "BILL_COMPOSE_OVERLAY=deploy/compose.intranet.yaml"
     echo "BILL_HEALTH_TIMEOUT_SECONDS=180"
     echo "BILL_BIND_IP=${bind_ip}"

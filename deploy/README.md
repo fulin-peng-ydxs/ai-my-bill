@@ -8,6 +8,7 @@
 - [首次部署、升级和运维手册](../agent-works/deployment/runbook.md)
 - [持续构建与发布链路](../agent-works/deployment/continuous-delivery.md)
 - [备份恢复方案与验证边界](../agent-works/deployment/backup-recovery.md)
+- [统一运维、异机备份与恢复演练](../agent-works/deployment/operations.md)
 - [环境变量与配置加载](../agent-works/architecture/environment-configuration.md)
 - [当前内网部署案例](../agent-works/deployment/cases/intranet-single-host.md)
 
@@ -28,6 +29,7 @@
 | scripts/backup-local.sh、verify-backup-restore.sh | 同机加密备份、基础隔离数据库恢复检查 |
 | scripts/verify-recovery-tool.sh、verify-recovery-http.py | 注销审计保全/重放、隔离样本恢复与应用/入口验证 |
 | scripts/check-operations.sh、systemd/ | 备份定时、容器/证书/磁盘/备份状态本机巡检 |
+| scripts/operate-service.sh、../scripts/operations.sh | 目标端日常动作与构建端统一运维入口 |
 | Dockerfile.postgres | 固定PostgreSQL16.14，构建安装发行版补丁的数据库镜像 |
 | monitoring/ | 待实际接入验证的监控告警规则 |
 

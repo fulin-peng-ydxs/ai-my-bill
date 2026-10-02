@@ -17,6 +17,7 @@
 | 资源 | 4CPU，内存约16GiB；快照时 available8616MiB；根XFS94GiB，使用38GiB/41%，可用57GiB |
 | 容器环境 | Docker26.0.1、Compose2.26.1、overlay2，已有Swarm处于active |
 | 宿主准备复核 | 2026-10-02 只读 `inspect/host-plan/host-verify`：Docker、Compose、绑定IP、Asia/Shanghai时区、磁盘和内存满足；仅有Python2.7，无Python3.8+，因此新宿主门禁失败 |
+| 统一运维入口 | 2026-10-02 只读实测status/health、备份列表和加密证书指纹通过；最新 `2026-10-02.cms` 已拉取到本机被忽略目录并再次校验SHA-256 |
 | 共存业务 | 部署完成时原12个业务容器仍运行且未重启；其功能未做回归 |
 | 访问范围 | 用户明确允许全部可达来源，MY_BILL_ALLOWED_CIDRS=0.0.0.0/0 ::/0；只绑定该私网IPv4，无新增公网映射 |
 
@@ -29,7 +30,9 @@ ssh -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
 
 用户明确接受本机 CentOS7 的内网例外，预检仅此IP可用 `MY_BILL_ALLOW_EOL_CENTOS7=1`；不代表宿主补丁验收通过，也不降低HTTPS、CSRF、鉴权、RLS和密钥要求。禁止据此对别的主机跳过维护基线。没有为部署升级/重装宿主、重启Docker、调整Swarm或更改SELinux现状。
 
-2026-10-02 新增的通用宿主准备入口按安全默认把本案例映射为 `existing-linux`，只读检查且禁止 `host-apply`。现有服务可运行不等于新的完整运维工具链通过；在补齐受支持Python前，依赖Python3.8+的首次初始化、备份校验和恢复演练入口不得在本机宣称可用。该缺口没有通过CentOS7例外豁免，也未在本轮对服务器安装软件。
+2026-10-02 新增的通用宿主准备入口按安全默认把本案例映射为 `existing-linux`，只读检查且禁止 `host-apply`。现有服务可运行不等于新的完整环境初始化工具链通过；在补齐受支持Python前，依赖Python3.8+的首次初始化和高级恢复HTTP演练入口不得在本机宣称可用。既有日常备份轮转兼容当前Python2.7，基础隔离归档恢复不依赖Python。该缺口没有通过CentOS7例外豁免，也未在本轮对服务器安装软件。
+
+本轮异机复制只包含CMS加密归档及其checksum，落点为本项目 `.local/offsite-backups/intranet-main`，未进入Git。服务器备份证书指纹为 `2B:AE:B1:4A:72:80:BB:CE:A5:7D:31:B8:62:A3:EE:56:63:A3:DB:33:6A:46:CA:45:49:E5:7D:85:64:15:67:B9`；解密私钥仍未执行新的 `backup-key-pull` 或组织密钥库托管，所以不能把该副本记为整机灾难恢复闭环。
 
 ## 路径、配置与凭据映射
 

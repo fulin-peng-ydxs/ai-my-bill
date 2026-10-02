@@ -25,6 +25,8 @@ reset_target() {
   BILL_HEALTH_URL=""
   BILL_BACKUP_SERVICE="my-bill-backup.service"
   BILL_BACKUP_STATUS_FILE="/var/lib/my-bill/operations/backup.properties"
+  BILL_OFFSITE_BACKUP_DIRECTORY=""
+  BILL_OFFSITE_KEY_DIRECTORY=""
   BILL_COMPOSE_OVERLAY="deploy/compose.intranet.yaml"
   BILL_HEALTH_TIMEOUT_SECONDS="180"
   BILL_BIND_IP=""
@@ -58,6 +60,8 @@ assign_target_value() {
     BILL_HEALTH_URL) BILL_HEALTH_URL="${value}" ;;
     BILL_BACKUP_SERVICE) BILL_BACKUP_SERVICE="${value}" ;;
     BILL_BACKUP_STATUS_FILE) BILL_BACKUP_STATUS_FILE="${value}" ;;
+    BILL_OFFSITE_BACKUP_DIRECTORY) BILL_OFFSITE_BACKUP_DIRECTORY="${value}" ;;
+    BILL_OFFSITE_KEY_DIRECTORY) BILL_OFFSITE_KEY_DIRECTORY="${value}" ;;
     BILL_COMPOSE_OVERLAY) BILL_COMPOSE_OVERLAY="${value}" ;;
     BILL_HEALTH_TIMEOUT_SECONDS) BILL_HEALTH_TIMEOUT_SECONDS="${value}" ;;
     BILL_BIND_IP) BILL_BIND_IP="${value}" ;;
@@ -79,7 +83,7 @@ validate_absolute_path() {
 load_target() {
   local requested_id="$1"
   local config_file="${TARGET_DIRECTORY}/${requested_id}.env"
-  local line key value
+  local line key value local_path
 
   validate_target_id "${requested_id}"
   [[ -f "${config_file}" ]] || fail "找不到目标配置：${config_file}"
@@ -107,6 +111,12 @@ load_target() {
   validate_absolute_path BILL_ENV_FILE "${BILL_ENV_FILE}"
   validate_absolute_path BILL_CA_FILE "${BILL_CA_FILE}"
   validate_absolute_path BILL_BACKUP_STATUS_FILE "${BILL_BACKUP_STATUS_FILE}"
+  [[ -z "${BILL_OFFSITE_BACKUP_DIRECTORY}" ]] || validate_absolute_path BILL_OFFSITE_BACKUP_DIRECTORY "${BILL_OFFSITE_BACKUP_DIRECTORY}"
+  [[ -z "${BILL_OFFSITE_KEY_DIRECTORY}" ]] || validate_absolute_path BILL_OFFSITE_KEY_DIRECTORY "${BILL_OFFSITE_KEY_DIRECTORY}"
+  for local_path in "${BILL_OFFSITE_BACKUP_DIRECTORY}" "${BILL_OFFSITE_KEY_DIRECTORY}"; do
+    [[ -z "${local_path}" || "${local_path}" != / && "${local_path}" != "${HOME}" && "$(dirname "${local_path}")" != / ]] || fail "${requested_id} 的异机落点不能是顶层目录或用户主目录"
+  done
+  [[ -z "${BILL_OFFSITE_BACKUP_DIRECTORY}" || -z "${BILL_OFFSITE_KEY_DIRECTORY}" || "${BILL_OFFSITE_BACKUP_DIRECTORY}" != "${BILL_OFFSITE_KEY_DIRECTORY}" ]] || fail "${requested_id} 的异机备份和解密材料目录不能相同"
   validate_absolute_path BILL_KNOWN_HOSTS_FILE "${BILL_KNOWN_HOSTS_FILE}"
   [[ -z "${BILL_IDENTITY_FILE}" ]] || validate_absolute_path BILL_IDENTITY_FILE "${BILL_IDENTITY_FILE}"
   [[ "${BILL_HEALTH_URL}" == https://* && "${BILL_HEALTH_URL}" != *[$'\r\n\t ']* ]] || fail "${requested_id} 的 BILL_HEALTH_URL 必须是无空白的 https:// 地址"

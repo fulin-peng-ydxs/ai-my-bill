@@ -26,6 +26,8 @@ BILL_CA_FILE=/etc/my-bill/ca.crt
 BILL_HEALTH_URL=https://192.168.20.10:18443/api/v1/health
 BILL_BACKUP_SERVICE=my-bill-backup.service
 BILL_BACKUP_STATUS_FILE=/var/lib/my-bill/operations/backup.properties
+BILL_OFFSITE_BACKUP_DIRECTORY=${temporary}/offsite-backups
+BILL_OFFSITE_KEY_DIRECTORY=${temporary}/offsite-keys
 BILL_COMPOSE_OVERLAY=deploy/compose.intranet.yaml
 BILL_HEALTH_TIMEOUT_SECONDS=180
 BILL_BIND_IP=192.168.20.10
@@ -49,6 +51,8 @@ load_target sample
 [[ "${BILL_HOST_PACKAGE_SOURCE}" == preconfigured ]]
 [[ "${BILL_HOST_TIMEZONE}" == Asia/Shanghai ]]
 [[ "${BILL_HOST_FIREWALL_MODE}" == external ]]
+[[ "${BILL_OFFSITE_BACKUP_DIRECTORY}" == "${TARGET_UNDER_TEST}/offsite-backups" ]]
+[[ "${BILL_OFFSITE_KEY_DIRECTORY}" == "${TARGET_UNDER_TEST}/offsite-keys" ]]
 BASH
 
 cp "${temporary}/sample.env" "${temporary}/malicious.env"
@@ -67,6 +71,21 @@ then
 fi
 [[ ! -e "${temporary}/parser-executed" ]]
 
+cp "${temporary}/sample.env" "${temporary}/unsafe.env"
+sed -i.bak 's/BILL_TARGET_ID=sample/BILL_TARGET_ID=unsafe/' "${temporary}/unsafe.env"
+printf 'BILL_OFFSITE_BACKUP_DIRECTORY=/\n' >> "${temporary}/unsafe.env"
+if PROJECT_UNDER_TEST="${PROJECT_ROOT}" TARGET_UNDER_TEST="${temporary}" bash <<'BASH'
+set -euo pipefail
+PROJECT_ROOT="${PROJECT_UNDER_TEST}"; TARGET_DIRECTORY="${TARGET_UNDER_TEST}"
+fail() { exit 1; }
+source "${PROJECT_ROOT}/scripts/lib/deploy-target.sh"
+load_target unsafe
+BASH
+then
+  echo '危险的异机根目录应被拒绝。' >&2
+  exit 1
+fi
+
 for profile in "${PROJECT_ROOT}"/deploy/host-profiles/*.env; do
   awk -F= '
     /^[[:space:]]*#/ || /^[[:space:]]*$/ {next}
@@ -81,4 +100,5 @@ if bash "${PROJECT_ROOT}/deploy/scripts/prepare-host.sh" --action invalid >/dev/
 fi
 
 bash "${PROJECT_ROOT}/scripts/environment.sh" help >/dev/null
+bash "${PROJECT_ROOT}/scripts/operations.sh" help >/dev/null
 echo 'PASS: 部署目标契约、宿主profile和Shell语法检查通过。'

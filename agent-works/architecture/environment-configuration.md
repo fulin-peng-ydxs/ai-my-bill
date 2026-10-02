@@ -31,6 +31,8 @@ flowchart TD
 
 目标描述中的 `BILL_HOST_PROFILE`、`BILL_HOST_PACKAGE_SOURCE`、`BILL_HOST_TIMEZONE`、`BILL_HOST_FIREWALL_MODE` 只供构建端的环境入口和目标端宿主准备脚本消费，不进入Compose或应用容器。它们分别决定宿主是否允许变更、Docker包从哪里取得、timer使用的宿主时区以及防火墙责任边界；不应复制进 `production.env`。旧目标缺少这些字段时默认 `existing-linux/preconfigured/Asia/Shanghai/external`，保证升级入口后不会意外修改既有主机。
 
+`BILL_OFFSITE_BACKUP_DIRECTORY` 与 `BILL_OFFSITE_KEY_DIRECTORY` 也只存在于构建/运维端目标描述，分别定义加密归档和一次性解密材料的本地落点。二者必须是不同的安全绝对路径，不能取根目录或用户主目录；旧目标缺失时由 `ops` 使用仓库 `.local` 下的目标专属默认目录。路径本身不进入Compose，私钥正文也不进入目标文件。
+
 `web/vite.config.ts` 直接读取 process.env，不调用 loadEnv 加载根目录模板。前端没有自定义 VITE_* 密钥/连接配置；API 固定同源 /api/v1。MY_BILL_BUILD_ID 只决定构建缓存名，不能运行时通过服务器 env 改已构建资源。
 
 ## 用两个例子理解配置实际如何生效

@@ -344,6 +344,19 @@ npm run environment -- verify intranet-main
 
 该入口只负责已有环境的持续构建更新，不安装Docker、不创建运行配置/secret/TLS/首管理员，也不把当前内网方案扩展成公网部署。目标配置契约见 [`deploy/targets`](deploy/targets/README.md)。详细机制见[持续构建与发布](agent-works/deployment/continuous-delivery.md)、[首次部署、升级与运维手册](agent-works/deployment/runbook.md)和[部署支持边界](agent-works/deployment/architecture.md#10-支持范围与待验收边界)。当前不承诺零停机或数据库自动回滚。
 
+### 日常运维、备份和恢复演练
+
+已初始化环境使用统一入口，不需要复制手册中的长命令：
+
+```bash
+npm run ops -- status intranet-main
+npm run ops -- health intranet-main
+npm run ops -- backup intranet-main
+npm run ops -- recovery-drill intranet-main YYYY-MM-DD
+```
+
+`backup` 会在服务器生成并校验加密归档，再拉取异机副本；解密私钥首次托管必须单独执行并继续转存组织密钥库。启停、日志、历史副本、校验和安全边界见[统一运维入口](agent-works/deployment/operations.md)，生产覆盖恢复仍按[备份与恢复](agent-works/deployment/backup-recovery.md)的受控流程执行。
+
 | 现象 | 检查顺序 |
 |---|---|
 | 前端ready但登录页请求失败 | 后端日志 → health → Vite代理目标端口；页面就绪不等于后端就绪 |

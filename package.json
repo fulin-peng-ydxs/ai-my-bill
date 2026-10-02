@@ -22,6 +22,7 @@
     "check:deployment": "bash scripts/test-deployment-tooling.sh",
     "build:release": "bash scripts/build-release-candidate.sh",
     "environment": "bash scripts/environment.sh",
+    "ops": "bash scripts/operations.sh",
     "release": "bash scripts/release.sh",
     "contracts:generate": "bash scripts/run-frontend.sh contract:generate"
   }
