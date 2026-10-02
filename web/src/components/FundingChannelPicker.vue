@@ -1,23 +1,32 @@
 <script setup lang="ts">
-import DictionaryPicker, { type DictionaryPickerItem } from './DictionaryPicker.vue'
+import DictionaryCombobox, { type DictionaryChoice } from './DictionaryCombobox.vue'
 
 defineProps<{
-  items: DictionaryPickerItem[]
+  items: DictionaryChoice[]
   label?: string
   modelValue?: string
   disabled?: boolean
   error?: string
+  loading?: boolean
 }>()
-defineEmits<{ 'update:modelValue': [value: string] }>()
+const emit = defineEmits<{ 'update:modelValue': [value: string], selected: [item: DictionaryChoice] }>()
+
+function select(item: DictionaryChoice): void {
+  emit('selected', item)
+  emit('update:modelValue', item.id)
+}
 </script>
 
 <template>
-  <DictionaryPicker
+  <DictionaryCombobox
+    :input-id="label === '收款方式' ? 'income-funding-channel' : 'expense-funding-channel'"
+    type="funding-channel"
     :label="label ?? '支付方式'"
     :items="items"
     :model-value="modelValue"
-    :disabled="disabled"
+    :disabled="disabled || loading"
     :error="error"
-    @update:model-value="$emit('update:modelValue', $event)"
+    @select="select"
+    @clear="emit('update:modelValue', '')"
   />
 </template>

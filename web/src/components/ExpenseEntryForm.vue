@@ -24,6 +24,7 @@ import AppStateBlock from './AppStateBlock.vue'
 import AppToast from './AppToast.vue'
 import DailyTemplateFallbackNotice from './DailyTemplateFallbackNotice.vue'
 import DictionaryPicker from './DictionaryPicker.vue'
+import DictionaryCombobox, { type DictionaryChoice } from './DictionaryCombobox.vue'
 import EntrySaveBar from './EntrySaveBar.vue'
 import FormField from './FormField.vue'
 import FormSection from './FormSection.vue'
@@ -238,6 +239,16 @@ function updatePrimaryCategory(value: string): void {
   persist()
 }
 
+function selectCategory(item: DictionaryChoice, level: 'primary' | 'secondary'): void {
+  ensureOption('categories', item.id, item.name, item.parentId)
+  if (level === 'primary') updatePrimaryCategory(item.id)
+  else {
+    form.secondaryCategoryId = item.id
+    clearError('secondaryCategoryId')
+    persist()
+  }
+}
+
 async function loadOptions(): Promise<void> {
   optionsLoading.value = true
   optionFailures.value = []
@@ -427,58 +438,30 @@ void loadOptions()
           @clear="clearProduct"
         />
         <div class="form-grid-two">
-          <FormField
-            field-id="expense-primary-category"
+          <DictionaryCombobox
+            input-id="expense-primary-category"
+            type="expense-category"
             label="一级分类"
+            :items="rootCategories"
+            :model-value="form.primaryCategoryId"
+            :disabled="submitting || optionsLoading"
             :error="errors.primaryCategoryId"
-          >
-            <template #default="{ describedBy }">
-              <select
-                id="expense-primary-category"
-                :value="form.primaryCategoryId"
-                :aria-describedby="describedBy"
-                :disabled="submitting"
-                @change="updatePrimaryCategory(($event.target as HTMLSelectElement).value)"
-              >
-                <option value="">
-                  请选择
-                </option>
-                <option
-                  v-for="item in rootCategories"
-                  :key="item.id"
-                  :value="item.id"
-                >
-                  {{ item.name }}
-                </option>
-              </select>
-            </template>
-          </FormField>
-          <FormField
-            field-id="expense-secondary-category"
-            label="二级分类（选填）"
+            @select="selectCategory($event, 'primary')"
+            @clear="updatePrimaryCategory('')"
+          />
+          <DictionaryCombobox
+            input-id="expense-secondary-category"
+            type="expense-category"
+            label="二级分类"
+            optional
+            :items="secondaryCategories"
+            :model-value="form.secondaryCategoryId"
+            :parent-id="form.primaryCategoryId"
+            :disabled="submitting || optionsLoading || !form.primaryCategoryId"
             :error="errors.secondaryCategoryId"
-          >
-            <template #default="{ describedBy }">
-              <select
-                id="expense-secondary-category"
-                v-model="form.secondaryCategoryId"
-                :aria-describedby="describedBy"
-                :disabled="submitting || !form.primaryCategoryId"
-                @change="clearError('secondaryCategoryId'); persist()"
-              >
-                <option value="">
-                  未选二级
-                </option>
-                <option
-                  v-for="item in secondaryCategories"
-                  :key="item.id"
-                  :value="item.id"
-                >
-                  {{ item.name }}
-                </option>
-              </select>
-            </template>
-          </FormField>
+            @select="selectCategory($event, 'secondary')"
+            @clear="form.secondaryCategoryId = ''; clearError('secondaryCategoryId'); persist()"
+          />
         </div>
         <FormField
           field-id="expense-unit"
@@ -573,9 +556,11 @@ void loadOptions()
       >
         <FundingChannelPicker
           :items="optionItems.funding"
+          :loading="optionsLoading"
           :model-value="form.fundingChannelId"
           :disabled="submitting"
           :error="errors.fundingChannelId"
+          @selected="ensureOption('funding', $event.id, $event.name)"
           @update:model-value="form.fundingChannelId = $event; clearError('fundingChannelId'); persist()"
         />
         <DictionaryPicker

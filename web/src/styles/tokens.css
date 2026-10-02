@@ -440,8 +440,8 @@ textarea:disabled {
 
 .auth-card h2,
 .settings-section h2 {
-  font-size: 18px;
-  line-height: 26px;
+  font-size: 20px;
+  line-height: 28px;
 }
 
 .auth-form {
@@ -1478,7 +1478,8 @@ body:has(dialog[open]) {
   line-height: 20px;
 }
 
-.account-section { text-align: center; gap: 0; }
+.account-section { gap: 0; }
+.account-section .section-heading { text-align: left; }
 .logout-action,
 .delete-account-action { justify-self: center; }
 .preference-caption,
@@ -1550,16 +1551,18 @@ body:has(dialog[open]) {
 
 .form-grid-two { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-lg); }
 
-.product-combobox {
+.entry-combobox {
   display: grid;
+  min-width: 0;
   gap: var(--space-sm);
   font-size: 14px;
 }
 
-.product-combobox > label { font-weight: 600; }
+.entry-combobox > label { font-weight: 600; }
 
-.product-combobox > input {
+.entry-combobox > input {
   width: 100%;
+  min-width: 0;
   min-height: 48px;
   padding: var(--space-md) var(--space-lg);
   color: var(--color-text);
@@ -1568,7 +1571,7 @@ body:has(dialog[open]) {
   border-radius: var(--radius-control);
 }
 
-.product-combobox small,
+.entry-combobox small,
 .field-help { color: var(--color-muted); font-size: 12px; line-height: 18px; }
 
 .product-options {
@@ -1626,12 +1629,15 @@ body:has(dialog[open]) {
 .field-heading-action {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: space-between;
   gap: var(--space-md);
+  min-width: 0;
+  border-top: 1px solid var(--color-border);
   font-size: 14px;
   font-weight: 600;
 }
-.field-heading-action a { min-height: 44px; padding: var(--space-sm); text-decoration: none; white-space: nowrap; }
+.field-heading-action a { display: flex; align-items: center; justify-content: space-between; width: 100%; min-height: 48px; padding: var(--space-sm) 0; text-decoration: none; }
+.field-heading-action a::after { content: '›'; font-size: 20px; }
 
 .entry-savebar {
   position: sticky;
@@ -1931,12 +1937,13 @@ body:has(dialog[open]) {
 .entry-preference-page .entry-type-switch { width: 100%; }
 .entry-form, .entry-form-surface, .entry-type-panel, .form-section-fields { min-width: 0; }
 .entry-form-surface { gap: 0; }
-.form-section h2 { margin: 0; font-size: 18px; line-height: 26px; }
+.form-section h2 { margin: 0; font-size: 20px; line-height: 28px; font-weight: 600; }
 .payer-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--space-sm); }
 .saved-income { padding: var(--space-lg); border: 1px solid var(--color-income-accent); border-radius: var(--radius-panel); background: var(--color-surface); }
 .saved-income h2 { margin: var(--space-xs) 0; color: var(--color-income-text); }
-.form-field input, .form-field textarea, .form-field select, .select-control, .product-combobox input { font-size: 16px; }
-.form-grid-two > * { min-width: 0; }
+.form-field input, .form-field textarea, .form-field select, .select-control, .entry-combobox input { font-size: 16px; }
+.form-grid-two > *, .form-field { min-width: 0; }
+.form-field input[type="datetime-local"] { display: block; min-width: 0; max-width: 100%; }
 .form-grid-two input, .form-grid-two select { padding-inline: var(--space-sm); }
 .ledger-controls > div { min-width: 0; flex: 1 1 200px; max-width: 360px; }
 .ledger-controls .segmented-control { width: 100%; }

@@ -138,6 +138,10 @@ function selectPayer(id: string): void {
   clear('payerId')
 }
 
+function selectFundingItem(item: { id: string, name: string }): void {
+  ensureItem(funding, 'funding-channel', item.id, item.name)
+}
+
 async function addPayer(): Promise<void> {
   const name = form.payerName.trim()
   if (!name) { errors.payerId = '请输入付款方名称后新增。'; return }
@@ -372,9 +376,11 @@ void loadOptions()
         <FundingChannelPicker
           label="收款方式"
           :items="funding"
+          :loading="loading"
           :model-value="form.fundingChannelId"
           :disabled="submitting"
           :error="errors.fundingChannelId"
+          @selected="selectFundingItem"
           @update:model-value="form.fundingChannelId = $event; clear('fundingChannelId')"
         />
       </FormSection>

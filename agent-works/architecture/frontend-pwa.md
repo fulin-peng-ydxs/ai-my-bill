@@ -35,7 +35,7 @@ flowchart LR
 
 ## 一次页面操作经过哪些层
 
-以保存支出为例，LedgerEntryPreferenceView组织页面，ExpenseEntryForm收集输入，domain/ledgerEntryForm与money等工具处理表单规则和精确金额，api/expenses调用api/http，后者实际请求同源 `/api/v1`。业务返回后页面更新保存反馈；字段错误保留到对应输入项，不能在API封装层把失败改成成功。
+以保存支出为例，LedgerEntryPreferenceView组织页面，ExpenseEntryForm收集输入，分类与资金渠道通过共享 `DictionaryCombobox` 搜索或就地新增个人字典项，再将服务端返回的稳定 ID 写入表单；二级分类始终绑定当前一级分类。domain/ledgerEntryForm与money等工具处理表单规则和精确金额，api/expenses调用api/http，后者实际请求同源 `/api/v1`。业务返回后页面更新保存反馈；字段错误保留到对应输入项，不能在API封装层把失败改成成功。
 
 | 层 | 应放入的内容 | 不应放入的内容 |
 |---|---|---|

@@ -85,7 +85,7 @@ void search(query.value)
 </script>
 
 <template>
-  <div class="product-combobox">
+  <div class="entry-combobox product-combobox">
     <label for="expense-product-search">商品名称</label>
     <input
       id="expense-product-search"
