@@ -21,12 +21,7 @@
 | 共存业务 | 部署完成时原12个业务容器仍运行且未重启；其功能未做回归 |
 | 访问范围 | 用户明确允许全部可达来源，MY_BILL_ALLOWED_CIDRS=0.0.0.0/0 ::/0；只绑定该私网IPv4，无新增公网映射 |
 
-连接命令：
-
-```bash
-ssh -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
-  -i /Users/pengshuaifeng/works/ssh/gzzn_gxts_id_rsa root@10.100.101.104
-```
+日常不再复制具体SSH长命令；连接身份、私钥和严格 `known_hosts` 已保存在本机 `.local/deploy-targets/intranet-main.env`，由 `environment`、`release`、`ops` 三个入口统一消费。事故诊断必须直连时，从该受控目标文件核对参数，仍保持批处理身份与严格主机密钥校验。
 
 用户明确接受本机 CentOS7 的内网例外，预检仅此IP可用 `MY_BILL_ALLOW_EOL_CENTOS7=1`；不代表宿主补丁验收通过，也不降低HTTPS、CSRF、鉴权、RLS和密钥要求。禁止据此对别的主机跳过维护基线。没有为部署升级/重装宿主、重启Docker、调整Swarm或更改SELinux现状。
 

@@ -9,6 +9,7 @@
 - [持续构建与发布链路](../agent-works/deployment/continuous-delivery.md)
 - [备份恢复方案与验证边界](../agent-works/deployment/backup-recovery.md)
 - [统一运维、异机备份与恢复演练](../agent-works/deployment/operations.md)
+- [公网部署演进与实现门禁](../agent-works/deployment/public-deployment.md)
 - [环境变量与配置加载](../agent-works/architecture/environment-configuration.md)
 - [当前内网部署案例](../agent-works/deployment/cases/intranet-single-host.md)
 

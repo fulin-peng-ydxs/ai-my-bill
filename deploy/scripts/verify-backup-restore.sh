@@ -4,7 +4,9 @@ umask 077
 # 只恢复到无网络、无宿主端口的临时容器；不接受业务数据库连接参数。
 [[ $# == 1 && $(id -u) == 0 ]] || exit 2
 archive=$(readlink -f "$1")
-[[ "$archive" =~ ^/var/backups/my-bill/(daily|weekly)/[0-9W-]+\.cms$ ]] || exit 2
+if [[ ! "$archive" =~ ^/var/backups/my-bill/(daily|weekly)/[0-9W-]+\.cms$ && ! "$archive" =~ ^/var/backups/my-bill/recovery-staging/[a-zA-Z0-9._-]+/[0-9]{4}-[0-9]{2}-[0-9]{2}\.cms$ ]]; then
+  exit 2
+fi
 (cd "$(dirname "$archive")" && sha256sum -c "$(basename "${archive%.cms}.sha256")")
 name="my-bill-restore-check-$$"
 owned=false

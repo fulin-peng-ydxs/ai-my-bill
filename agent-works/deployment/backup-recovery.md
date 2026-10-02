@@ -8,42 +8,24 @@
 
 ## 一次性准备
 
-以下命令仅在已授权目标主机 root、目录与密钥不存在时执行。密钥不可重复生成覆盖，否则旧副本无法解密。
+新环境由 `npm run environment -- bootstrap <目标>` 创建0700备份目录、RSA3072备份加密材料、systemd单元并完成首次备份，不再要求运维复制一串OpenSSL和systemctl命令。脚本先检查目标文件不存在并以0600落盘；密钥不可重复生成覆盖，否则旧副本无法解密。已有环境修复时回查 `deploy/scripts/bootstrap-environment.sh` 的同一状态步骤，不手工另造第二套约定。
 
-```bash
-umask 077
-install -d -m 0700 /var/backups/my-bill
-# 先确认以下两个文件均不存在；存在则复用受控密钥，不执行生成。
-test ! -e /etc/my-bill/backup-encryption.key
-test ! -e /etc/my-bill/backup-encryption.crt
-openssl req -x509 -newkey rsa:3072 -nodes -sha256 -days 3650 \
-  -subj '/CN=my-bill-backup' \
-  -keyout /etc/my-bill/backup-encryption.key \
-  -out /etc/my-bill/backup-encryption.crt
-chmod 0600 /etc/my-bill/backup-encryption.key /etc/my-bill/backup-encryption.crt
-```
-
-这套证书用于备份加密，独立于 HTTPS CA，不能发给客户端当根信任。真实执行应在 set -e shell 中进行，前置检查失败即停。
+这套证书用于备份加密，独立于 HTTPS CA，不能发给客户端当根信任。生成后立即按[统一运维入口](operations.md)检查指纹、复制异机归档并完成解密材料托管。
 
 脚本固定容器名 my-bill-db-1/my-bill-app-1/my-bill-proxy-1、库my_bill和目录；改项目名、库名或路径须同步脚本和验证，不能只改 env。宿主需要 `python` 命令与 date 的ISO周格式能力，备份目录、解密密钥和Docker访问仅root。
 
 ## 执行、校验与调度
 
-在目标 current 目录执行：
+日常执行使用稳定入口：
 
 ```bash
-bash deploy/scripts/backup-local.sh
-cat /var/backups/my-bill/last-success
-# 指定刚生成且核对日期的副本，不使用未经确认的任意路径。
-bash deploy/scripts/verify-backup-restore.sh /var/backups/my-bill/daily/YYYY-MM-DD.cms
-install -m 0644 deploy/systemd/my-bill-backup.service /etc/systemd/system/my-bill-backup.service
-install -m 0644 deploy/systemd/my-bill-backup.timer /etc/systemd/system/my-bill-backup.timer
-systemctl daemon-reload
-systemctl enable --now my-bill-backup.timer
-systemctl start my-bill-backup.service
-systemctl status my-bill-backup.timer --no-pager
-journalctl -u my-bill-backup.service -n 50 --no-pager
+npm run ops -- backup <目标>
+npm run ops -- backup-list <目标>
+npm run ops -- backup-verify <目标> YYYY-MM-DD
+npm run ops -- recovery-drill <目标> YYYY-MM-DD
 ```
+
+`backup` 同时核对本次成功时间并拉取异机加密副本；首次初始化已经安装并启用timer。底层 `backup-local.sh`、systemd和 `verify-backup-restore.sh` 命令只用于脚本实现或故障诊断，正常运维不逐条重放。
 
 先核对宿主时区 Asia/Shanghai；OnCalendar 用宿主本地时间，脚本里的 TZ 只影响归档日期，不能替代 timer 时区。其他业务依赖宿主时区时，不擅自全局修改，应为定时配置设计独立时区方案并验证。
 
@@ -78,11 +60,13 @@ verify-backup-restore.sh 校验路径和checksum，在 --network none、无宿�
 
 日常触发、列表、异机复制、checksum复核、解密材料转存和隔离恢复演练统一使用[运维入口](operations.md)。异机归档与私钥必须分别保管；只拉取加密文件或把两者放在同一台普通工作站，都不能宣称已满足整机灾备。
 
+替代主机恢复时，`backup-key-restore` 只在目标密钥不存在时恢复托管材料，`offsite-recovery-drill` 将异机归档上传到隔离暂存区并验证解密/数据库重建；两者都不覆盖线上库。生产开放前仍须按“真实业务恢复操作方案”完成最新注销审计、导出文件、schema、业务样本和入口切换。
+
 ## 状态与本机告警部署
 
 以 root 创建 `/var/lib/my-bill/operations`（0755，root 所有），由备份脚本原子发布 0644 的 `backup.properties`。应用仅只读挂载这个目录。首次接入先成功运行一次备份，再重建 app 容器。管理页成功只代表归档校验，不能替代完整恢复演练。
 
-将 `deploy/systemd/my-bill-monitor.service` 和 `.timer` 安装到 `/etc/systemd/system/` 后执行 `systemctl daemon-reload`、`systemctl enable --now my-bill-monitor.timer`、`systemctl start my-bill-monitor.service`。用 `journalctl -u my-bill-monitor.service` 和 `journalctl -t my-bill-monitor` 查看检查与告警；非零退出令巡检单元标为失败，后续成功检查恢复。每 15 分钟检查容器、备份文件系统 85% 水位、叶证书 30 天到期阈值和备份 26 小时新鲜度。该巡检不读取个人账目，也不自动重启服务或删除数据。
+首次初始化入口安装并启用 `my-bill-monitor.service/.timer`；日常使用 `npm run ops -- status <目标>` 查看timer，使用 `npm run ops -- logs <目标>` 查看检查与告警，不再逐条复制systemctl/journalctl命令。非零退出令巡检单元标为失败，后续成功检查恢复。每15分钟检查容器、备份文件系统85%水位、叶证书30天到期阈值和备份26小时新鲜度。该巡检不读取个人账目，也不自动重启服务或删除数据。
 
 ## 注销审计离线维护工具
 
@@ -99,24 +83,7 @@ verify-backup-restore.sh 校验路径和checksum，在 --network none、无宿�
 
 开发机执行 `bash scripts/test-recovery.sh`。脚本先编译测试后端，再创建一次性 PostgreSQL 集群，运行真实 HTTP/业务样本，保全审计、全库导出、恢复至 `my_bill_restore_drill` 并核对非空账目条数及十进制金额。恢复副本加入旧快照中已注销账号与导出文件的合成情景，再执行 CLI 重放两次，断言只减少该账号、文件消失、其余账目条数与金额不变。退出销毁集群，不读取生产连接。它不能替代目标机全量业务恢复或 RTO 证明。
 
-离线容器命令形式如下；占位值必须按已隔离的恢复环境填写，不能复制线上网络、数据库 URL 或导出卷作为 replay 目标：
-
-```bash
-docker run --rm --network RECOVERY_INTERNAL_NETWORK --read-only \
-  --tmpfs /tmp:rw,noexec,nosuid,size=64m --cap-drop ALL \
-  --security-opt no-new-privileges:true --memory 1g --cpus 1 \
-  -e MY_BILL_APP_DB_URL=jdbc:postgresql://RECOVERY_DB:5432/my_bill_restore_CASE \
-  -e MY_BILL_APP_DB_USERNAME=my_bill_app \
-  -e MY_BILL_EXPORT_DIRECTORY=/var/lib/my-bill/exports \
-  -e MY_BILL_RECOVERY_ACTION=replay \
-  -e MY_BILL_RECOVERY_AUDIT_FILE=/recovery/audit.jsonl \
-  -e MY_BILL_RECOVERY_EXPECTED_DB_FINGERPRINT='经独立查询并确认的实时指纹' \
-  -v /受控目录/app_db_password:/run/secrets/app_db_password:ro \
-  -v /受控目录/auth_rate_limit_pepper:/run/secrets/auth_rate_limit_pepper:ro \
-  -v /受控目录/audit.jsonl:/recovery/audit.jsonl:ro \
-  -v RECOVERY_EXPORT_VOLUME:/var/lib/my-bill/exports \
-  已验证包含恢复工具的应用镜像 --recovery-tool
-```
+离线容器的完整参数已封装在 `deploy/scripts/verify-recovery-tool.sh`，不再要求运维复制易误用的长 `docker run`。实现必须保持：专用internal网络、无宿主端口、只读根、受限tmpfs/内存/CPU/PID、capabilities全移除、`no-new-privileges`；数据库URL只能指向 `my_bill_restore_` 专用库，挂载独立恢复导出卷、应用密码、pepper和只读审计文件，不挂Docker socket、线上导出卷、管理员或迁移凭据。生产事故需要自定义参数时，应扩展并审查脚本，而不是在终端临时删减保护项。
 
 `preserve` 使用 `MY_BILL_RECOVERY_ACTION=preserve`、当前库的应用 URL 和 secret、可写保全目录，省略预期指纹；必须先停止写入端，且输出文件不得已存在。`replay` 的实时指纹查询与 `RecoveryAuditMapper.xml` 的 `fingerprint` 保持完全一致，用应用角色、同一连接地址从恢复库取得；数据库重启后须重新核对。容器不发布端口、不挂 Docker socket、不挂线上导出卷、不持有管理员或迁移凭据。失败退出后保留审计源与恢复副本，修复失败原因并重新执行；只有业务核验通过后才制定切换步骤。
 

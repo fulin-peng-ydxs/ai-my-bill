@@ -17,7 +17,9 @@ usage() {
   npm run ops -- backup-pull <目标> [YYYY-MM-DD]
   npm run ops -- backup-verify <目标> [YYYY-MM-DD]
   npm run ops -- backup-key-pull <目标> [--yes]
+  npm run ops -- backup-key-restore <目标> [--yes]
   npm run ops -- recovery-drill <目标> <YYYY-MM-DD> [--yes]
+  npm run ops -- offsite-recovery-drill <目标> <YYYY-MM-DD> [--yes]
 
 backup-pull只复制已加密归档；backup-key-pull是一次性密钥托管动作，拒绝覆盖。
 EOF
@@ -49,6 +51,13 @@ ensure_private_directory() {
   mode="$(stat -f '%Lp' "${path}" 2>/dev/null || stat -c '%a' "${path}")"
   [[ "${mode}" =~ ^[0-7]+$ ]] || fail "无法读取目录权限：${path}"
   (( (8#${mode} & 077) == 0 )) || fail "本机敏感目录不得允许组或其他用户访问：${path}（当前${mode}）"
+}
+require_private_file() {
+  local path="$1" mode
+  [[ -f "${path}" && ! -L "${path}" ]] || fail "本机敏感文件不存在或不是普通文件：${path}"
+  mode="$(stat -f '%Lp' "${path}" 2>/dev/null || stat -c '%a' "${path}")"
+  [[ "${mode}" =~ ^[0-7]+$ ]] || fail "无法读取文件权限：${path}"
+  (( (8#${mode} & 077) == 0 )) || fail "本机敏感文件不得允许组或其他用户访问：${path}（当前${mode}）"
 }
 
 remote_operation() {
@@ -135,6 +144,69 @@ pull_backup_key() {
   echo "备份解密材料已受控复制并验证：${root}；请继续转存到组织密钥库，勿与唯一备份共址。"
 }
 
+local_key_material() {
+  local target="$1" root backup_root latest archive_date cert_hash key_hash
+  load_target "${target}"; root="$(local_key_directory)"; validate_local_storage_root "${root}"
+  [[ -d "${root}" ]] || fail "本机托管的备份解密材料目录不存在：${root}"
+  ensure_private_directory "${root}"
+  require_private_file "${root}/backup-encryption.key"
+  require_private_file "${root}/backup-encryption.crt"
+  cert_hash="$(openssl x509 -in "${root}/backup-encryption.crt" -pubkey -noout | openssl pkey -pubin -outform DER 2>/dev/null | shasum -a 256 | awk '{print $1}')"
+  key_hash="$(openssl pkey -in "${root}/backup-encryption.key" -pubout -outform DER 2>/dev/null | shasum -a 256 | awk '{print $1}')"
+  [[ -n "${cert_hash}" && "${cert_hash}" == "${key_hash}" ]] || fail "本机备份证书与私钥不匹配"
+  backup_root="$(local_backup_directory)"
+  validate_local_storage_root "${backup_root}"
+  latest="$(find "${backup_root}/daily" -maxdepth 1 -type f -name '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9].cms' -print 2>/dev/null | LC_ALL=C sort | tail -n 1)"
+  [[ -n "${latest}" ]] || fail "恢复密钥前需要至少一份已拉取的异机日备份"
+  archive_date="$(basename "${latest}" .cms)"
+  verify_backup "${target}" "${archive_date}" >/dev/null
+  openssl cms -decrypt -binary -inform DER -in "${latest}" -recip "${root}/backup-encryption.crt" -inkey "${root}/backup-encryption.key" | tar -tzf - >/dev/null || fail "托管密钥无法完整解密最新异机副本"
+  printf '%s\n' "${root}"
+}
+
+restore_backup_key() {
+  local target="$1" root destination staging command
+  root="$(local_key_material "${target}")"
+  load_target "${target}"; validate_local_connection_files; ssh_arguments; destination="${BILL_SSH_USER}@${BILL_HOST}"
+  staging="/tmp/my-bill-backup-key-${BILL_TARGET_ID}-$$"
+  printf -v command 'set -euo pipefail; umask 077; test ! -e %q; install -d -m 0700 %q' "${staging}" "${staging}"
+  ssh "${SSH_ARGS[@]}" "${destination}" "bash -c $(printf '%q' "${command}")"
+  if ! scp "${SCP_ARGS[@]}" "${root}/backup-encryption.key" "${root}/backup-encryption.crt" "${destination}:${staging}/"; then
+    ssh "${SSH_ARGS[@]}" "${destination}" "rm -rf -- $(printf '%q' "${staging}")" || true
+    return 1
+  fi
+  printf -v command 'set -euo pipefail; key=%q/backup-encryption.key; cert=%q/backup-encryption.crt; test ! -e /etc/my-bill/backup-encryption.key; test ! -e /etc/my-bill/backup-encryption.crt; cert_hash=$(openssl x509 -in "$cert" -pubkey -noout | openssl pkey -pubin -outform DER 2>/dev/null | sha256sum | awk '\''{print $1}'\''); key_hash=$(openssl pkey -in "$key" -pubout -outform DER 2>/dev/null | sha256sum | awk '\''{print $1}'\''); test -n "$cert_hash"; test "$cert_hash" = "$key_hash"; install -d -m 0700 /etc/my-bill; install -m 0600 "$key" /etc/my-bill/.backup-encryption.key.new; install -m 0600 "$cert" /etc/my-bill/.backup-encryption.crt.new; mv /etc/my-bill/.backup-encryption.key.new /etc/my-bill/backup-encryption.key; mv /etc/my-bill/.backup-encryption.crt.new /etc/my-bill/backup-encryption.crt' "${staging}" "${staging}"
+  if ssh "${SSH_ARGS[@]}" "${destination}" "bash -c $(printf '%q' "${command}")"; then
+    ssh "${SSH_ARGS[@]}" "${destination}" "rm -rf -- $(printf '%q' "${staging}")"
+    echo "备份解密材料已恢复到${BILL_TARGET_ID}；目标原文件此前不存在。"
+  else
+    ssh "${SSH_ARGS[@]}" "${destination}" "rm -rf -- $(printf '%q' "${staging}")" || true
+    return 1
+  fi
+}
+
+offsite_recovery_drill() {
+  local target="$1" date="$2" root destination staging command
+  [[ "${date}" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] || fail "备份日期必须为YYYY-MM-DD"
+  verify_backup "${target}" "${date}" >/dev/null
+  load_target "${target}"; validate_local_connection_files; ssh_arguments; destination="${BILL_SSH_USER}@${BILL_HOST}"; root="$(local_backup_directory)"
+  staging="/var/backups/my-bill/recovery-staging/${date}-${BILL_TARGET_ID}-$$"
+  printf -v command 'set -euo pipefail; test ! -e %q; install -d -m 0700 %q' "${staging}" "${staging}"
+  ssh "${SSH_ARGS[@]}" "${destination}" "bash -c $(printf '%q' "${command}")"
+  if ! scp "${SCP_ARGS[@]}" "${root}/daily/${date}.cms" "${root}/daily/${date}.sha256" "${PROJECT_ROOT}/deploy/scripts/verify-backup-restore.sh" "${destination}:${staging}/"; then
+    ssh "${SSH_ARGS[@]}" "${destination}" "rm -rf -- $(printf '%q' "${staging}")" || true
+    return 1
+  fi
+  printf -v command 'bash %q/verify-backup-restore.sh %q/%q.cms' "${staging}" "${staging}" "${date}"
+  if ssh "${SSH_ARGS[@]}" "${destination}" "${command}"; then
+    ssh "${SSH_ARGS[@]}" "${destination}" "rm -rf -- $(printf '%q' "${staging}")"
+    echo "异机副本隔离恢复演练通过：${BILL_TARGET_ID}/${date}"
+  else
+    ssh "${SSH_ARGS[@]}" "${destination}" "rm -rf -- $(printf '%q' "${staging}")" || true
+    return 1
+  fi
+}
+
 ASSUME_YES=false
 main() {
   local action="${1:-}"; [[ -n "${action}" ]] || { usage; exit 1; }; shift || true
@@ -152,7 +224,9 @@ main() {
     backup-pull) [[ "$#" -ge 1 && "$#" -le 2 ]] || fail "backup-pull接受一个目标和可选日期"; pull_backup "$1" "${2:-}" ;;
     backup-verify) [[ "$#" -ge 1 && "$#" -le 2 ]] || fail "backup-verify接受一个目标和可选日期"; verify_backup "$1" "${2:-}" ;;
     backup-key-pull) [[ "$#" -eq 1 ]] || fail "backup-key-pull只接受一个目标"; confirm "确认从$1受控复制备份解密私钥？" || fail "已取消"; pull_backup_key "$1" ;;
+    backup-key-restore) [[ "$#" -eq 1 ]] || fail "backup-key-restore只接受一个目标"; confirm "确认向$1恢复备份解密私钥（仅目标文件不存在时）？" || fail "已取消"; restore_backup_key "$1" ;;
     recovery-drill) [[ "$#" -eq 2 ]] || fail "recovery-drill需要目标和日期"; confirm "确认在$1执行隔离恢复演练（不连接生产库）？" || fail "已取消"; remote_operation recovery-drill "$1" "$2" ;;
+    offsite-recovery-drill) [[ "$#" -eq 2 ]] || fail "offsite-recovery-drill需要目标和日期"; confirm "确认上传异机加密副本并在$1执行隔离恢复演练？" || fail "已取消"; offsite_recovery_drill "$1" "$2" ;;
     help|-h|--help) usage ;;
     *) usage; fail "未知操作：${action}" ;;
   esac

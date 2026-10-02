@@ -56,7 +56,7 @@ npm run environment -- finalize intranet-main
 
 ## 公网演进
 
-当前只实现 `intranet-single-host`。`public-direct` 与 `public-behind-edge` 已作为模式契约预留，但入口会明确拒绝执行，避免把内网Caddy配置伪装成公网安全方案。
+当前只实现 `intranet-single-host`。`public-direct` 与 `public-behind-edge` 已作为模式契约预留，但入口会明确拒绝执行，避免把内网Caddy配置伪装成公网安全方案。完整分层、门禁和迁移边界见[公网部署演进方案](public-deployment.md)。
 
 公网直连至少要先落地：域名/DNS、80/443入口、ACME和持久化Caddy状态、客户端真实IP策略、管理入口限制、异机备份与外部告警。边缘/CDN前置模式还必须确定供应商、可信代理CIDR、源站认证和边缘到源站TLS。完成这些设计后应新增对应Compose覆盖、预检、验收和profile实现，再复用同一个环境入口；具体域名、云资源和主机仍只放实例配置/案例，不写回通用脚本。
 

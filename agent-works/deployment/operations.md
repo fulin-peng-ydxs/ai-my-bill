@@ -50,13 +50,18 @@ npm run ops -- backup-key-pull intranet-main
 
 该动作通过已校验SSH一次性复制证书和解密私钥到 `BILL_OFFSITE_KEY_DIRECTORY`（旧目标默认 `.local/backup-keys/<目标>`），校验公私钥匹配、权限设为0600，并拒绝覆盖既有目录。这个目录是转存暂存点，不应与唯一归档副本共址；应继续进入组织密钥库或离线保管介质，登记指纹和恢复责任人。脚本不会上传密钥到第三方服务，也不会把密钥写入Git、日志或目标配置正文。
 
+在全新替代主机需要使用托管材料时，可执行 `backup-key-restore <目标>`。入口先在本地复核公私钥匹配，并用最新已校验异机归档完成一次流式解密/目录校验，再经严格SSH上传；只有目标 `/etc/my-bill/backup-encryption.key/.crt` 均不存在时才安装，绝不轮换或覆盖已有恢复密钥。该动作需要显式确认，执行后用 `backup-key-status` 对照原登记指纹。
+
 ## 隔离恢复演练与生产恢复
 
 ```bash
 npm run ops -- recovery-drill intranet-main 2026-10-02
+npm run ops -- offsite-recovery-drill intranet-main 2026-10-02
 ```
 
 该动作调用现有 `verify-backup-restore.sh`，在无宿主端口、无网络的临时 PostgreSQL 中验证checksum、解密、导入和重新导出；只清理本轮临时资源，不连接生产数据库。它需要服务器仍可访问归档和解密私钥，因此不能替代“用异机归档+托管私钥重建新主机”的灾难恢复演练。
+
+`offsite-recovery-drill` 从 `BILL_OFFSITE_BACKUP_DIRECTORY` 重新校验指定归档，上传到目标专用0700暂存目录，使用目标已恢复/已存在的解密材料执行同一隔离恢复，随后清理暂存文件。它覆盖“服务器本地副本不可依赖、从异机副本重新进入恢复链路”的关键一段；仍不恢复线上导出卷、不切换生产入口。
 
 生产覆盖恢复涉及恢复点选择、当前库/注销审计保全、写入阻断、数据库和文件一致性、schema兼容、业务抽样及入口切换，不能由一个无条件命令直接覆盖线上数据。完整受控流程见[备份与恢复](backup-recovery.md)；后续生产恢复编排必须保持预检、计划、确认、执行、验证和可追溯状态分离。
 
@@ -66,4 +71,5 @@ npm run ops -- recovery-drill intranet-main 2026-10-02
 - 启停动作不执行 `down -v`、`docker system prune`、数据库删除或宿主重启。
 - `backup-pull`只复制加密文件，不能证明可解密；密钥匹配与隔离恢复是独立门禁。
 - `backup-key-pull`是敏感读操作，需要确认且拒绝覆盖；执行成功不代表外部密钥托管已经完成。
+- `backup-key-restore`只面向新主机或密钥确已不存在的受控恢复，不是日常轮换入口；发现任一同名目标文件即停止。
 - 日常备份不是schema回退机制；发布更新仍由 `npm run release` 在维护窗口完成。

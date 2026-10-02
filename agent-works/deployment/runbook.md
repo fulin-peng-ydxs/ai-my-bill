@@ -27,6 +27,12 @@ ssh -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
 
 首次连接若无可信 known_hosts，先人工核对主机指纹后登记；不使用 StrictHostKeyChecking=no。
 
+### 命令封装规则
+
+是否封装不只看字符数。满足任一条件的正常操作应进入 `scripts/` 或 `deploy/scripts/`：会改变远端/生产状态；包含三个及以上有顺序依赖的命令；需要重复输入SSH、Compose、CA、secret或路径参数；需要确认、幂等、回退、清理、多目标或证据记录；命令超过约120字符且容易因引号/换行误执行。单条只读诊断、标准工具的短查询、一次性事故取证可留在文档，但必须说明身份、工作目录、成功条件和副作用。
+
+脚本至少做到参数白名单、失败非零、危险动作确认、秘密不回显、仅清理自身资源，并把通用逻辑与 `.local/deploy-targets` 具体机器分开。README只给稳定入口；本文的底层长命令用于解释实现或异常处置，不是要求运维日常复制。当前正常路径分别为 `npm run environment`（宿主与首次建设）、`npm run release`（代码/schema更新）和 `npm run ops`（日常运维、备份与恢复演练）。
+
 ## 1. 构建与交付
 
 先执行 [持续构建](continuous-delivery.md) 的关卡，取得干净候选、web/dist 和摘要。新主机采用与目标 CPU 架构匹配的镜像；本地 ARM 镜像不能直接当成 x86 制品。
