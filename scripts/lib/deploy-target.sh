@@ -10,6 +10,10 @@ validate_target_id() {
 reset_target() {
   BILL_TARGET_ID=""
   BILL_DEPLOYMENT_PROFILE="intranet-single-host"
+  BILL_HOST_PROFILE="existing-linux"
+  BILL_HOST_PACKAGE_SOURCE="preconfigured"
+  BILL_HOST_TIMEZONE="Asia/Shanghai"
+  BILL_HOST_FIREWALL_MODE="external"
   BILL_HOST=""
   BILL_SSH_USER="root"
   BILL_SSH_PORT="22"
@@ -39,6 +43,10 @@ assign_target_value() {
   case "${key}" in
     BILL_TARGET_ID) BILL_TARGET_ID="${value}" ;;
     BILL_DEPLOYMENT_PROFILE) BILL_DEPLOYMENT_PROFILE="${value}" ;;
+    BILL_HOST_PROFILE) BILL_HOST_PROFILE="${value}" ;;
+    BILL_HOST_PACKAGE_SOURCE) BILL_HOST_PACKAGE_SOURCE="${value}" ;;
+    BILL_HOST_TIMEZONE) BILL_HOST_TIMEZONE="${value}" ;;
+    BILL_HOST_FIREWALL_MODE) BILL_HOST_FIREWALL_MODE="${value}" ;;
     BILL_HOST) BILL_HOST="${value}" ;;
     BILL_SSH_USER) BILL_SSH_USER="${value}" ;;
     BILL_SSH_PORT) BILL_SSH_PORT="${value}" ;;
@@ -88,6 +96,10 @@ load_target() {
 
   [[ "${BILL_TARGET_ID}" == "${requested_id}" ]] || fail "${config_file} 的 BILL_TARGET_ID 必须等于 ${requested_id}"
   [[ "${BILL_DEPLOYMENT_PROFILE}" =~ ^[a-z][a-z0-9-]*$ ]] || fail "${requested_id} 的 BILL_DEPLOYMENT_PROFILE 不合法"
+  [[ "${BILL_HOST_PROFILE}" =~ ^[a-z][a-z0-9-]*$ ]] || fail "${requested_id} 的 BILL_HOST_PROFILE 不合法"
+  [[ "${BILL_HOST_PACKAGE_SOURCE}" == preconfigured || "${BILL_HOST_PACKAGE_SOURCE}" == docker-official ]] || fail "${requested_id} 的 BILL_HOST_PACKAGE_SOURCE 只能是 preconfigured 或 docker-official"
+  [[ "${BILL_HOST_TIMEZONE}" =~ ^[A-Za-z0-9_+.-]+(/[A-Za-z0-9_+.-]+)+$ ]] || fail "${requested_id} 的 BILL_HOST_TIMEZONE 不合法"
+  [[ "${BILL_HOST_FIREWALL_MODE}" == external ]] || fail "${requested_id} 的 BILL_HOST_FIREWALL_MODE 当前只能是 external"
   [[ "${BILL_HOST}" =~ ^[a-zA-Z0-9][a-zA-Z0-9.-]*$ ]] || fail "${requested_id} 的 BILL_HOST 不合法（当前支持主机名或 IPv4）"
   [[ "${BILL_SSH_USER}" =~ ^[a-zA-Z_][a-zA-Z0-9._-]*$ ]] || fail "${requested_id} 的 BILL_SSH_USER 不合法"
   [[ "${BILL_SSH_PORT}" =~ ^[0-9]+$ && "${BILL_SSH_PORT}" -ge 1 && "${BILL_SSH_PORT}" -le 65535 ]] || fail "${requested_id} 的 BILL_SSH_PORT 不合法"
@@ -133,8 +145,8 @@ validate_local_connection_files() {
 }
 
 ssh_arguments() {
-  SSH_ARGS=(-p "${BILL_SSH_PORT}" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=${BILL_KNOWN_HOSTS_FILE}")
-  SCP_ARGS=(-P "${BILL_SSH_PORT}" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=${BILL_KNOWN_HOSTS_FILE}")
+  SSH_ARGS=(-p "${BILL_SSH_PORT}" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o SendEnv=-LANG -o 'SendEnv=-LC_*' -o "UserKnownHostsFile=${BILL_KNOWN_HOSTS_FILE}")
+  SCP_ARGS=(-P "${BILL_SSH_PORT}" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o SendEnv=-LANG -o 'SendEnv=-LC_*' -o "UserKnownHostsFile=${BILL_KNOWN_HOSTS_FILE}")
   if [[ -n "${BILL_IDENTITY_FILE}" ]]; then
     SSH_ARGS+=(-i "${BILL_IDENTITY_FILE}")
     SCP_ARGS+=(-i "${BILL_IDENTITY_FILE}")

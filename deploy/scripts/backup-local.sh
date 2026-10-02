@@ -4,6 +4,9 @@ umask 077
 export TZ=Asia/Shanghai
 # 仅 root 调度；明文暂存目录 0700，归档加密后删除。只保留本项目服务器副本。
 [[ $(id -u) == 0 ]] || exit 1
+python_command=python3
+command -v "${python_command}" >/dev/null 2>&1 || python_command=python
+"${python_command}" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 8) else 1)'
 backup_root=/var/backups/my-bill
 mkdir -p "$backup_root/daily" "$backup_root/weekly"
 exec 9>"$backup_root/backup.lock"
@@ -61,7 +64,7 @@ mv "$work_dir/archive.cms" "$backup_root/daily/$stamp.cms"
 week=$(date +%G-W%V)
 ln -f "$backup_root/daily/$stamp.cms" "$backup_root/weekly/$week.cms"
 (cd "$backup_root/weekly" && sha256sum "$week.cms" > "$week.sha256")
-python - "$backup_root" <<'PY'
+"${python_command}" - "$backup_root" <<'PY'
 import os,re,sys,datetime
 root=sys.argv[1]
 today=datetime.date.today()

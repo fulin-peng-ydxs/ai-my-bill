@@ -56,9 +56,16 @@ done
 [[ "${allow_eol_centos7}" == 0 || "${allow_eol_centos7}" == 1 ]] || fail "CentOS7例外值不合法"
 [[ -n "${allowed_cidrs}" && "${allowed_cidrs}" != *$'\n'* ]] || fail "允许网段不能为空"
 
-for command in awk cmp curl date docker grep install openssl python sha256sum systemctl tar; do require_command "${command}"; done
-python -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 8) else 1)' || fail "目标主机的 python 必须是 Python 3.8+"
-python - "${bind_ip}" "${allowed_cidrs}" <<'PY'
+for command in awk cmp curl date docker grep install openssl sha256sum systemctl tar; do require_command "${command}"; done
+PYTHON_COMMAND=""
+for candidate in python3 python; do
+  if command -v "${candidate}" >/dev/null 2>&1 && "${candidate}" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 8) else 1)' >/dev/null 2>&1; then
+    PYTHON_COMMAND="${candidate}"
+    break
+  fi
+done
+[[ -n "${PYTHON_COMMAND}" ]] || fail "目标主机需要Python 3.8+"
+"${PYTHON_COMMAND}" - "${bind_ip}" "${allowed_cidrs}" <<'PY'
 import ipaddress,sys
 address=ipaddress.ip_address(sys.argv[1])
 private_networks=[ipaddress.ip_network(value) for value in ('10.0.0.0/8','172.16.0.0/12','192.168.0.0/16')]
@@ -214,7 +221,7 @@ if ! step_done PREPARED; then
   install -d -m 0700 /etc/my-bill "${secrets_directory}" "${tls_directory}"
   if [[ ! -e "${env_file}" ]]; then
     install -m 0600 "${release_directory}/deploy/env/production.env.example" "${env_file}"
-    python - "${env_file}" "${bind_ip}" "${https_port}" "${allowed_cidrs}" "${release_root}" <<'PY'
+    "${PYTHON_COMMAND}" - "${env_file}" "${bind_ip}" "${https_port}" "${allowed_cidrs}" "${release_root}" <<'PY'
 import pathlib,sys
 path=pathlib.Path(sys.argv[1]); values={
  "MY_BILL_BIND_IP":sys.argv[2],"MY_BILL_HTTPS_PORT":sys.argv[3],

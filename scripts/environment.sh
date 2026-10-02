@@ -20,6 +20,10 @@ usage() {
 用法：
   npm run environment -- configure [目标]
   npm run environment -- targets
+  npm run environment -- inspect <目标...|--all>
+  npm run environment -- host-plan <目标...|--all>
+  npm run environment -- host-apply <目标...|--all> [--yes]
+  npm run environment -- host-verify <目标...|--all>
   npm run environment -- plan <目标...|--all>
   npm run environment -- preflight <目标...|--all>
   npm run environment -- bootstrap <目标...|--all> [--yes]
@@ -28,8 +32,9 @@ usage() {
   npm run environment -- status <目标...|--all>
   npm run environment -- finalize <目标...|--all> [--yes]
 
-configure 是交互式安装向导；其他命令读取 .local/deploy-targets/<目标>.env。
-bootstrap 仅初始化全新项目环境，不安装操作系统、Docker、云资源或公网入口。
+configure 是交互式目标配置向导；其他命令读取 .local/deploy-targets/<目标>.env。
+host-apply 从可SSH的受支持Linux开始安装缺失宿主组件；不会安装操作系统、创建云资源或修改外部网络。
+bootstrap 在宿主验证通过后初始化全新项目环境。
 EOF
 }
 
@@ -116,13 +121,40 @@ load_deployment_profile() {
   [[ "${PROFILE_IMPLEMENTED}" == 0 || "${PROFILE_IMPLEMENTED}" == 1 ]] || fail "部署模式 ${requested_profile} 的 IMPLEMENTED 不合法"
 }
 
+load_host_profile() {
+  local requested_profile="$1" profile_file line key value
+  profile_file="${PROJECT_ROOT}/deploy/host-profiles/${requested_profile}.env"
+  [[ -f "${profile_file}" ]] || fail "找不到宿主模式契约：${requested_profile}"
+  HOST_PROFILE_ID=""; HOST_PROFILE_IMPLEMENTED=""; HOST_PROFILE_MUTATION_ALLOWED=""
+  HOST_PROFILE_MIN_DOCKER_VERSION=""; HOST_PROFILE_MIN_COMPOSE_VERSION=""
+  while IFS= read -r line || [[ -n "${line}" ]]; do
+    line="${line%$'\r'}"
+    [[ -z "${line}" || "${line}" == \#* ]] && continue
+    [[ "${line}" == *=* ]] || fail "宿主模式 ${requested_profile} 包含无效行"
+    key="${line%%=*}"; value="${line#*=}"
+    case "${key}" in
+      HOST_PROFILE_ID) HOST_PROFILE_ID="${value}" ;;
+      IMPLEMENTED) HOST_PROFILE_IMPLEMENTED="${value}" ;;
+      MUTATION_ALLOWED) HOST_PROFILE_MUTATION_ALLOWED="${value}" ;;
+      MIN_DOCKER_VERSION) HOST_PROFILE_MIN_DOCKER_VERSION="${value}" ;;
+      MIN_COMPOSE_VERSION) HOST_PROFILE_MIN_COMPOSE_VERSION="${value}" ;;
+      *) fail "宿主模式 ${requested_profile} 包含未知字段：${key}" ;;
+    esac
+  done < "${profile_file}"
+  [[ "${HOST_PROFILE_ID}" == "${requested_profile}" ]] || fail "宿主模式文件与HOST_PROFILE_ID不一致"
+  [[ "${HOST_PROFILE_IMPLEMENTED}" == 1 ]] || fail "宿主模式 ${requested_profile} 尚未实现"
+  [[ "${HOST_PROFILE_MUTATION_ALLOWED}" == 0 || "${HOST_PROFILE_MUTATION_ALLOWED}" == 1 ]] || fail "宿主模式 ${requested_profile} 的MUTATION_ALLOWED不合法"
+  [[ "${HOST_PROFILE_MIN_DOCKER_VERSION}" =~ ^[0-9]+([.][0-9]+){1,2}$ ]] || fail "宿主模式 ${requested_profile} 的Docker最低版本不合法"
+  [[ "${HOST_PROFILE_MIN_COMPOSE_VERSION}" =~ ^[0-9]+([.][0-9]+){1,2}$ ]] || fail "宿主模式 ${requested_profile} 的Compose最低版本不合法"
+}
+
 configure_target() {
   require_command python3
   [[ -r /dev/tty ]] || fail "configure 需要交互式终端"
-  local requested_id="${1:-}" target_id config_file profile_choice tls_choice generate_tls=false
+  local requested_id="${1:-}" target_id config_file profile_choice host_choice package_choice tls_choice generate_tls=false
   local host ssh_user ssh_port identity_file known_hosts bind_ip https_port allowed_cidrs
   local remote_root env_file ca_file health_url cert_source key_source ca_source admin_output allow_eol=0
-  local pki_root leaf_root temporary backup_file
+  local host_profile package_source pki_root leaf_root temporary backup_file
 
   echo "我的账单首次环境安装向导"
   echo "只采集非敏感参数与密钥文件路径；不会要求在终端输入生产密码。"
@@ -153,10 +185,36 @@ EOF
   done
 
   host="$(prompt_value 'SSH主机名或IPv4' '')"
-  ssh_user="$(prompt_value 'SSH用户' 'root')"
+  ssh_user="$(prompt_value 'SSH用户（当前安装与初始化要求root）' 'root')"
+  [[ "${ssh_user}" == root ]] || fail "当前环境安装与初始化只支持root SSH；不隐式使用sudo"
   ssh_port="$(prompt_value 'SSH端口' '22')"
   identity_file="$(prompt_optional 'SSH私钥绝对路径（留空使用ssh-agent）')"
   known_hosts="$(prompt_value 'known_hosts绝对路径' "${HOME}/.ssh/known_hosts")"
+  cat >/dev/tty <<'EOF'
+宿主模式：
+  1) managed-linux（新建/专用主机，安装缺失组件并启用Docker）
+  2) existing-linux（共享/既有主机，只检查不修改）
+EOF
+  read -r -p '请选择 [1]: ' host_choice </dev/tty
+  case "${host_choice:-1}" in
+    1) host_profile=managed-linux ;;
+    2) host_profile=existing-linux ;;
+    *) fail "宿主模式选项不合法" ;;
+  esac
+  package_source=preconfigured
+  if [[ "${host_profile}" == managed-linux ]]; then
+    cat >/dev/tty <<'EOF'
+Docker软件源：
+  1) 使用宿主已配置的软件源/组织镜像（推荐内网）
+  2) 配置Docker官方稳定源（要求目标机可访问download.docker.com）
+EOF
+    read -r -p '请选择 [1]: ' package_choice </dev/tty
+    case "${package_choice:-1}" in
+      1) package_source=preconfigured ;;
+      2) package_source=docker-official ;;
+      *) fail "软件源选项不合法" ;;
+    esac
+  fi
   bind_ip="$(prompt_value '服务绑定的RFC1918内网IPv4' "${host}")"
   validate_intranet_ipv4 "${bind_ip}" || fail "内网IP不合法：${bind_ip}"
   https_port="$(prompt_value 'HTTPS端口' '18443')"
@@ -194,7 +252,7 @@ EOF
     *) fail "TLS选项不合法" ;;
   esac
 
-  if [[ "${bind_ip}" == 10.100.101.104 ]] && confirm "是否启用仅限既有10.100.101.104主机的CentOS7已批准例外？" false; then
+  if [[ "${host_profile}" == existing-linux && "${bind_ip}" == 10.100.101.104 ]] && confirm "是否启用仅限既有10.100.101.104主机的CentOS7已批准例外？" false; then
     allow_eol=1
   fi
 
@@ -203,6 +261,7 @@ EOF
 即将保存（不含密码/私钥正文）：
   目标：${target_id}
   模式：intranet-single-host
+  宿主：${host_profile}（软件源：${package_source}）
   SSH：${ssh_user}@${host}:${ssh_port}
   入口：https://${bind_ip}:${https_port}
   允许网段：${allowed_cidrs}
@@ -227,6 +286,10 @@ EOF
   {
     echo "BILL_TARGET_ID=${target_id}"
     echo "BILL_DEPLOYMENT_PROFILE=intranet-single-host"
+    echo "BILL_HOST_PROFILE=${host_profile}"
+    echo "BILL_HOST_PACKAGE_SOURCE=${package_source}"
+    echo "BILL_HOST_TIMEZONE=Asia/Shanghai"
+    echo "BILL_HOST_FIREWALL_MODE=external"
     echo "BILL_HOST=${host}"
     echo "BILL_SSH_USER=${ssh_user}"
     echo "BILL_SSH_PORT=${ssh_port}"
@@ -259,11 +322,24 @@ EOF
     grep -Fqx "${target_id}" "${TARGET_LIST}" || printf '%s\n' "${target_id}" >> "${TARGET_LIST}"
   fi
   echo "配置完成：${config_file}"
-  echo "下一步：npm run environment -- plan ${target_id}"
+  echo "下一步：npm run environment -- inspect ${target_id}"
+}
+
+validate_host_target() {
+  require_command python3
+  load_host_profile "${BILL_HOST_PROFILE}"
+  [[ "${BILL_SSH_USER}" == root ]] || fail "${BILL_TARGET_ID} 的宿主安装与项目初始化当前要求root SSH"
+  validate_intranet_ipv4 "${BILL_BIND_IP}" || fail "${BILL_TARGET_ID} 的内网IP不合法"
+  [[ "${BILL_HTTPS_PORT}" =~ ^[0-9]+$ && "${BILL_HTTPS_PORT}" -ge 1024 && "${BILL_HTTPS_PORT}" -le 65535 ]] || fail "${BILL_TARGET_ID} 的HTTPS端口不合法"
+  [[ "${BILL_HOST_FIREWALL_MODE}" == external ]] || fail "${BILL_TARGET_ID} 的宿主防火墙模式尚未实现"
+  if [[ "${BILL_ALLOW_EOL_CENTOS7}" == 1 && "${BILL_HOST_PROFILE}" != existing-linux ]]; then
+    fail "${BILL_TARGET_ID} 的CentOS7例外只能使用existing-linux"
+  fi
 }
 
 validate_environment_target() {
   local path cert_public key_public
+  validate_host_target
   require_command python3
   require_command openssl
   load_deployment_profile "${BILL_DEPLOYMENT_PROFILE}"
@@ -287,6 +363,40 @@ validate_environment_target() {
   [[ "${BILL_CA_FILE}" == /etc/my-bill/ca.crt ]] || fail "${BILL_TARGET_ID} 的首次初始化CA路径当前必须是 /etc/my-bill/ca.crt"
   [[ "${BILL_BACKUP_SERVICE}" == my-bill-backup.service && "${BILL_BACKUP_STATUS_FILE}" == /var/lib/my-bill/operations/backup.properties ]] || fail "${BILL_TARGET_ID} 的首次初始化备份单元必须使用当前固定契约"
   [[ "${BILL_COMPOSE_OVERLAY}" == "${PROFILE_COMPOSE_OVERLAY}" ]] || fail "${BILL_TARGET_ID} 的Compose覆盖与部署模式契约不一致"
+}
+
+host_remote_command() {
+  local action="$1" destination="$2" remote_script="$3" remote_command
+  printf -v remote_command 'LC_ALL=C LANG=C bash %q --action %q --host-profile %q --package-source %q --timezone %q --firewall-mode %q --bind-ip %q --https-port %q --allow-eol-centos7 %q --min-docker-version %q --min-compose-version %q' \
+    "${remote_script}" "${action}" "${BILL_HOST_PROFILE}" "${BILL_HOST_PACKAGE_SOURCE}" "${BILL_HOST_TIMEZONE}" \
+    "${BILL_HOST_FIREWALL_MODE}" "${BILL_BIND_IP}" "${BILL_HTTPS_PORT}" "${BILL_ALLOW_EOL_CENTOS7}" \
+    "${HOST_PROFILE_MIN_DOCKER_VERSION}" "${HOST_PROFILE_MIN_COMPOSE_VERSION}"
+  ssh "${SSH_ARGS[@]}" "${destination}" "${remote_command}"
+}
+
+run_host_action() {
+  local action="$1" target="$2" destination remote_script temporary_script remote_command
+  load_target "${target}"; validate_host_target; validate_local_connection_files; ssh_arguments
+  destination="${BILL_SSH_USER}@${BILL_HOST}"
+  remote_script=-
+  if [[ "${action}" == apply ]]; then
+    [[ "${HOST_PROFILE_MUTATION_ALLOWED}" == 1 ]] || fail "${target} 使用existing-linux，禁止host-apply"
+    temporary_script="/tmp/my-bill-prepare-host-${BILL_TARGET_ID}-$$.sh"
+    scp "${SCP_ARGS[@]}" "${PROJECT_ROOT}/deploy/scripts/prepare-host.sh" "${destination}:${temporary_script}"
+    remote_script="${temporary_script}"
+    if host_remote_command "${action}" "${destination}" "${remote_script}"; then
+      ssh "${SSH_ARGS[@]}" "${destination}" "rm -f $(printf '%q' "${temporary_script}")"
+    else
+      ssh "${SSH_ARGS[@]}" "${destination}" "rm -f $(printf '%q' "${temporary_script}")" || true
+      return 1
+    fi
+  else
+    printf -v remote_command 'LC_ALL=C LANG=C bash -s -- --action %q --host-profile %q --package-source %q --timezone %q --firewall-mode %q --bind-ip %q --https-port %q --allow-eol-centos7 %q --min-docker-version %q --min-compose-version %q' \
+      "${action}" "${BILL_HOST_PROFILE}" "${BILL_HOST_PACKAGE_SOURCE}" "${BILL_HOST_TIMEZONE}" \
+      "${BILL_HOST_FIREWALL_MODE}" "${BILL_BIND_IP}" "${BILL_HTTPS_PORT}" "${BILL_ALLOW_EOL_CENTOS7}" \
+      "${HOST_PROFILE_MIN_DOCKER_VERSION}" "${HOST_PROFILE_MIN_COMPOSE_VERSION}"
+    ssh "${SSH_ARGS[@]}" "${destination}" "${remote_command}" < "${PROJECT_ROOT}/deploy/scripts/prepare-host.sh"
+  fi
 }
 
 print_plan() {
@@ -417,14 +527,18 @@ main() {
   case "${action}" in
     configure) [[ "$#" -le 1 ]] || fail "configure最多接受一个目标ID"; configure_target "${1:-}" ;;
     targets) [[ "$#" -eq 0 ]] || fail "targets不接受参数"; list_targets ;;
-    plan|preflight|bootstrap|resume|verify|status|finalize)
+    inspect|host-plan|host-apply|host-verify|plan|preflight|bootstrap|resume|verify|status|finalize)
       resolve_targets "$@"
-      if [[ "${action}" == bootstrap || "${action}" == resume || "${action}" == finalize ]]; then
+      if [[ "${action}" == host-apply || "${action}" == bootstrap || "${action}" == resume || "${action}" == finalize ]]; then
         confirm "确认对 ${#SELECTED_TARGETS[@]} 个目标执行 ${action}？" false || fail "已取消"
       fi
       local target
       for target in "${SELECTED_TARGETS[@]}"; do
         case "${action}" in
+          inspect) run_host_action inspect "${target}" ;;
+          host-plan) run_host_action plan "${target}" ;;
+          host-apply) run_host_action apply "${target}" ;;
+          host-verify) run_host_action verify "${target}" ;;
           plan) print_plan "${target}" ;;
           preflight) preflight_target "${target}" ;;
           *) run_environment_action "${action}" "${target}" ;;

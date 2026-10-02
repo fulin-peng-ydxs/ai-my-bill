@@ -3,6 +3,7 @@
 部署方案与实例分开维护：
 
 - [部署导航与模式](../agent-works/deployment/README.md)
+- [宿主环境准备](../agent-works/deployment/host-preparation.md)
 - [首次环境初始化自动化](../agent-works/deployment/environment-bootstrap.md)
 - [首次部署、升级和运维手册](../agent-works/deployment/runbook.md)
 - [持续构建与发布链路](../agent-works/deployment/continuous-delivery.md)

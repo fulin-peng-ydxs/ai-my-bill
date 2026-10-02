@@ -276,6 +276,7 @@ npm run dev
 │   ├── compose*.yaml                 服务编排、内网覆盖、一次性管理员初始化
 │   ├── Caddyfile、Dockerfile.proxy    HTTPS/静态资源/API代理
 │   ├── env/、postgres/               非密钥配置模板与数据库角色初始化
+│   ├── host-profiles/、profiles/      宿主变更策略与部署模式契约
 │   ├── scripts/                      预检、容器入口、备份/隔离恢复、证书激活与巡检
 │   ├── tls/、systemd/、monitoring/     CA签发、备份/巡检定时、本机告警与可选监控规则
 ├── agent-works/
@@ -304,6 +305,7 @@ npm run dev
 | npm run check:performance | 查询/批处理容量风险 | 临时PG代表性规模数据；不连开发库 |
 | npm run check:security | 依赖/安全门禁 | secret与依赖OSV扫描；需网络，不包含容器OS包 |
 | npm run check:e2e | 浏览器独有关键链路 | 隔离库与Chromium；需匹配版本浏览器，不使用生产账号 |
+| npm run check:deployment | 部署脚本、profile或目标字段变更 | Shell语法、严格字面解析和部署配置负例 |
 
 常规局部修改选择最低充分检查，不默认每次全跑。已有验证证据见[验收记录](agent-works/pre-release-test-report.md)，脚本存在与实际执行结果分开记录。构建产物web/dist用于发布，server/target下JAR用于打包，不手工编辑。
 
@@ -313,17 +315,21 @@ npm run dev
 
 ### 新服务器如何初始化
 
-已具备受支持Linux、Docker/Compose、Python、systemd等宿主前提的空服务器，可使用交互式入口：
+从一台已安装受支持Linux、可由root通过严格主机密钥校验登录的服务器开始，可使用交互式入口准备宿主并完成首次部署：
 
 ```bash
 npm run environment -- configure intranet-main
+npm run environment -- inspect intranet-main
+npm run environment -- host-plan intranet-main
+npm run environment -- host-apply intranet-main
+npm run environment -- host-verify intranet-main
 npm run environment -- plan intranet-main
 npm run environment -- preflight intranet-main
 npm run environment -- bootstrap intranet-main
 npm run environment -- verify intranet-main
 ```
 
-向导以安装程序式问答收集机器、路径、网段和TLS来源，不要求输入生产密码；初始化入口自动运行持续构建、生成服务器secret、建立数据库角色/schema/首管理员、启动服务并配置备份巡检。失败可用同一提交 `resume`，完成首登改密后用 `finalize` 删除服务器初始密码副本。当前只实现单机内网profile；公网模式仅保留契约且会拒绝执行，须先完成域名/ACME或边缘源站认证、真实客户端IP、管理入口、异机备份和外部告警方案。详见[首次环境初始化自动化](agent-works/deployment/environment-bootstrap.md)。
+向导以安装程序式问答收集宿主模式、软件源、机器、路径、网段和TLS来源，不要求输入生产密码。`managed-linux` 安装缺失的基础工具和Docker/Compose，`existing-linux` 只检查既有或共享主机；两者都不安装操作系统、创建云资源或接管防火墙。初始化入口随后自动运行持续构建、生成服务器secret、建立数据库角色/schema/首管理员、启动服务并配置备份巡检。失败可用同一提交 `resume`，完成首登改密后用 `finalize` 删除服务器初始密码副本。详见[宿主环境准备](agent-works/deployment/host-preparation.md)和[首次环境初始化自动化](agent-works/deployment/environment-bootstrap.md)。
 
 ### 前后端代码更新如何发布
 

@@ -4,7 +4,7 @@
 
 本文说明环境变量从哪里读取、如何进入进程、何时生效，以及密钥如何分发和轮换。开发使用Shell变量与application.yml，部署使用Compose配置和secret文件；用户偏好另存业务数据库，不属于基础设施配置。
 
-部署“目标描述”不是生产运行配置：`.local/deploy-targets/<目标>.env` 保存SSH连接、部署模式、路径、入口、TLS材料来源和本机凭据输出位置，由首次初始化与持续发布入口共用白名单解析且不进入Git；它指向目标机 `/etc/my-bill/production.env`，不会替代或复制其中的运行变量与secret。字段契约见 `deploy/targets/README.md`，首次初始化机制见[初始化自动化](../deployment/environment-bootstrap.md)。
+部署“目标描述”不是生产运行配置：`.local/deploy-targets/<目标>.env` 保存SSH连接、宿主/部署profile、软件源责任、路径、入口、TLS材料来源和本机凭据输出位置，由宿主准备、首次初始化与持续发布入口共用白名单解析且不进入Git；它指向目标机 `/etc/my-bill/production.env`，不会替代或复制其中的运行变量与secret。字段契约见 `deploy/targets/README.md`，宿主阶段见[宿主环境准备](../deployment/host-preparation.md)，首次初始化机制见[初始化自动化](../deployment/environment-bootstrap.md)。
 
 ```mermaid
 flowchart TD
@@ -28,6 +28,8 @@ flowchart TD
 | Compose 插值 | docker compose | 当前 shell 同名变量可覆盖 --env-file；environment 只透传列出的字段，env 文件不是整体进入容器 |
 | /run/secrets/* | 启动脚本/认证属性 | 文件挂载；run-app 派生 SPRING_DATASOURCE_*，run-flyway 派生 FLYWAY_*，不输出值 |
 | user_preference、个人字典 | 业务服务 | 当前账号数据，不覆盖基础设施参数，不构成全局环境变量管理中心 |
+
+目标描述中的 `BILL_HOST_PROFILE`、`BILL_HOST_PACKAGE_SOURCE`、`BILL_HOST_TIMEZONE`、`BILL_HOST_FIREWALL_MODE` 只供构建端的环境入口和目标端宿主准备脚本消费，不进入Compose或应用容器。它们分别决定宿主是否允许变更、Docker包从哪里取得、timer使用的宿主时区以及防火墙责任边界；不应复制进 `production.env`。旧目标缺少这些字段时默认 `existing-linux/preconfigured/Asia/Shanghai/external`，保证升级入口后不会意外修改既有主机。
 
 `web/vite.config.ts` 直接读取 process.env，不调用 loadEnv 加载根目录模板。前端没有自定义 VITE_* 密钥/连接配置；API 固定同源 /api/v1。MY_BILL_BUILD_ID 只决定构建缓存名，不能运行时通过服务器 env 改已构建资源。
 

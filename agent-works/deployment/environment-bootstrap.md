@@ -2,15 +2,16 @@
 
 ## 定位与边界
 
-`npm run environment -- ...` 把首次部署手册中的项目初始化步骤收敛为可续跑入口；它与 `npm run release -- ...` 分工明确：前者把一台已具备宿主前提的空服务器初始化为可运行环境，后者只对已经初始化的环境持续构建和更新代码。
+`npm run environment -- ...` 同时承载宿主准备和首次项目初始化，但两个阶段保持独立状态：`host-*` 从可SSH的Linux安装或核对缺失组件，`bootstrap/resume` 把宿主门禁已通过的空服务器初始化为可运行环境。`npm run release -- ...` 只对已经初始化的环境持续构建和更新代码。
 
-初始化入口不会安装或升级操作系统、Docker、Compose、Python、systemd，不购买域名、创建云资源、防火墙或端口映射，也不修改外部DNS。主机前提不满足时，预检会停止并由运维按所在组织的主机制度处理。
+宿主阶段不会安装操作系统、创建云资源、防火墙、端口映射或外部DNS；详细支持范围和软件源边界见[宿主环境准备](host-preparation.md)。`bootstrap` 自身仍不安装或升级Docker等宿主组件，门禁不满足时停止并要求先完成 `host-verify`。
 
 ## 抽象层与具体实例
 
 | 层次 | 位置 | 内容 |
 |---|---|---|
 | 通用流程 | `scripts/environment.sh`、`deploy/scripts/bootstrap-environment.sh` | 交互配置、构建、传输、初始化、续跑、验证与收尾 |
+| 宿主模式 | `deploy/host-profiles/*.env` | 是否允许修改、Docker/Compose最低版本，不含机器信息 |
 | 部署模式 | `deploy/profiles/*.env` | 内网/公网入口类型和实现状态，不含机器信息 |
 | 字段契约 | `deploy/targets/example.env` | SSH、路径、入口、TLS来源等允许字段 |
 | 具体实例 | `.local/deploy-targets/<目标>.env` | 某台机器的实际取值；被Git忽略，不写入通用方案 |
@@ -25,11 +26,15 @@
 
 ```bash
 npm run environment -- configure intranet-main
+npm run environment -- inspect intranet-main
+npm run environment -- host-plan intranet-main
+npm run environment -- host-apply intranet-main
+npm run environment -- host-verify intranet-main
 npm run environment -- plan intranet-main
 npm run environment -- preflight intranet-main
 ```
 
-`configure` 使用常见安装程序式问答，逐项采集部署模式、SSH、服务IP/端口、允许网段、服务器路径、TLS材料和本机初始管理员凭据保存位置。输入会校验；最终先显示不含秘密的摘要，经确认后才写入权限为0600的本机目标文件。已有配置必须确认并先备份，不静默覆盖。
+`configure` 使用常见安装程序式问答，逐项采集部署模式、宿主模式、软件源、SSH、服务IP/端口、允许网段、服务器路径、TLS材料和本机初始管理员凭据保存位置。输入会校验；最终先显示不含秘密的摘要，经确认后才写入权限为0600的本机目标文件。已有配置必须确认并先备份，不静默覆盖。
 
 向导不要求输入数据库密码、应用密码或初始管理员密码。服务器端初始化时分别随机生成secret；初始管理员凭据通过已验证SSH通道取回到本机0600 JSON文件且不在终端回显。当前TLS可选择已有叶证书/私钥/CA公钥，或在本机 `.local/pki/<目标>` 创建该环境独立内部CA并签发IP叶证书；CA私钥永不上传服务器。
 
@@ -61,4 +66,4 @@ npm run environment -- finalize intranet-main
 - SSH固定启用主机密钥严格校验；没有经可信渠道确认的 `known_hosts` 不继续。
 - 归档先校验SHA-256和越界路径；已有运行配置、TLS、release或初始化状态不匹配即停止。
 - 空环境初始化不等于灾难恢复；已有数据环境不得使用 `bootstrap` 重新接管或清空。
-- 当前脚本仅完成本地语法、配置和负向验证；未对真实服务器执行本次初始化，不能把“脚本存在”记作环境部署成功。
+- 宿主脚本与初始化脚本仅完成本地语法、配置和负向验证；未在新的真实服务器执行本轮宿主安装或初始化，不能把“脚本存在”记作环境部署成功。

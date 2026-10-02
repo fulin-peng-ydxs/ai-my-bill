@@ -210,7 +210,7 @@ flowchart LR
 
 预检要求至少2GiB可用内存、Docker盘10GiB空闲且使用率低于85%，只用于最低准入。镜像构建、一次性迁移、初始化和恢复演练都需要额外峰值资源；业务数据、导出及备份增长也要监控，不能据最低值承诺实际容量。
 
-主机基线为受维护Linux、已核查补丁、Docker/Compose v2及宿主备份工具。具体旧系统例外只在相应案例登记。独立Compose项目不改已有Swarm，不使用docker stack deploy或全局Docker清理。
+主机基线为受维护Linux、已核查补丁、Docker/Compose v2、Python3及宿主备份工具；可从root SSH可达的Linux按[宿主环境准备](host-preparation.md)安装缺失组件。具体旧系统例外只在相应案例登记。独立Compose项目不改已有Swarm，不使用docker stack deploy或全局Docker清理。
 
 ## 10. 支持范围与待验收边界
 

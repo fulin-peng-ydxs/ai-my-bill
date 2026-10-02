@@ -11,7 +11,7 @@
 - 关键实现取舍：用户已确认采用单机同源部署；后端采用模块化单体和关系型精确数据模型；金额使用 Java `BigDecimal` 与 PostgreSQL `numeric`；第一期不引入 Redis、消息队列、微服务或地图服务；共享状态通过 PostgreSQL 和应用事务闭环。该选择以更可控的中国大陆访问、服务端 Cookie 会话和单一部署边界换取主机、补丁和备份运维责任。
 - 本次不做：R25-R38、R57、R69 对应的后续或明确排除能力；不重新生成或替换已确认 HTML 原型；不把原型演示数据当成生产 seed。
 - 计划输出目录：`agent-works/`。
-- 当前完成状态：T1–T29 已按一期内网范围完成；T30 已完成持续构建更新入口；T31 已完成首次环境初始化自动化的本地实现与验证，真实新服务器初始化尚未执行；后续建议和排除项仍按 §3/§6 处理。
+- 当前完成状态：T1–T29 已按一期内网范围完成；T30 已完成持续构建更新入口；T31 已完成首次环境初始化自动化的本地实现与验证；T32 已完成宿主准备入口的本地实现与验证。新的真实服务器宿主安装和初始化尚未执行；后续建议和排除项仍按 §3/§6 处理。
 - 证据入口：T1–T28 的测试与候选见[部署前报告](pre-release-test-report.md)；T29 服务器、浏览器和用户 iOS 实机确认见[验收报告](test-report.md)。实际源码/镜像/前端制品分别以[部署案例](deployment/cases/intranet-single-host.md)为准，不混用历史候选摘要。
 
 ## 2. 当前项目依据
@@ -981,6 +981,14 @@ Flyway 高权限凭据边界：
 - 实现：新增 `npm run environment -- configure|targets|plan|preflight|bootstrap|resume|status|verify|finalize`、目标端状态机和 `deploy/profiles`。交互向导采集非敏感配置、支持已有TLS或创建环境独立内部CA；服务器随机生成secret，本机以0600 JSON受控接收初始管理员凭据。初始化自动构建当前干净HEAD候选，依次完成预检、配置、TLS、镜像、数据库/角色/schema/管理员、服务、备份/巡检和HTTPS基础验收；中断只能用同一提交续跑，已有资源不匹配即拒绝接管。
 - 范围：当前仅实现 `intranet-single-host`。`public-direct` 与 `public-behind-edge` 只声明能力和阻塞项，入口明确拒绝；后续须补域名/ACME或边缘源站认证、真实客户端IP、管理入口、异机备份和外部告警后才能启用。脚本不安装/升级宿主、Docker或云资源，不执行客户端信任和真实PWA/恢复验收。
 - 验证：Bash语法、目标白名单解析、CIDR/IP/端口、未知字段和公网profile拒绝、单目标/`--all`计划、交互向导与文件权限、候选封装/摘要、文档链接和完整构建门禁；真实SSH及服务器写入保持未执行，不能以本阶段完成替代新环境验收。
+
+### T32：宿主环境准备入口
+
+- 状态：实现完成；本机目标契约、负向解析、profile和Shell语法验证通过，真实新服务器安装未执行。
+- 目标：从一台可由root严格SSH登录的受支持Linux开始，自动检查、预览、安装和复核项目运行所需宿主组件；通用安装策略、宿主profile与具体机器取值分离。
+- 实现：`npm run environment` 新增 `inspect|host-plan|host-apply|host-verify`，新增 `managed-linux` 与 `existing-linux` 宿主profile及目标字段。支持Ubuntu 22.04/24.04、Debian 12/13、RHEL/Rocky/AlmaLinux 9/10；可使用组织预配软件源或Docker官方稳定源，安装缺失基础工具、Docker Engine、Buildx、Compose插件并启用Docker、设置Asia/Shanghai时区。已有可用Docker不升级或替换，既有Docker缺Compose、未知非空Docker目录、冲突包和仓库文件不一致时停止。
+- 范围：起点是已安装操作系统并可root SSH的机器；不创建云/VM/裸机资源，不安装OS镜像，不修改DNS、安全组或宿主全局防火墙，不做全系统升级。CentOS7只保留现有案例的`existing-linux`例外，禁止自动安装。宿主防火墙责任当前固定为`external`。
+- 验证：`npm run check:deployment` 已验证全部Shell语法、新目标字段白名单与字面解析、恶意命令替换不执行、宿主profile字段和非法action拒绝；并对现有内网Linux案例执行只读 `inspect/host-plan/host-verify`，准确识别其Docker、Compose、IP、时区、磁盘和内存满足，但只有Python 2.7，故门禁失败。未执行 `host-apply`，未验证apt/dnf下载、Docker服务启动或新宿主写入，必须在新的 `managed-linux` 实例中单独记录。
 ## 8. 数据库、SQL、seed 与配置计划
 
 | 路径 | 用途 | 执行时机 | 影响范围 | 回滚方式 |

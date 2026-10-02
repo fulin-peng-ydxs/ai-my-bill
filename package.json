@@ -19,6 +19,7 @@
     "check:e2e": "bash scripts/test-e2e.sh",
     "check:performance": "bash scripts/test-performance.sh",
     "check:security": "bash scripts/check-security.sh",
+    "check:deployment": "bash scripts/test-deployment-tooling.sh",
     "build:release": "bash scripts/build-release-candidate.sh",
     "environment": "bash scripts/environment.sh",
     "release": "bash scripts/release.sh",
