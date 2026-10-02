@@ -54,10 +54,11 @@ export_dev_database_environment
 cd "${PROJECT_ROOT}"
 bash "${PROJECT_ROOT}/scripts/run-backend.sh" &
 SERVER_PID=$!
-bash "${PROJECT_ROOT}/scripts/run-frontend.sh" dev -- --host 127.0.0.1 &
+bash "${PROJECT_ROOT}/scripts/run-frontend.sh" dev -- --host "${MY_BILL_WEB_HOST:-0.0.0.0}" &
 WEB_PID=$!
 
 echo "前端: http://127.0.0.1:${MY_BILL_WEB_PORT:-5174}"
+echo "手机访问: http://<本机局域网IP>:${MY_BILL_WEB_PORT:-5174}（需连接同一局域网）"
 echo "健康检查: http://127.0.0.1:${MY_BILL_SERVER_PORT:-8080}/api/v1/health"
 while kill -0 "${SERVER_PID}" 2>/dev/null && kill -0 "${WEB_PID}" 2>/dev/null; do
   sleep 1
