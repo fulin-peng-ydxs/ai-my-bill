@@ -101,3 +101,25 @@ describe('session store', () => {
     expect(store.isAuthenticated).toBe(true)
   })
 })
+
+describe('password change session handling', () => {
+  const original = { accountId: '10000000-0000-4000-8000-000000000099', username: 'preview', role: 'USER' as const, passwordChangeRequired: false }
+  it('sends only current and new passwords and accepts the rotated server session', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify(original), { headers: { 'Content-Type': 'application/json' } }))
+    vi.stubGlobal('fetch', fetchMock)
+    const store = useSessionStore()
+    store.accept(original)
+    await store.changePassword('old-password', 'new-password-long-enough')
+    expect(fetchMock).toHaveBeenCalledWith('/api/v1/auth/password', expect.objectContaining({ method: 'POST', body: JSON.stringify({ currentPassword: 'old-password', newPassword: 'new-password-long-enough' }) }))
+    expect(store.session).toEqual(original)
+    expect(store.status).toBe('authenticated')
+  })
+  it('preserves the current session when the current password is rejected', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ code: 'INVALID_CREDENTIALS', message: '密码不正确', fieldErrors: {}, retryable: false }), { status: 401, headers: { 'Content-Type': 'application/json' } })))
+    const store = useSessionStore()
+    store.accept(original)
+    await expect(store.changePassword('wrong', 'new-password-long-enough')).rejects.toThrow()
+    expect(store.session).toEqual(original)
+    expect(store.status).toBe('authenticated')
+  })
+})

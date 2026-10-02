@@ -147,6 +147,5 @@ void search(query.value)
       class="field-error"
       role="alert"
     >{{ error || createError }}</small>
-    <small v-else>选择已有商品会带出仍有效的最近值，但不会自动保存。</small>
   </div>
 </template>

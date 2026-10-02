@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Archive, Database, HeartPulse, RefreshCw, ShieldCheck, Users } from 'lucide-vue-next'
+import { Archive, Database, HeartPulse, RefreshCw, Users } from 'lucide-vue-next'
 import { computed, onMounted } from 'vue'
 
 import { getAdminOverview } from '../../api/adminOperations'
@@ -22,9 +22,6 @@ onMounted(() => void load())
   <section class="admin-overview-page">
     <header class="admin-page-heading">
       <div>
-        <p class="eyebrow">
-          OPERATIONS · 账号与服务元数据
-        </p>
         <h1>运行概况</h1>
         <p>查看账号状态、服务连通性和存储使用情况，不读取或聚合任何用户账目。</p>
       </div>
@@ -42,13 +39,6 @@ onMounted(() => void load())
       </button>
     </header>
 
-    <div class="privacy-boundary">
-      <ShieldCheck
-        :size="18"
-        aria-hidden="true"
-      />
-      隐私边界：接口模型不包含商品、收入名称、付款方、金额、位置或账目字段
-    </div>
 
     <AppStateBlock
       v-if="staleWarning"

@@ -9,12 +9,13 @@ const props = defineProps<{
   open: boolean
   title: string
   description?: string
+  busy?: boolean
 }>()
 const emit = defineEmits<{
   'update:open': [value: boolean]
 }>()
 const isOpen = computed(() => props.open)
-const { dialog, handleCancel, handleClose } = useDialogController(isOpen, (value) => emit('update:open', value))
+const { dialog, handleCancel, handleClose } = useDialogController(isOpen, (value) => { if (!props.busy) emit('update:open', value) })
 </script>
 
 <template>
@@ -44,6 +45,7 @@ const { dialog, handleCancel, handleClose } = useDialogController(isOpen, (value
           type="button"
           class="icon-button"
           aria-label="关闭"
+          :disabled="busy"
           @click="emit('update:open', false)"
         >
           <X

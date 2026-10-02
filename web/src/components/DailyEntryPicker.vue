@@ -84,22 +84,13 @@ async function remove(item: DailyTemplateSummary): Promise<void> {
 </script>
 
 <template>
-  <section
-    class="daily-entry-launch"
-    aria-labelledby="daily-entry-launch-title"
+  <button
+    type="button"
+    class="text-action daily-entry-trigger"
+    @click="open = true"
   >
-    <div>
-      <strong id="daily-entry-launch-title">{{ entryType === 'EXPENSE' ? '日常支出' : '日常收入' }}</strong>
-      <span>从常用内容开始，本次时间与备注仍由你填写。</span>
-    </div>
-    <button
-      type="button"
-      class="secondary-button"
-      @click="open = true"
-    >
-      选择模板
-    </button>
-  </section>
+    {{ entryType === 'EXPENSE' ? '日常支出' : '日常收入' }}
+  </button>
 
   <AppDrawer
     id="daily-entry-picker"
@@ -130,7 +121,7 @@ async function remove(item: DailyTemplateSummary): Promise<void> {
         v-else-if="!items.length"
         kind="empty"
         title="还没有日常模板"
-        message="可在收支明细中将常用记录加入日常；该入口将在明细阶段开放。"
+        message="到明细中左滑或长按一笔有效账目，选择“加入日常”。"
       />
       <ul
         v-else

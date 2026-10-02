@@ -6,6 +6,8 @@ import type { LedgerDateRange, LedgerFilters } from '../api/ledgerEntries'
 import type { ExpenseReport,
   IncomeReport, ReportFilters, ReportScope, ReportSummary, ReportTimeGrain,
   ReportTimeMetric, TimeReport } from '../api/reports'
+import PageHeading from '../components/PageHeading.vue'
+import { hasFilterChanges } from '../domain/filterChanges'
 import AppliedFilterBar from '../components/AppliedFilterBar.vue'
 import AppStateBlock from '../components/AppStateBlock.vue'
 import ChartPanel from '../components/ChartPanel.vue'
@@ -37,13 +39,14 @@ const draft = ref<ReportFilters>({ ...filters.value })
 const filterOpen = ref(false)
 const rangeError = ref('')
 const defaultRange = computed<LedgerDateRange>(() => preferences.values.reportDefaultRange)
+const hasFilters = computed(() => hasFilterChanges(filters.value, clearedReportFilters(defaultRange.value, filters.value.scope)))
 const parsed = computed(() => parseReportRoute(route.query, defaultRange.value))
 const presentation = computed(() => parseReportPresentation(route.query, parsed.value))
 const shownFilters = computed(() => request.data.value?.filters ?? filters.value)
 const shownPresentation = computed(() => request.data.value?.presentation ?? presentation.value)
 const nameFor = useDictionaryFilterLabels(() => shownFilters.value)
 function optionsFor(scope: ReportScope): { value: ReportDimension, label: string }[] { return [
-  { value: 'OVERVIEW', label: '口径总览' }, { value: 'TIME', label: '时间趋势' },
+  { value: 'OVERVIEW', label: '收支概览' }, { value: 'TIME', label: '时间趋势' },
   ...(scope === 'EXPENSE' ? [
     { value: 'CATEGORY' as const, label: '分类结构' }, { value: 'PRODUCT' as const, label: '商品排行' },
     { value: 'FUNDING_CHANNEL' as const, label: '支付方式' }, { value: 'PURCHASE_CHANNEL' as const, label: '购买渠道' },
@@ -234,13 +237,7 @@ function drillIncome(point: IncomeReport['points'][number]): void {
     class="report-page"
     data-page-key="reports"
   >
-    <header class="page-heading">
-      <p class="eyebrow">
-        当前租户 · 有效账目
-      </p>
-      <h1>收支报表</h1>
-      <p>搜索、筛选、金额摘要和下钻共用同一服务端口径。</p>
-    </header>
+    <PageHeading title="收支报表" />
 
     <GlobalLedgerSearch
       id="report-search"
@@ -257,6 +254,7 @@ function drillIncome(point: IncomeReport['points'][number]): void {
     />
     <AppliedFilterBar
       :summaries="filterSummaries"
+      :clearable="hasFilters"
       label="报表已应用筛选"
       @open="filterOpen = true"
       @clear="clearFilters"
@@ -266,7 +264,7 @@ function drillIncome(point: IncomeReport['points'][number]): void {
       v-if="request.status.value === 'loading' || request.refreshing.value"
       kind="loading"
       title="正在计算报表"
-      message="所有区域成功后一起更新，期间暂不可下钻。"
+      message="正在更新，请稍候。"
     />
     <AppStateBlock
       v-if="request.error.value"
@@ -362,7 +360,7 @@ function drillIncome(point: IncomeReport['points'][number]): void {
         </select>
       </div>
       <p v-if="presentation.dimension === 'OVERVIEW'">
-        统一口径概览，可点击指标下钻。
+        点击图表或指标查看明细。
       </p>
     </section>
     <fieldset
@@ -382,7 +380,7 @@ function drillIncome(point: IncomeReport['points'][number]): void {
       />
       <ChartPanel
         v-else-if="shownPresentation.dimension === 'OVERVIEW'"
-        title="口径总览"
+        title="收支概览"
         :points="request.data.value.summary.dataPoints"
         @select="drill"
       />

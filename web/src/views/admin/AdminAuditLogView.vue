@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { MoreHorizontal, RefreshCw, Search, ShieldCheck } from 'lucide-vue-next'
+import { MoreHorizontal, RefreshCw, Search } from 'lucide-vue-next'
 import { computed, onMounted, ref } from 'vue'
 
 import {
@@ -90,9 +90,6 @@ onMounted(() => void load())
   <section class="admin-audit-page">
     <header class="admin-page-heading">
       <div>
-        <p class="eyebrow">
-          AUDIT TRAIL · 只读追溯
-        </p>
         <h1>操作日志</h1>
         <p>按管理员、动作、对象、结果和时间查询高影响管理操作；日志不可修改或删除。</p>
       </div>
@@ -110,13 +107,6 @@ onMounted(() => void load())
       </button>
     </header>
 
-    <div class="privacy-boundary">
-      <ShieldCheck
-        :size="18"
-        aria-hidden="true"
-      />
-      日志摘要经过字段白名单与敏感信息清理，不显示密码、令牌、坐标或用户账目
-    </div>
 
     <form
       class="admin-audit-toolbar"

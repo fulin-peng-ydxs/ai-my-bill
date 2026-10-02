@@ -4,6 +4,7 @@ import { SlidersHorizontal, X } from 'lucide-vue-next'
 defineProps<{
   summaries: readonly string[]
   label?: string
+  clearable: boolean
 }>()
 
 defineEmits<{
@@ -28,7 +29,7 @@ defineEmits<{
     </div>
     <div class="filter-actions">
       <button
-        v-if="summaries.length"
+        v-if="clearable"
         type="button"
         class="icon-button"
         aria-label="清除全部筛选"

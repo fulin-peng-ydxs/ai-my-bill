@@ -11,6 +11,8 @@ import type { LedgerDateRange, LedgerFilters, LedgerItem } from '../api/ledgerEn
 import { changeLedgerLifecycle, type LedgerLifecycleResponse } from '../api/ledgerLifecycle'
 import DictionaryFilterPicker from '../components/DictionaryFilterPicker.vue'
 import { useDictionaryFilterLabels } from '../composables/useDictionaryFilterLabels'
+import PageHeading from '../components/PageHeading.vue'
+import { hasFilterChanges } from '../domain/filterChanges'
 import AppliedFilterBar from '../components/AppliedFilterBar.vue'
 import AppDialog from '../components/AppDialog.vue'
 import AppDrawer from '../components/AppDrawer.vue'
@@ -76,11 +78,12 @@ const trashDetailTarget = ref<LedgerItem>()
 const trashDetailOpen = ref(false)
 
 const defaultRange = computed<LedgerDateRange>(() => preferences.values.ledgerDefaultRange)
+const hasFilters = computed(() => hasFilterChanges(filters.value, clearedLedgerFilters(defaultRange.value, filters.value.lifecycle)))
 const parsed = computed(() => parseLedgerRoute(route.query, defaultRange.value))
 const drill = computed(() => parsed.value.drill)
 const filterName = useDictionaryFilterLabels(() => ({ fundingChannelId: filters.value.fundingChannelId }))
 const filterSummaries = computed(() => [
-  optionLabel(ledgerRangeOptions, filters.value.range),
+  filters.value.range === 'CUSTOM' ? `${filters.value.startDate} 至 ${filters.value.endDate}` : optionLabel(ledgerRangeOptions, filters.value.range),
   ...(filters.value.type === 'ALL' ? [] : [optionLabel(ledgerTypeOptions, filters.value.type)]),
   ...(filters.value.fundingChannelId ? [filterName('fundingChannelId') ?? '指定资金渠道'] : []),
 ])
@@ -116,10 +119,6 @@ function navigate(next: LedgerFilters): void {
 
 function updateSearch(value: string): void {
   navigate({ ...filters.value, query: value })
-}
-
-function updateType(value: string): void {
-  navigate({ ...filters.value, type: value as LedgerFilters['type'] })
 }
 
 function updateLifecycle(value: string): void {
@@ -336,19 +335,15 @@ onBeforeUnmount(() => { editRequest.cancel(); adjustmentRequest.cancel() })
     class="ledger-page"
     data-page-key="bill-details"
   >
-    <header class="page-heading ledger-page-heading">
-      <div>
-        <p class="eyebrow">
-          {{ filters.lifecycle === 'ACTIVE' ? '有效账目' : '30 天回收站' }}
-        </p>
-        <h1>收支明细</h1>
-        <p>{{ filters.lifecycle === 'ACTIVE' ? '按上海业务日期分组，稳定加载每一笔收支与退款/报销调整。' : '删除后 30 天内可恢复，也可经确认永久删除。' }}</p>
-      </div>
+    <PageHeading
+      title="收支明细"
+      :subtitle="filters.lifecycle === 'TRASHED' ? '删除后 30 天内可恢复' : undefined"
+    >
       <DataExportAction
         :request="exportRequest"
         @notify="showExportNotice"
       />
-    </header>
+    </PageHeading>
 
     <section
       v-if="drill"
@@ -375,6 +370,7 @@ onBeforeUnmount(() => { editRequest.cancel(); adjustmentRequest.cancel() })
     />
     <AppliedFilterBar
       :summaries="filterSummaries"
+      :clearable="hasFilters"
       @open="filterOpen = true"
       @clear="clearFilters"
     />
@@ -384,7 +380,6 @@ onBeforeUnmount(() => { editRequest.cancel(); adjustmentRequest.cancel() })
       aria-label="明细视图控制"
     >
       <div>
-        <span class="control-label">账目状态</span>
         <SegmentedControl
           label="账目状态"
           :model-value="filters.lifecycle"
@@ -392,16 +387,9 @@ onBeforeUnmount(() => { editRequest.cancel(); adjustmentRequest.cancel() })
           @update:model-value="updateLifecycle"
         />
       </div>
-      <div>
-        <span class="control-label">账目类型</span>
-        <SegmentedControl
-          label="账目类型"
-          :model-value="filters.type"
-          :options="ledgerTypeOptions"
-          @update:model-value="updateType"
-        />
-      </div>
-      <p>长按、右键或按 Shift+F10 管理{{ filters.lifecycle === 'ACTIVE' ? '有效账目' : '回收站账目' }}</p>
+      <p class="ledger-gesture-hint">
+        <span class="touch-hint">轻点查看 · 左滑或长按管理</span><span class="pointer-hint">点击查看 · 右键管理</span>
+      </p>
     </section>
 
     <AppStateBlock
@@ -420,10 +408,10 @@ onBeforeUnmount(() => { editRequest.cancel(); adjustmentRequest.cancel() })
     <AppStateBlock
       v-else-if="list.status.value === 'empty'"
       kind="empty"
-      :title="filters.lifecycle === 'ACTIVE' ? '当前条件没有明细' : '回收站为空'"
-      :message="filters.lifecycle === 'ACTIVE' ? '调整账目类型、搜索内容、资金渠道或日期范围后重试。' : '删除的账目会在这里保留 30 天。'"
-      action-label="清除筛选"
-      @action="clearFilters"
+      :title="hasFilters ? '没有匹配的明细' : filters.lifecycle === 'ACTIVE' ? '这段时间还没有记录' : '回收站为空'"
+      :message="hasFilters ? '试试调整日期、类型或搜索内容。' : filters.lifecycle === 'ACTIVE' ? '记下一笔，或通过筛选查看其他日期。' : '删除的账目会在这里保留 30 天。'"
+      :action-label="hasFilters ? '清除筛选' : filters.lifecycle === 'ACTIVE' ? '记一笔' : undefined"
+      @action="hasFilters ? clearFilters() : router.push('/entry')"
     />
     <template v-else>
       <AppStateBlock

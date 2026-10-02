@@ -63,18 +63,11 @@ watch(() => sessionStore.session?.accountId, (accountId, previousAccountId) => {
       </nav>
     </aside>
     <header
+      v-if="isAdmin"
       class="shell-header"
       :class="{ 'admin-shell-header': isAdmin }"
     >
-      <RouterLink
-        v-if="!isAdmin"
-        class="shell-brand"
-        to="/entry"
-      >
-        我的账单
-      </RouterLink>
       <div
-        v-else
         class="admin-mobile-title"
       >
         <span>系统管理</span>

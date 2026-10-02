@@ -186,9 +186,6 @@ onMounted(() => void Promise.all([load(), loadSummaries()]))
   <section class="admin-default-dictionaries-page">
     <header class="admin-page-heading">
       <div>
-        <p class="eyebrow">
-          NEW USER STARTER SET · 五类默认项
-        </p>
         <h1>默认字典</h1>
         <p>维护新用户首次创建时获得的候选项，不会覆盖任何已有用户的个人字典。</p>
       </div>

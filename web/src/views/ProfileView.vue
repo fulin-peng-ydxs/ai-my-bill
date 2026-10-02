@@ -1,12 +1,15 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 
 import AppDrawer from '../components/AppDrawer.vue'
 import AppDialog from '../components/AppDialog.vue'
 import AppStateBlock from '../components/AppStateBlock.vue'
 import AppToast from '../components/AppToast.vue'
 import DataExportAction from '../components/DataExportAction.vue'
+import PageHeading from '../components/PageHeading.vue'
+import DictionaryIndexPanel from '../components/DictionaryIndexPanel.vue'
+import PasswordChangeSheet from '../components/PasswordChangeSheet.vue'
 import FormField from '../components/FormField.vue'
 import PwaInstallPrompt from '../components/PwaInstallPrompt.vue'
 import SettingsDisclosureList, { type SettingsDisclosureItem } from '../components/SettingsDisclosureList.vue'
@@ -32,6 +35,17 @@ import { themeModeLabel } from '../theme/theme'
 
 const sessionStore = useSessionStore()
 const router = useRouter()
+const route = useRoute()
+const dictionariesOpen = computed({
+  get: () => route.query.panel === 'dictionaries',
+  set: (open: boolean) => {
+    const query = { ...route.query }
+    if (open) query.panel = 'dictionaries'
+    else delete query.panel
+    void router.replace({ query })
+  },
+})
+const passwordOpen = ref(false)
 const themeStore = useThemeStore()
 const installStore = usePwaInstallStore()
 const preferencesStore = usePreferencesStore()
@@ -96,7 +110,7 @@ const drawerDescription = computed(() => activeSetting.value === 'funding'
   : activeSetting.value === 'ledgerRange' || activeSetting.value === 'reportRange'
     ? '清除临时筛选后也会恢复到这里。'
     : activeSetting.value === 'appearance'
-      ? '主题立即生效，并安全同步到当前账号。'
+      ? '选择后立即生效。'
       : '安装能力不可用时，网页模式仍保留完整功能。')
 
 function openSetting(key: string): void {
@@ -184,15 +198,10 @@ onMounted(loadFundingChannels)
     class="settings-page"
     data-page-key="profile-settings"
   >
-    <header class="page-heading">
-      <div>
-        <p class="eyebrow">
-          个人设置
-        </p>
-        <h1>我的</h1>
-        <p>{{ sessionStore.session?.username }}</p>
-      </div>
-    </header>
+    <PageHeading
+      title="我的"
+      :subtitle="sessionStore.session?.username"
+    />
 
     <section
       class="settings-section"
@@ -203,7 +212,6 @@ onMounted(loadFundingChannels)
           <h2 id="preferences-title">
             偏好设置
           </h2>
-          <p>选择立即生效并异步同步；失败时保留本次会话值。</p>
         </div>
       </div>
       <SettingsDisclosureList
@@ -220,7 +228,7 @@ onMounted(loadFundingChannels)
         @action="retryPreferences"
       />
       <p class="preference-caption">
-        最近记账类型：{{ preferencesStore.values.recentEntryType === 'EXPENSE' ? '支出' : '收入' }} · 在“记一笔”中自动记录
+        最近记账：{{ preferencesStore.values.recentEntryType === 'EXPENSE' ? '支出' : '收入' }}
       </p>
       <button
         type="button"
@@ -241,13 +249,12 @@ onMounted(loadFundingChannels)
           <h2 id="data-security-title">
             数据与安全
           </h2>
-          <p>管理当前账号的记账候选项与个人数据副本。</p>
         </div>
       </div>
       <SettingsDisclosureList
         label="数据与安全"
-        :items="[{ key: 'dictionaries', label: '管理个人字典', value: '8 类' }]"
-        @select="router.push({ name: 'personal-dictionaries' })"
+        :items="[{ key: 'dictionaries', label: '个人字典', value: '8 类' }, { key: 'password', label: '修改密码', value: '' }]"
+        @select="$event === 'password' ? passwordOpen = true : dictionariesOpen = true"
       >
         <DataExportAction
           :request="fullExportRequest"
@@ -266,7 +273,6 @@ onMounted(loadFundingChannels)
           <h2 id="account-title">
             账号操作
           </h2>
-          <p>退出仅撤销当前会话；注销会永久删除账号和在线个人数据。</p>
         </div>
       </div>
       <AppStateBlock
@@ -294,6 +300,21 @@ onMounted(loadFundingChannels)
         注销账号
       </button>
     </section>
+
+    <AppDrawer
+      id="profile-dictionaries"
+      v-model:open="dictionariesOpen"
+      title="个人字典"
+    >
+      <DictionaryIndexPanel
+        v-if="dictionariesOpen"
+        @select="router.push({ name: 'personal-dictionary-detail', params: { type: $event }, query: { from: 'profile' } })"
+      />
+    </AppDrawer>
+    <PasswordChangeSheet
+      v-model:open="passwordOpen"
+      @saved="showExportNotice('密码已更新，其他设备需重新登录。', 'success')"
+    />
 
     <AppDrawer
       id="profile-setting"

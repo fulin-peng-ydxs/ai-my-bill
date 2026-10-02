@@ -214,7 +214,7 @@ void loadOptions()
 
 <template>
   <section
-    class="income-entry-form"
+    class="entry-form"
     :aria-label="editMode ? '编辑收入' : '收入填报'"
   >
     <AppStateBlock
@@ -268,12 +268,11 @@ void loadOptions()
       </div>
     </section>
     <form
-      class="income-form"
+      class="entry-form-surface"
       @submit.prevent="submit(false)"
     >
       <FormSection
         title="收入信息"
-        description="收入名称可以重复，最近使用名称会优先提示。"
       >
         <FormField
           field-id="income-name"
@@ -349,7 +348,6 @@ void loadOptions()
       </FormSection>
       <FormSection
         title="金额与收款"
-        description="金额使用十进制精确保存，收款方式来自个人字典。"
       >
         <FormField
           field-id="income-amount"
@@ -382,12 +380,11 @@ void loadOptions()
       </FormSection>
       <FormSection
         title="时间与备注"
-        description="服务端按上海时区确定业务日期。"
       >
         <FormField
           field-id="income-occurred-at"
           label="收入时间"
-          help="服务端允许最多向未来偏移 5 分钟。"
+          help="最多可填写未来 5 分钟内的时间。"
           :error="errors.occurredAt"
         >
           <template #default="{ describedBy }">
@@ -443,11 +440,3 @@ void loadOptions()
     />
   </section>
 </template>
-
-<style scoped>
-.income-entry-form,.income-form{display:grid;gap:var(--space-5)}
-.payer-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:var(--space-2)}
-.saved-income{padding:var(--space-5);border:1px solid var(--border);border-radius:var(--radius-lg);background:var(--surface)}
-.saved-income h2{margin:var(--space-1) 0;color:var(--color-income-text)}
-@media(max-width:640px){.payer-row{grid-template-columns:1fr}.payer-row button{width:100%}}
-</style>

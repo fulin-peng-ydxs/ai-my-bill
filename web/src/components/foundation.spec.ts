@@ -64,9 +64,15 @@ describe('shared frontend foundations', () => {
     expect(search).toContain('搜索全部账目')
     expect(search).toContain('enterkeyhint="search"')
 
-    const filters = await render(AppliedFilterBar, { summaries: ['本月', '仅支出'] })
+    const filters = await render(AppliedFilterBar, { summaries: ['本月', '仅支出'], clearable: true })
     expect(filters).toContain('本月')
     expect(filters).toContain('清除全部筛选')
+  })
+
+  it('keeps default-date context visible without offering a no-op reset', async () => {
+    const filters = await render(AppliedFilterBar, { summaries: ['今天'], clearable: false })
+    expect(filters).toContain('今天')
+    expect(filters).not.toContain('清除全部筛选')
   })
 
   it('renders exact signed money semantics and stable settings disclosure values', async () => {

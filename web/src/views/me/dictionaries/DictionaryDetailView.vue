@@ -308,7 +308,7 @@ onMounted(() => {
         type="button"
         class="icon-button"
         aria-label="返回个人字典"
-        @click="router.push({ name: 'personal-dictionaries' })"
+        @click="router.push(route.query.from === 'profile' ? { path: '/me', query: { panel: 'dictionaries' } } : { name: 'personal-dictionaries' })"
       >
         <ArrowLeft
           :size="20"
@@ -316,9 +316,6 @@ onMounted(() => {
         />
       </button>
       <div>
-        <p class="eyebrow">
-          {{ definition.type.toUpperCase() }} · 稳定标识与名称分离
-        </p>
         <h1>{{ definition.label }}</h1>
         <p>{{ definition.description }}</p>
       </div>
@@ -356,7 +353,6 @@ onMounted(() => {
       v-if="status === 'loading'"
       kind="loading"
       :title="`正在加载${definition.label}`"
-      message="候选与管理数据保持分离。"
     />
     <AppStateBlock
       v-else-if="status === 'error'"
@@ -419,12 +415,6 @@ onMounted(() => {
       :title="selected?.name ?? `${definition.label}操作`"
       :description="selected?.referenced ? '此项已被引用；改名或停用不会改写历史名称快照。' : '管理操作只影响当前账号。'"
     >
-      <div
-        v-if="selected"
-        class="dictionary-item-identity"
-      >
-        <span>稳定 ID</span><code>{{ selected.id }}</code>
-      </div>
       <div
         v-if="selected"
         class="context-action-list"

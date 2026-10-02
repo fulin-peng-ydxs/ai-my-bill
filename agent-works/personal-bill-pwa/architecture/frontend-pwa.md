@@ -24,10 +24,14 @@ flowchart LR
 | /login | session 初始化、登录、首次改密、安全回跳 | session store、api/http、密码校验 |
 | /entry、/ledger | 表单/筛选 → API → 保存或列表反馈 | domain 金额/筛选/幂等、composables、共享表单与列表 |
 | /reports | 统一条件 → summary/time/维度接口 → 图表与明细下钻 | reportQuery、ChartPanel、维度与时间组件 |
-| /me 与个人字典 | 偏好、主题、安装、字典与注销 | preferences/theme、accountStorage、PWA 安装模块 |
+| /me 与个人字典 | 偏好、主题、安装、字典、修改密码与注销 | preferences/theme、accountStorage、PWA 安装模块 |
 | /admin 及子页面 | 用户、默认字典、运行概况、审计 | 管理 API；不查询个人账目 |
 
 加载、空、错误和就绪状态登记为 pageStates；权限态由角色守卫和 AppShell 承接。普通用户访问管理 URL 时保留地址并呈现权限反馈，管理员访问个人页面回管理入口。未保存内容通过 unsavedChanges 统一拦截。样式 token、组件选择、响应式和页面维护矩阵以 [DESIGN](../../../DESIGN.md) 为准，不在页面私有复制共享状态或样式。
+
+普通用户页头共用 `PageHeading`，不重复显示品牌栏；两类记账表单共用表面与保存栏样式。明细与报表的清除入口通过 `hasFilterChanges` 对照各自默认条件决定是否显示。
+
+“我的”使用 `panel=dictionaries` 打开共享 `DictionaryIndexPanel`，字典详情携带来源并返回原索引抽屉；独立索引路由保持可访问。修改密码由 `PasswordChangeSheet` 调用既有 `session.changePassword`，接受服务端轮换会话；临时输入只存在组件内存，成功或关闭即清空，不进入持久化存储。
 
 ## 一次页面操作经过哪些层
 

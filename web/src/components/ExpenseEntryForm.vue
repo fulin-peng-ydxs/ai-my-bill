@@ -356,7 +356,7 @@ void loadOptions()
 
 <template>
   <section
-    class="expense-entry-form"
+    class="entry-form"
     :aria-label="editMode ? '编辑支出' : '支出填报'"
   >
     <AppStateBlock
@@ -411,12 +411,11 @@ void loadOptions()
     </section>
 
     <form
-      class="expense-form"
+      class="entry-form-surface"
       @submit.prevent="submit(false)"
     >
       <FormSection
         title="商品信息"
-        description="选择商品及其分类和计量单位。"
       >
         <ProductCombobox
           ref="productCombobox"
@@ -511,7 +510,6 @@ void loadOptions()
 
       <FormSection
         title="金额信息"
-        description="系统精确计算金额，实付可单独调整。"
       >
         <div class="form-grid-two">
           <FormField
@@ -572,13 +570,7 @@ void loadOptions()
 
       <FormSection
         title="渠道与场景"
-        description="选择付款方式以及可选的购买渠道和地点标签。"
       >
-        <div class="field-heading-action">
-          <RouterLink to="/me/dictionaries/funding-channel">
-            管理支付方式
-          </RouterLink>
-        </div>
         <FundingChannelPicker
           :items="optionItems.funding"
           :model-value="form.fundingChannelId"
@@ -586,11 +578,6 @@ void loadOptions()
           :error="errors.fundingChannelId"
           @update:model-value="form.fundingChannelId = $event; clearError('fundingChannelId'); persist()"
         />
-        <div class="field-heading-action">
-          <RouterLink to="/me/dictionaries/purchase-channel">
-            管理购买渠道
-          </RouterLink>
-        </div>
         <DictionaryPicker
           label="购买渠道"
           optional
@@ -600,11 +587,6 @@ void loadOptions()
           :error="errors.purchaseChannelId"
           @update:model-value="form.purchaseChannelId = $event; clearError('purchaseChannelId'); persist()"
         />
-        <div class="field-heading-action">
-          <RouterLink to="/me/dictionaries/location">
-            管理地点标签
-          </RouterLink>
-        </div>
         <LocationLabelPicker
           :items="optionItems.locations"
           :model-value="form.locationLabelId"
@@ -612,16 +594,20 @@ void loadOptions()
           :error="errors.locationLabelId"
           @update:model-value="form.locationLabelId = $event; clearError('locationLabelId'); persist()"
         />
+        <div class="field-heading-action">
+          <RouterLink to="/me?panel=dictionaries">
+            管理常用选项
+          </RouterLink>
+        </div>
       </FormSection>
 
       <FormSection
         title="时间与备注"
-        description="消费时间由服务端校验，备注仅保存在本条账目。"
       >
         <FormField
           field-id="expense-occurred-at"
           label="消费时间"
-          help="客户端时间仅用于填写提示，服务端允许最多向未来偏移 5 分钟。"
+          help="最多可填写未来 5 分钟内的时间。"
           :error="errors.occurredAt"
         >
           <template #default="{ describedBy }">

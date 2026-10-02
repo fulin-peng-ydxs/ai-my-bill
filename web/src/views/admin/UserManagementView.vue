@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { MoreHorizontal, Plus, RefreshCw, Search, ShieldCheck } from 'lucide-vue-next'
+import { MoreHorizontal, Plus, RefreshCw, Search } from 'lucide-vue-next'
 import { computed, onMounted, ref } from 'vue'
 
 import {
@@ -187,9 +187,6 @@ onMounted(() => void load())
   <section class="admin-users-page">
     <header class="admin-page-heading">
       <div>
-        <p class="eyebrow">
-          USER ACCESS · 仅账号信息
-        </p>
         <h1>用户管理</h1>
         <p>创建和维护普通用户账号。管理员无法查看用户的任何账目内容。</p>
       </div>
@@ -205,12 +202,6 @@ onMounted(() => void load())
       </button>
     </header>
 
-    <div class="privacy-boundary">
-      <ShieldCheck
-        :size="18"
-        aria-hidden="true"
-      /> 本页数据边界：身份、状态与活跃时间
-    </div>
 
     <form
       class="admin-toolbar"

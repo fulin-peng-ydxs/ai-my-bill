@@ -17,7 +17,10 @@ const emit = defineEmits<{
 </script>
 
 <template>
-  <fieldset class="segmented-control">
+  <fieldset
+    class="segmented-control"
+    :style="{ '--segment-count': options.length }"
+  >
     <legend class="sr-only">
       {{ label }}
     </legend>

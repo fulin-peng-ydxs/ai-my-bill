@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs'
+import { readFileSync, readdirSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 
 import { describe, expect, it } from 'vitest'
@@ -31,5 +31,20 @@ describe('responsive and accessibility style contracts', () => {
     expect(styles).not.toMatch(/height:\s*calc\(100vh\s*-/)
     expect(styles).toContain('@media (prefers-reduced-motion: reduce)')
     expect(styles).toContain('animation-duration: 0.01ms !important')
+  })
+})
+
+// A missing token silently removes card boundaries or focus outlines in the browser.
+describe('shared style token references', () => {
+  it('resolves tokens used without fallbacks in global and component styles', () => {
+    const root = fileURLToPath(new URL('../', import.meta.url))
+    const componentStyles = readdirSync(root, { recursive: true })
+      .filter((name) => typeof name === 'string' && name.endsWith('.vue'))
+      .map((name) => readFileSync(`${root}/${name}`, 'utf8').match(/<style[^>]*>([\s\S]*?)<\/style>/)?.[1] ?? '')
+    const sources = [styles, ...componentStyles].join('\n')
+    const defined = new Set(Array.from(sources.matchAll(/(--[\w-]+)\s*:/g), (match) => match[1]))
+    const missing = Array.from(sources.matchAll(/var\((--[\w-]+)\)/g), (match) => match[1])
+      .filter((name) => !defined.has(name))
+    expect([...new Set(missing)]).toEqual([])
   })
 })

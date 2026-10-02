@@ -20,5 +20,4 @@ defineEmits<{ 'update:modelValue': [value: string] }>()
     :error="error"
     @update:model-value="$emit('update:modelValue', $event)"
   />
-  <small class="field-help">第一期只保存文本标签，不请求定位权限。</small>
 </template>
