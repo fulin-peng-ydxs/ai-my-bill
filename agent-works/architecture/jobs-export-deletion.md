@@ -58,7 +58,7 @@ ExpiredLedgerPurgeJob 按租户与到期分钟合并调度，每批最多 100 �
 
 ## 使用与开发接入
 
-接口由 [OpenAPI](../../../contracts/openapi.yaml) 的 exports、ledger lifecycle、me/admin users 定义；任务没有独立公共消息入口。新增后台能力实现 JobDefinition、明确作用域、失败重试与批次幂等、注册后补 JobCoordinator 和真实数据库测试；禁止新增无限队列或无限批次。
+接口由 [OpenAPI](../../contracts/openapi.yaml) 的 exports、ledger lifecycle、me/admin users 定义；任务没有独立公共消息入口。新增后台能力实现 JobDefinition、明确作用域、失败重试与批次幂等、注册后补 JobCoordinator 和真实数据库测试；禁止新增无限队列或无限批次。
 
 任务变更影响 job_run、租户事务、资源限额与轮询延迟；导出格式变更影响下载、公式防护、前端进度及备份；注销变更影响审计、所有租户资产和备份恢复政策。
 

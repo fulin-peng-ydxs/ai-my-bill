@@ -27,7 +27,7 @@ flowchart LR
 | /me 与个人字典 | 偏好、主题、安装、字典、修改密码与注销 | preferences/theme、accountStorage、PWA 安装模块 |
 | /admin 及子页面 | 用户、默认字典、运行概况、审计 | 管理 API；不查询个人账目 |
 
-加载、空、错误和就绪状态登记为 pageStates；权限态由角色守卫和 AppShell 承接。普通用户访问管理 URL 时保留地址并呈现权限反馈，管理员访问个人页面回管理入口。未保存内容通过 unsavedChanges 统一拦截。样式 token、组件选择、响应式和页面维护矩阵以 [DESIGN](../../../DESIGN.md) 为准，不在页面私有复制共享状态或样式。
+加载、空、错误和就绪状态登记为 pageStates；权限态由角色守卫和 AppShell 承接。普通用户访问管理 URL 时保留地址并呈现权限反馈，管理员访问个人页面回管理入口。未保存内容通过 unsavedChanges 统一拦截。样式 token、组件选择、响应式和页面维护矩阵以 [DESIGN](../../DESIGN.md) 为准，不在页面私有复制共享状态或样式。
 
 普通用户页头共用 `PageHeading`，不重复显示品牌栏；两类记账表单共用表面与保存栏样式。明细与报表的清除入口通过 `hasFilterChanges` 对照各自默认条件决定是否显示。
 

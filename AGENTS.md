@@ -4,9 +4,9 @@
 
 本文件约束整个仓库；子目录如新增 AGENTS.md，按就近且更具体规则执行。用户明确要求优先于项目约束，项目约束优先于 `~/ai-agent-config/config/force/collaboration-rule.md` 的兜底规则；代码或文档任务先读取该通用规则。
 
-- 业务以[需求](agent-works/personal-bill-pwa/requirement.md)及其[上游闭环](agent-works/personal-bill-pwa/requirement-closure.md)为准，顺序、依赖、实施与验收状态以[计划](agent-works/personal-bill-pwa/plan.md)为准。
+- 业务以[需求](agent-works/requirement.md)及其[上游闭环](agent-works/requirement-closure.md)为准，顺序、依赖、实施与验收状态以[计划](agent-works/plan.md)为准。
 - 设计以 [DESIGN.md](DESIGN.md) 为准；仅涉及 UI 时读取相应规则。接口以 [OpenAPI](contracts/openapi.yaml) 为准。
-- 当前实现机制见[技术架构](agent-works/personal-bill-pwa/architecture/README.md)，变量与加载规则见[环境架构](agent-works/personal-bill-pwa/architecture/environment-configuration.md)。有冲突先回查源码、配置和已确认需求；实现缺失不能通过删需求来消除。
+- 当前实现机制见[技术架构](agent-works/architecture/README.md)，变量与加载规则见[环境架构](agent-works/architecture/environment-configuration.md)。有冲突先回查源码、配置和已确认需求；实现缺失不能通过删需求来消除。
 - [README](README.md)负责使用入口，[文档索引](agent-works/README.md)负责目录归属；CLAUDE只链接本文件，不重复规则。
 
 ## 代码与文档定位
@@ -20,7 +20,7 @@
 | server/src/test、web/src/**/*.spec.ts、web/e2e | 分层测试；E2E只用于低层无法覆盖的关键浏览器链路 |
 | contracts | OpenAPI事实源；web/src/api/generated为生成物，修改契约后重新生成，不手改 |
 | scripts、deploy | 本地工具链/验证/候选构建与部署实现 |
-| agent-works/personal-bill-pwa | 需求、计划、原型、验证；architecture放当前技术事实，deployment放通用方案，deployment/cases放具体实例 |
+| agent-works | 需求、计划、原型、验证；architecture放当前技术事实，deployment放通用方案，deployment/cases放具体实例 |
 | .local、node_modules、web/dist、server/target | 本机私密数据、依赖和构建产物；不提交，不为验证清空已有数据 |
 
 文档默认目录沿用通用协作规则；本模块复用现有目录。新增同类架构先更新已有专题，禁止建立第二份变量表或把服务器信息写回通用方案。
@@ -52,7 +52,7 @@
 
 ## 部署、敏感数据与完成标准
 
-- [部署方案](agent-works/personal-bill-pwa/deployment/README.md)定义可复用操作；[案例](agent-works/personal-bill-pwa/deployment/cases/README.md)保存具体主机、连接、路径、制品与证据。实例例外不得推广为通用安全基线。
+- [部署方案](agent-works/deployment/README.md)定义可复用操作；[案例](agent-works/deployment/cases/README.md)保存具体主机、连接、路径、制品与证据。实例例外不得推广为通用安全基线。
 - secret、CA私钥、初始密码和真实数据不进入Git/镜像/日志。生产禁E2E写开关；迁移凭据不授常驻app。未经相应授权不进行外部写入、破坏性清理、数据库覆盖或宿主升级；只读核查及授权范围内可逆工作直接完成。
 - 运行成功、脚本存在、历史测试通过分别记录；未验证写“未验证”。部署验收不得以基础服务启动替代目标终端PWA、续期、恢复/注销重放等验证；用户实测、工具实测与隔离模拟需分别标注。
 - 一次实施一个任务阶段；验证通过、更新计划实际落地、完成本地Git提交后进入下一阶段。提交前使用git-commit-msg技能；未经要求不推送。

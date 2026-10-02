@@ -2,9 +2,9 @@
 
 个人收支管理 PWA。普通用户录入支出/收入、管理个人字典和日常模板、查询明细、处理退款报销、查看报表和导出；系统管理员管理账号、默认字典、运行概况与审计，不能读取个人账目。
 
-一期使用内网 IP + HTTPS。实际地址、服务器和上线验收状态见[内网案例](agent-works/personal-bill-pwa/deployment/cases/intranet-single-host.md)。系统不提供账户余额、转账和离线记账。
+一期使用内网 IP + HTTPS。实际地址、服务器和上线验收状态见[内网案例](agent-works/deployment/cases/intranet-single-host.md)。系统不提供账户余额、转账和离线记账。
 
-手机安装使用 PWA 的“添加到主屏幕”，无需下载 IPA/APK；iPhone/iPad 的内部 CA 信任、Safari 安装步骤及验收记录见[内网案例安装指引](agent-works/personal-bill-pwa/deployment/cases/intranet-single-host.md#iphone--ipad-安装与待验收步骤)。
+手机安装使用 PWA 的“添加到主屏幕”，无需下载 IPA/APK；iPhone/iPad 的内部 CA 信任、Safari 安装步骤及验收记录见[内网案例安装指引](agent-works/deployment/cases/intranet-single-host.md#iphone--ipad-安装与待验收步骤)。
 
 ## 快速开始
 
@@ -142,7 +142,7 @@ exit
 
 若开发服务使用了自定义库名/PG端口，在该终端同步 MY_BILL_DB_NAME、MY_BILL_DB_PORT；不能只改前端地址。该命令使用本地 trust 连接和已经迁移好的库，临时启动仅监听本机随机端口的初始化进程。初始化入口复用prod配置，因此需提供专用pepper文件；这些前缀变量只影响此次初始化，不会改变已运行开发后端的配置。创建 admin 后自行退出，不取代正在运行的后端。账号库非空则拒绝，不会重置已有账号。
 
-在本地编辑器打开 `.local/dev-bootstrap/password` 获取临时密码（不要提交或贴到日志），访问登录页登录 admin，24 小时内完成首次改密；随后从管理页创建普通用户，用普通账号进入“记一笔”。改密成功后删除本地临时密码文件。服务器的首管理员流程另见[部署初始化](agent-works/personal-bill-pwa/deployment/runbook.md#4-镜像迁移和首管理员)，不能复用开发凭据。
+在本地编辑器打开 `.local/dev-bootstrap/password` 获取临时密码（不要提交或贴到日志），访问登录页登录 admin，24 小时内完成首次改密；随后从管理页创建普通用户，用普通账号进入“记一笔”。改密成功后删除本地临时密码文件。服务器的首管理员流程另见[部署初始化](agent-works/deployment/runbook.md#4-镜像迁移和首管理员)，不能复用开发凭据。
 
 ### 5. 更换端口或开发库
 
@@ -157,7 +157,7 @@ npm run dev
 
 此时页面为 http://127.0.0.1:15174，API 代理和后端一起改为18080；PG仍是54329，但使用另一个数据库。选用的库名会持久保存，不是每次退出就销毁。旧库校验和错误时，另建空库只能帮助区分环境与代码问题，不能替代分析原库结构，禁止直接 Flyway repair 或清空旧库。
 
-全部变量的消费者、默认值和生效时机见[配置架构](agent-works/personal-bill-pwa/architecture/environment-configuration.md)。
+全部变量的消费者、默认值和生效时机见[配置架构](agent-works/architecture/environment-configuration.md)。
 
 ## 日常开发与调试
 
@@ -276,7 +276,7 @@ npm run dev
 │   ├── env/、postgres/               非密钥配置模板与数据库角色初始化
 │   ├── scripts/                      预检、容器入口、备份/隔离恢复、证书激活与巡检
 │   ├── tls/、systemd/、monitoring/     CA签发、备份/巡检定时、本机告警与可选监控规则
-├── agent-works/personal-bill-pwa/
+├── agent-works/
 │   ├── requirement*.md、plan.md       需求、确认依据、阶段与验收状态
 │   ├── architecture/                 当前技术与环境配置说明
 │   ├── deployment/                   通用部署架构、手册、构建、恢复
@@ -289,7 +289,7 @@ npm run dev
 
 例如“保存支出”：ExpenseEntryForm收集输入 → web/src/api/expenses.ts通过api/http发送 → ExpenseController解析请求 → ExpenseService校验金额、字典归属与幂等 → 租户事务 → ExpenseRepository/ExpenseRepositoryMapper → 对应XML写数据库 → 返回结果并由页面显示成功/字段错误。
 
-新增字段需要同步OpenAPI、生成类型、表单/domain校验、Controller契约、Service、Mapper及相关测试；只有真实存储结构改变时才新增Flyway迁移。修改页面布局查DESIGN和共享组件，修改金额算法先查domain/BigDecimal规则，修改后台任务查job与对应JobDefinition，不在Controller内写长循环。各模块完整机制见[架构索引](agent-works/personal-bill-pwa/architecture/README.md)。
+新增字段需要同步OpenAPI、生成类型、表单/domain校验、Controller契约、Service、Mapper及相关测试；只有真实存储结构改变时才新增Flyway迁移。修改页面布局查DESIGN和共享组件，修改金额算法先查domain/BigDecimal规则，修改后台任务查job与对应JobDefinition，不在Controller内写长循环。各模块完整机制见[架构索引](agent-works/architecture/README.md)。
 
 ## 开发与验证
 
@@ -303,11 +303,11 @@ npm run dev
 | npm run check:security | 依赖/安全门禁 | secret与依赖OSV扫描；需网络，不包含容器OS包 |
 | npm run check:e2e | 浏览器独有关键链路 | 隔离库与Chromium；需匹配版本浏览器，不使用生产账号 |
 
-常规局部修改选择最低充分检查，不默认每次全跑。已有验证证据见[验收记录](agent-works/personal-bill-pwa/pre-release-test-report.md)，脚本存在与实际执行结果分开记录。构建产物web/dist用于发布，server/target下JAR用于打包，不手工编辑。
+常规局部修改选择最低充分检查，不默认每次全跑。已有验证证据见[验收记录](agent-works/pre-release-test-report.md)，脚本存在与实际执行结果分开记录。构建产物web/dist用于发布，server/target下JAR用于打包，不手工编辑。
 
 ## 部署与排查
 
-开发的Vite不用于正式部署。生产只有三个常驻容器：Caddy提供前端文件/HTTPS并转发API，Java执行后端，PostgreSQL保存数据。角色初始化、迁移、首管理员是一次性工具；备份是宿主定时任务，具体区别见[部署架构](agent-works/personal-bill-pwa/deployment/architecture.md)。
+开发的Vite不用于正式部署。生产只有三个常驻容器：Caddy提供前端文件/HTTPS并转发API，Java执行后端，PostgreSQL保存数据。角色初始化、迁移、首管理员是一次性工具；备份是宿主定时任务，具体区别见[部署架构](agent-works/deployment/architecture.md)。
 
 ### 新服务器如何初始化
 
@@ -321,7 +321,7 @@ npm run environment -- bootstrap intranet-main
 npm run environment -- verify intranet-main
 ```
 
-向导以安装程序式问答收集机器、路径、网段和TLS来源，不要求输入生产密码；初始化入口自动运行持续构建、生成服务器secret、建立数据库角色/schema/首管理员、启动服务并配置备份巡检。失败可用同一提交 `resume`，完成首登改密后用 `finalize` 删除服务器初始密码副本。当前只实现单机内网profile；公网模式仅保留契约且会拒绝执行，须先完成域名/ACME或边缘源站认证、真实客户端IP、管理入口、异机备份和外部告警方案。详见[首次环境初始化自动化](agent-works/personal-bill-pwa/deployment/environment-bootstrap.md)。
+向导以安装程序式问答收集机器、路径、网段和TLS来源，不要求输入生产密码；初始化入口自动运行持续构建、生成服务器secret、建立数据库角色/schema/首管理员、启动服务并配置备份巡检。失败可用同一提交 `resume`，完成首登改密后用 `finalize` 删除服务器初始密码副本。当前只实现单机内网profile；公网模式仅保留契约且会拒绝执行，须先完成域名/ACME或边缘源站认证、真实客户端IP、管理入口、异机备份和外部告警方案。详见[首次环境初始化自动化](agent-works/deployment/environment-bootstrap.md)。
 
 ### 前后端代码更新如何发布
 
@@ -334,7 +334,7 @@ npm run environment -- verify intranet-main
 5. `npm run release -- status intranet-main` 只读查看版本、Compose状态和HTTPS健康。任一目标失败后不会继续后续位置；迁移已尝试时不会盲目自动回滚，须按迁移兼容性和恢复手册判断。
 6. 前端由宿主 `web/dist` 只读挂载到proxy，后端在app镜像内；发布通过重建容器应用新版本，不只替换符号链接或重启旧容器。
 
-该入口只负责已有环境的持续构建更新，不安装Docker、不创建运行配置/secret/TLS/首管理员，也不把当前内网方案扩展成公网部署。目标配置契约见 [`deploy/targets`](deploy/targets/README.md)。详细机制见[持续构建与发布](agent-works/personal-bill-pwa/deployment/continuous-delivery.md)、[首次部署、升级与运维手册](agent-works/personal-bill-pwa/deployment/runbook.md)和[部署支持边界](agent-works/personal-bill-pwa/deployment/architecture.md#10-支持范围与待验收边界)。当前不承诺零停机或数据库自动回滚。
+该入口只负责已有环境的持续构建更新，不安装Docker、不创建运行配置/secret/TLS/首管理员，也不把当前内网方案扩展成公网部署。目标配置契约见 [`deploy/targets`](deploy/targets/README.md)。详细机制见[持续构建与发布](agent-works/deployment/continuous-delivery.md)、[首次部署、升级与运维手册](agent-works/deployment/runbook.md)和[部署支持边界](agent-works/deployment/architecture.md#10-支持范围与待验收边界)。当前不承诺零停机或数据库自动回滚。
 
 | 现象 | 检查顺序 |
 |---|---|
@@ -344,7 +344,7 @@ npm run environment -- verify intranet-main
 | Flyway checksum失败 | 目标库是否选对、迁移源码与历史是否一致；保留旧库分析，不自动repair |
 | 账号初始化失败 | 开发服务是否已完成迁移、库是否为空、密码文件是否可读；不要重跑以重置已有账号 |
 | 调试断点不命中 | 5005监听、IDE连接的进程、源码是否与运行版本一致、请求是否通过角色/CSRF |
-| HTTPS警告或备份状态疑问 | [实际案例](agent-works/personal-bill-pwa/deployment/cases/intranet-single-host.md)的证书/定时任务证据 |
+| HTTPS警告或备份状态疑问 | [实际案例](agent-works/deployment/cases/intranet-single-host.md)的证书/定时任务证据 |
 
 ## 文档导航
 
@@ -353,10 +353,10 @@ npm run environment -- verify intranet-main
 | 想了解 | 文档 |
 |---|---|
 | AI协作规则 | [AGENTS](AGENTS.md)、[Claude入口](CLAUDE.md) |
-| 业务范围与进度 | [需求](agent-works/personal-bill-pwa/requirement.md)、[计划](agent-works/personal-bill-pwa/plan.md) |
-| 技术架构 | [架构索引](agent-works/personal-bill-pwa/architecture/README.md) |
-| 环境变量/secret | [配置架构](agent-works/personal-bill-pwa/architecture/environment-configuration.md) |
+| 业务范围与进度 | [需求](agent-works/requirement.md)、[计划](agent-works/plan.md) |
+| 技术架构 | [架构索引](agent-works/architecture/README.md) |
+| 环境变量/secret | [配置架构](agent-works/architecture/environment-configuration.md) |
 | 页面规范/接口 | [DESIGN](DESIGN.md)、[OpenAPI](contracts/openapi.yaml) |
-| 可复用部署方案 | [部署架构与手册](agent-works/personal-bill-pwa/deployment/README.md) |
-| 当前服务器与部署结果 | [案例索引](agent-works/personal-bill-pwa/deployment/cases/README.md) |
-| 部署前验证 | [验收记录](agent-works/personal-bill-pwa/pre-release-test-report.md)、[性能](agent-works/personal-bill-pwa/performance-test.md)、[安全](agent-works/personal-bill-pwa/security-test.md) |
+| 可复用部署方案 | [部署架构与手册](agent-works/deployment/README.md) |
+| 当前服务器与部署结果 | [案例索引](agent-works/deployment/cases/README.md) |
+| 部署前验证 | [验收记录](agent-works/pre-release-test-report.md)、[性能](agent-works/performance-test.md)、[安全](agent-works/security-test.md) |

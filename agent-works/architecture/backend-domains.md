@@ -28,7 +28,7 @@ flowchart TD
 | admin/audit | /admin/audit-logs | 脱敏审计筛选与详情；只读查询，追加经统一审计服务 |
 | account、job | 注销、离线恢复维护和后台执行 | 见任务专题；不用 Controller 内长循环替代任务 |
 
-API 的精确字段、枚举和状态以 [OpenAPI](../../../contracts/openapi.yaml) 为准；上述前缀用于定位，不代替契约。
+API 的精确字段、枚举和状态以 [OpenAPI](../../contracts/openapi.yaml) 为准；上述前缀用于定位，不代替契约。
 
 ## 分层名称对应什么工作
 

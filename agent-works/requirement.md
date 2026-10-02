@@ -25,7 +25,7 @@
 - 管理概况只读取账号、会话、服务、备份状态和存储元数据，不聚合个人账目。注销立即物理删除在线数据/导出并撤销会话，匿名审计保留180天；旧备份恢复前保全审计，恢复后通过受保护的离线工具重放注销。
 - 本次内网的宿主及数据库镜像残余风险经用户接受；更大规模恢复测试按用户要求不做。具体实例和验证边界见[部署案例](deployment/cases/intranet-single-host.md)。
 - 上游闭环事实源为 [requirement-closure.md](requirement-closure.md)。
-- 前端设计事实源为 [DESIGN.md](../../DESIGN.md)。
+- 前端设计事实源为 [DESIGN.md](../DESIGN.md)。
 - 六个页面原型位于 [prototypes](prototypes/)，用于验证结构、交互和状态，不替代本文业务规则。
 
 ### 2.2 用户已明确确认

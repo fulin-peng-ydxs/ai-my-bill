@@ -2,13 +2,13 @@
 
 部署方案与实例分开维护：
 
-- [部署导航与模式](../agent-works/personal-bill-pwa/deployment/README.md)
-- [首次环境初始化自动化](../agent-works/personal-bill-pwa/deployment/environment-bootstrap.md)
-- [首次部署、升级和运维手册](../agent-works/personal-bill-pwa/deployment/runbook.md)
-- [持续构建与发布链路](../agent-works/personal-bill-pwa/deployment/continuous-delivery.md)
-- [备份恢复方案与验证边界](../agent-works/personal-bill-pwa/deployment/backup-recovery.md)
-- [环境变量与配置加载](../agent-works/personal-bill-pwa/architecture/environment-configuration.md)
-- [当前内网部署案例](../agent-works/personal-bill-pwa/deployment/cases/intranet-single-host.md)
+- [部署导航与模式](../agent-works/deployment/README.md)
+- [首次环境初始化自动化](../agent-works/deployment/environment-bootstrap.md)
+- [首次部署、升级和运维手册](../agent-works/deployment/runbook.md)
+- [持续构建与发布链路](../agent-works/deployment/continuous-delivery.md)
+- [备份恢复方案与验证边界](../agent-works/deployment/backup-recovery.md)
+- [环境变量与配置加载](../agent-works/architecture/environment-configuration.md)
+- [当前内网部署案例](../agent-works/deployment/cases/intranet-single-host.md)
 
 ## 实现目录
 
@@ -30,4 +30,4 @@
 | Dockerfile.postgres | 固定PostgreSQL16.14，构建安装发行版补丁的数据库镜像 |
 | monitoring/ | 待实际接入验证的监控告警规则 |
 
-当前内网实例已按本次范围完成T29，证据汇总见[验收报告](../agent-works/personal-bill-pwa/test-report.md)。具体地址、例外、凭据位置、镜像摘要和验证结果只维护在案例中；不能把方案命令当作已执行证据。
+当前内网实例已按本次范围完成T29，证据汇总见[验收报告](../agent-works/test-report.md)。具体地址、例外、凭据位置、镜像摘要和验证结果只维护在案例中；不能把方案命令当作已执行证据。
