@@ -1602,30 +1602,6 @@ body:has(dialog[open]) {
 .product-options span { color: var(--color-muted); font-size: 12px; }
 .product-create-button { justify-self: start; max-width: 100%; overflow-wrap: anywhere; white-space: normal; }
 
-.dictionary-picker {
-  display: grid;
-  min-width: 0;
-  gap: var(--space-sm);
-  padding: 0;
-  border: 0;
-}
-.dictionary-picker legend { padding: 0; font-size: 14px; font-weight: 600; }
-.dictionary-picker-options { display: flex; flex-wrap: wrap; gap: var(--space-sm); }
-.dictionary-picker-options button {
-  min-height: 44px;
-  padding: var(--space-sm) var(--space-md);
-  color: var(--color-text);
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-pill);
-  cursor: pointer;
-}
-.dictionary-picker-options button[aria-pressed="true"] {
-  color: var(--color-primary);
-  border-color: var(--color-primary);
-  font-weight: 600;
-}
-
 .field-heading-action {
   display: flex;
   align-items: center;
@@ -1957,3 +1933,36 @@ body:has(dialog[open]) {
   .shell-content, .auth-workspace { padding-left: max(var(--space-md), env(safe-area-inset-left)); padding-right: max(var(--space-md), env(safe-area-inset-right)); }
   .form-grid-two { grid-template-columns: 1fr; }
 }
+
+/* 可新增字典的候选浮在控件上方，不改变填报表单的排版。 */
+.anchored-dropdown {
+  position: fixed;
+  z-index: 10000;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--color-text);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  box-shadow: 0 12px 32px color-mix(in srgb, var(--color-text) 16%, transparent);
+}
+.anchored-dropdown .product-options { max-height: none; min-height: 0; border: 0; border-radius: 0; }
+.anchored-dropdown .product-options li { min-width: 0; }
+.anchored-dropdown .product-options strong { overflow-wrap: anywhere; }
+.dropdown-action {
+  flex: 0 0 auto;
+  width: 100%;
+  min-height: 48px;
+  padding: var(--space-sm) var(--space-md);
+  color: var(--color-primary);
+  text-align: left;
+  overflow-wrap: anywhere;
+  background: var(--color-surface);
+  border: 0;
+  border-top: 1px solid var(--color-border);
+  cursor: pointer;
+}
+.dropdown-action:disabled { opacity: .6; cursor: wait; }
+.dropdown-status { display: block; padding: var(--space-sm) var(--space-md); font-size: 12px; line-height: 18px; }

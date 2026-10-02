@@ -17,6 +17,7 @@ import AppDialog from '../../components/AppDialog.vue'
 import AppDrawer from '../../components/AppDrawer.vue'
 import AppStateBlock from '../../components/AppStateBlock.vue'
 import AppToast from '../../components/AppToast.vue'
+import DictionaryCombobox, { type DictionaryChoice } from '../../components/DictionaryCombobox.vue'
 import DictionaryItemList, { type DictionaryListItem } from '../../components/DictionaryItemList.vue'
 import DictionaryToolbar from '../../components/DictionaryToolbar.vue'
 import FormField from '../../components/FormField.vue'
@@ -104,6 +105,24 @@ async function loadParentOptions(): Promise<void> {
     parentStatus.value = 'error'
     parentError.value = normalizeRequestError(cause).message
   }
+}
+
+async function searchDefaultRoots(query: string, signal: globalThis.AbortSignal): Promise<DictionaryChoice[]> {
+  const roots: DictionaryChoice[] = []
+  let pageIndex = 0
+  let total = 0
+  do {
+    const page = await listDefaultDictionaryItems('expense-category', query, 'ACTIVE', signal, pageIndex, 100)
+    roots.push(...page.items.filter((item) => !item.parentId))
+    total = page.total
+    pageIndex += 1
+  } while (pageIndex * 100 < total)
+  return roots
+}
+async function createDefaultRoot(name: string): Promise<DictionaryChoice> {
+  const item = await createDefaultDictionaryItem('expense-category', name)
+  activeRoots.value = [item, ...activeRoots.value]
+  return item
 }
 
 async function submitCreate(): Promise<void> {
@@ -374,31 +393,20 @@ onMounted(() => void Promise.all([load(), loadSummaries()]))
             >
           </template>
         </FormField>
-        <FormField
+        <DictionaryCombobox
           v-if="definition.hierarchical && parentStatus === 'ready'"
-          field-id="default-dictionary-parent"
+          input-id="default-dictionary-parent"
+          :clear-on-input="false"
+          type="expense-category"
           label="父分类"
-          help="不选择时创建一级分类；只能选择启用中的一级分类。"
-        >
-          <template #default="{ describedBy }">
-            <select
-              id="default-dictionary-parent"
-              v-model="createParentId"
-              :aria-describedby="describedBy"
-            >
-              <option value="">
-                无（一级分类）
-              </option>
-              <option
-                v-for="root in activeRoots"
-                :key="root.id"
-                :value="root.id"
-              >
-                {{ root.name }}
-              </option>
-            </select>
-          </template>
-        </FormField>
+          optional
+          :items="activeRoots"
+          :model-value="createParentId"
+          :load-items="searchDefaultRoots"
+          :create-item="createDefaultRoot"
+          @select="createParentId = $event.id"
+          @clear="createParentId = ''"
+        />
       </div>
     </AppDialog>
 

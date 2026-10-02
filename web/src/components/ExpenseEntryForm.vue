@@ -463,32 +463,17 @@ void loadOptions()
             @clear="form.secondaryCategoryId = ''; clearError('secondaryCategoryId'); persist()"
           />
         </div>
-        <FormField
-          field-id="expense-unit"
+        <DictionaryCombobox
+          input-id="expense-unit"
+          type="unit"
           label="单位"
+          :items="optionItems.units"
+          :model-value="form.unitId"
+          :disabled="submitting"
           :error="errors.unitId"
-        >
-          <template #default="{ describedBy }">
-            <select
-              id="expense-unit"
-              v-model="form.unitId"
-              :aria-describedby="describedBy"
-              :disabled="submitting"
-              @change="clearError('unitId'); persist()"
-            >
-              <option value="">
-                请选择
-              </option>
-              <option
-                v-for="item in optionItems.units"
-                :key="item.id"
-                :value="item.id"
-              >
-                {{ item.name }}
-              </option>
-            </select>
-          </template>
-        </FormField>
+          @select="ensureOption('units', $event.id, $event.name); form.unitId = $event.id; clearError('unitId'); persist()"
+          @clear="form.unitId = ''; clearError('unitId'); persist()"
+        />
       </FormSection>
 
       <FormSection
@@ -564,12 +549,15 @@ void loadOptions()
           @update:model-value="form.fundingChannelId = $event; clearError('fundingChannelId'); persist()"
         />
         <DictionaryPicker
+          type="purchase-channel"
+          input-id="expense-purchase-channel"
           label="购买渠道"
           optional
           :items="optionItems.purchase"
           :model-value="form.purchaseChannelId"
           :disabled="submitting"
           :error="errors.purchaseChannelId"
+          @selected="ensureOption('purchase', $event.id, $event.name)"
           @update:model-value="form.purchaseChannelId = $event; clearError('purchaseChannelId'); persist()"
         />
         <LocationLabelPicker
@@ -577,6 +565,7 @@ void loadOptions()
           :model-value="form.locationLabelId"
           :disabled="submitting"
           :error="errors.locationLabelId"
+          @selected="ensureOption('locations', $event.id, $event.name)"
           @update:model-value="form.locationLabelId = $event; clearError('locationLabelId'); persist()"
         />
         <div class="field-heading-action">

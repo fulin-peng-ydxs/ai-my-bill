@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import AppDrawer from '../components/AppDrawer.vue'
@@ -11,6 +11,7 @@ import PageHeading from '../components/PageHeading.vue'
 import DictionaryIndexPanel from '../components/DictionaryIndexPanel.vue'
 import PasswordChangeSheet from '../components/PasswordChangeSheet.vue'
 import FormField from '../components/FormField.vue'
+import DictionaryCombobox, { type DictionaryChoice } from '../components/DictionaryCombobox.vue'
 import PwaInstallPrompt from '../components/PwaInstallPrompt.vue'
 import SettingsDisclosureList, { type SettingsDisclosureItem } from '../components/SettingsDisclosureList.vue'
 import ThemeModeControl from '../components/ThemeModeControl.vue'
@@ -83,7 +84,8 @@ const fundingOptions = computed(() => {
 const settingItems = computed<SettingsDisclosureItem[]>(() => [
   {
     key: 'funding', label: '默认资金渠道',
-    value: fundingOptions.value.find((item) => item.id === preferencesStore.values.defaultFundingChannelId)?.name ?? '未设置',
+    value: fundingOptions.value.find((item) => item.id === preferencesStore.values.defaultFundingChannelId)?.name
+      ?? preferencesStore.defaultFundingChannelName ?? '未设置',
   },
   {
     key: 'ledgerRange', label: '明细默认范围',
@@ -116,11 +118,19 @@ const drawerDescription = computed(() => activeSetting.value === 'funding'
 function openSetting(key: string): void {
   if (['funding', 'ledgerRange', 'reportRange', 'appearance', 'install'].includes(key)) {
     activeSetting.value = key as typeof activeSetting.value
+    if (key === 'funding' && fundingLoading.value) void loadFundingChannels()
   }
 }
 
 function updatePreference(patch: Parameters<typeof preferencesStore.update>[0]): void {
   void preferencesStore.update(patch).catch(() => undefined)
+}
+
+function selectDefaultFunding(item: DictionaryChoice): void {
+  if (!fundingChannels.value.some((channel) => channel.id === item.id)) {
+    fundingChannels.value = [{ id: item.id, name: item.name, type: 'funding-channel', status: 'ACTIVE', sortOrder: 0, referenced: false }, ...fundingChannels.value]
+  }
+  updatePreference({ defaultFundingChannelId: item.id })
 }
 
 function retryActive(): void {
@@ -190,7 +200,6 @@ function showExportNotice(message: string, kind: 'success' | 'error'): void {
   toastOpen.value = true
 }
 
-onMounted(loadFundingChannels)
 </script>
 
 <template>
@@ -344,32 +353,19 @@ onMounted(loadFundingChannels)
           action-label="重试"
           @action="loadFundingChannels"
         />
-        <FormField
+        <DictionaryCombobox
           v-else-if="activeSetting === 'funding'"
-          field-id="default-funding-channel"
+          input-id="default-funding-channel"
+          :clear-on-input="false"
+          type="funding-channel"
           label="默认资金渠道"
-        >
-          <template #default="{ describedBy }">
-            <select
-              id="default-funding-channel"
-              :value="preferencesStore.values.defaultFundingChannelId ?? ''"
-              :aria-describedby="describedBy"
-              :disabled="preferencesStore.isSaving"
-              @change="updatePreference({ defaultFundingChannelId: ($event.target as HTMLSelectElement).value || null })"
-            >
-              <option value="">
-                未设置
-              </option>
-              <option
-                v-for="channel in fundingOptions"
-                :key="channel.id"
-                :value="channel.id"
-              >
-                {{ channel.name }}（资金渠道）
-              </option>
-            </select>
-          </template>
-        </FormField>
+          optional
+          :items="fundingOptions"
+          :model-value="preferencesStore.values.defaultFundingChannelId ?? ''"
+          :disabled="preferencesStore.isSaving"
+          @select="selectDefaultFunding"
+          @clear="updatePreference({ defaultFundingChannelId: null })"
+        />
         <FormField
           v-else-if="activeSetting === 'ledgerRange'"
           field-id="ledger-default-range"

@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 
+import AnchoredDropdown from './AnchoredDropdown.vue'
+
 import { createDictionaryItem } from '../api/dictionaries'
 import { listExpenseProducts, type ProductSuggestion } from '../api/expenses'
 import { normalizeRequestError } from '../api/errors'
@@ -21,23 +23,35 @@ const emit = defineEmits<{
 }>()
 
 const query = ref(props.modelName)
-const listOpen = ref(true)
+const anchor = ref<globalThis.HTMLElement>()
+const dropdown = ref<{ focusFirst: () => void }>()
+const listOpen = ref(false)
 const createError = ref<string>()
 const creating = ref(false)
 const request = useLatestRequest<ProductSuggestion[]>()
+const searchedQuery = ref<string>()
+const candidates = computed(() => (request.data.value ?? []).filter((item) =>
+  normalizeDictionaryName(item.name).includes(normalizeDictionaryName(query.value))))
 const exactMatch = computed(() => {
   const normalizedQuery = normalizeDictionaryName(query.value)
-  return request.data.value?.some((item) => normalizeDictionaryName(item.name) === normalizedQuery) ?? false
+  return candidates.value.some((item) => normalizeDictionaryName(item.name) === normalizedQuery)
 })
-const canCreate = computed(() => query.value.trim().length > 0 && query.value.trim().length <= 200 && !exactMatch.value)
+const nameTooLong = computed(() => [...query.value.trim()].length > 200)
+const canCreate = computed(() => query.value.trim().length > 0 && !nameTooLong.value && !exactMatch.value)
 
 async function search(value: string): Promise<void> {
+  searchedQuery.value = value
   await request.execute((signal) => listExpenseProducts(value.trim(), signal).then((response) => response.items), {
     isEmpty: (items) => items.length === 0,
   })
 }
 
 const debounced = useDebouncedQuery((value: string) => { void search(value) })
+
+function focus(): void {
+  listOpen.value = true
+  if (searchedQuery.value !== query.value || !request.data.value) void search(query.value)
+}
 
 function changeQuery(value: string): void {
   query.value = value
@@ -61,7 +75,6 @@ async function createProduct(): Promise<void> {
   try {
     const created = await createDictionaryItem('product', query.value.trim())
     select({ id: created.id, name: created.name })
-    await search(created.name)
   } catch (error) {
     createError.value = normalizeRequestError(error).message
   } finally {
@@ -71,9 +84,10 @@ async function createProduct(): Promise<void> {
 
 function reset(): void {
   query.value = ''
-  listOpen.value = true
+  searchedQuery.value = undefined
+  listOpen.value = false
   createError.value = undefined
-  void search('')
+  request.cancel()
 }
 
 defineExpose({ reset })
@@ -81,7 +95,6 @@ defineExpose({ reset })
 watch(() => props.modelName, (value) => {
   if (props.modelValue && value && value !== query.value) query.value = value
 })
-void search(query.value)
 </script>
 
 <template>
@@ -89,59 +102,84 @@ void search(query.value)
     <label for="expense-product-search">商品名称</label>
     <input
       id="expense-product-search"
+      ref="anchor"
       :value="query"
       :disabled="disabled"
       autocomplete="off"
       placeholder="搜索或输入新商品"
       role="combobox"
-      :aria-expanded="listOpen && Boolean(request.data.value?.length)"
+      :aria-expanded="listOpen"
       aria-controls="expense-product-options"
       :aria-invalid="Boolean(error)"
       @input="changeQuery(($event.target as HTMLInputElement).value)"
-      @focus="listOpen = true"
+      @focus="focus"
       @keydown.enter.prevent="debounced.submit(query)"
       @keydown.escape="listOpen = false"
+      @keydown.down.prevent="dropdown?.focusFirst()"
     >
-    <small v-if="request.status.value === 'loading'">正在查询商品…</small>
-    <small
-      v-else-if="request.error.value"
-      class="field-error"
-      role="alert"
-    >{{ request.error.value.message }} <button
-      type="button"
-      class="inline-action"
-      @click="search(query)"
-    >重试</button></small>
-    <ul
-      v-if="listOpen && request.data.value?.length"
+    <AnchoredDropdown
       id="expense-product-options"
-      class="product-options"
-      role="listbox"
+      ref="dropdown"
+      :anchor="anchor"
+      :open="listOpen"
+      @close="listOpen = false"
     >
-      <li
-        v-for="item in request.data.value"
-        :key="item.id"
+      <small
+        v-if="request.status.value === 'loading'"
+        class="dropdown-status"
+      >正在查询商品…</small>
+      <small
+        v-else-if="request.error.value"
+        class="dropdown-status field-error"
+        role="alert"
       >
-        <button
+        {{ request.error.value.message }} <button
           type="button"
-          role="option"
-          :aria-selected="modelValue === item.id"
-          @click="select(item)"
+          class="inline-action"
+          @click="search(query)"
+        >重试</button>
+      </small>
+      <ul
+        v-if="candidates.length"
+        class="product-options"
+        role="listbox"
+      >
+        <li
+          v-for="item in candidates"
+          :key="item.id"
         >
-          <strong>{{ item.name }}</strong>
-          <span>{{ item.lastUnitPrice ? `最近 ¥${item.lastUnitPrice}` : '尚无最近价格' }}</span>
-        </button>
-      </li>
-    </ul>
-    <button
-      v-if="canCreate"
-      type="button"
-      class="secondary-button product-create-button"
-      :disabled="disabled || creating"
-      @click="createProduct"
-    >
-      {{ creating ? '正在新增…' : `新增商品“${query.trim()}”` }}
-    </button>
+          <button
+            type="button"
+            role="option"
+            :aria-selected="modelValue === item.id"
+            @click="select(item)"
+          >
+            <strong>{{ item.name }}</strong>
+            <span>{{ item.lastUnitPrice ? `最近 ¥${item.lastUnitPrice}` : '尚无最近价格' }}</span>
+          </button>
+        </li>
+      </ul>
+      <div
+        v-else-if="request.status.value !== 'loading'"
+        class="dropdown-status"
+      >
+        暂无匹配商品
+      </div>
+      <button
+        v-if="canCreate"
+        type="button"
+        class="dropdown-action"
+        :disabled="disabled || creating"
+        @click="createProduct"
+      >
+        {{ creating ? '正在新增…' : `＋ 新增商品“${query.trim()}”` }}
+      </button>
+      <small
+        v-if="nameTooLong || createError"
+        class="dropdown-status field-error"
+        role="alert"
+      >{{ nameTooLong ? '商品名称不能超过 200 个字符。' : createError }}</small>
+    </AnchoredDropdown>
     <small
       v-if="error || createError"
       class="field-error"

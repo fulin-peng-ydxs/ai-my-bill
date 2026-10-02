@@ -2,7 +2,7 @@
 import { computed, onScopeDispose, reactive, ref, watch } from 'vue'
 
 import type { DailyTemplateSelection } from '../api/dailyTemplates'
-import { createDictionaryItem, listDictionaryCandidates, type DictionaryItem } from '../api/dictionaries'
+import { listDictionaryCandidates, type DictionaryItem } from '../api/dictionaries'
 import { ApiClientError } from '../api/http'
 import {
   createIncome, getIncome, listRecentIncomeNames, undoCreatedIncome, updateIncome, type IncomeResponse,
@@ -12,7 +12,6 @@ import { registerUnsavedChanges } from '../composables/unsavedChanges'
 import { createIdempotencyAttemptTracker } from '../domain/idempotency'
 import { toShanghaiLocalDateTime } from '../domain/businessTime'
 import { isDecimalInRange, MONEY_MAX, scaledIntegerToDecimal, decimalToScaledInteger } from '../domain/money'
-import { normalizeDictionaryName } from '../domain/dictionaries'
 import {
   emptyIncomeForm, incomeFormFromResponse, incomeRequestFromForm, validateIncomeForm,
   type IncomeField, type IncomeFormState,
@@ -21,6 +20,7 @@ import AppStateBlock from './AppStateBlock.vue'
 import AppToast from './AppToast.vue'
 import DailyTemplateFallbackNotice from './DailyTemplateFallbackNotice.vue'
 import DictionaryPicker from './DictionaryPicker.vue'
+import DictionaryCombobox, { type DictionaryChoice } from './DictionaryCombobox.vue'
 import EntrySaveBar from './EntrySaveBar.vue'
 import FormField from './FormField.vue'
 import FormSection from './FormSection.vue'
@@ -45,7 +45,6 @@ const loading = ref(true)
 const loadError = ref('')
 const errors = reactive<Partial<Record<IncomeField, string>>>({})
 const submitting = ref(false)
-const addingPayer = ref(false)
 const undoing = ref(false)
 const saved = ref<IncomeResponse>()
 const savedKey = ref('')
@@ -132,28 +131,19 @@ async function loadOptions(): Promise<void> {
   finally { loading.value = false }
 }
 
-function selectPayer(id: string): void {
-  form.payerId = id
-  form.payerName = payers.value.find((item) => item.id === id)?.name ?? ''
+function selectPayer(item: DictionaryChoice): void {
+  ensureItem(payers, 'payer', item.id, item.name)
+  form.payerId = item.id
+  form.payerName = item.name
   clear('payerId')
 }
 
-function selectFundingItem(item: { id: string, name: string }): void {
-  ensureItem(funding, 'funding-channel', item.id, item.name)
+function selectIncomeCategory(item: DictionaryChoice): void {
+  ensureItem(categories, 'income-category', item.id, item.name)
 }
 
-async function addPayer(): Promise<void> {
-  const name = form.payerName.trim()
-  if (!name) { errors.payerId = '请输入付款方名称后新增。'; return }
-  const existing = payers.value.find((item) => normalizeDictionaryName(item.name) === normalizeDictionaryName(name))
-  if (existing) { selectPayer(existing.id); return }
-  addingPayer.value = true
-  try {
-    const created = await createDictionaryItem('payer', name)
-    payers.value = [created, ...payers.value]
-    selectPayer(created.id)
-  } catch (error) { errors.payerId = error instanceof Error ? error.message : '新增付款方失败。' }
-  finally { addingPayer.value = false }
+function selectFundingItem(item: DictionaryChoice): void {
+  ensureItem(funding, 'funding-channel', item.id, item.name)
 }
 
 function validate(): boolean {
@@ -300,53 +290,26 @@ void loadOptions()
             </datalist>
           </template>
         </FormField>
-        <FormField
-          field-id="income-payer-name"
+        <DictionaryCombobox
+          input-id="income-payer-name"
+          type="payer"
           label="付款方"
-          help="可选择已有付款方，或输入名称后快速新增。"
+          :items="payers"
+          :model-value="form.payerId"
+          :disabled="submitting"
           :error="errors.payerId"
-        >
-          <template #default="{ describedBy }">
-            <div class="payer-row">
-              <input
-                id="income-payer-name"
-                v-model="form.payerName"
-                :aria-describedby="describedBy"
-                :disabled="submitting || addingPayer"
-                @input="form.payerId = ''; clear('payerId')"
-              ><button
-                type="button"
-                class="secondary-button"
-                :disabled="submitting || addingPayer"
-                @click="addPayer"
-              >
-                {{ addingPayer ? '新增中…' : '新增' }}
-              </button>
-            </div>
-            <select
-              :value="form.payerId"
-              aria-label="已有付款方"
-              :disabled="submitting"
-              @change="selectPayer(($event.target as HTMLSelectElement).value)"
-            >
-              <option value="">
-                选择已有付款方
-              </option><option
-                v-for="item in payers"
-                :key="item.id"
-                :value="item.id"
-              >
-                {{ item.name }}
-              </option>
-            </select>
-          </template>
-        </FormField>
+          @select="selectPayer"
+          @clear="form.payerId = ''; form.payerName = ''; clear('payerId')"
+        />
         <DictionaryPicker
+          type="income-category"
+          input-id="income-category"
           label="收入分类"
           :items="categories"
           :model-value="form.incomeCategoryId"
           :disabled="submitting"
           :error="errors.incomeCategoryId"
+          @selected="selectIncomeCategory"
           @update:model-value="form.incomeCategoryId = $event; clear('incomeCategoryId')"
         />
       </FormSection>

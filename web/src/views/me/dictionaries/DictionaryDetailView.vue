@@ -21,6 +21,7 @@ import AppDialog from '../../../components/AppDialog.vue'
 import AppDrawer from '../../../components/AppDrawer.vue'
 import AppStateBlock from '../../../components/AppStateBlock.vue'
 import AppToast from '../../../components/AppToast.vue'
+import DictionaryCombobox, { type DictionaryChoice } from '../../../components/DictionaryCombobox.vue'
 import DictionaryItemList, { type DictionaryListItem } from '../../../components/DictionaryItemList.vue'
 import DictionaryToolbar from '../../../components/DictionaryToolbar.vue'
 import FormField from '../../../components/FormField.vue'
@@ -112,7 +113,7 @@ async function loadParentOptions(): Promise<void> {
     let rootPage = 0
     let rootTotal = 0
     do {
-      const page = await listDictionaryItems(definition.value.type, '', 'ACTIVE', undefined, rootPage, 100)
+      const page = await listDictionaryItems(definition.value.type, '', 'ACTIVE', undefined, rootPage, 100, { rootsOnly: true })
       activeRoots.value.push(...page.items.filter((item) => !item.parentId))
       rootTotal = page.total
       rootPage += 1
@@ -122,6 +123,17 @@ async function loadParentOptions(): Promise<void> {
     parentOptionsStatus.value = 'error'
     parentOptionsError.value = normalizeRequestError(cause).message
   }
+}
+
+async function searchParentRoots(query: string, signal: globalThis.AbortSignal): Promise<DictionaryChoice[]> {
+  if (!definition.value) return []
+  const page = await listDictionaryItems(definition.value.type, query, 'ACTIVE', signal, 0, 100, { rootsOnly: true })
+  return page.items
+}
+async function createParentRoot(name: string): Promise<DictionaryChoice> {
+  const item = await createDictionaryItem('expense-category', name)
+  activeRoots.value = [item, ...activeRoots.value]
+  return item
 }
 
 function canSubmitEditor(): boolean {
@@ -607,31 +619,20 @@ onMounted(() => {
             >
           </template>
         </FormField>
-        <FormField
+        <DictionaryCombobox
           v-if="definition.hierarchical && editorMode === 'create' && parentOptionsStatus === 'ready'"
-          field-id="dictionary-parent"
+          input-id="dictionary-parent"
+          :clear-on-input="false"
+          type="expense-category"
           label="父分类"
-          help="不选择时创建一级分类；只能选择启用中的一级分类。"
-        >
-          <template #default="{ describedBy }">
-            <select
-              id="dictionary-parent"
-              v-model="editorParentId"
-              :aria-describedby="describedBy"
-            >
-              <option value="">
-                无（一级分类）
-              </option>
-              <option
-                v-for="root in activeRoots"
-                :key="root.id"
-                :value="root.id"
-              >
-                {{ root.name }}
-              </option>
-            </select>
-          </template>
-        </FormField>
+          optional
+          :items="activeRoots"
+          :model-value="editorParentId"
+          :load-items="searchParentRoots"
+          :create-item="createParentRoot"
+          @select="editorParentId = $event.id"
+          @clear="editorParentId = ''"
+        />
       </div>
     </AppDialog>
 

@@ -276,8 +276,8 @@ Key Characteristics：
 | `EntrySaveBar` | 收支填报的双保存操作 | 统一“保存并继续”和当前类型主保存的布局、禁用态与移动端底部定位 |
 | `DictionaryFilterPicker` | 明细与报表的历史字典筛选 | 复用字段、搜索和四态；服务端分页与层级过滤，允许停用项；已选 ID 独立回显，禁止首批候选冒充完整选项 |
 | `FundingChannelPicker` | 资金渠道选择 | 同一数据在支出显示“支付方式”、收入显示“收款方式”；搜索或输入新名称，停用项不用于新记录 |
-| `DictionaryCombobox` | 记账时搜索和新增字典项 | 一级、二级支出分类与资金渠道共用商品名称的紧凑交互；输入时显示候选和新增动作，创建成功后选中稳定 ID，二级分类绑定已选一级分类 |
-| `PayerCombobox` | 付款方搜索、最近使用和快捷新增 | 收入必填；新值随收入保存到个人字典，历史记录保留名称快照 |
+| `DictionaryCombobox` / `DictionaryPicker` / `AnchoredDropdown` | 字典填报的搜索、选择和下拉新增 | 分类、单位、资金渠道、购买渠道、地点、付款方、默认渠道及父分类复用固定锚点浮层；展开不推动表单，候选与新增动作分区；创建后选中稳定 ID，二级分类绑定已选一级分类；浮层在抽屉与弹窗内仍可见且随视口定位；设置值搜索不提前写入，离开时恢复未提交选择 |
+| `DictionaryCombobox` 的付款方实例 | 付款方搜索、最近使用和快捷新增 | 收入必填；新值随收入保存到个人字典，历史记录保留名称快照 |
 | `LocationLabelPicker` | 可选地点文本标签 | 第一期只消费当前租户字典，不请求定位、不展示地图占位；精准位置属于后期增强 |
 | `LedgerListItem` | 手机收支摘要 | 支出以商品、收入以收入名称为主；全部、调整和回收站等混合语境用描边标签显示类型，单一支出或收入页签隐藏重复类型标签；始终显示对象、正负金额和业务时间，整行可进入对应详情 |
 | `GlobalLedgerSearch` | 明细与报表常驻关键词搜索 | 搜索名称、分类、付款方和备注；位于页面主内容顶部，短防抖更新，不得埋入筛选抽屉 |
@@ -330,7 +330,7 @@ Key Characteristics：
 - 数字键盘字段使用适合移动端的输入模式；不能仅依赖 HTML 输入类型完成业务校验。
 - 长表单必须按用户能够识别的业务任务分组，分区标题说明“这一组填写什么”，使用留白和 hairline 分隔；不得只按字段顺序连续堆叠，也不得用卡片套卡片制造层级。
 - 行内候选值只承载可选业务数据；“管理、新增、调整”等动作必须与候选值分离，避免被误认成选项。
-- 手机端资金渠道、购买渠道和地点等业务候选必须自然换行，不使用隐藏滚动条掩盖屏幕外选项；短动作按钮仍保持单行。
+- 手机端字典输入只占单行控件高度；候选与新增动作显示在有界浮层中，长名称自然换行，浮层内部纵向滚动，不得撑开表单或造成页面横向溢出；短动作按钮仍保持单行。
 - 普通字段必须具有可由浏览器识别的标签关联；芯片候选组使用 `fieldset/legend` 或 `aria-labelledby`，不得只依赖视觉邻近文字。
 - 同一任务在同一页面只保留一个主要入口；常驻关键词搜索与高级结构化筛选职责互补，不得在抽屉中重复搜索字段。
 
@@ -555,7 +555,7 @@ Key Characteristics：
 | pageKey | 页面 | 原型 | 主任务 | 主要组件 |
 | --- | --- | --- | --- | --- |
 | `login` | 登录与安装 | `auth` | 完成安全登录并理解安装方式 | `ThemeModeControl` / `PwaInstallPrompt` / `AppStateBlock` |
-| `ledger-entry` | 记一笔 | `quick-entry` | 选择日常模板或手动快速保存商品支出、金额收入 | `EntryTypeSwitch` / `DailyEntryPicker` / `ProductCombobox` / `PayerCombobox` / `FundingChannelPicker` / `MoneySummary` |
+| `ledger-entry` | 记一笔 | `quick-entry` | 选择日常模板或手动快速保存商品支出、金额收入 | `EntryTypeSwitch` / `DailyEntryPicker` / `ProductCombobox` / `DictionaryCombobox` / `FundingChannelPicker` / `MoneySummary` |
 | `reports` | 收支报表 | `dashboard` | 分析收支、调整、时间趋势、收支多维与质量线索并下钻 | `GlobalLedgerSearch` / `MoneySummary` / `ChartPanel` / `TimeTrendPanel` / `ReportDimensionPanel` / `DictionaryFilterPicker` / `FilterSheet` |
 | `bill-details` | 收支明细 | `list` | 查询和纠正支出、收入及调整 | `GlobalLedgerSearch` / `LedgerListItem` / `LedgerContextActions` / `IncrementalLedgerList` / `DictionaryFilterPicker` / `FilterSheet` / `AppDrawer` |
 | `profile-settings` | 我的 | `settings` | 从单一“管理个人字典”入口进入八类维护，并管理偏好、安装帮助和个人数据 | `SettingsDisclosureList` / `ThemeModeControl` / `PwaInstallPrompt` / `AppDrawer` / `AppDialog` |
