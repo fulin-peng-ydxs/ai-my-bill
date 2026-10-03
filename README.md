@@ -305,9 +305,23 @@ npm run dev
 | npm run check:performance | 查询/批处理容量风险 | 临时PG代表性规模数据；不连开发库 |
 | npm run check:security | 依赖/安全门禁 | secret与依赖OSV扫描；需网络，不包含容器OS包 |
 | npm run check:e2e | 浏览器独有关键链路 | 隔离库与Chromium；需匹配版本浏览器，不使用生产账号 |
+| npm run check:ios | 前端改动的真机页面验收 | 连接实体 iPhone Safari，登录本地测试账号，检查记账页宽度、日期控件与分类浮层并保存私密截图 |
 | npm run check:deployment | 部署脚本、profile或目标字段变更 | Shell语法、严格字面解析和部署配置负例 |
 
 常规局部修改选择最低充分检查，不默认每次全跑。已有验证证据见[验收记录](agent-works/pre-release-test-report.md)，脚本存在与实际执行结果分开记录。构建产物web/dist用于发布，server/target下JAR用于打包，不手工编辑。
+
+### iPhone Safari 真机验收
+
+将 iPhone 解锁并连接 Mac，在手机「设置 → App → Safari → 高级」打开「网页检查器」和「远程自动化」。Mac Safari 的「开发」菜单应能看到该 iPhone；首次用线缆配对时需在手机上信任 Mac。保持手机亮屏、前后端本地服务运行，确认手机能访问本机前端地址。Mac 安装的 `safaridriver` 通过 WebDriver 启动独立的 iPhone Safari 测试会话；若 Mac 提示启用远程自动化，需在 Safari 开发者设置中开启。Apple 的[真机检查](https://developer.apple.com/documentation/safari-developer-tools/inspecting-ios)和[远程自动化](https://developer.apple.com/documentation/safari-developer-tools/ios-enabling-webdriver)说明可用于排查连接问题。
+
+将 `admin` 和 `pengfulin` 的本地测试密码保存在 `.local/real-device-test/accounts.md`，格式为用户名与密码两列表格；在同目录的 `config.json` 保存手机可访问的本机开发地址 `baseUrl`（`http://<本机地址>:5174`）和可选的实体手机 `deviceUDID`。目录权限设为 `700`、文件权限设为 `600`；该目录被 Git 忽略。不要在命令或仓库文档中写密码。运行：
+
+```bash
+npm run check:ios
+MY_BILL_IOS_ACCOUNT=admin npm run check:ios
+```
+
+输出必须标明 `iOS`、实际设备名且 `safari:useSimulator=false`；普通账号检查支出和收入填报的横向溢出、日期控件边界，以及支出分类浮层边界；管理员账号检查用户页加载后的宽度。截图写入 `.local/real-device-test/`，只留本机，不提交。脚本不保存账目；会临时切换普通测试账号的最近记账类型，并在成功后恢复，失败时可在页面手动切回。WebDriver 的焦点操作不保证弹出系统软键盘；涉及软键盘、原生选择器、底部安全区、主题或 PWA 的改动，还要用 Safari 开发菜单连接该手机页面，在真机上逐项目视检查。WebDriver 独立会话不能代替已安装的主屏幕 PWA。真机断开、锁屏或远程自动化关闭时，命令会失败，应记录“真机未验证”，不能用 Mac 手机模式通过验收。
 
 ## 部署与排查
 
