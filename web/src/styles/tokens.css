@@ -493,6 +493,37 @@ textarea:disabled {
 
 .form-field input::placeholder { color: var(--color-placeholder); }
 
+.date-time-control {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-width: 0;
+  min-height: 48px;
+  padding-inline: var(--space-lg);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+}
+
+/* WebKit 301648：原生日期输入自身不能带 padding，由外层承载尺寸和留白。 */
+.date-time-control input[type="datetime-local"] {
+  display: inline-block;
+  flex: 1 1 auto;
+  width: 100%;
+  min-width: 0;
+  min-height: 0;
+  height: auto;
+  max-width: 100%;
+  padding: 0;
+  color: var(--color-text);
+  text-align: center;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+}
+.date-time-control:focus-within { outline: 2px solid var(--color-focus); outline-offset: 2px; }
+.date-time-control input[type="datetime-local"]:focus-visible { outline: 0; }
+
 .form-field small,
 .form-intro,
 .inline-help {
@@ -553,6 +584,7 @@ textarea:disabled {
 .app-dialog,
 .app-drawer {
   max-width: none;
+  overflow: visible;
   padding: 0;
   color: var(--color-text);
   background: transparent;
@@ -1554,6 +1586,7 @@ body:has(dialog[open]) {
 .form-grid-two { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-lg); }
 
 .entry-combobox {
+  position: relative;
   display: grid;
   min-width: 0;
   gap: var(--space-sm);
@@ -1921,7 +1954,6 @@ body:has(dialog[open]) {
 .saved-income h2 { margin: var(--space-xs) 0; color: var(--color-income-text); }
 .form-field input, .form-field textarea, .form-field select, .select-control, .entry-combobox input { font-size: 16px; }
 .form-grid-two > *, .form-field { min-width: 0; }
-.form-field input[type="datetime-local"] { display: block; width: 100%; min-width: 0; max-width: 100%; }
 .form-grid-two input, .form-grid-two select { padding-inline: var(--space-sm); }
 .ledger-controls > div { min-width: 0; flex: 1 1 200px; max-width: 360px; }
 .ledger-controls .segmented-control { width: 100%; }
@@ -1938,9 +1970,9 @@ body:has(dialog[open]) {
   .shell-content, .auth-workspace { padding-left: max(var(--space-md), env(safe-area-inset-left)); padding-right: max(var(--space-md), env(safe-area-inset-right)); }
 }
 
-/* 可新增字典的候选浮在控件上方，不改变填报表单的排版。 */
+/* 候选相对输入容器或原生弹窗定位，避免 iOS 软键盘下 fixed 浮层漂移。 */
 .anchored-dropdown {
-  position: fixed;
+  position: absolute;
   z-index: 10000;
   display: flex;
   flex-direction: column;

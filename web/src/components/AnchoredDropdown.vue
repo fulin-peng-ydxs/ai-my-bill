@@ -5,6 +5,7 @@ const props = defineProps<{ open: boolean, anchor?: globalThis.HTMLElement | nul
 const emit = defineEmits<{ close: [] }>()
 const panel = ref<globalThis.HTMLElement>()
 const target = computed(() => props.anchor?.closest('dialog') ?? 'body')
+const inline = computed(() => Boolean(props.anchor && !props.anchor.closest('dialog')))
 const position = ref<Record<string, string>>({})
 let panelObserver: globalThis.ResizeObserver | undefined
 
@@ -19,15 +20,19 @@ function place(): void {
   const horizontalGap = 12
   const panelWidth = Math.min(rect.width, Math.max(0, width - horizontalGap * 2))
   const left = Math.max(leftEdge + horizontalGap, Math.min(rect.left, leftEdge + width - panelWidth - horizontalGap))
-  const below = Math.max(0, topEdge + height - rect.bottom - horizontalGap - 4)
+  const savebarTop = props.anchor.closest('form')?.querySelector('.entry-savebar')?.getBoundingClientRect().top
+  const bottomEdge = Math.min(topEdge + height, savebarTop ?? Number.POSITIVE_INFINITY)
+  const below = Math.max(0, bottomEdge - rect.bottom - horizontalGap - 4)
   const above = Math.max(0, rect.top - topEdge - horizontalGap - 4)
   const desiredHeight = Math.min(320, panel.value?.scrollHeight ?? 320)
-  const opensAbove = below < desiredHeight && above > below
+  const opensAbove = below < Math.min(96, desiredHeight) && above > below
   const room = opensAbove ? above : below
   const panelHeight = Math.min(desiredHeight, room)
+  const top = opensAbove ? rect.top - 4 - panelHeight : rect.bottom + 4
+  const parentRect = (props.anchor.closest('dialog') ?? props.anchor.closest('.entry-combobox'))?.getBoundingClientRect()
   position.value = {
-    left: `${left}px`, width: `${panelWidth}px`, maxHeight: `${room}px`,
-    top: `${opensAbove ? rect.top - 4 - panelHeight : rect.bottom + 4}px`,
+    left: `${left - (parentRect?.left ?? 0)}px`, width: `${panelWidth}px`, maxHeight: `${room}px`,
+    top: `${top - (parentRect?.top ?? 0)}px`,
   }
 }
 function outside(event: globalThis.PointerEvent): void {
@@ -84,7 +89,10 @@ onBeforeUnmount(unlisten)
 </script>
 
 <template>
-  <Teleport :to="target">
+  <Teleport
+    :to="target"
+    :disabled="inline"
+  >
     <div
       v-if="open"
       :id="id"

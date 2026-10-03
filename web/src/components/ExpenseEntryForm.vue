@@ -23,6 +23,7 @@ import { registerUnsavedChanges } from '../composables/unsavedChanges'
 import AppStateBlock from './AppStateBlock.vue'
 import AppToast from './AppToast.vue'
 import DailyTemplateFallbackNotice from './DailyTemplateFallbackNotice.vue'
+import DateTimeControl from './DateTimeControl.vue'
 import DictionaryPicker from './DictionaryPicker.vue'
 import DictionaryCombobox, { type DictionaryChoice } from './DictionaryCombobox.vue'
 import EntrySaveBar from './EntrySaveBar.vue'
@@ -585,14 +586,13 @@ void loadOptions()
           :error="errors.occurredAt"
         >
           <template #default="{ describedBy }">
-            <input
+            <DateTimeControl
               id="expense-occurred-at"
               v-model="form.occurredAt"
-              type="datetime-local"
               :aria-describedby="describedBy"
               :disabled="submitting"
               @change="clearError('occurredAt'); persist()"
-            >
+            />
           </template>
         </FormField>
         <FormField

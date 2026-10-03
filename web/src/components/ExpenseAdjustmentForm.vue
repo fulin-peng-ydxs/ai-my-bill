@@ -9,6 +9,7 @@ import { shanghaiLocalDateTimeToIso, toShanghaiLocalDateTime } from '../domain/b
 import { createIdempotencyAttemptTracker } from '../domain/idempotency'
 import { decimalToScaledInteger, isDecimalInRange, MONEY_MAX, scaledIntegerToDecimal, subtractMoney } from '../domain/money'
 import { unicodeCodePointLength } from '../domain/text'
+import DateTimeControl from './DateTimeControl.vue'
 import EntrySaveBar from './EntrySaveBar.vue'
 import FormField from './FormField.vue'
 import FormSection from './FormSection.vue'
@@ -118,12 +119,11 @@ async function submit(): Promise<void> {
           label="调整时间"
           :error="errors.occurredAt"
         >
-          <input
+          <DateTimeControl
             id="adjustment-time"
             v-model="form.occurredAt"
-            type="datetime-local"
             @input="delete errors.occurredAt"
-          >
+          />
         </FormField>
       </div>
       <FormField
