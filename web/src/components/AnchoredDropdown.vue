@@ -6,6 +6,7 @@ const emit = defineEmits<{ close: [] }>()
 const panel = ref<globalThis.HTMLElement>()
 const target = computed(() => props.anchor?.closest('dialog') ?? 'body')
 const position = ref<Record<string, string>>({})
+let panelObserver: globalThis.ResizeObserver | undefined
 
 function place(): void {
   if (!props.anchor || !props.open) return
@@ -16,16 +17,17 @@ function place(): void {
   const width = viewport?.width ?? globalThis.window.innerWidth
   const height = viewport?.height ?? globalThis.window.innerHeight
   const horizontalGap = 12
-  const panelWidth = Math.min(Math.max(rect.width, 240), width - horizontalGap * 2)
+  const panelWidth = Math.min(rect.width, Math.max(0, width - horizontalGap * 2))
   const left = Math.max(leftEdge + horizontalGap, Math.min(rect.left, leftEdge + width - panelWidth - horizontalGap))
-  const below = topEdge + height - rect.bottom - 12
-  const above = rect.top - topEdge - 12
-  const opensAbove = below < 180 && above > below
-  const room = Math.max(96, opensAbove ? above : below)
+  const below = Math.max(0, topEdge + height - rect.bottom - horizontalGap - 4)
+  const above = Math.max(0, rect.top - topEdge - horizontalGap - 4)
+  const desiredHeight = Math.min(320, panel.value?.scrollHeight ?? 320)
+  const opensAbove = below < desiredHeight && above > below
+  const room = opensAbove ? above : below
+  const panelHeight = Math.min(desiredHeight, room)
   position.value = {
-    left: `${left}px`, width: `${panelWidth}px`, maxHeight: `${Math.min(320, room)}px`,
-    top: opensAbove ? 'auto' : `${rect.bottom + 4}px`,
-    bottom: opensAbove ? `${globalThis.window.innerHeight - rect.top + 4}px` : 'auto',
+    left: `${left}px`, width: `${panelWidth}px`, maxHeight: `${room}px`,
+    top: `${opensAbove ? rect.top - 4 - panelHeight : rect.bottom + 4}px`,
   }
 }
 function outside(event: globalThis.PointerEvent): void {
@@ -58,8 +60,14 @@ function listen(): void {
   globalThis.document.addEventListener('pointerdown', outside, true)
   globalThis.document.addEventListener('keydown', keydown, true)
   globalThis.document.addEventListener('focusin', focusOutside, true)
+  if (panel.value && globalThis.ResizeObserver) {
+    panelObserver = new globalThis.ResizeObserver(place)
+    panelObserver.observe(panel.value)
+  }
 }
 function unlisten(): void {
+  panelObserver?.disconnect()
+  panelObserver = undefined
   globalThis.window.removeEventListener('resize', place)
   globalThis.window.removeEventListener('scroll', place, true)
   globalThis.window.visualViewport?.removeEventListener('resize', place)

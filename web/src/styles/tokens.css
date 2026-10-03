@@ -506,13 +506,15 @@ textarea:disabled {
 
 .form-section {
   display: grid;
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--space-lg);
   padding-block: var(--space-lg);
   border-bottom: 1px solid var(--color-border);
 }
 
 .form-section:last-child { border-bottom: 0; }
-.form-section-fields { display: grid; gap: var(--space-lg); }
+.form-section-fields { display: grid; min-width: 0; grid-template-columns: minmax(0, 1fr); gap: var(--space-lg); }
 
 .secondary-button,
 .icon-button {
@@ -1919,7 +1921,7 @@ body:has(dialog[open]) {
 .saved-income h2 { margin: var(--space-xs) 0; color: var(--color-income-text); }
 .form-field input, .form-field textarea, .form-field select, .select-control, .entry-combobox input { font-size: 16px; }
 .form-grid-two > *, .form-field { min-width: 0; }
-.form-field input[type="datetime-local"] { display: block; min-width: 0; max-width: 100%; }
+.form-field input[type="datetime-local"] { display: block; width: 100%; min-width: 0; max-width: 100%; }
 .form-grid-two input, .form-grid-two select { padding-inline: var(--space-sm); }
 .ledger-controls > div { min-width: 0; flex: 1 1 200px; max-width: 360px; }
 .ledger-controls .segmented-control { width: 100%; }
@@ -1929,9 +1931,11 @@ body:has(dialog[open]) {
 .account-section > .text-action { width: 100%; min-height: 52px; border-radius: 0; }
 .account-section > .text-action + .text-action { border-top: 1px solid var(--color-border); }
 .password-change-form { display: grid; gap: var(--space-lg); }
+@media (max-width: 735px) {
+  .form-grid-two { grid-template-columns: minmax(0, 1fr); }
+}
 @media (max-width: 359px) {
   .shell-content, .auth-workspace { padding-left: max(var(--space-md), env(safe-area-inset-left)); padding-right: max(var(--space-md), env(safe-area-inset-right)); }
-  .form-grid-two { grid-template-columns: 1fr; }
 }
 
 /* 可新增字典的候选浮在控件上方，不改变填报表单的排版。 */
