@@ -3,6 +3,7 @@ set -euo pipefail
 
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "${PROJECT_ROOT}/scripts/lib/dev-database.sh"
+source "${PROJECT_ROOT}/scripts/toolchain.sh"
 configure_dev_database
 validate_dev_database_configuration
 require_dev_database_tools
@@ -27,8 +28,18 @@ case "${command_name}" in
     if dev_database_is_ready; then
       verify_active_dev_database_cluster
     else
-      pg_ctl -D "${DEV_DB_DATA_DIR}" -l "${DEV_DB_LOG_FILE}" \
-        -o "-h ${DEV_DB_HOST} -p ${DEV_DB_PORT}" -w start >/dev/null
+      resolve_node
+      cd "${PROJECT_ROOT}"
+      nohup node scripts/lib/local-log-runner.mjs postgres postgres -D "${DEV_DB_DATA_DIR}" \
+        -h "${DEV_DB_HOST}" -p "${DEV_DB_PORT}" </dev/null >/dev/null 2>&1 &
+      logger_pid=$!
+      database_started_here=true
+      for _ in {1..60}; do
+        dev_database_is_ready && break
+        kill -0 "${logger_pid}" 2>/dev/null || { echo "PostgreSQL 启动失败，查看 ${DEV_DB_LOG_FILE}" >&2; exit 1; }
+        sleep 0.2
+      done
+      dev_database_is_ready || { echo "PostgreSQL 启动超时" >&2; exit 1; }
       database_started_here=true
       verify_active_dev_database_cluster
     fi

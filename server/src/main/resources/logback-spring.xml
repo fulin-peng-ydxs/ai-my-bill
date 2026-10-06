@@ -1,0 +1,20 @@
+<configuration>
+    <!-- Suppress throwable messages (database drivers may include SQL/values); retain bounded code locations. -->
+    <conversionRule conversionWord="safeEx" class="com.mybill.shared.logging.SafeThrowableConverter"/>
+    <property name="LOG_EXCEPTION_CONVERSION_WORD" value="%safeEx"/>
+    <include resource="org/springframework/boot/logging/logback/defaults.xml"/>
+    <springProfile name="!prod">
+        <include resource="org/springframework/boot/logging/logback/console-appender.xml"/>
+    </springProfile>
+    <springProfile name="prod">
+        <include resource="org/springframework/boot/logging/logback/structured-console-appender.xml"/>
+    </springProfile>
+    <root level="${ROOT_LOG_LEVEL:-INFO}"><appender-ref ref="CONSOLE"/></root>
+    <springProfile name="local-logging &amp; !prod">
+        <include resource="org/springframework/boot/logging/logback/file-appender.xml"/>
+        <root level="${ROOT_LOG_LEVEL:-INFO}"><appender-ref ref="CONSOLE"/><appender-ref ref="FILE"/></root>
+    </springProfile>
+    <springProfile name="prod">
+        <root level="${ROOT_LOG_LEVEL:-INFO}"><appender-ref ref="CONSOLE"/></root>
+    </springProfile>
+</configuration>

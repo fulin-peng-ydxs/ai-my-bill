@@ -29,7 +29,7 @@ trap cleanup EXIT HUP INT TERM
 initialize_dev_database_cluster
 
 if ! dev_database_is_ready; then
-  postgres -D "${DEV_DB_DATA_DIR}" -h "${DEV_DB_HOST}" -p "${DEV_DB_PORT}" >"${DEV_DB_LOG_FILE}" 2>&1 &
+  node "${PROJECT_ROOT}/scripts/lib/local-log-runner.mjs" postgres postgres -D "${DEV_DB_DATA_DIR}" -h "${DEV_DB_HOST}" -p "${DEV_DB_PORT}" &
   POSTGRES_PID=$!
   postgres_started=true
   for _ in {1..30}; do
@@ -57,6 +57,7 @@ SERVER_PID=$!
 bash "${PROJECT_ROOT}/scripts/run-frontend.sh" dev -- --host "${MY_BILL_WEB_HOST:-0.0.0.0}" &
 WEB_PID=$!
 
+echo "本地日志: ${MY_BILL_LOCAL_LOG_ROOT:-${PROJECT_ROOT}/.local/logs}（backend / frontend / postgres）"
 echo "前端: http://127.0.0.1:${MY_BILL_WEB_PORT:-5174}"
 echo "手机访问: http://<本机局域网IP>:${MY_BILL_WEB_PORT:-5174}（需连接同一局域网）"
 echo "健康检查: http://127.0.0.1:${MY_BILL_SERVER_PORT:-8080}/api/v1/health"

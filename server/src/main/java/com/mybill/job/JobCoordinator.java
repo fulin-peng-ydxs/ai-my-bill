@@ -107,6 +107,17 @@ public final class JobCoordinator {
     }
 
     private void execute(JobRun run) {
+        java.util.Map<String, String> previous = org.slf4j.MDC.getCopyOfContextMap();
+        org.slf4j.MDC.put("jobId", run.id().toString());
+        org.slf4j.MDC.put("jobType", run.jobType());
+        try { executeBatch(run); }
+        finally {
+            if (previous == null) org.slf4j.MDC.clear();
+            else org.slf4j.MDC.setContextMap(previous);
+        }
+    }
+
+    private void executeBatch(JobRun run) {
         JobDefinition definition = registry.require(run.jobType());
         try {
             enforceScope(definition, run.tenantId());

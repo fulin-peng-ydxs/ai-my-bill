@@ -7,7 +7,7 @@ configure_dev_database() {
   : "${PROJECT_ROOT:?PROJECT_ROOT must be set before loading dev database configuration}"
   DEV_DB_LOCAL_DIR="${PROJECT_ROOT}/.local"
   DEV_DB_DATA_DIR="${DEV_DB_LOCAL_DIR}/postgres"
-  DEV_DB_LOG_FILE="${DEV_DB_LOCAL_DIR}/postgres.log"
+  DEV_DB_LOG_FILE="${MY_BILL_LOCAL_LOG_ROOT:-${DEV_DB_LOCAL_DIR}/logs}/postgres"
   DEV_DB_HOST="${MY_BILL_DB_HOST:-127.0.0.1}"
   DEV_DB_PORT="${MY_BILL_DB_PORT:-54329}"
   DEV_DB_NAME="${MY_BILL_DB_NAME:-my_bill_dev}"

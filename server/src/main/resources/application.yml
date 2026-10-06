@@ -79,3 +79,24 @@ my-bill:
   export:
     directory: ${MY_BILL_EXPORT_DIRECTORY:.local/exports}
     retention: ${MY_BILL_EXPORT_RETENTION:PT24H}
+
+# Console everywhere; only local launchers set LOGGING_FILE_NAME. Docker owns production retention.
+logging:
+  level:
+    root: ${MY_BILL_LOG_LEVEL:INFO}
+    com.mybill: ${MY_BILL_APP_LOG_LEVEL:INFO}
+    org.mybatis: WARN
+  pattern:
+    dateformat: "yyyy-MM-dd'T'HH:mm:ss.SSSXXX,Asia/Shanghai"
+    level: "%5p traceId=%X{traceId:-} jobId=%X{jobId:-} jobType=%X{jobType:-}"
+  logback:
+    rollingpolicy:
+      max-file-size: ${MY_BILL_APP_LOG_FILE_SIZE:10MB}
+      max-history: ${MY_BILL_APP_LOG_HISTORY:7}
+      total-size-cap: ${MY_BILL_APP_LOG_TOTAL_SIZE:200MB}
+      clean-history-on-start: true
+  structured:
+    json:
+      exclude: error.message
+      stacktrace:
+        printer: com.mybill.shared.logging.SafeStackTracePrinter

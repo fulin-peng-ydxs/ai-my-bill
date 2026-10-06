@@ -98,8 +98,8 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(DataAccessException.class)
     ResponseEntity<ApiError> handleDatabaseUnavailable(DataAccessException exception, HttpServletRequest request) {
         String traceId = traceId();
-        log.error("Database unavailable traceId={} method={} path={}",
-                traceId, request.getMethod(), request.getRequestURI(), exception);
+        log.error("Database unavailable traceId={} method={} route={}",
+                traceId, request.getMethod(), com.mybill.shared.logging.RequestLogFilter.route(request), exception);
         boolean authenticationPath = request.getRequestURI().startsWith("/api/v1/auth/");
         ApiError error = new ApiError(
                 authenticationPath ? "AUTH_STORAGE_UNAVAILABLE" : "STORAGE_UNAVAILABLE",
@@ -114,8 +114,8 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(Exception.class)
     ResponseEntity<ApiError> handleUnexpected(Exception exception, HttpServletRequest request) {
         String traceId = traceId();
-        log.error("Unhandled API error traceId={} method={} path={}",
-                traceId, request.getMethod(), request.getRequestURI(), exception);
+        log.error("Unhandled API error traceId={} method={} route={}",
+                traceId, request.getMethod(), com.mybill.shared.logging.RequestLogFilter.route(request), exception);
 
         ApiError error = new ApiError(
                 "INTERNAL_ERROR",

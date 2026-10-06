@@ -174,3 +174,20 @@ secret 文件模式 0600；app/migrate 使用 UID/GID 10001，文件属主必须
 | MY_BILL_RECOVERY_EXPECTED_DB_FINGERPRINT | replay 必填 | 必须与当前连接实时指纹完全一致，且库名以 my_bill_restore_ 开头 |
 
 后台轮询与启动任务恢复在 recovery profile 下关闭；回环随机 HTTP 端口强制覆盖普通配置，仅为复用现有 Spring 依赖装配，不发布给宿主。应用上下文在工具结束后关闭，失败以非零退出，禁止把失败进程当作可用服务。运行步骤、写入阻断、文件挂载与失败重试见 [备份恢复](../deployment/backup-recovery.md)。
+
+## 日志配置
+
+本地 PostgreSQL 新启动也由同一输出工具按 postgres.*.log 分片，复用既有数据库时不改变其输出位置；旧 .local/postgres.log 不清理。`dev:db start` 后台运行日志工具，`dev:db stop` 通过 pg_ctl 停止本项目集群。
+
+本地 `run-backend.sh` 启用 `local-logging` profile 并设置 `LOGGING_FILE_NAME`；总启动复用该入口。Logback 同时写终端与 application.log，按日期/大小归档；非本地入口只写控制台。生产 `prod` 使用 ECS 单行 JSON，仅写控制台，由 Docker 管理轮转。请求摘要只记录路由模板、方法、状态和耗时；MDC 关联 traceId，任务执行关联 jobId/jobType 并恢复原 MDC。异常输出只保留有限的类型/代码帧，不输出异常消息和 suppressed 内容；业务代码仍不得把敏感值拼进日志消息。
+
+| 配置 | 默认/消费者 | 生效与边界 |
+| --- | --- | --- |
+| MY_BILL_LOG_LEVEL / MY_BILL_APP_LOG_LEVEL | INFO / INFO；Spring Logging | 重启应用生效；临时 DEBUG 优先仅调整业务包，不输出 SQL 参数 |
+| MY_BILL_LOCAL_LOG_ROOT | .local/logs；本地启动器 | 相对仓库或绝对目录；不自动读取根 .env |
+| MY_BILL_LOCAL_LOG_DAYS | 7；启动器 | 整数 1–365；仅清理其命名的归档 |
+| MY_BILL_LOCAL_LOG_FILE_MB / MY_BILL_LOCAL_LOG_TOTAL_MB | 10 / 100；启动器 | 整数 1–100 / 1–2048；单文件不能超过总量 |
+| MY_BILL_APP_LOG_FILE_SIZE / MY_BILL_APP_LOG_HISTORY / MY_BILL_APP_LOG_TOTAL_SIZE | 10MB / 7 / 200MB；Logback | 仅本地文件；容量优先于历史天数，当前活动文件另计 |
+| MY_BILL_VERSION | unknown；生产 ECS | 发布入口设置实际版本；标准时间戳带时区，文本按 Asia/Shanghai |
+
+启动记录同时保存控制台输出，可能包含框架消息；按私有诊断材料保管，不上传至公共渠道。浏览器 Console 不会自动进入服务器日志，业务审计继续保存在审计表。
