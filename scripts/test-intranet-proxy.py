@@ -17,6 +17,7 @@ class ApiProbe(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(401)
         self.send_header('Content-Type', 'application/json')
+        self.send_header('X-Trace-Id', 'test-proxy-trace')
         self.end_headers()
         self.wfile.write(json.dumps({
             'code': 'UNAUTHORIZED', 'xff': self.headers.get('X-Forwarded-For'),
@@ -94,7 +95,7 @@ def verify_proxy(binary, temporary, backend_port):
                     assert '200 OK' in response.stdout and 'my-bill-probe' in response.stdout
                     assert 'Content-Security-Policy:' in response.stdout
                     assert 'Cache-Control: no-cache' in response.stdout
-                    api = request('/api/v1/unknown', ['-H', 'X-Forwarded-For: 203.0.113.9'])
+                    api = request('/api/v1/unknown?token=private-query', ['-H', 'X-Forwarded-For: 203.0.113.9', '-H', 'Cookie: test=private-cookie', '-H', 'Authorization: Bearer private-token'])
                     assert api.returncode == 0, api.stderr
                     assert '401 Unauthorized' in api.stdout and 'Cache-Control: no-store' in api.stdout
                     assert '"xff": null' in api.stdout and 'my-bill-probe' not in api.stdout
@@ -112,6 +113,16 @@ def verify_proxy(binary, temporary, backend_port):
                 except subprocess.TimeoutExpired:
                     process.kill()
                     process.wait(timeout=5)
+        events = [json.loads(line) for line in log_path.read_text().splitlines() if line.startswith('{')]
+        access = [event for event in events if event.get('logger', '').startswith('http.log.access')]
+        assert access, 'access log missing'
+        for event in access:
+            assert 'uri' not in event['request'] and 'headers' not in event['request']
+            assert 'resp_headers' not in event
+        assert not any(secret in log_path.read_text() for secret in ('private-query', 'private-cookie', 'private-token'))
+        if allowed != '192.0.2.1/32':
+            assert any(event.get('traceId') == 'test-proxy-trace' for event in access)
+        print('Access JSON/privacy filtering and server trace correlation passed.')
 
 
 def main():

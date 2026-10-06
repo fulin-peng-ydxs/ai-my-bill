@@ -1,6 +1,15 @@
 {
 	# 独立内部 CA 在受控签发端保存；代理只加载叶证书，不自动生成另一套根证书。
 	auto_https off
+	log default {
+		format filter {
+			wrap json
+			fields {
+				request delete
+				resp_headers delete
+			}
+		}
+	}
 	admin localhost:2019
 	servers {
 		protocols h1 h2
@@ -8,6 +17,25 @@
 }
 
 https://:8443 {
+	# Access diagnostics never retain URLs/headers/IPs; application logs provide safe route templates.
+	log {
+		output stdout
+		format filter {
+			wrap json
+			fields {
+				request>uri delete
+				request>headers delete
+				request>remote_ip delete
+				request>client_ip delete
+				request>remote_port delete
+				request>tls delete
+				resp_headers delete
+			}
+		}
+	}
+	log_append traceId {rp.header.X-Trace-Id}
+	@health path /api/v1/health /api/v1/health/*
+	log_skip @health
 	tls /etc/my-bill/tls/server.crt /etc/my-bill/tls/server.key
 	@outside not remote_ip {$MY_BILL_ALLOWED_CIDRS}
 	route {

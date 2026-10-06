@@ -12,7 +12,9 @@ source "${PROJECT_ROOT}/scripts/lib/deploy-target.sh"
 usage() {
   cat <<'EOF'
 用法：
-  npm run ops -- status|health|logs|backup-list|backup-key-status <目标...|--all>
+  npm run ops -- status|health|backup-list|backup-key-status <目标...|--all>
+  npm run ops -- logs <目标...|--all> [--service app|proxy|db|provision|migrate|bootstrap-admin|system] [--since 30m] [--tail 200] [--trace-id 标识] [--follow]
+  npm run ops -- logs-export <目标> [--service 服务] [--since 2h] [--tail 10000] [--trace-id 标识]
   npm run ops -- start|stop|restart|backup <目标...|--all> [--yes]
   npm run ops -- backup-pull <目标> [YYYY-MM-DD]
   npm run ops -- backup-verify <目标> [YYYY-MM-DD]
@@ -81,7 +83,11 @@ remote_operation() {
       "${script_text}" "${action}" "${BILL_REMOTE_ROOT}" "${BILL_ENV_FILE}" "${BILL_CA_FILE}" "${BILL_HEALTH_URL}" \
       "${BILL_BACKUP_SERVICE}" "${BILL_BACKUP_STATUS_FILE}" "${BILL_COMPOSE_OVERLAY}" "${BILL_HEALTH_TIMEOUT_SECONDS}" "${backup_date}"
   fi
-  echo "[${BILL_TARGET_ID}] ${action}"
+  if [[ "${action}" == logs ]]; then
+    command+=" $(printf '%s %q %s %q %s %q %s %q' --log-service "${LOG_SERVICE}" --log-since "${LOG_SINCE}" --log-tail "${LOG_TAIL}" --log-trace "${LOG_TRACE}")"
+    [[ "${LOG_FOLLOW}" == false ]] || command+=" --log-follow"
+  fi
+  echo "[${BILL_TARGET_ID}] ${action}" >&2
   if [[ -n "${temporary_script}" ]]; then
     if ssh "${SSH_ARGS[@]}" "${destination}" "${command}"; then
       ssh "${SSH_ARGS[@]}" "${destination}" "rm -f $(printf '%q' "${temporary_script}")"
@@ -207,12 +213,58 @@ offsite_recovery_drill() {
   fi
 }
 
+LOG_SERVICE=all
+LOG_SINCE=1h
+LOG_TAIL=200
+LOG_TRACE=""
+LOG_FOLLOW=false
+
+log_operation() {
+  local action="$1"; shift
+  local targets=() target root file
+  [[ "${action}" != logs-export ]] || LOG_TAIL=10000
+  while [[ "$#" -gt 0 ]]; do
+    case "$1" in
+      --service|--since|--tail|--trace-id)
+        [[ "$#" -ge 2 ]] || fail "$1缺少值"
+        case "$1" in --service) LOG_SERVICE="$2" ;; --since) LOG_SINCE="$2" ;; --tail) LOG_TAIL="$2" ;; --trace-id) LOG_TRACE="$2" ;; esac
+        shift 2 ;;
+      --follow) LOG_FOLLOW=true; shift ;;
+      --all) targets+=("$1"); shift ;;
+      --*) fail "未知日志参数：$1" ;;
+      *) targets+=("$1"); shift ;;
+    esac
+  done
+  case "${LOG_SERVICE}" in all|app|proxy|db|provision|migrate|bootstrap-admin|system) ;; *) fail "日志服务不合法" ;; esac
+  [[ "${LOG_TAIL}" =~ ^[1-9][0-9]*$ && ${#LOG_TAIL} -le 5 && "${LOG_TAIL}" -le 10000 ]] || fail "日志行数必须为1–10000"
+  [[ "${LOG_SINCE}" =~ ^[1-9][0-9]{0,4}[smhd]$ ]] || fail "日志时间窗口不合法"
+  [[ -z "${LOG_TRACE}" || "${LOG_TRACE}" =~ ^[a-zA-Z0-9_-]{1,128}$ ]] || fail "traceId不合法"
+  resolve_targets "${targets[@]}"
+  [[ "${LOG_FOLLOW}" == false || ( "${action}" == logs && "${#SELECTED_TARGETS[@]}" -eq 1 && "${LOG_SERVICE}" != all ) ]] || fail "跟随仅支持一个目标的指定服务"
+  [[ "${action}" != logs-export || "${#SELECTED_TARGETS[@]}" -eq 1 ]] || fail "日志导出只支持一个目标"
+  for target in "${SELECTED_TARGETS[@]}"; do
+    if [[ "${action}" == logs-export ]]; then
+      root="${PROJECT_ROOT}/.local/logs/operations/${target}"
+      validate_local_storage_root "${root}"; ensure_private_directory "${root}"
+      file="${root}/diagnostic.$(date -u '+%Y%m%dT%H%M%SZ').$$.log.gz"
+      if remote_operation logs "${target}" | gzip > "${file}.partial"; then
+        mv "${file}.partial" "${file}"
+        echo "诊断日志：${file}（仅当前保留窗口及行数范围）"
+      else
+        rm -f "${file}.partial"; return 1
+      fi
+    else
+      remote_operation logs "${target}"
+    fi
+  done
+}
+
 ASSUME_YES=false
 main() {
   local action="${1:-}"; [[ -n "${action}" ]] || { usage; exit 1; }; shift || true
   if [[ "${*: -1}" == --yes ]]; then ASSUME_YES=true; set -- "${@:1:$(($#-1))}"; fi
   case "${action}" in
-    status|health|logs|backup-list|backup-key-status|start|stop|restart|backup)
+    status|health|backup-list|backup-key-status|start|stop|restart|backup)
       resolve_targets "$@"
       case "${action}" in start|stop|restart|backup) confirm "确认对${#SELECTED_TARGETS[@]}个目标执行${action}？" || fail "已取消" ;; esac
       local target
@@ -221,6 +273,7 @@ main() {
         if [[ "${action}" == backup ]]; then pull_backup "${target}"; fi
       done
       ;;
+    logs|logs-export) log_operation "${action}" "$@" ;;
     backup-pull) [[ "$#" -ge 1 && "$#" -le 2 ]] || fail "backup-pull接受一个目标和可选日期"; pull_backup "$1" "${2:-}" ;;
     backup-verify) [[ "$#" -ge 1 && "$#" -le 2 ]] || fail "backup-verify接受一个目标和可选日期"; verify_backup "$1" "${2:-}" ;;
     backup-key-pull) [[ "$#" -eq 1 ]] || fail "backup-key-pull只接受一个目标"; confirm "确认从$1受控复制备份解密私钥？" || fail "已取消"; pull_backup_key "$1" ;;

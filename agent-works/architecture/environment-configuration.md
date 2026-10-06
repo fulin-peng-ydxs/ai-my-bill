@@ -191,3 +191,5 @@ secret 文件模式 0600；app/migrate 使用 UID/GID 10001，文件属主必须
 | MY_BILL_VERSION | unknown；生产 ECS | 发布入口设置实际版本；标准时间戳带时区，文本按 Asia/Shanghai |
 
 启动记录同时保存控制台输出，可能包含框架消息；按私有诊断材料保管，不上传至公共渠道。浏览器 Console 不会自动进入服务器日志，业务审计继续保存在审计表。
+
+部署白名单传递 MY_BILL_LOG_LEVEL、MY_BILL_APP_LOG_LEVEL、MY_BILL_VERSION；基础、内网及 bootstrap Compose 使用相同 `MY_BILL_DOCKER_LOG_MAX_SIZE`（默认 10m）和 `MY_BILL_DOCKER_LOG_MAX_FILES`（默认 3）。Docker 驱动固定 json-file，修改后重建容器生效，不修改宿主 daemon 全局设置。预算约为每容器单文件大小×份数，不代表固定天数，容器内部日志文件仅由 Docker 管理。

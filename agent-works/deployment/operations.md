@@ -26,7 +26,20 @@ npm run ops -- restart intranet-main
 
 `status` 汇总当前提交、Compose状态、备份/巡检timer和最近备份状态；`health` 额外使用目标CA验证HTTPS健康接口。`stop` 只停止外部入口和应用，保留数据库运行；`start/restart` 等待应用健康后才启动代理并验证HTTPS。改变服务状态的动作要求交互确认，自动化调用必须显式 `--yes`。
 
-`logs` 只取 app/proxy/db 最近200行及备份/巡检最近100行，不输出完整容器环境；日志仍可能含业务错误上下文，按运维日志权限保管。多目标按 `targets.list` 或命令顺序串行，首个失败即停止。
+`logs` 默认查询最近 1 小时、app/proxy/db 每服务最多 200 行以及备份/巡检最多 200 行，不输出完整容器环境。时间窗口允许 `s/m/h/d`，最多 30 天；行数 1–10000。多目标串行，首个失败即停止。
+
+```bash
+npm run ops -- logs intranet-main --service app --since 30m --tail 200
+npm run ops -- logs intranet-main --service app --trace-id <错误响应中的traceId>
+npm run ops -- logs intranet-main --service app --follow
+npm run ops -- logs-export intranet-main --service app --since 2h
+```
+
+服务可选 `app/proxy/db/provision/migrate/bootstrap-admin/system`；跟随只支持一个目标的一个服务，Ctrl+C 仅退出查询。traceId 仅按所查询输出匹配，未找到会提示可能超过保留窗口，不意味着请求不存在。一次性 `--rm` 容器删除后不能通过当前日志查询恢复；它们的过程输出须在发布/初始化流程保存。
+
+`logs-export` 默认每服务最多 10000 行，gzip 保存到本机 `.local/logs/operations/<目标>/diagnostic.*.log.gz`，目录 0700、文件 0600；失败删除本次 partial 文件。导出是当前保留窗口的诊断材料，不是连续历史档案；仅运维人员持有和分享。
+
+Java 生产日志为 ECS JSON，含版本及服务信息；请求摘要使用路由模板，异常消息与 suppressed 内容不输出。Caddy 访问日志写 stdout，经 JSON 过滤去掉 URI（含查询）、请求/响应头、IP 和 TLS 客户端信息，保留方法、状态、耗时及服务端 traceId；健康访问跳过。浏览器 Console 没有远程采集。
 
 ## 备份、异机副本和密钥
 

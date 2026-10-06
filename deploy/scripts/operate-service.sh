@@ -13,9 +13,19 @@ backup_status_file=""
 compose_overlay=""
 backup_date=""
 health_timeout=180
+log_service=all
+log_since=1h
+log_tail=200
+log_trace=""
+log_follow=false
 
 while [[ "$#" -gt 0 ]]; do
   case "$1" in
+    --log-service) log_service="${2:-}"; shift 2 ;;
+    --log-since) log_since="${2:-}"; shift 2 ;;
+    --log-tail) log_tail="${2:-}"; shift 2 ;;
+    --log-trace) log_trace="${2:-}"; shift 2 ;;
+    --log-follow) log_follow=true; shift ;;
     --action) action="${2:-}"; shift 2 ;;
     --release-root) release_root="${2:-}"; shift 2 ;;
     --env-file) env_file="${2:-}"; shift 2 ;;
@@ -38,6 +48,15 @@ for path in "${release_root}" "${env_file}" "${ca_file}" "${backup_status_file}"
 [[ "${compose_overlay}" =~ ^[a-zA-Z0-9][a-zA-Z0-9._/-]*$ && "${compose_overlay}" != /* && "${compose_overlay}" != *".."* ]] || fail "Compose覆盖路径不合法"
 [[ "${health_timeout}" =~ ^[0-9]+$ && "${health_timeout}" -ge 30 && "${health_timeout}" -le 900 ]] || fail "健康等待秒数不合法"
 [[ -z "${backup_date}" || "${backup_date}" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] || fail "备份日期必须为YYYY-MM-DD"
+
+case "${log_service}" in all|app|proxy|db|provision|migrate|bootstrap-admin|system) ;; *) fail "日志服务不合法" ;; esac
+[[ "${log_tail}" =~ ^[1-9][0-9]*$ && ${#log_tail} -le 5 && "${log_tail}" -le 10000 ]] || fail "日志行数必须为1–10000"
+[[ -z "${log_trace}" || "${log_trace}" =~ ^[a-zA-Z0-9_-]{1,128}$ ]] || fail "traceId不合法"
+[[ "${log_since}" =~ ^([1-9][0-9]{0,4})([smhd])$ ]] || fail "日志时间窗口使用1–99999加s/m/h/d"
+log_amount="${BASH_REMATCH[1]}"; log_unit="${BASH_REMATCH[2]}"
+case "${log_unit}" in s) log_seconds=${log_amount} ;; m) log_seconds=$((log_amount * 60)) ;; h) log_seconds=$((log_amount * 3600)) ;; d) log_seconds=$((log_amount * 86400)) ;; esac
+[[ "${log_seconds}" -le 2592000 ]] || fail "日志时间窗口最多30天"
+[[ "${log_follow}" == false || "${log_service}" != all ]] || fail "跟随日志必须指定一个服务"
 
 current="${release_root}/current"
 [[ -d "${current}" ]] || fail "当前发布目录不存在：${current}"
@@ -68,6 +87,29 @@ print_status() {
   if [[ -f "${backup_status_file}" ]]; then sed -n '1,10p' "${backup_status_file}"; else echo 'backupStatus=missing'; fi
 }
 
+log_output() {
+  local since_epoch=$(($(date +%s) - log_seconds))
+  local flags=(--no-color --timestamps --since "${since_epoch}" --tail "${log_tail}")
+  [[ "${log_follow}" == false ]] || flags+=(--follow)
+  if [[ "${log_service}" == all ]]; then
+    echo "source=current-container window=${log_since} tail=${log_tail} (capacity-retained, not complete history)"
+    compose logs "${flags[@]}" app proxy db
+    echo "source=system-journal"
+    journalctl -u "${backup_service}" -u my-bill-monitor.service --since "@${since_epoch}" -n "${log_tail}" --no-pager
+  elif [[ "${log_service}" == system ]]; then
+    local journal_flags=()
+    [[ "${log_follow}" == false ]] || journal_flags+=(--follow)
+    journalctl -u "${backup_service}" -u my-bill-monitor.service --since "@${since_epoch}" -n "${log_tail}" --no-pager "${journal_flags[@]}"
+  else
+    # One-shot bootstrap uses its overlay only when explicitly selected.
+    if [[ "${log_service}" == bootstrap-admin ]]; then
+      (cd "${current}" && docker compose --env-file "${env_file}" -f deploy/compose.yaml -f "${compose_overlay}" -f deploy/compose.bootstrap.yaml logs "${flags[@]}" bootstrap-admin)
+    else
+      compose logs "${flags[@]}" "${log_service}"
+    fi
+  fi
+}
+
 case "${action}" in
   status) print_status ;;
   health) print_status; curl --fail --silent --show-error --cacert "${ca_file}" "${health_url}"; echo ;;
@@ -75,8 +117,12 @@ case "${action}" in
   stop) compose stop -t 60 proxy app; print_status ;;
   restart) compose stop -t 60 proxy app; compose up -d app; wait_app; compose up -d proxy; wait_health; print_status ;;
   logs)
-    compose logs --no-color --tail=200 app proxy db
-    journalctl -u "${backup_service}" -u my-bill-monitor.service -n 100 --no-pager
+    if [[ -z "${log_trace}" ]]; then
+      log_output
+    else
+      # awk has no grep no-match failure; flush each match for follow mode.
+      log_output | awk -v trace="${log_trace}" 'index($0, trace) { print; fflush(); found=1 } END { if (!found) print "未找到traceId；可能超过日志保留窗口。" > "/dev/stderr" }'
+    fi
     ;;
   backup)
     backup_started="$(date -u +%s)"

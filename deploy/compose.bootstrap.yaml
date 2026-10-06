@@ -1,6 +1,11 @@
 # 仅初始化时叠加；执行 run --rm bootstrap-admin，退出后删除初始密码的服务器副本。
 services:
   bootstrap-admin:
+    logging:
+      driver: json-file
+      options:
+        max-size: "${MY_BILL_DOCKER_LOG_MAX_SIZE:-10m}"
+        max-file: "${MY_BILL_DOCKER_LOG_MAX_FILES:-3}"
     image: my-bill-app
     restart: "no"
     user: "10001:10001"

@@ -206,7 +206,7 @@ flowchart LR
 
 构建端需要Node/npm编译前端，Docker的Maven build stage编译后端；build stage只是生成产物的步骤，不是上线后保留的Maven服务。app target生成Java运行镜像，migrate target生成Flyway镜像；proxy镜像独立构建。持续流程见[持续构建](continuous-delivery.md)。
 
-当前内网配置：app内存上限1GiB/CPU配额1核，db768MiB/1核，proxy128MiB/0.5核；另有进程数限制、日志10MiB×3轮转。CPU配额不是独占物理CPU，内存上限超出可能导致容器被杀。app JVM堆上限512MiB，剩余空间供直接内存、线程栈等，不能把容器1GiB全部设为Java堆。
+当前内网配置：app内存上限1GiB/CPU配额1核，db768MiB/1核，proxy128MiB/0.5核；另有进程数限制、日志默认10MB×3轮转（MY_BILL_DOCKER_LOG_MAX_SIZE/MAX_FILES，常驻及一次性服务共用）。CPU配额不是独占物理CPU，内存上限超出可能导致容器被杀。app JVM堆上限512MiB，剩余空间供直接内存、线程栈等，不能把容器1GiB全部设为Java堆。
 
 预检要求至少2GiB可用内存、Docker盘10GiB空闲且使用率低于85%，只用于最低准入。镜像构建、一次性迁移、初始化和恢复演练都需要额外峰值资源；业务数据、导出及备份增长也要监控，不能据最低值承诺实际容量。
 

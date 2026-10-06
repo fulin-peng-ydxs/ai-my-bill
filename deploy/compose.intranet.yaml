@@ -3,8 +3,8 @@ x-runtime: &runtime
   logging:
     driver: json-file
     options:
-      max-size: "10m"
-      max-file: "3"
+      max-size: "${MY_BILL_DOCKER_LOG_MAX_SIZE:-10m}"
+      max-file: "${MY_BILL_DOCKER_LOG_MAX_FILES:-3}"
   security_opt:
     - no-new-privileges:true
 
