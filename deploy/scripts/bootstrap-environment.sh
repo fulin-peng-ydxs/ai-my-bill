@@ -7,6 +7,12 @@ set -euo pipefail
 fail() { echo "错误：$*" >&2; exit 1; }
 require_command() { command -v "$1" >/dev/null 2>&1 || fail "目标主机缺少命令：$1"; }
 
+original_arguments=("$@")
+logged_child=false
+log_archive_directory=""
+log_archive_days=14
+log_archive_total_mb=500
+log_helper=""
 action=""
 commit=""
 incoming_dir=""
@@ -24,6 +30,11 @@ allow_eol_centos7="0"
 
 while [[ "$#" -gt 0 ]]; do
   case "$1" in
+    --logged-child) logged_child=true; shift ;;
+    --log-helper) log_helper="${2:-}"; shift 2 ;;
+    --log-archive-directory) log_archive_directory="${2:-}"; shift 2 ;;
+    --log-archive-days) log_archive_days="${2:-}"; shift 2 ;;
+    --log-archive-total-mb) log_archive_total_mb="${2:-}"; shift 2 ;;
     --action) action="${2:-}"; shift 2 ;;
     --commit) commit="${2:-}"; shift 2 ;;
     --incoming-dir) incoming_dir="${2:-}"; shift 2 ;;
@@ -55,6 +66,19 @@ done
 [[ "${health_timeout}" =~ ^[0-9]+$ && "${health_timeout}" -ge 30 && "${health_timeout}" -le 900 ]] || fail "健康等待秒数不合法"
 [[ "${allow_eol_centos7}" == 0 || "${allow_eol_centos7}" == 1 ]] || fail "CentOS7例外值不合法"
 [[ -n "${allowed_cidrs}" && "${allowed_cidrs}" != *$'\n'* ]] || fail "允许网段不能为空"
+
+if [[ "${action}" == bootstrap || "${action}" == resume || "${action}" == finalize ]]; then
+  if [[ "${logged_child}" == false ]]; then
+    source "${log_helper:-${incoming_dir}/log-archive.sh}"
+    log_archive_prepare "${log_archive_directory:-${release_root}/logs}" "${log_archive_days}" "${log_archive_total_mb}"
+    command -v flock >/dev/null || fail "初始化日志与切换需要flock"
+    exec 9>"${release_root}/.release-operation.lock"
+    flock -n 9 || fail "目标已有发布/初始化操作"
+    log_archive_write bootstrap "${commit}" bash "$0" --logged-child "${original_arguments[@]}"
+    exit $?
+  fi
+fi
+export MY_BILL_VERSION="${commit}"
 
 for command in awk cmp curl date docker grep install openssl sha256sum systemctl tar; do require_command "${command}"; done
 PYTHON_COMMAND=""
@@ -124,7 +148,7 @@ record_step() {
 
 compose_at() {
   local directory="$1"; shift
-  (cd "${directory}" && docker compose --env-file "${env_file}" -f deploy/compose.yaml -f "${compose_overlay}" "$@")
+  (cd "${directory}" && export MY_BILL_VERSION="$(cat REVISION 2>/dev/null || echo unknown)" && docker compose --env-file "${env_file}" -f deploy/compose.yaml -f "${compose_overlay}" "$@")
 }
 
 wait_for_health() {
@@ -178,7 +202,7 @@ case "${action}" in
 esac
 
 [[ "${incoming_dir}" == "${release_root}/incoming/${commit}" ]] || fail "接收目录不属于本次候选"
-for file in source.tar web-dist.tar.gz manifest.txt bootstrap-environment.sh preflight-host.sh build.properties SHA256SUMS; do
+for file in source.tar web-dist.tar.gz manifest.txt bootstrap-environment.sh preflight-host.sh log-archive.sh build.properties SHA256SUMS; do
   [[ -f "${incoming_dir}/${file}" ]] || fail "交付文件缺失：${file}"
 done
 [[ -f "${incoming_dir}/tls/server.crt" && -f "${incoming_dir}/tls/server.key" && -f "${incoming_dir}/tls/ca.crt" ]] || fail "内网TLS交付文件不完整"

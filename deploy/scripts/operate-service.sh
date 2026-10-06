@@ -18,9 +18,13 @@ log_since=1h
 log_tail=200
 log_trace=""
 log_follow=false
+log_archive_id=""
+log_archive_directory=""
 
 while [[ "$#" -gt 0 ]]; do
   case "$1" in
+    --log-archive-id) log_archive_id="${2:-}"; shift 2 ;;
+    --log-archive-directory) log_archive_directory="${2:-}"; shift 2 ;;
     --log-service) log_service="${2:-}"; shift 2 ;;
     --log-since) log_since="${2:-}"; shift 2 ;;
     --log-tail) log_tail="${2:-}"; shift 2 ;;
@@ -61,7 +65,7 @@ case "${log_unit}" in s) log_seconds=${log_amount} ;; m) log_seconds=$((log_amou
 current="${release_root}/current"
 [[ -d "${current}" ]] || fail "当前发布目录不存在：${current}"
 [[ -f "${env_file}" ]] || fail "运行配置不存在：${env_file}"
-compose() { (cd "${current}" && docker compose --env-file "${env_file}" -f deploy/compose.yaml -f "${compose_overlay}" "$@"); }
+compose() { (cd "${current}" && export MY_BILL_VERSION="$(cat REVISION 2>/dev/null || echo unknown)" && docker compose --env-file "${env_file}" -f deploy/compose.yaml -f "${compose_overlay}" "$@"); }
 wait_health() {
   local deadline=$((SECONDS + health_timeout))
   until curl --fail --silent --show-error --cacert "${ca_file}" "${health_url}" >/dev/null; do
@@ -88,6 +92,22 @@ print_status() {
 }
 
 log_output() {
+  if [[ -n "${log_archive_id}" ]]; then
+    local archive_root="${log_archive_directory:-${release_root}/logs}" selected_file
+    source "${current}/deploy/scripts/log-archive.sh"
+    log_archive_validate_path "${archive_root}" || return 1
+    [[ -f "${archive_root}/.my-bill-log-archive" && ! -L "${archive_root}/.my-bill-log-archive" ]] || fail "归档目录不存在或未经登记"
+    grep -Fqx my-bill-log-archive-v1 "${archive_root}/.my-bill-log-archive" || fail "归档目录标记不合法"
+    [[ "${log_service}" == all && "${log_follow}" == false ]] || fail "归档查询不接受service或follow"
+    if [[ "${log_archive_id}" == latest ]]; then
+      log_archive_id="$(log_archive_latest "${archive_root}")"
+    fi
+    log_archive_name_valid "${log_archive_id}" || fail "归档不存在或文件名不合法"
+    [[ -f "${archive_root}/${log_archive_id}" && ! -L "${archive_root}/${log_archive_id}" ]] || fail "归档文件不存在"
+    echo "source=archive file=${log_archive_id} (whole record; since does not filter archived events)" >&2
+    gzip -cd "${archive_root}/${log_archive_id}" | tail -n "${log_tail}"
+    return
+  fi
   local since_epoch=$(($(date +%s) - log_seconds))
   local flags=(--no-color --timestamps --since "${since_epoch}" --tail "${log_tail}")
   [[ "${log_follow}" == false ]] || flags+=(--follow)
@@ -103,7 +123,7 @@ log_output() {
   else
     # One-shot bootstrap uses its overlay only when explicitly selected.
     if [[ "${log_service}" == bootstrap-admin ]]; then
-      (cd "${current}" && docker compose --env-file "${env_file}" -f deploy/compose.yaml -f "${compose_overlay}" -f deploy/compose.bootstrap.yaml logs "${flags[@]}" bootstrap-admin)
+      (cd "${current}" && export MY_BILL_VERSION="$(cat REVISION 2>/dev/null || echo unknown)" && docker compose --env-file "${env_file}" -f deploy/compose.yaml -f "${compose_overlay}" -f deploy/compose.bootstrap.yaml logs "${flags[@]}" bootstrap-admin)
     else
       compose logs "${flags[@]}" "${log_service}"
     fi

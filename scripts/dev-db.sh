@@ -31,7 +31,7 @@ case "${command_name}" in
       resolve_node
       cd "${PROJECT_ROOT}"
       nohup node scripts/lib/local-log-runner.mjs postgres postgres -D "${DEV_DB_DATA_DIR}" \
-        -h "${DEV_DB_HOST}" -p "${DEV_DB_PORT}" </dev/null >/dev/null 2>&1 &
+        -h "${DEV_DB_HOST}" -p "${DEV_DB_PORT}" "${DEV_DB_LOG_OPTIONS[@]}" </dev/null >/dev/null 2>&1 &
       logger_pid=$!
       database_started_here=true
       for _ in {1..60}; do

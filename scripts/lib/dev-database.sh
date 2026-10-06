@@ -8,6 +8,9 @@ configure_dev_database() {
   DEV_DB_LOCAL_DIR="${PROJECT_ROOT}/.local"
   DEV_DB_DATA_DIR="${DEV_DB_LOCAL_DIR}/postgres"
   DEV_DB_LOG_FILE="${MY_BILL_LOCAL_LOG_ROOT:-${DEV_DB_LOCAL_DIR}/logs}/postgres"
+  # SQL/error DETAIL can contain ledger values even when the application logs are sanitized.
+  DEV_DB_LOG_OPTIONS=(-c log_statement=none -c log_min_error_statement=panic -c log_error_verbosity=terse
+    -c log_parameter_max_length=0 -c log_parameter_max_length_on_error=0)
   DEV_DB_HOST="${MY_BILL_DB_HOST:-127.0.0.1}"
   DEV_DB_PORT="${MY_BILL_DB_PORT:-54329}"
   DEV_DB_NAME="${MY_BILL_DB_NAME:-my_bill_dev}"

@@ -28,6 +28,9 @@ BILL_BACKUP_SERVICE=my-bill-backup.service
 BILL_BACKUP_STATUS_FILE=/var/lib/my-bill/operations/backup.properties
 BILL_OFFSITE_BACKUP_DIRECTORY=${temporary}/offsite-backups
 BILL_OFFSITE_KEY_DIRECTORY=${temporary}/offsite-keys
+BILL_LOG_ARCHIVE_DIRECTORY=${temporary}/logs
+BILL_LOG_ARCHIVE_DAYS=14
+BILL_LOG_ARCHIVE_TOTAL_MB=500
 BILL_COMPOSE_OVERLAY=deploy/compose.intranet.yaml
 BILL_HEALTH_TIMEOUT_SECONDS=180
 BILL_BIND_IP=192.168.20.10
@@ -47,6 +50,8 @@ PROJECT_ROOT="${PROJECT_UNDER_TEST}"; TARGET_DIRECTORY="${TARGET_UNDER_TEST}"
 fail() { echo "$*" >&2; exit 1; }
 source "${PROJECT_ROOT}/scripts/lib/deploy-target.sh"
 load_target sample
+[[ "${BILL_LOG_ARCHIVE_DIRECTORY}" == "${TARGET_UNDER_TEST}/logs" ]]
+[[ "${BILL_LOG_ARCHIVE_DAYS}" == 14 && "${BILL_LOG_ARCHIVE_TOTAL_MB}" == 500 ]]
 [[ "${BILL_HOST_PROFILE}" == managed-linux ]]
 [[ "${BILL_HOST_PACKAGE_SOURCE}" == preconfigured ]]
 [[ "${BILL_HOST_TIMEZONE}" == Asia/Shanghai ]]

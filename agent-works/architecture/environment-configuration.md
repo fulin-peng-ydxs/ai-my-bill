@@ -179,7 +179,7 @@ secret 文件模式 0600；app/migrate 使用 UID/GID 10001，文件属主必须
 
 本地 PostgreSQL 新启动也由同一输出工具按 postgres.*.log 分片，复用既有数据库时不改变其输出位置；旧 .local/postgres.log 不清理。`dev:db start` 后台运行日志工具，`dev:db stop` 通过 pg_ctl 停止本项目集群。
 
-本地 `run-backend.sh` 启用 `local-logging` profile 并设置 `LOGGING_FILE_NAME`；总启动复用该入口。Logback 同时写终端与 application.log，按日期/大小归档；非本地入口只写控制台。生产 `prod` 使用 ECS 单行 JSON，仅写控制台，由 Docker 管理轮转。请求摘要只记录路由模板、方法、状态和耗时；MDC 关联 traceId，任务执行关联 jobId/jobType 并恢复原 MDC。异常输出只保留有限的类型/代码帧，不输出异常消息和 suppressed 内容；业务代码仍不得把敏感值拼进日志消息。
+本地 `run-backend.sh` 启用 `local-logging` profile 并设置 `LOGGING_FILE_NAME`；总启动复用该入口。Logback 同时写终端与 application.log，按日期/大小归档；非本地入口只写控制台。生产 `prod` 使用 ECS 单行 JSON，仅写控制台，由 Docker 管理轮转。请求摘要只记录路由模板、方法、状态和耗时；MDC 关联 traceId，任务执行关联 jobId/jobType 并恢复原 MDC。异常输出只保留有限的类型/代码帧，不输出异常消息和 suppressed 内容；MyBatis使用NoLoggingImpl，业务包DEBUG也不会启用Mapper SQL/参数输出；业务代码仍不得把敏感值拼进日志消息。
 
 | 配置 | 默认/消费者 | 生效与边界 |
 | --- | --- | --- |
@@ -187,9 +187,17 @@ secret 文件模式 0600；app/migrate 使用 UID/GID 10001，文件属主必须
 | MY_BILL_LOCAL_LOG_ROOT | .local/logs；本地启动器 | 相对仓库或绝对目录；不自动读取根 .env |
 | MY_BILL_LOCAL_LOG_DAYS | 7；启动器 | 整数 1–365；仅清理其命名的归档 |
 | MY_BILL_LOCAL_LOG_FILE_MB / MY_BILL_LOCAL_LOG_TOTAL_MB | 10 / 100；启动器 | 整数 1–100 / 1–2048；单文件不能超过总量 |
-| MY_BILL_APP_LOG_FILE_SIZE / MY_BILL_APP_LOG_HISTORY / MY_BILL_APP_LOG_TOTAL_SIZE | 10MB / 7 / 200MB；Logback | 仅本地文件；容量优先于历史天数，当前活动文件另计 |
-| MY_BILL_VERSION | unknown；生产 ECS | 发布入口设置实际版本；标准时间戳带时区，文本按 Asia/Shanghai |
+| MY_BILL_APP_LOG_FILE_SIZE / MY_BILL_APP_LOG_HISTORY / MY_BILL_APP_LOG_TOTAL_SIZE | 10MB / 7 / 200MB；Logback | 仅本地文件；本地启动器校验历史1–365天，大小使用正整数KB/MB/GB，单文件≤100MB、总量≤2GB且单文件≤总量；容量优先于历史天数，当前活动文件另计 |
+| MY_BILL_VERSION | unknown；生产 ECS | 发布/初始化及日常Compose入口从REVISION设置实际版本；标准时间戳带时区，文本按 Asia/Shanghai |
 
 启动记录同时保存控制台输出，可能包含框架消息；按私有诊断材料保管，不上传至公共渠道。浏览器 Console 不会自动进入服务器日志，业务审计继续保存在审计表。
 
 部署白名单传递 MY_BILL_LOG_LEVEL、MY_BILL_APP_LOG_LEVEL、MY_BILL_VERSION；基础、内网及 bootstrap Compose 使用相同 `MY_BILL_DOCKER_LOG_MAX_SIZE`（默认 10m）和 `MY_BILL_DOCKER_LOG_MAX_FILES`（默认 3）。Docker 驱动固定 json-file，修改后重建容器生效，不修改宿主 daemon 全局设置。预算约为每容器单文件大小×份数，不代表固定天数，容器内部日志文件仅由 Docker 管理。
+
+| 运维目标日志字段 | 默认与消费链 | 生效与边界 |
+| --- | --- | --- |
+| BILL_LOG_ARCHIVE_DIRECTORY | 留空使用发布根/logs；release/environment传给目标执行器，ops读取 | 服务器专用绝对目录，无符号链接，0700；不影响Docker内部日志位置 |
+| BILL_LOG_ARCHIVE_DAYS | 14；共享Shell归档工具 | 1–365天，创建归档时按修改时间清理 |
+| BILL_LOG_ARCHIVE_TOTAL_MB | 500；共享Shell归档工具 | 100–10240MB；仅完成归档预算，最旧先删；本机诊断导出沿用同目标保留参数 |
+
+共享 log-archive.sh 随候选单独校验和交付，在源码解包前记录失败；源包也包含同一工具。目标只依赖宿主现有Shell/coreutils/gzip/flock，不为日志新增Python/Node需求。初始化本身原有Python3.8+要求仍然保留。PostgreSQL启动禁用SQL语句/参数记录并使用terse错误格式；新本地进程和新db容器生效，复用进程不静默改配置。

@@ -29,7 +29,7 @@ trap cleanup EXIT HUP INT TERM
 initialize_dev_database_cluster
 
 if ! dev_database_is_ready; then
-  node "${PROJECT_ROOT}/scripts/lib/local-log-runner.mjs" postgres postgres -D "${DEV_DB_DATA_DIR}" -h "${DEV_DB_HOST}" -p "${DEV_DB_PORT}" &
+  node "${PROJECT_ROOT}/scripts/lib/local-log-runner.mjs" postgres postgres -D "${DEV_DB_DATA_DIR}" -h "${DEV_DB_HOST}" -p "${DEV_DB_PORT}" "${DEV_DB_LOG_OPTIONS[@]}" &
   POSTGRES_PID=$!
   postgres_started=true
   for _ in {1..30}; do

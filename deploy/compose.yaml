@@ -9,6 +9,8 @@ x-logging: &container-logging
 services:
   db:
     logging: *container-logging
+    # PostgreSQL error DETAIL/statements/parameters may contain private ledger values.
+    command: ["postgres", "-c", "log_statement=none", "-c", "log_min_error_statement=panic", "-c", "log_error_verbosity=terse", "-c", "log_parameter_max_length=0", "-c", "log_parameter_max_length_on_error=0"]
     image: my-bill-postgres:16.14-bookworm
     build:
       context: ..

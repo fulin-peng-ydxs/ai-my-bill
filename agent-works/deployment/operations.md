@@ -37,9 +37,25 @@ npm run ops -- logs-export intranet-main --service app --since 2h
 
 服务可选 `app/proxy/db/provision/migrate/bootstrap-admin/system`；跟随只支持一个目标的一个服务，Ctrl+C 仅退出查询。traceId 仅按所查询输出匹配，未找到会提示可能超过保留窗口，不意味着请求不存在。一次性 `--rm` 容器删除后不能通过当前日志查询恢复；它们的过程输出须在发布/初始化流程保存。
 
-`logs-export` 默认每服务最多 10000 行，gzip 保存到本机 `.local/logs/operations/<目标>/diagnostic.*.log.gz`，目录 0700、文件 0600；失败删除本次 partial 文件。导出是当前保留窗口的诊断材料，不是连续历史档案；仅运维人员持有和分享。
+`logs-export` 默认每服务最多 10000 行，gzip 保存到本机 `.local/logs/operations/<目标>/diagnostic.*.log.gz`，目录 0700、文件 0600；失败删除本次临时文件。归档保留期/容量沿用目标 BILL_LOG_ARCHIVE_DAYS/TOTAL_MB（默认14天/500MB），启动导出前后清理；活动导出限制100MB。导出是当前保留窗口的诊断材料，不是连续历史档案；仅运维人员持有和分享。
 
 Java 生产日志为 ECS JSON，含版本及服务信息；请求摘要使用路由模板，异常消息与 suppressed 内容不输出。Caddy 访问日志写 stdout，经 JSON 过滤去掉 URI（含查询）、请求/响应头、IP 和 TLS 客户端信息，保留方法、状态、耗时及服务端 traceId；健康访问跳过。浏览器 Console 没有远程采集。
+
+## 发布快照与历史诊断
+
+持续发布在关闭旧入口/应用后、执行迁移和重建前，保存 app/proxy/db 当前仍能读取的最近24小时、每容器最多10000行及容器/镜像/创建时间信息。失败则阻止迁移并按原有流程恢复旧容器。Docker 已淘汰的内容不会进入快照，数据库在快照后仍运行，因此快照不是完整停机边界。
+
+`apply-release` 和首次初始化/续跑/最终清理保存完整过程输出（含一次性迁移/初始化容器）；失败同样 gzip 落盘并记录退出码，沿用原有迁移后不自动回滚的边界。发布和初始化共享 flock，避免同目标并行切换。记录目录默认 `<发布根>/logs`，由专用标记登记，0700；文件0600。BILL_LOG_ARCHIVE_DIRECTORY可覆盖为非顶层、无符号链接的专用绝对目录，拒绝接管非空未登记目录。
+
+```bash
+npm run ops -- logs intranet-main --archive latest --tail 200
+npm run ops -- logs intranet-main --archive <实际归档文件名> --trace-id <traceId> --tail 10000
+npm run ops -- logs-export intranet-main --archive latest
+```
+
+归档查询按整份记录读取后限制行数，不使用 `--since` 筛选归档内部事件，也不接受 `--service/--follow`；入口明确标记当前容器与历史归档来源。`latest` 指最近生成的有效归档。归档最多14天/500MB，时间或容量先达到则淘汰；创建记录/导出时执行清理，闲置期间不承诺到点即时删除。只处理登记目录中精确命名的普通文件，不递归、不清理其他资料；已退出写入进程留下的临时记录在下一次清理回收。活动过程原文最多100MB，压缩期间另有临时占用；容量上限是已完成归档预算，不是整个文件系统硬配额。写入失败或超过活动文件限制会令操作失败，应结合服务/迁移状态判断，不能仅据命令失败推断所有变更已回滚。
+
+生产容器日志策略只在重建时生效，发布入口不自动重建db；db日志参数或轮转配置变更需另行安排数据库维护窗口。PostgreSQL关闭SQL/参数及错误DETAIL/HINT/CONTEXT输出，保留主要运维消息；主要错误消息仍可能由数据库组件包含输入，应按私有诊断材料管理。业务审计继续遵循数据库审计保留规则，不受运行日志清理影响。
 
 ## 备份、异机副本和密钥
 

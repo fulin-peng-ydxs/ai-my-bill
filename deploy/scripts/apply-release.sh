@@ -10,6 +10,11 @@ require_command() {
   command -v "$1" >/dev/null 2>&1 || fail "目标主机缺少命令：$1"
 }
 
+original_arguments=("$@")
+logged_child=false
+log_archive_directory=""
+log_archive_days=14
+log_archive_total_mb=500
 commit=""
 incoming_dir=""
 release_root=""
@@ -23,6 +28,10 @@ health_timeout="180"
 
 while [[ "$#" -gt 0 ]]; do
   case "$1" in
+    --logged-child) logged_child=true; shift ;;
+    --log-archive-directory) log_archive_directory="${2:-}"; shift 2 ;;
+    --log-archive-days) log_archive_days="${2:-}"; shift 2 ;;
+    --log-archive-total-mb) log_archive_total_mb="${2:-}"; shift 2 ;;
     --commit) commit="${2:-}"; shift 2 ;;
     --incoming-dir) incoming_dir="${2:-}"; shift 2 ;;
     --release-root) release_root="${2:-}"; shift 2 ;;
@@ -48,6 +57,19 @@ done
 [[ "${compose_overlay}" =~ ^[a-zA-Z0-9][a-zA-Z0-9._/-]*$ && "${compose_overlay}" != /* && "${compose_overlay}" != *".."* ]] || fail "Compose 覆盖文件路径不合法"
 [[ "${health_timeout}" =~ ^[0-9]+$ && "${health_timeout}" -ge 30 && "${health_timeout}" -le 900 ]] || fail "健康等待秒数不合法"
 
+if [[ "${logged_child}" == false ]]; then
+  source "$(dirname "${BASH_SOURCE[0]}")/log-archive.sh"
+  log_archive_prepare "${log_archive_directory:-${release_root}/logs}" "${log_archive_days}" "${log_archive_total_mb}"
+  command -v flock >/dev/null || fail "发布日志与切换需要flock"
+  exec 9>"${release_root}/.release-operation.lock"
+  flock -n 9 || fail "目标已有发布/初始化操作"
+  log_archive_write deployment "${commit}" bash "$0" --logged-child "${original_arguments[@]}"
+  exit $?
+fi
+source "$(dirname "${BASH_SOURCE[0]}")/log-archive.sh"
+log_archive_prepare "${log_archive_directory:-${release_root}/logs}" "${log_archive_days}" "${log_archive_total_mb}"
+export MY_BILL_VERSION="${commit}"
+
 require_command curl
 require_command date
 require_command docker
@@ -56,7 +78,7 @@ require_command systemctl
 require_command tar
 [[ -f "${env_file}" ]] || fail "运行配置不存在：${env_file}"
 [[ -f "${ca_file}" ]] || fail "CA 公钥不存在：${ca_file}"
-for file in source.tar web-dist.tar.gz manifest.txt apply-release.sh build.properties SHA256SUMS; do
+for file in source.tar web-dist.tar.gz manifest.txt apply-release.sh log-archive.sh build.properties SHA256SUMS; do
   [[ -f "${incoming_dir}/${file}" ]] || fail "交付文件缺失：${file}"
 done
 
@@ -78,6 +100,7 @@ compose_at() {
   shift
   (
     cd "${directory}"
+    export MY_BILL_VERSION="$(cat REVISION 2>/dev/null || echo unknown)"
     docker compose --env-file "${env_file}" -f deploy/compose.yaml -f "${compose_overlay}" "$@"
   )
 }
@@ -171,6 +194,20 @@ backup_completed_epoch="$(date -u -d "${backup_completed_at}" +%s 2>/dev/null ||
 echo "[5/8] 停止外部入口与应用"
 services_stopped=true
 compose_at "${old_worktree}" stop -t 60 proxy app
+
+# Entry is closed and old containers are stopped: preserve their final retained output before replacement.
+preserve_container_logs() {
+  local service container
+  echo "snapshotScope=retained-output since=24h tail=10000 previousRevision=${old_revision}"
+  for service in app proxy db; do
+    container="$(compose_at "${old_worktree}" ps -a -q "${service}")" || return 1
+    [[ -n "${container}" ]] || continue
+    echo "service=${service}"
+    docker inspect --format 'container={{.Id}} image={{.Image}} created={{.Created}}' "${container}" || return 1
+    docker logs --timestamps --since 24h --tail 10000 "${container}" 2>&1 || return 1
+  done
+}
+log_archive_write snapshot "${old_revision}" preserve_container_logs
 
 echo "[6/8] 执行数据库迁移"
 migration_attempted=true

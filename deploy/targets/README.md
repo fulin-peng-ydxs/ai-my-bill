@@ -22,3 +22,5 @@
 `BILL_OFFSITE_BACKUP_DIRECTORY` 和 `BILL_OFFSITE_KEY_DIRECTORY` 必须是构建/运维端绝对路径，不是服务器路径。前者保存已加密归档，后者仅作为一次性解密材料转存点；两者不应共址。旧目标缺失字段时，`ops` 分别使用仓库下被忽略的 `.local/offsite-backups/<目标>` 与 `.local/backup-keys/<目标>`，但这不自动满足组织级异机灾备或密钥托管要求。
 
 需要 `--all` 时，创建 `.local/deploy-targets/targets.list`，每行一个目标 ID，顺序就是更新顺序。多目标串行执行；任一目标失败后停止，不继续扩大影响面。
+
+日志目标字段 BILL_LOG_ARCHIVE_DIRECTORY（留空使用服务器发布根/logs）、BILL_LOG_ARCHIVE_DAYS（14）及BILL_LOG_ARCHIVE_TOTAL_MB（500）由 release/environment/ops 共用；范围与默认值见[环境架构](../../agent-works/architecture/environment-configuration.md#日志配置)。目录必须专用、0700且无符号链接；这三个字段不配置Docker内部文件路径。

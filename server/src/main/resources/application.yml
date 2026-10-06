@@ -23,6 +23,8 @@ mybatis-plus:
   type-handlers-package: com.mybill.shared.persistence
   configuration:
     map-underscore-to-camel-case: false
+    # Mapper logger names live under com.mybill; business DEBUG must never enable SQL parameter logs.
+    log-impl: org.apache.ibatis.logging.nologging.NoLoggingImpl
   global-config:
     banner: false
 

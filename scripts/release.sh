@@ -74,6 +74,7 @@ build_release() {
   LC_ALL=C LANG=C COPYFILE_DISABLE=1 git archive --format=tar "${commit}" .dockerignore .mvn mvnw pom.xml server deploy scripts > "${staging}/source.tar"
   LC_ALL=C LANG=C COPYFILE_DISABLE=1 tar --no-xattrs -czf "${staging}/web-dist.tar.gz" web/dist
   cp "${manifest_file}" "${staging}/manifest.txt"
+  cp deploy/scripts/log-archive.sh "${staging}/log-archive.sh"
   cp deploy/scripts/apply-release.sh "${staging}/apply-release.sh"
   cp deploy/scripts/bootstrap-environment.sh "${staging}/bootstrap-environment.sh"
   cp deploy/scripts/preflight-host.sh "${staging}/preflight-host.sh"
@@ -83,7 +84,7 @@ build_release() {
     echo "builtAt=$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
     echo "gates=check,check:performance,check:security,check:e2e,build:release"
   } > "${staging}/build.properties"
-  (cd "${staging}" && LC_ALL=C LANG=C shasum -a 256 source.tar web-dist.tar.gz manifest.txt apply-release.sh bootstrap-environment.sh preflight-host.sh build.properties > SHA256SUMS)
+  (cd "${staging}" && LC_ALL=C LANG=C shasum -a 256 source.tar web-dist.tar.gz manifest.txt apply-release.sh bootstrap-environment.sh preflight-host.sh log-archive.sh build.properties > SHA256SUMS)
   mv "${staging}" "${output}"
   echo "持续构建完成：${output}"
 }
@@ -124,13 +125,14 @@ deploy_target() {
   echo "[${BILL_TARGET_ID}] 上传并校验候选 ${commit}"
   scp "${SCP_ARGS[@]}" \
     "${artifact}/source.tar" "${artifact}/web-dist.tar.gz" "${artifact}/manifest.txt" \
-    "${artifact}/apply-release.sh" "${artifact}/bootstrap-environment.sh" "${artifact}/preflight-host.sh" \
+    "${artifact}/log-archive.sh" "${artifact}/apply-release.sh" "${artifact}/bootstrap-environment.sh" "${artifact}/preflight-host.sh" \
     "${artifact}/build.properties" "${artifact}/SHA256SUMS" \
     "${destination}:${remote_incoming}/"
   printf -v remote_command 'bash %q --commit %q --incoming-dir %q --release-root %q --env-file %q --ca-file %q --health-url %q --backup-service %q --backup-status-file %q --compose-overlay %q --health-timeout %q' \
     "${remote_incoming}/apply-release.sh" "${commit}" "${remote_incoming}" "${BILL_REMOTE_ROOT}" \
     "${BILL_ENV_FILE}" "${BILL_CA_FILE}" "${BILL_HEALTH_URL}" "${BILL_BACKUP_SERVICE}" \
     "${BILL_BACKUP_STATUS_FILE}" "${BILL_COMPOSE_OVERLAY}" "${BILL_HEALTH_TIMEOUT_SECONDS}"
+  remote_command+=" $(printf '%s %q %s %q %s %q' --log-archive-directory "${BILL_LOG_ARCHIVE_DIRECTORY}" --log-archive-days "${BILL_LOG_ARCHIVE_DAYS}" --log-archive-total-mb "${BILL_LOG_ARCHIVE_TOTAL_MB}")"
   if ssh "${SSH_ARGS[@]}" "${destination}" "${remote_command}" 2>&1 | tee "${log_file}"; then
     echo "[${BILL_TARGET_ID}] 更新成功，日志：${log_file}"
   else

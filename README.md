@@ -18,7 +18,7 @@
 | Spring Boot 后端 | 登录鉴权、业务校验、数据库读写、后台任务 | http://127.0.0.1:8080/api/v1 | 启动终端及 `.local/logs/backend/application.log`；启动输出见 `launcher.*.log` |
 | Vite 前端开发服务器 | 编译 Vue 页面并热更新；代理浏览器 API 请求 | 本机 http://127.0.0.1:5174；同一局域网设备访问 `http://<本机局域网 IP>:5174` | 同一启动终端及 `.local/logs/frontend/dev.*.log` |
 
-本地总启动和单独 `dev:backend` / `dev:frontend` 均自动保存日志。应用日志由 Logback 按 10MB、7 天、归档总量 200MB 轮转；启动器与 Vite 输出按 10MB 分片，各最多 100MB、7 天（启动及写入时清理）。`launcher` 包含 Maven 和应用控制台输出，用于应用尚未启动的失败诊断；它不是另一份长期应用档案。日志目录权限受本地启动器的 `umask 077` 保护。配置及生产日志入口见[环境架构](agent-works/architecture/environment-configuration.md#日志配置)。
+本地总启动和单独 `dev:backend` / `dev:frontend` 均自动保存日志。应用日志由 Logback 按 10MB、7 天、归档总量 200MB 轮转；启动器、Vite 与 PostgreSQL 输出按 10MB 分片，各最多 100MB、7 天（启动及写入时清理）。`launcher` 包含 Maven 和应用控制台输出，用于应用尚未启动的失败诊断；它不是另一份长期应用档案。同类本地服务同一日志目录只允许一个启动器，避免application.log多进程冲突；启动失败/退出时回收本次子进程。日志目录权限受本地启动器的 `umask 077` 保护。配置及生产日志入口见[环境架构](agent-works/architecture/environment-configuration.md#日志配置)。
 
 通过 **5174 的页面** 使用账单功能。浏览器请求 `/api/v1` 时，Vite 转给 8080 的 Java 后端，后端再访问 54329 的数据库；浏览器不直接连接数据库。8080 的健康接口用于检查后端，不是前端页面地址。
 
@@ -371,7 +371,7 @@ npm run ops -- backup intranet-main
 npm run ops -- recovery-drill intranet-main YYYY-MM-DD
 ```
 
-`backup` 会在服务器生成并校验加密归档，再拉取异机副本；解密私钥首次托管必须单独执行并继续转存组织密钥库。启停、日志、历史副本、校验和安全边界见[统一运维入口](agent-works/deployment/operations.md)，生产覆盖恢复仍按[备份与恢复](agent-works/deployment/backup-recovery.md)的受控流程执行。
+`backup` 会在服务器生成并校验加密归档，再拉取异机副本；解密私钥首次托管必须单独执行并继续转存组织密钥库。日志可用 `npm run ops -- logs <目标> --service app --since 30m` 查询、`logs-export <目标>` 压缩导出；发布前快照及过程记录用 `logs <目标> --archive latest` 查看。启停、日志、历史副本、校验和安全边界见[统一运维入口](agent-works/deployment/operations.md)，生产覆盖恢复仍按[备份与恢复](agent-works/deployment/backup-recovery.md)的受控流程执行。
 
 公网部署当前仍会被脚本拒绝，不可把内网配置直接开放到互联网；直连域名与可信边缘两种后续模式、必需安全门禁和实现顺序见[公网部署演进](agent-works/deployment/public-deployment.md)。
 

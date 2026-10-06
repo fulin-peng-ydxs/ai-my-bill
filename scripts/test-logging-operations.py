@@ -12,13 +12,14 @@ REPO = Path(__file__).resolve().parent.parent
 
 def main():
     with tempfile.TemporaryDirectory(prefix='my-bill-ops-log-') as directory:
-        root = Path(directory)
+        root = Path(directory).resolve()
         shutil.copytree(REPO / 'scripts', root / 'scripts')
         shutil.copytree(REPO / 'deploy', root / 'deploy')
         executor = root / 'deploy/scripts/operate-service.sh'
         # The harness changes only its private copy's root guard; production retains the guard.
         executor.write_text(executor.read_text().replace('[[ "${EUID}" -eq 0 ]]', '[[ "${EUID}" -ge 0 ]]'))
         (root / 'current').mkdir()
+        shutil.copytree(root / 'deploy', root / 'current/deploy')
         targets = root / 'targets'; targets.mkdir()
         (root / 'known_hosts').write_text('fixture')
         (root / 'runtime.env').touch()
@@ -67,9 +68,17 @@ print('app | unrelated')
         exports = list((root / '.local/logs/operations/fixture').glob('*.gz'))
         assert len(exports) == 1 and 'fixture-event' in gzip.open(exports[0], 'rt').read()
         assert exports[0].stat().st_mode & 0o077 == 0
+        archive = root / 'logs'; archive.mkdir(mode=0o700)
+        (archive / '.my-bill-log-archive').write_text('my-bill-log-archive-v1\n')
+        archive_file = archive / 'snapshot.20261006T000000Z.1.fixture.ABCDEF.log.gz'
+        with gzip.open(archive_file, 'wt') as output: output.write('fixture-archived-trace\n')
+        result = invoke('logs', 'fixture', '--archive', 'latest')
+        assert 'fixture-archived-trace' in result.stdout
+        invoke('logs', 'fixture', '--archive', '../../escape', failure=True)
+        invoke('logs', 'fixture', '--archive', 'latest', '--service', 'app', failure=True)
         env['FAIL_DOCKER'] = '1'
         invoke('logs-export', 'fixture', failure=True)
-        assert not list((root / '.local/logs/operations/fixture').glob('*.partial'))
+        assert not list((root / '.local/logs/operations/fixture').glob('.diagnostic.*'))
         assert len(list((root / '.local/logs/operations/fixture').glob('*.gz'))) == 1
         print('PASS: SSH/remote log filters, follow, bootstrap overlay, rejected input, private export and failure cleanup')
 

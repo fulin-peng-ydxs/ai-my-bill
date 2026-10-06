@@ -7,7 +7,7 @@ const root = mkdtempSync(join(tmpdir(), 'my-bill-log-test-'))
 const env = { ...process.env, MY_BILL_LOCAL_LOG_ROOT: root, MY_BILL_LOCAL_LOG_FILE_MB: '1', MY_BILL_LOCAL_LOG_TOTAL_MB: '2' }
 try {
   const result = spawnSync(process.execPath, ['scripts/lib/local-log-runner.mjs', 'frontend', process.execPath, '-e',
-    'process.stdout.write("x".repeat(3*1024*1024));process.stderr.write("failure-marker");process.exitCode=17'], { env, maxBuffer: 5*1024*1024 })
+    'process.stdout.write("x".repeat(3*1024*1024),()=>{process.stderr.write("failure-marker");process.exitCode=17})'], { env, maxBuffer: 5*1024*1024 })
   assert.equal(result.status, 17)
   const files = readdirSync(join(root, 'frontend')).map(name => join(root, 'frontend', name))
   assert.ok(files.reduce((sum, file) => sum + statSync(file).size, 0) <= 2*1024*1024)
@@ -17,10 +17,24 @@ try {
     'require("node:child_process").spawn(process.execPath,["-e","setInterval(()=>{},1000)"],{stdio:"inherit"});console.log("ready");setInterval(()=>{},1000)'], { env })
   await new Promise((resolve, reject) => {
     const timer = setTimeout(() => { processUnderTest.kill('SIGKILL'); reject(new Error('Signal cleanup timeout')) }, 9000)
-    processUnderTest.stdout.once('data', () => setTimeout(() => processUnderTest.kill('SIGTERM'), 100))
+    let ready = false
+    processUnderTest.stdout.on('data', data => {
+      if (ready || !data.toString().includes('ready')) return
+      ready = true
+      const duplicate = spawnSync(process.execPath, ['scripts/lib/local-log-runner.mjs', 'backend', 'true'], { env })
+      assert.notEqual(duplicate.status, 0)
+      assert.ok(duplicate.stderr.toString().includes('already has a local log writer'))
+      processUnderTest.kill('SIGTERM')
+    })
     processUnderTest.on('close', code => { clearTimeout(timer); assert.equal(code, 1); resolve() })
   })
+  const earlyExit = spawnSync(process.execPath, ['scripts/lib/local-log-runner.mjs', 'frontend', process.execPath, '-e',
+    'require("node:child_process").spawn(process.execPath,["-e","setInterval(()=>{},1000)"],{stdio:"inherit"});process.exit(19)'], { env, timeout: 3000 })
+  assert.equal(earlyExit.status, 19, 'Early launcher exit must not hang on orphan descendant pipes')
   const invalid = spawnSync(process.execPath, ['scripts/lib/local-log-runner.mjs', 'frontend', 'true'], { env: { ...env, MY_BILL_LOCAL_LOG_DAYS: '0' } })
   assert.notEqual(invalid.status, 0)
+  const unsafeHistory = spawnSync(process.execPath, ['scripts/lib/local-log-runner.mjs', 'backend', 'true'], { env: { ...env, MY_BILL_APP_LOG_HISTORY: '0' } })
+  assert.notEqual(unsafeHistory.status, 0)
+  assert.ok(unsafeHistory.stderr.toString().includes('Invalid MY_BILL_APP_LOG_HISTORY'))
   console.log('PASS: log size bounds, permissions, exit status and process-group cleanup')
 } finally { rmSync(root, { recursive: true, force: true }) }

@@ -27,6 +27,9 @@ reset_target() {
   BILL_BACKUP_STATUS_FILE="/var/lib/my-bill/operations/backup.properties"
   BILL_OFFSITE_BACKUP_DIRECTORY=""
   BILL_OFFSITE_KEY_DIRECTORY=""
+  BILL_LOG_ARCHIVE_DIRECTORY=""
+  BILL_LOG_ARCHIVE_DAYS="14"
+  BILL_LOG_ARCHIVE_TOTAL_MB="500"
   BILL_COMPOSE_OVERLAY="deploy/compose.intranet.yaml"
   BILL_HEALTH_TIMEOUT_SECONDS="180"
   BILL_BIND_IP=""
@@ -62,6 +65,9 @@ assign_target_value() {
     BILL_BACKUP_STATUS_FILE) BILL_BACKUP_STATUS_FILE="${value}" ;;
     BILL_OFFSITE_BACKUP_DIRECTORY) BILL_OFFSITE_BACKUP_DIRECTORY="${value}" ;;
     BILL_OFFSITE_KEY_DIRECTORY) BILL_OFFSITE_KEY_DIRECTORY="${value}" ;;
+    BILL_LOG_ARCHIVE_DIRECTORY) BILL_LOG_ARCHIVE_DIRECTORY="${value}" ;;
+    BILL_LOG_ARCHIVE_DAYS) BILL_LOG_ARCHIVE_DAYS="${value}" ;;
+    BILL_LOG_ARCHIVE_TOTAL_MB) BILL_LOG_ARCHIVE_TOTAL_MB="${value}" ;;
     BILL_COMPOSE_OVERLAY) BILL_COMPOSE_OVERLAY="${value}" ;;
     BILL_HEALTH_TIMEOUT_SECONDS) BILL_HEALTH_TIMEOUT_SECONDS="${value}" ;;
     BILL_BIND_IP) BILL_BIND_IP="${value}" ;;
@@ -117,6 +123,9 @@ load_target() {
     [[ -z "${local_path}" || "${local_path}" != / && "${local_path}" != "${HOME}" && "$(dirname "${local_path}")" != / ]] || fail "${requested_id} 的异机落点不能是顶层目录或用户主目录"
   done
   [[ -z "${BILL_OFFSITE_BACKUP_DIRECTORY}" || -z "${BILL_OFFSITE_KEY_DIRECTORY}" || "${BILL_OFFSITE_BACKUP_DIRECTORY}" != "${BILL_OFFSITE_KEY_DIRECTORY}" ]] || fail "${requested_id} 的异机备份和解密材料目录不能相同"
+  [[ -z "${BILL_LOG_ARCHIVE_DIRECTORY}" ]] || validate_absolute_path BILL_LOG_ARCHIVE_DIRECTORY "${BILL_LOG_ARCHIVE_DIRECTORY}"
+  [[ "${BILL_LOG_ARCHIVE_DAYS}" =~ ^[1-9][0-9]{0,2}$ && "${BILL_LOG_ARCHIVE_DAYS}" -le 365 ]] || fail "日志保留期不合法"
+  [[ "${BILL_LOG_ARCHIVE_TOTAL_MB}" =~ ^[1-9][0-9]{0,4}$ && "${BILL_LOG_ARCHIVE_TOTAL_MB}" -ge 100 && "${BILL_LOG_ARCHIVE_TOTAL_MB}" -le 10240 ]] || fail "日志归档容量不合法"
   validate_absolute_path BILL_KNOWN_HOSTS_FILE "${BILL_KNOWN_HOSTS_FILE}"
   [[ -z "${BILL_IDENTITY_FILE}" ]] || validate_absolute_path BILL_IDENTITY_FILE "${BILL_IDENTITY_FILE}"
   [[ "${BILL_HEALTH_URL}" == https://* && "${BILL_HEALTH_URL}" != *[$'\r\n\t ']* ]] || fail "${requested_id} 的 BILL_HEALTH_URL 必须是无空白的 https:// 地址"

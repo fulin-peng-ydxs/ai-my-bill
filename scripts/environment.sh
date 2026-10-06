@@ -434,11 +434,12 @@ preflight_target() {
 }
 
 remote_tool_command() {
-  local action="$1" destination="$2" remote_script="$3" remote_command
+  local action="$1" destination="$2" remote_script="$3" remote_log_helper="$4" remote_command
   printf -v remote_command 'bash %q --action %q --commit %q --incoming-dir %q --release-root %q --env-file %q --ca-file %q --health-url %q --compose-overlay %q --profile %q --bind-ip %q --https-port %q --allowed-cidrs %q --health-timeout %q --allow-eol-centos7 %q' \
     "${remote_script}" "${action}" "${REMOTE_COMMIT}" "${BILL_REMOTE_ROOT}/incoming/${REMOTE_COMMIT}" "${BILL_REMOTE_ROOT}" \
     "${BILL_ENV_FILE}" "${BILL_CA_FILE}" "${BILL_HEALTH_URL}" "${BILL_COMPOSE_OVERLAY}" "${BILL_DEPLOYMENT_PROFILE}" \
     "${BILL_BIND_IP}" "${BILL_HTTPS_PORT}" "${BILL_ALLOWED_CIDRS}" "${BILL_HEALTH_TIMEOUT_SECONDS}" "${BILL_ALLOW_EOL_CENTOS7}"
+  remote_command+=" $(printf '%s %q %s %q %s %q %s %q' --log-helper "${remote_log_helper}" --log-archive-directory "${BILL_LOG_ARCHIVE_DIRECTORY}" --log-archive-days "${BILL_LOG_ARCHIVE_DAYS}" --log-archive-total-mb "${BILL_LOG_ARCHIVE_TOTAL_MB}")"
   ssh "${SSH_ARGS[@]}" "${destination}" "${remote_command}"
 }
 
@@ -448,7 +449,7 @@ read_remote_commit() {
 }
 
 run_environment_action() {
-  local action="$1" target="$2" destination artifact remote_incoming remote_script temporary_script credential_temp credential_password_temp local_commit
+  local action="$1" target="$2" destination artifact remote_incoming remote_script remote_log_helper temporary_script credential_temp credential_password_temp local_commit
   load_target "${target}"; validate_environment_target; validate_local_connection_files; ssh_arguments
   destination="${BILL_SSH_USER}@${BILL_HOST}"
   local_commit="$(git -C "${PROJECT_ROOT}" rev-parse HEAD)"
@@ -475,25 +476,28 @@ run_environment_action() {
     ssh "${SSH_ARGS[@]}" "${destination}" "install -d -m 0750 $(printf '%q' "${BILL_REMOTE_ROOT}") $(printf '%q' "${remote_incoming}") $(printf '%q' "${remote_incoming}/tls")"
     scp "${SCP_ARGS[@]}" \
       "${artifact}/source.tar" "${artifact}/web-dist.tar.gz" "${artifact}/manifest.txt" \
-      "${artifact}/apply-release.sh" "${artifact}/bootstrap-environment.sh" "${artifact}/preflight-host.sh" \
+      "${artifact}/log-archive.sh" "${artifact}/apply-release.sh" "${artifact}/bootstrap-environment.sh" "${artifact}/preflight-host.sh" \
       "${artifact}/build.properties" "${artifact}/SHA256SUMS" "${destination}:${remote_incoming}/"
     scp "${SCP_ARGS[@]}" "${BILL_TLS_CERT_SOURCE}" "${destination}:${remote_incoming}/tls/server.crt"
     scp "${SCP_ARGS[@]}" "${BILL_TLS_KEY_SOURCE}" "${destination}:${remote_incoming}/tls/server.key"
     scp "${SCP_ARGS[@]}" "${BILL_CA_CERT_SOURCE}" "${destination}:${remote_incoming}/tls/ca.crt"
     ssh "${SSH_ARGS[@]}" "${destination}" "chmod 0600 $(printf '%q' "${remote_incoming}/tls/server.key")"
     remote_script="${remote_incoming}/bootstrap-environment.sh"
+    remote_log_helper="${remote_incoming}/log-archive.sh"
   else
     temporary_script="/tmp/my-bill-environment-${BILL_TARGET_ID}-$$.sh"
     scp "${SCP_ARGS[@]}" "${PROJECT_ROOT}/deploy/scripts/bootstrap-environment.sh" "${destination}:${temporary_script}"
     remote_script="${temporary_script}"
+    remote_log_helper="${temporary_script}.log-archive.sh"
+    scp "${SCP_ARGS[@]}" "${PROJECT_ROOT}/deploy/scripts/log-archive.sh" "${destination}:${remote_log_helper}"
   fi
 
-  if remote_tool_command "${action}" "${destination}" "${remote_script}"; then
+  if remote_tool_command "${action}" "${destination}" "${remote_script}" "${remote_log_helper}"; then
     if [[ "${action}" != bootstrap && "${action}" != resume ]]; then
-      ssh "${SSH_ARGS[@]}" "${destination}" "rm -f $(printf '%q' "${temporary_script}")"
+      ssh "${SSH_ARGS[@]}" "${destination}" "rm -f $(printf '%q' "${temporary_script}") $(printf '%q' "${remote_log_helper:-${temporary_script}.log-archive.sh}")"
     fi
   else
-    [[ -z "${temporary_script:-}" ]] || ssh "${SSH_ARGS[@]}" "${destination}" "rm -f $(printf '%q' "${temporary_script}")" || true
+    [[ -z "${temporary_script:-}" ]] || ssh "${SSH_ARGS[@]}" "${destination}" "rm -f $(printf '%q' "${temporary_script}") $(printf '%q' "${remote_log_helper:-${temporary_script}.log-archive.sh}")" || true
     return 1
   fi
 

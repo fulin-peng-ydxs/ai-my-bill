@@ -13,7 +13,7 @@ usage() {
   cat <<'EOF'
 用法：
   npm run ops -- status|health|backup-list|backup-key-status <目标...|--all>
-  npm run ops -- logs <目标...|--all> [--service app|proxy|db|provision|migrate|bootstrap-admin|system] [--since 30m] [--tail 200] [--trace-id 标识] [--follow]
+  npm run ops -- logs <目标...|--all> [--service app|proxy|db|provision|migrate|bootstrap-admin|system] [--since 30m] [--tail 200] [--trace-id 标识] [--follow] [--archive latest|文件名]
   npm run ops -- logs-export <目标> [--service 服务] [--since 2h] [--tail 10000] [--trace-id 标识]
   npm run ops -- start|stop|restart|backup <目标...|--all> [--yes]
   npm run ops -- backup-pull <目标> [YYYY-MM-DD]
@@ -85,6 +85,7 @@ remote_operation() {
   fi
   if [[ "${action}" == logs ]]; then
     command+=" $(printf '%s %q %s %q %s %q %s %q' --log-service "${LOG_SERVICE}" --log-since "${LOG_SINCE}" --log-tail "${LOG_TAIL}" --log-trace "${LOG_TRACE}")"
+    command+=" $(printf '%s %q %s %q' --log-archive-id "${LOG_ARCHIVE_ID}" --log-archive-directory "${BILL_LOG_ARCHIVE_DIRECTORY}")"
     [[ "${LOG_FOLLOW}" == false ]] || command+=" --log-follow"
   fi
   echo "[${BILL_TARGET_ID}] ${action}" >&2
@@ -218,6 +219,7 @@ LOG_SINCE=1h
 LOG_TAIL=200
 LOG_TRACE=""
 LOG_FOLLOW=false
+LOG_ARCHIVE_ID=""
 
 log_operation() {
   local action="$1"; shift
@@ -225,9 +227,9 @@ log_operation() {
   [[ "${action}" != logs-export ]] || LOG_TAIL=10000
   while [[ "$#" -gt 0 ]]; do
     case "$1" in
-      --service|--since|--tail|--trace-id)
+      --service|--since|--tail|--trace-id|--archive)
         [[ "$#" -ge 2 ]] || fail "$1缺少值"
-        case "$1" in --service) LOG_SERVICE="$2" ;; --since) LOG_SINCE="$2" ;; --tail) LOG_TAIL="$2" ;; --trace-id) LOG_TRACE="$2" ;; esac
+        case "$1" in --archive) LOG_ARCHIVE_ID="$2" ;; --service) LOG_SERVICE="$2" ;; --since) LOG_SINCE="$2" ;; --tail) LOG_TAIL="$2" ;; --trace-id) LOG_TRACE="$2" ;; esac
         shift 2 ;;
       --follow) LOG_FOLLOW=true; shift ;;
       --all) targets+=("$1"); shift ;;
@@ -239,6 +241,8 @@ log_operation() {
   [[ "${LOG_TAIL}" =~ ^[1-9][0-9]*$ && ${#LOG_TAIL} -le 5 && "${LOG_TAIL}" -le 10000 ]] || fail "日志行数必须为1–10000"
   [[ "${LOG_SINCE}" =~ ^[1-9][0-9]{0,4}[smhd]$ ]] || fail "日志时间窗口不合法"
   [[ -z "${LOG_TRACE}" || "${LOG_TRACE}" =~ ^[a-zA-Z0-9_-]{1,128}$ ]] || fail "traceId不合法"
+  [[ -z "${LOG_ARCHIVE_ID}" || "${LOG_ARCHIVE_ID}" == latest || "${LOG_ARCHIVE_ID}" =~ ^(snapshot|deployment|bootstrap)\.[0-9]{8}T[0-9]{6}Z\.[0-9]+\.[a-zA-Z0-9_-]{1,64}\.[a-zA-Z0-9]{6}\.log\.gz$ ]] || fail "归档文件名不合法"
+  [[ -z "${LOG_ARCHIVE_ID}" || ( "${LOG_SERVICE}" == all && "${LOG_FOLLOW}" == false ) ]] || fail "归档查询按整份记录读取，不接受service或follow"
   resolve_targets "${targets[@]}"
   [[ "${LOG_FOLLOW}" == false || ( "${action}" == logs && "${#SELECTED_TARGETS[@]}" -eq 1 && "${LOG_SERVICE}" != all ) ]] || fail "跟随仅支持一个目标的指定服务"
   [[ "${action}" != logs-export || "${#SELECTED_TARGETS[@]}" -eq 1 ]] || fail "日志导出只支持一个目标"
@@ -246,12 +250,19 @@ log_operation() {
     if [[ "${action}" == logs-export ]]; then
       root="${PROJECT_ROOT}/.local/logs/operations/${target}"
       validate_local_storage_root "${root}"; ensure_private_directory "${root}"
-      file="${root}/diagnostic.$(date -u '+%Y%m%dT%H%M%SZ').$$.log.gz"
-      if remote_operation logs "${target}" | gzip > "${file}.partial"; then
-        mv "${file}.partial" "${file}"
+      load_target "${target}"
+      source "${PROJECT_ROOT}/deploy/scripts/log-archive.sh"
+      log_archive_prepare "${root}" "${BILL_LOG_ARCHIVE_DAYS}" "${BILL_LOG_ARCHIVE_TOTAL_MB}"
+      log_archive_prune
+      file="$(mktemp "${root}/.diagnostic.$(date -u '+%Y%m%dT%H%M%SZ').$$.export.XXXXXX")"
+      if remote_operation logs "${target}" | (ulimit -f 102400; gzip > "${file}"); then
+        local name="${file##*/}" completed
+        completed="${root}/${name#.}.log.gz"
+        mv "${file}" "${completed}"; file="${completed}"
+        log_archive_prune
         echo "诊断日志：${file}（仅当前保留窗口及行数范围）"
       else
-        rm -f "${file}.partial"; return 1
+        rm -f "${file}"; return 1
       fi
     else
       remote_operation logs "${target}"
