@@ -69,7 +69,7 @@ npm run release -- build
 
 ## 单目标更新闭环
 
-`deploy` 在没有本提交制品时先自动执行完整 `build`，有制品时重新校验摘要。随后上传到目标的 `incoming/<提交>`，目标端依次完成：校验归档 → 独立释放目录 → Compose配置检查 → 保留旧镜像 → 构建 app/migrate/proxy → systemd维护前备份并核对本次完成时间 → 停止proxy/app → 执行migrate → 原子切换current → app健康 → proxy启动 → CA校验的HTTPS健康 → 记录版本、JAR/镜像ID、schema和配置摘要。不会执行首次部署的 provision、bootstrap、secret/TLS生成或数据库容器切换。
+`deploy` 在没有本提交制品时先自动执行完整 `build`，有制品时重新校验摘要。随后上传到目标的 `incoming/<提交>`，目标端依次完成：校验归档 → 独立释放目录 → Compose配置检查 → 保留旧镜像 → 构建 app/migrate/proxy → systemd维护前备份并核对本次完成时间 → 停止proxy/app → 执行migrate → 原子切换current → app健康 → proxy启动 → CA校验的HTTPS健康 → 记录版本、JAR/镜像ID、schema和配置摘要。不会执行首次部署的 provision、bootstrap、secret/TLS生成或数据库容器切换。应用与代理启动显式使用 `--no-deps`，数据库配置变更留给独立维护窗口；systemd状态读取解析 `Result=...` 属性，兼容不支持 `--value` 的旧版本。
 
 这是维护窗口更新，不是零停机。每个目标独立完成后才进入下一个目标；因此同批目标可能短时间运行不同版本。`status` 是只读检查，不上传或修改文件。
 

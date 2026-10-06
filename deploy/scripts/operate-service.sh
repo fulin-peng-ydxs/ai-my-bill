@@ -135,7 +135,7 @@ case "${action}" in
   health) print_status; curl --fail --silent --show-error --cacert "${ca_file}" "${health_url}"; echo ;;
   start) compose up -d db app; wait_app; compose up -d proxy; wait_health; print_status ;;
   stop) compose stop -t 60 proxy app; print_status ;;
-  restart) compose stop -t 60 proxy app; compose up -d app; wait_app; compose up -d proxy; wait_health; print_status ;;
+  restart) compose stop -t 60 proxy app; compose up -d --no-deps app; wait_app; compose up -d --no-deps proxy; wait_health; print_status ;;
   logs)
     if [[ -z "${log_trace}" ]]; then
       log_output
@@ -147,7 +147,7 @@ case "${action}" in
   backup)
     backup_started="$(date -u +%s)"
     systemctl start "${backup_service}"
-    [[ "$(systemctl show "${backup_service}" -p Result --value)" == success ]] || fail "备份服务执行失败"
+    [[ "$(systemctl show "${backup_service}" -p Result | sed -n 's/^Result=//p')" == success ]] || fail "备份服务执行失败"
     [[ -f "${backup_status_file}" ]] || fail "备份状态文件不存在"
     grep -Fqx 'status=SUCCEEDED' "${backup_status_file}" || fail "备份状态不是SUCCEEDED"
     completed="$(awk -F= '$1 == "latestCompletedAt" {print $2}' "${backup_status_file}")"

@@ -370,10 +370,10 @@ if ! step_done BACKUP; then
   install -o root -g root -m 0644 "${release_directory}/deploy/systemd/my-bill-monitor.timer" /etc/systemd/system/my-bill-monitor.timer
   systemctl daemon-reload
   systemctl start my-bill-backup.service
-  [[ "$(systemctl show my-bill-backup.service -p Result --value)" == success ]] || fail "首次备份失败"
+  [[ "$(systemctl show my-bill-backup.service -p Result | sed -n 's/^Result=//p')" == success ]] || fail "首次备份失败"
   systemctl enable --now my-bill-backup.timer my-bill-monitor.timer
   systemctl start my-bill-monitor.service
-  [[ "$(systemctl show my-bill-monitor.service -p Result --value)" == success ]] || fail "首次巡检失败"
+  [[ "$(systemctl show my-bill-monitor.service -p Result | sed -n 's/^Result=//p')" == success ]] || fail "首次巡检失败"
   record_step BACKUP
 fi
 

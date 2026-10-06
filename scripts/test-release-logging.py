@@ -59,7 +59,7 @@ elif args[0]=='image': print('sha256:new')
 elif args[0]=='run': print('0'*64+' /app/my-bill-server.jar')
 elif args[0]=='exec': print('12:012')
 ''')
-        (binary / 'systemctl').write_text('#!/usr/bin/env bash\necho success\n')
+        (binary / 'systemctl').write_text('#!/usr/bin/env bash\nfor arg in \"$@\"; do [[ \"$arg\" != --value ]] || exit 2; done\n[[ \"$1\" != show ]] || echo Result=success\n')
         (binary / 'curl').write_text('#!/usr/bin/env bash\nexit 0\n')
         (binary / 'chown').write_text('#!/usr/bin/env bash\nexit 0\n')
         (binary / 'date').write_text('#!/usr/bin/env bash\nif [[ "$*" == *" -d "* ]]; then /bin/date -u +%s; else exec /bin/date "$@"; fi\n')
@@ -103,6 +103,9 @@ else: os.execv('/bin/mv',['mv',*sys.argv[1:]])
             assert (release / 'current').resolve() == old
         else:
             assert (release / 'current/REVISION').read_text().strip() == commit
+            recreates = [item['args'] for item in calls if '--force-recreate' in item['args']]
+            assert len(recreates) == 2 and all('--no-deps' in args for args in recreates)
+            assert not any('up' in item['args'] and item['args'][-1] == 'db' for item in calls)
             assert all(item['version'] == commit for item in calls if 'build' in item['args'] or 'run' in item['args'] or '--force-recreate' in item['args'])
         assert all(path.stat().st_mode & 0o077 == 0 for path in archives)
         print('PASS: isolated release logging / ' + failure)

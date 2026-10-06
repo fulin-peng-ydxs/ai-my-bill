@@ -191,3 +191,13 @@ E0:A6:29:12:BB:BA:E0:33:67:8B:D7:EB:0A:6B:FD:66:17:51:62:F0:D2:79:05:47:76:5B:B0
 用户明确批准先保存该容器最近2000行到本机私有目录，再清空其当前日志文件。保存文件 `.local/logs/operations/gxts-taskapi-before-clear-20261006.log.gz`，gzip校验通过、0600；核对完整容器ID/名称及LogPath且文件非链接后截断指定文件，未重启其他业务。根盘恢复49GiB可用；数据库pg_isready及SELECT 1通过。其余历史日志已丢弃，该其他业务的无轮转根因尚未配置，可能再次增长。
 
 发布门禁发现新增依赖公告，Jackson与source-map-js更新到同分支修复版后工程/隔离数据库集成通过。用户明确接受本次内网候选的 `spring-webmvc:6.2.19 / GHSA-pc63-qcmh-9cmg` 风险例外，仅限intranet-main与本案例主机；[官方公告](https://spring.io/security/cve-2026-47884/)的XsltView触发配置未在项目静态核查中发现，6.2.20为商业支持，公开修复在7.x。此授权不代表漏洞修复、零命中或后续候选放行。候选审批记录位于本机私有目录并绑定完整源码SHA，门禁按精确版本/公告核验；框架迁移未实施。实际发布结果待补。
+
+### 首次应用门禁与兼容修复
+
+首个候选c7ffb61在目标机构建完成，app镜像fc25ccbd、proxy镜像2223813f、migrate镜像32e61587；三者本次Trivy OS扫描均无CRITICAL/HIGH，app为MEDIUM39/LOW4，proxy零命中，migrate为MEDIUM14/LOW16。此结果不代替已获批Spring公告风险或原数据库镜像的历史残余项。构建迁移镜像的发行版补丁安装耗时约1713秒，多次在XFS同步等待，但最终成功；未升级宿主或重启Docker。历史migrate镜像已不在本机，未复用未经本次扫描的旧制品。
+
+23:56维护前加密备份实际成功；旧systemd不支持 `show --value`，发布检查误判后停止。旧app/proxy未停止，迁移未尝试，版本仍为4f0af93；失败过程已保存在私有日志归档。已统一改用读取 `Result=...` 属性的兼容方式，并覆盖发布、日常备份和初始化/巡检。
+
+本次线上前端目录已复制并固定到 `/opt/my-bill/frontend-preserved/4f0af93e588391ecbc5ce380db66dde0037d105e`，完整文件树摘要 `a694b364159e870908615097935be0605774a87bbbfb4d428f7be25d6fee75f6`，首页仍为 `3cece33eae27758b468483493197c36a3a6a2dec280bab0dd5bb321a78db9ce8`；production.env仅原子更新MY_BILL_WEB_DIST，原0600配置备份为 `/etc/my-bill/production.env.before-logging-c7ffb61`。因此候选包中当前HEAD的新前端构建资产不作为本次线上页面；本次保留原已验收页面。
+
+独立合成容器实测Docker轮转仅保留3文件并清理测试容器；独立Compose项目另证明 `up app` 会重建配置变更的db依赖，`--no-deps`才保持数据库。已修正发布与restart的应用/代理启动，不将数据库配置变更隐式带入。数据库日志参数将另行在备份后的维护窗口应用，保持原数据库镜像及持久卷。

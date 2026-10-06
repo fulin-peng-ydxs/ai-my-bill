@@ -184,7 +184,7 @@ new_proxy_image="$(docker image inspect my-bill-proxy --format '{{.Id}}')"
 echo "[4/8] 执行维护前备份"
 backup_started_epoch="$(date -u +%s)"
 systemctl start "${backup_service}"
-[[ "$(systemctl show "${backup_service}" -p Result --value)" == "success" ]] || fail "维护前备份失败"
+[[ "$(systemctl show "${backup_service}" -p Result | sed -n 's/^Result=//p')" == "success" ]] || fail "维护前备份失败"
 [[ -f "${backup_status_file}" ]] || fail "备份没有生成状态文件：${backup_status_file}"
 backup_status="$(awk -F= '$1 == "status" {print $2}' "${backup_status_file}")"
 backup_completed_at="$(awk -F= '$1 == "latestCompletedAt" {print $2}' "${backup_status_file}")"
@@ -226,7 +226,8 @@ else
   ln -s "${release_directory}" "${current_path}"
 fi
 
-compose_at "${release_directory}" up -d --force-recreate app
+# Keep database configuration changes in an explicit, backed-up database maintenance window.
+compose_at "${release_directory}" up -d --no-deps --force-recreate app
 deadline=$((SECONDS + health_timeout))
 while true; do
   app_container="$(compose_at "${release_directory}" ps -q app)"
@@ -235,7 +236,7 @@ while true; do
   [[ "${SECONDS}" -lt "${deadline}" ]] || fail "app 在 ${health_timeout} 秒内未健康，当前状态：${app_health:-unknown}"
   sleep 3
 done
-compose_at "${release_directory}" up -d --force-recreate proxy
+compose_at "${release_directory}" up -d --no-deps --force-recreate proxy
 
 echo "[8/8] 验证 HTTPS 并记录版本"
 curl --fail --silent --show-error --cacert "${ca_file}" "${health_url}" >/dev/null
