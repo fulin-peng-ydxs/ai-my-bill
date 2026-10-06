@@ -89,6 +89,9 @@ remote_operation() {
     [[ "${LOG_FOLLOW}" == false ]] || command+=" --log-follow"
   fi
   echo "[${BILL_TARGET_ID}] ${action}" >&2
+  # A remote PTY ties the foreground follow process to the SSH session lifetime.
+  # Without it, closing the local client can leave a quiet docker/journal follower behind.
+  if [[ "${action}" == logs && "${LOG_FOLLOW:-false}" == true ]]; then SSH_ARGS+=(-tt); fi
   if [[ -n "${temporary_script}" ]]; then
     if ssh "${SSH_ARGS[@]}" "${destination}" "${command}"; then
       ssh "${SSH_ARGS[@]}" "${destination}" "rm -f $(printf '%q' "${temporary_script}")"

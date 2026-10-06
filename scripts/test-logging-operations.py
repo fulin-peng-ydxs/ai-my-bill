@@ -32,7 +32,11 @@ def main():
         }
         (targets / 'fixture.env').write_text(''.join(f'{key}={value}\n' for key, value in values.items()))
         binary = root / 'bin'; binary.mkdir()
-        (binary / 'ssh').write_text('#!/usr/bin/env bash\nexec bash -c "${@: -1}"\n')
+        (binary / 'ssh').write_text('''#!/usr/bin/env python3
+import json,os,sys
+with open(os.environ['SSH_CALLS'], 'a') as output: output.write(json.dumps(sys.argv[1:])+'\\n')
+os.execv('/bin/bash',['bash','-c',sys.argv[-1]])
+''')
         (binary / 'docker').write_text('''#!/usr/bin/env python3
 import json,os,sys
 with open(os.environ['CALLS'], 'a') as output: output.write(json.dumps(sys.argv[1:])+'\\n')
@@ -43,7 +47,7 @@ print('app | unrelated')
         (binary / 'journalctl').write_text('#!/usr/bin/env bash\necho "fixture-system-event"\n')
         for path in binary.iterdir(): path.chmod(0o755)
         env = {**os.environ, 'PATH': str(binary) + ':' + os.environ['PATH'],
-               'MY_BILL_DEPLOY_TARGET_DIRECTORY': str(targets), 'CALLS': str(root / 'calls')}
+               'MY_BILL_DEPLOY_TARGET_DIRECTORY': str(targets), 'CALLS': str(root / 'calls'), 'SSH_CALLS': str(root / 'ssh-calls')}
 
         def invoke(*args, failure=False):
             result = subprocess.run(['bash', str(root / 'scripts/operations.sh'), *args], env=env,
@@ -56,9 +60,11 @@ print('app | unrelated')
         call = json.loads((root / 'calls').read_text().splitlines()[-1])
         assert call[-1] == 'app' and call[call.index('--tail') + 1] == '17'
         assert call[call.index('--since') + 1].isdigit()
+        assert '-tt' not in json.loads((root / 'ssh-calls').read_text().splitlines()[-1])
         invoke('logs', 'fixture', '--trace-id', 'missing-trace')
         invoke('logs', 'fixture', '--service', 'app', '--follow')
         assert '--follow' in json.loads((root / 'calls').read_text().splitlines()[-1])
+        assert '-tt' in json.loads((root / 'ssh-calls').read_text().splitlines()[-1])
         invoke('logs', 'fixture', '--service', 'bootstrap-admin')
         assert 'deploy/compose.bootstrap.yaml' in json.loads((root / 'calls').read_text().splitlines()[-1])
         for args in [('--tail', '0'), ('--tail', '9999999999999'), ('--since', '31d'),

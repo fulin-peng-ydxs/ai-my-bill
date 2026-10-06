@@ -20,6 +20,9 @@ fi
 
 ./mvnw -B -pl server -DskipTests package
 MY_BILL_BUILD_ID="${source_commit}" npm --prefix web run build
+# Release diagnostics use a private umask; Caddy still needs to read these public assets.
+find web/dist -type d -exec chmod 0755 {} +
+find web/dist -type f -exec chmod 0644 {} +
 
 server_jar="$(find server/target -maxdepth 1 -type f -name '*.jar' ! -name '*.original' | head -1)"
 if [[ -z "${server_jar}" ]]; then

@@ -130,6 +130,7 @@ MY_BILL_*_PASSWORD_FILE（容器路径）与 *_PASSWORD_HOST_FILE（宿主路径
 | MY_BILL_AUTH_RATE_LIMIT_PEPPER_FILE | app/bootstrap 认证文件 | 常驻 app 可读，其他不相关服务不可挂载 |
 | MY_BILL_BOOTSTRAP_USERNAME、MY_BILL_BOOTSTRAP_PASSWORD_FILE | compose.bootstrap 固定 admin 与 initial_admin_password 文件 | 只在空账号库初始化；常驻 app 拒绝 MY_BILL_BOOTSTRAP_* |
 | MY_BILL_ALLOW_EOL_CENTOS7 | preflight 无默认放行 | 唯一已授权实例例外，见案例；不是通用部署开关 |
+| MY_BILL_SECURITY_EXCEPTION_FILE | 无默认值；本地check:security读取审批JSON，release记录摘要并在交付前复核 | 不进入Compose/app；仅已批准的精确依赖/公告、候选HEAD及目标，最长7天；无记录仍严格拒绝，具体授权见部署案例 |
 | MY_BILL_DATABASE_TEST_SUITE | test-database.sh：regression/e2e/performance/recovery | 隔离集群测试分支，不进入运行 app |
 | MY_BILL_E2E_WRITE、MY_BILL_E2E_EXPECTED_DB_FINGERPRINT | 隔离 E2E seed 写入授权与库指纹 | 错误指纹拒绝写；生产 run-app 拒绝全部 MY_BILL_E2E_* |
 | MY_BILL_E2E_BASE_URL | Playwright 临时服务地址 | 只指向受控测试环境，禁止生产 |
