@@ -2,9 +2,9 @@
 
 个人收支管理 PWA。普通用户录入支出/收入、管理个人字典和日常模板、查询明细、处理退款报销、查看报表和导出；系统管理员管理账号、默认字典、运行概况与审计，不能读取个人账目。
 
-一期使用内网 IP + HTTPS。实际地址、服务器和上线验收状态见[内网案例](agent-works/deployment/cases/intranet-single-host.md)。系统不提供账户余额、转账和离线记账。
+一期使用内网 IP + HTTPS。实际地址、服务器和上线验收状态见[内网案例](agent-works/deployment/cases/intranet-single-host/README.md)。系统不提供账户余额、转账和离线记账。
 
-手机安装使用 PWA 的“添加到主屏幕”，无需下载 IPA/APK；iPhone/iPad 的内部 CA 信任、Safari 安装步骤及验收记录见[内网案例安装指引](agent-works/deployment/cases/intranet-single-host.md#iphone--ipad-安装与待验收步骤)。
+手机安装使用 PWA 的“添加到主屏幕”，无需下载 IPA/APK；iPhone/iPad 的内部 CA 信任、Safari 安装步骤及验收记录见[内网案例安装指引](agent-works/deployment/cases/intranet-single-host/baseline.md#iphone--ipad-安装与待验收步骤)。
 
 ## 快速开始
 
@@ -383,7 +383,7 @@ npm run ops -- recovery-drill intranet-main YYYY-MM-DD
 | Flyway checksum失败 | 目标库是否选对、迁移源码与历史是否一致；保留旧库分析，不自动repair |
 | 账号初始化失败 | 开发服务是否已完成迁移、库是否为空、密码文件是否可读；不要重跑以重置已有账号 |
 | 调试断点不命中 | 5005监听、IDE连接的进程、源码是否与运行版本一致、请求是否通过角色/CSRF |
-| HTTPS警告或备份状态疑问 | [实际案例](agent-works/deployment/cases/intranet-single-host.md)的证书/定时任务证据 |
+| HTTPS警告或备份状态疑问 | [实际案例](agent-works/deployment/cases/intranet-single-host/README.md)的证书/定时任务证据 |
 
 ## 文档导航
 

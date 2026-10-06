@@ -11,7 +11,7 @@
 - [统一运维、异机备份与恢复演练](../agent-works/deployment/operations.md)
 - [公网部署演进与实现门禁](../agent-works/deployment/public-deployment.md)
 - [环境变量与配置加载](../agent-works/architecture/environment-configuration.md)
-- [当前内网部署案例](../agent-works/deployment/cases/intranet-single-host.md)
+- [当前内网部署案例](../agent-works/deployment/cases/intranet-single-host/README.md)
 
 ## 实现目录
 

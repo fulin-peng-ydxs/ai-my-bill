@@ -23,7 +23,7 @@
 
 ## 可复核入口
 
-- [内网部署案例](deployment/cases/intranet-single-host.md)：主机、源码与镜像、证书指纹、测试记录和用户确认。
+- [内网部署案例](deployment/cases/intranet-single-host/README.md)：主机、源码与镜像、证书指纹、测试记录和用户确认。
 - [部署操作手册](deployment/runbook.md)：证书签发/轮换、新内网部署及发布/回退流程。
 - [备份恢复](deployment/backup-recovery.md)：隔离工具边界、恢复流程及命令。
 - `deploy/scripts/verify-recovery-tool.sh`、`verify-recovery-http.py` 与 `server/src/test/resources/recovery/recovery-business-fixture.sql`：可重复执行的目标机隔离验证；未修改Java业务代码。
