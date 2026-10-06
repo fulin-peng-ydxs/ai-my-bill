@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+umask 077
 
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TARGET_DIRECTORY="${MY_BILL_DEPLOY_TARGET_DIRECTORY:-${PROJECT_ROOT}/.local/deploy-targets}"
@@ -83,6 +84,12 @@ build_release() {
     echo "commit=${commit}"
     echo "builtAt=$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
     echo "gates=check,check:performance,check:security,check:e2e,build:release"
+    if [[ -n "${MY_BILL_SECURITY_EXCEPTION_FILE:-}" ]]; then
+      echo "securityStatus=accepted-candidate-risk"
+      echo "securityExceptionSha256=$(LC_ALL=C LANG=C shasum -a 256 "${MY_BILL_SECURITY_EXCEPTION_FILE}" | awk '{print $1}')"
+    else
+      echo "securityStatus=zero-osv-findings"
+    fi
   } > "${staging}/build.properties"
   (cd "${staging}" && LC_ALL=C LANG=C shasum -a 256 source.tar web-dist.tar.gz manifest.txt apply-release.sh bootstrap-environment.sh preflight-host.sh log-archive.sh build.properties > SHA256SUMS)
   mv "${staging}" "${output}"
@@ -113,6 +120,15 @@ deploy_target() {
   commit="$(git -C "${PROJECT_ROOT}" rev-parse HEAD)"
   artifact="${RELEASE_DIRECTORY}/${commit}"
   sha256_check "${artifact}" || fail "本地交付物校验失败：${artifact}"
+  if grep -Fqx 'securityStatus=accepted-candidate-risk' "${artifact}/build.properties"; then
+    [[ "${BILL_TARGET_ID}" == intranet-main && "${BILL_HOST}" == 10.100.101.104 ]] || fail "此风险例外制品只能部署到获批内网目标"
+    [[ -n "${MY_BILL_SECURITY_EXCEPTION_FILE:-}" ]] || fail "风险例外制品部署需提供原审批记录"
+    local approval_sha
+    approval_sha="$(LC_ALL=C LANG=C shasum -a 256 "${MY_BILL_SECURITY_EXCEPTION_FILE}" | awk '{print $1}')"
+    grep -Fqx "securityExceptionSha256=${approval_sha}" "${artifact}/build.properties" || fail "审批记录与风险例外制品不一致"
+    # Recheck candidate binding and expiry before remote writes, even when build artifacts are reused.
+    npm run check:security
+  fi
   remote_incoming="${BILL_REMOTE_ROOT}/incoming/${commit}"
   destination="${BILL_SSH_USER}@${BILL_HOST}"
   timestamp="$(date '+%Y%m%d-%H%M%S')"

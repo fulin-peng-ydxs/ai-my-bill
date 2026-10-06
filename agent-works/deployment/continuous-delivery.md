@@ -55,6 +55,8 @@ npm run release -- build
 
 入口拒绝未提交改动，并依次执行 `check`、`check:performance`、`check:security`、`check:e2e` 和 `build:release`。随后生成白名单 `source.tar`、`web-dist.tar.gz`、manifest、构建记录、目标端更新器及 `SHA256SUMS`，保存到 `.local/releases/<完整提交>/`。相同提交仅在全部摘要重新校验通过后复用；不存在跳过门禁开关。manifest 与源码同一提交，不把 `.local` 入库。
 
+经用户明确批准的单次风险例外可由 `MY_BILL_SECURITY_EXCEPTION_FILE` 指向私有JSON审批记录；字段为 `commit/target/host/dependency/id/approvedAt/expiresAt/reason`。记录绑定完整候选HEAD、精确依赖及公告和已获批实例，最长7天，无记录默认严格拦截；其他公告及后续提交不适用。构建记录保存 `securityStatus=accepted-candidate-risk` 和审批摘要，部署重新检查审批与目标，不能记为零漏洞通过。当前仅有[内网案例](cases/intranet-single-host.md)中明确批准的公告白名单，不提供任意漏洞忽略能力。
+
 普通检查生成的JAR/dist不自动成为发布候选；只有干净提交、完整关卡、manifest和目标镜像记录形成对应关系后才可交付。
 
 ## 交付产物与可追溯性

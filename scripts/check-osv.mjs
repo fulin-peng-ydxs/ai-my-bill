@@ -1,4 +1,5 @@
 import { readFile } from 'node:fs/promises'
+import { execFileSync } from 'node:child_process'
 
 const [lockPath, mavenListPath, mavenPluginListPath, mavenPomPath] = process.argv.slice(2)
 if (!lockPath || !mavenListPath || !mavenPluginListPath || !mavenPomPath) {
@@ -61,7 +62,8 @@ const pluginDependencyOverrides = new Map([
     ['io.airlift:aircompressor', '2.0.3'],
   ])],
   ['org.springframework.boot:spring-boot-maven-plugin', new Map([
-    ['com.fasterxml.jackson.core:jackson-databind', '2.21.6'],
+    ['com.fasterxml.jackson.core:jackson-databind', '2.21.7'],
+    ['com.fasterxml.jackson.core:jackson-core', '2.21.7'],
     ['org.apache.commons:commons-lang3', '3.20.0'],
     ['org.apache.httpcomponents.client5:httpclient5', '5.6.3'],
     ['org.apache.httpcomponents.core5:httpcore5', '5.4.3'],
@@ -95,6 +97,27 @@ for (const line of mavenPluginCoordinates.split(/\r?\n/u)) {
   add('Maven', name, version)
 }
 
+// An explicit, private approval record applies only to one immutable intranet candidate.
+// Default checks remain strict; this is not a repository-wide vulnerability ignore.
+let acceptedException = null
+if (process.env.MY_BILL_SECURITY_EXCEPTION_FILE) {
+  const approval = JSON.parse(await readFile(process.env.MY_BILL_SECURITY_EXCEPTION_FILE, 'utf8'))
+  const currentCommit = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim()
+  const allowedKeys = ['commit', 'target', 'host', 'dependency', 'id', 'approvedAt', 'expiresAt', 'reason']
+  if (Object.keys(approval).some(key => !allowedKeys.includes(key))
+      || approval.commit !== currentCommit
+      || approval.target !== 'intranet-main' || approval.host !== '10.100.101.104'
+      || approval.dependency !== 'Maven:org.springframework:spring-webmvc:6.2.19'
+      || approval.id !== 'GHSA-pc63-qcmh-9cmg'
+      || typeof approval.reason !== 'string' || !approval.reason.trim()
+      || !Number.isFinite(Date.parse(approval.approvedAt)) || !Number.isFinite(Date.parse(approval.expiresAt))
+      || Date.parse(approval.approvedAt) > Date.now() || Date.parse(approval.expiresAt) <= Date.now()
+      || Date.parse(approval.expiresAt) - Date.parse(approval.approvedAt) > 7 * 86400000) {
+    throw new Error('security exception must match the approved intranet candidate, advisory and seven-day maximum validity')
+  }
+  acceptedException = approval
+}
+
 const vulnerabilities = []
 for (let offset = 0; offset < queries.length; offset += 500) {
   const batch = queries.slice(offset, offset + 500)
@@ -109,7 +132,12 @@ for (let offset = 0; offset < queries.length; offset += 500) {
   payload.results.forEach((result, index) => {
     for (const vulnerability of result.vulns ?? []) {
       if (!vulnerability.withdrawn) {
-        vulnerabilities.push({ dependency: labels[offset + index], id: vulnerability.id })
+        const dependency = labels[offset + index]
+        if (acceptedException?.dependency === dependency && acceptedException.id === vulnerability.id) {
+          console.error(`ACCEPTED RISK: ${dependency} ${vulnerability.id} target=${acceptedException.target} commit=${acceptedException.commit}`)
+        } else {
+          vulnerabilities.push({ dependency, id: vulnerability.id })
+        }
       }
     }
   })
@@ -120,5 +148,7 @@ if (vulnerabilities.length > 0) {
   vulnerabilities.forEach(({ dependency, id }) => console.error(`${dependency} ${id}`))
   process.exitCode = 1
 } else {
-  console.log(`OSV dependency scan passed (${queries.length} dependencies).`)
+  console.log(acceptedException
+    ? `OSV gate completed with the explicit candidate risk exception (${queries.length} dependencies); this is not a zero-vulnerability result.`
+    : `OSV dependency scan passed (${queries.length} dependencies).`)
 }

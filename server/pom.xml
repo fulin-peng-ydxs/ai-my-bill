@@ -21,7 +21,7 @@
         <java.version>21</java.version>
         <archunit.version>1.4.1</archunit.version>
         <!-- Keep the Boot-managed Jackson family aligned on the patched 2.21 line. -->
-        <jackson-bom.version>2.21.6</jackson-bom.version>
+        <jackson-bom.version>2.21.7</jackson-bom.version>
         <log4j2.version>2.25.5</log4j2.version>
         <mybatis-plus.version>3.5.17</mybatis-plus.version>
         <postgresql.version>42.7.13</postgresql.version>
@@ -136,7 +136,12 @@
                     <dependency>
                         <groupId>com.fasterxml.jackson.core</groupId>
                         <artifactId>jackson-databind</artifactId>
-                        <version>2.21.6</version>
+                        <version>2.21.7</version>
+                    </dependency>
+                    <dependency>
+                        <groupId>com.fasterxml.jackson.core</groupId>
+                        <artifactId>jackson-core</artifactId>
+                        <version>2.21.7</version>
                     </dependency>
                     <dependency>
                         <groupId>org.apache.commons</groupId>
