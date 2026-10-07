@@ -11,7 +11,6 @@ import { useLedgerDraft } from '../composables/useLedgerDraft'
 import { registerUnsavedChanges } from '../composables/unsavedChanges'
 import { createIdempotencyAttemptTracker } from '../domain/idempotency'
 import { toShanghaiLocalDateTime } from '../domain/businessTime'
-import { isDecimalInRange, MONEY_MAX, scaledIntegerToDecimal, decimalToScaledInteger } from '../domain/money'
 import {
   emptyIncomeForm, incomeFormFromResponse, incomeRequestFromForm, validateIncomeForm,
   type IncomeField, type IncomeFormState,
@@ -26,7 +25,7 @@ import EntrySaveBar from './EntrySaveBar.vue'
 import FormField from './FormField.vue'
 import FormSection from './FormSection.vue'
 import FundingChannelPicker from './FundingChannelPicker.vue'
-import MoneySummary from './MoneySummary.vue'
+import FormDisclosure from './FormDisclosure.vue'
 
 const props = defineProps<{ accountId?: string, defaultFundingChannelId?: string | null,
   templateSelection?: DailyTemplateSelection, templateRevision?: number, editEntry?: IncomeResponse }>()
@@ -60,10 +59,6 @@ const appliedTemplateRevision = ref(props.templateRevision ?? 0)
 const templateUnavailableFields = ref<DailyTemplateSelection['unavailableFields']>(
   props.templateSelection?.entryType === 'INCOME' ? props.templateSelection.unavailableFields : [],
 )
-const summary = computed(() => [{ key: 'income', label: '本次收入',
-  amount: isDecimalInRange(form.amount, 2, MONEY_MAX, true)
-    ? scaledIntegerToDecimal(decimalToScaledInteger(form.amount, 2), 2) : '0.00',
-  tone: 'income' as const, sign: '+' as const }])
 const editDirty = computed(() => editMode.value && editBaseline.value !== JSON.stringify(form))
 
 function applyEditEntry(value: IncomeResponse): void {
@@ -263,11 +258,11 @@ void loadOptions()
       </div>
     </section>
     <form
-      class="entry-form-surface"
+      class="entry-form-surface task-entry-form"
       @submit.prevent="submit(false)"
     >
       <FormSection
-        title="收入信息"
+        title="收到什么"
       >
         <FormField
           field-id="income-name"
@@ -315,11 +310,12 @@ void loadOptions()
         />
       </FormSection>
       <FormSection
-        title="金额与收款"
+        title="收到多少"
       >
         <FormField
           field-id="income-amount"
-          label="收入金额"
+          class="entry-total-field money-income"
+          label="收入金额（¥）"
           :error="errors.amount"
         >
           <template #default="{ describedBy }">
@@ -333,11 +329,10 @@ void loadOptions()
             >
           </template>
         </FormField>
-        <MoneySummary
-          :items="summary"
-          label="本次收入金额"
-        />
+      </FormSection>
+      <FormSection title="如何收款">
         <FundingChannelPicker
+          class="entry-setting-field"
           label="收款方式"
           :items="funding"
           :loading="loading"
@@ -347,14 +342,11 @@ void loadOptions()
           @selected="selectFundingItem"
           @update:model-value="form.fundingChannelId = $event; clear('fundingChannelId')"
         />
-      </FormSection>
-      <FormSection
-        title="时间与备注"
-      >
+
         <FormField
           field-id="income-occurred-at"
+          class="entry-setting-field"
           label="收入时间"
-          help="最多可填写未来 5 分钟内的时间。"
           :error="errors.occurredAt"
         >
           <template #default="{ describedBy }">
@@ -367,6 +359,12 @@ void loadOptions()
             />
           </template>
         </FormField>
+      </FormSection>
+      <FormDisclosure
+        title="补充信息"
+        :summary="form.note.trim() || '备注（选填）'"
+        :invalid="Boolean(errors.note)"
+      >
         <FormField
           field-id="income-note"
           label="备注（选填）"
@@ -383,7 +381,7 @@ void loadOptions()
             />
           </template>
         </FormField>
-      </FormSection>
+      </FormDisclosure>
       <EntrySaveBar
         :submitting="submitting"
         :continue-visible="!editMode"

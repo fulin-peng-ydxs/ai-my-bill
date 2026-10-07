@@ -8,7 +8,7 @@ import {
 } from '../api/expenses'
 import { listDictionaryCandidates } from '../api/dictionaries'
 import {
-  calculateExpenseTotal, decimalToScaledInteger, isDecimalInRange, MONEY_MAX, scaledIntegerToDecimal,
+  calculateExpenseTotal, decimalToScaledInteger, formatCny, isDecimalInRange, MONEY_MAX,
 } from '../domain/money'
 import { expenseContinuationFields } from '../domain/expense'
 import { createIdempotencyAttemptTracker } from '../domain/idempotency'
@@ -31,7 +31,7 @@ import FormField from './FormField.vue'
 import FormSection from './FormSection.vue'
 import FundingChannelPicker from './FundingChannelPicker.vue'
 import LocationLabelPicker from './LocationLabelPicker.vue'
-import MoneySummary from './MoneySummary.vue'
+import FormDisclosure from './FormDisclosure.vue'
 import ProductCombobox from './ProductCombobox.vue'
 
 const props = defineProps<{
@@ -105,12 +105,11 @@ const differenceText = computed(() => {
   const absolute = (difference < 0n ? -difference : difference).toString().padStart(3, '0')
   return `${difference > 0n ? '高于' : '低于'}计算金额 ¥${absolute.slice(0, -2)}.${absolute.slice(-2)}`
 })
-const summaryItems = computed(() => [
-  { key: 'calculated', label: '计算金额', amount: calculatedAmount.value, tone: 'neutral' as const, sign: '' as const },
-  { key: 'paid', label: '本次支出', amount: isDecimalInRange(form.paidAmount, 2, MONEY_MAX)
-    ? scaledIntegerToDecimal(decimalToScaledInteger(form.paidAmount, 2), 2) : '0.00',
-  tone: 'expense' as const, sign: '-' as const },
-])
+const supplementSummary = computed(() => [
+  optionItems.purchase.find((item) => item.id === form.purchaseChannelId)?.name,
+  optionItems.locations.find((item) => item.id === form.locationLabelId)?.name,
+  form.note.trim(),
+].filter(Boolean).join(' · ') || '购买渠道、地点、备注（选填）')
 const editDirty = computed(() => editMode.value && editBaseline.value !== JSON.stringify(form))
 
 function applyEditEntry(value: ExpenseResponse): void {
@@ -423,11 +422,11 @@ void loadOptions()
     </section>
 
     <form
-      class="entry-form-surface"
+      class="entry-form-surface task-entry-form"
       @submit.prevent="submit(false)"
     >
       <FormSection
-        title="商品信息"
+        title="买了什么"
       >
         <ProductCombobox
           ref="productCombobox"
@@ -438,7 +437,7 @@ void loadOptions()
           @select="selectProduct"
           @clear="clearProduct"
         />
-        <div class="form-grid-two">
+        <div class="form-grid-two entry-short-fields">
           <DictionaryCombobox
             input-id="expense-primary-category"
             type="expense-category"
@@ -464,23 +463,12 @@ void loadOptions()
             @clear="form.secondaryCategoryId = ''; clearError('secondaryCategoryId'); persist()"
           />
         </div>
-        <DictionaryCombobox
-          input-id="expense-unit"
-          type="unit"
-          label="单位"
-          :items="optionItems.units"
-          :model-value="form.unitId"
-          :disabled="submitting"
-          :error="errors.unitId"
-          @select="ensureOption('units', $event.id, $event.name); form.unitId = $event.id; clearError('unitId'); persist()"
-          @clear="form.unitId = ''; clearError('unitId'); persist()"
-        />
       </FormSection>
 
       <FormSection
-        title="金额信息"
+        title="花了多少"
       >
-        <div class="form-grid-two">
+        <div class="entry-amount-fields">
           <FormField
             field-id="expense-unit-price"
             label="单位价格"
@@ -513,10 +501,22 @@ void loadOptions()
               >
             </template>
           </FormField>
+          <DictionaryCombobox
+            input-id="expense-unit"
+            type="unit"
+            label="单位"
+            :items="optionItems.units"
+            :model-value="form.unitId"
+            :disabled="submitting"
+            :error="errors.unitId"
+            @select="ensureOption('units', $event.id, $event.name); form.unitId = $event.id; clearError('unitId'); persist()"
+            @clear="form.unitId = ''; clearError('unitId'); persist()"
+          />
         </div>
         <FormField
           field-id="expense-paid-amount"
-          label="实付金额"
+          class="entry-total-field money-expense"
+          label="实付金额（¥）"
           :help="differenceText"
           :error="errors.paidAmount || errors.calculatedAmount"
         >
@@ -531,16 +531,16 @@ void loadOptions()
             >
           </template>
         </FormField>
-        <MoneySummary
-          :items="summaryItems"
-          label="本次支出金额"
-        />
+        <p class="entry-calculation">
+          计算金额 {{ formatCny(calculatedAmount) }}
+        </p>
       </FormSection>
 
       <FormSection
-        title="渠道与场景"
+        title="如何付款"
       >
         <FundingChannelPicker
+          class="entry-setting-field"
           :items="optionItems.funding"
           :loading="optionsLoading"
           :model-value="form.fundingChannelId"
@@ -549,6 +549,30 @@ void loadOptions()
           @selected="ensureOption('funding', $event.id, $event.name)"
           @update:model-value="form.fundingChannelId = $event; clearError('fundingChannelId'); persist()"
         />
+
+        <FormField
+          field-id="expense-occurred-at"
+          class="entry-setting-field"
+          label="消费时间"
+          :error="errors.occurredAt"
+        >
+          <template #default="{ describedBy }">
+            <DateTimeControl
+              id="expense-occurred-at"
+              v-model="form.occurredAt"
+              :aria-describedby="describedBy"
+              :disabled="submitting"
+              @change="clearError('occurredAt'); persist()"
+            />
+          </template>
+        </FormField>
+      </FormSection>
+
+      <FormDisclosure
+        title="补充信息"
+        :summary="supplementSummary"
+        :invalid="Boolean(errors.purchaseChannelId || errors.locationLabelId || errors.note)"
+      >
         <DictionaryPicker
           type="purchase-channel"
           input-id="expense-purchase-channel"
@@ -574,27 +598,6 @@ void loadOptions()
             管理常用选项
           </RouterLink>
         </div>
-      </FormSection>
-
-      <FormSection
-        title="时间与备注"
-      >
-        <FormField
-          field-id="expense-occurred-at"
-          label="消费时间"
-          help="最多可填写未来 5 分钟内的时间。"
-          :error="errors.occurredAt"
-        >
-          <template #default="{ describedBy }">
-            <DateTimeControl
-              id="expense-occurred-at"
-              v-model="form.occurredAt"
-              :aria-describedby="describedBy"
-              :disabled="submitting"
-              @change="clearError('occurredAt'); persist()"
-            />
-          </template>
-        </FormField>
         <FormField
           field-id="expense-note"
           label="备注（选填）"
@@ -611,7 +614,7 @@ void loadOptions()
             />
           </template>
         </FormField>
-      </FormSection>
+      </FormDisclosure>
 
       <EntrySaveBar
         :submitting="submitting"

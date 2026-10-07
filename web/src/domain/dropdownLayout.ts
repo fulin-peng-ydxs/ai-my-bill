@@ -5,7 +5,8 @@ export function dropdownLayout(anchor: DropdownBounds, viewport: DropdownBounds,
   mobile: boolean, savebar?: DropdownBounds) {
   const gap = 8
   const cap = mobile ? 240 : 320
-  const width = Math.min(anchor.width, Math.max(0, viewport.width - gap * 2))
+  // 短字段可并排，候选面板仍为搜索、取消和长名称保留可读宽度。
+  const width = Math.min(Math.max(anchor.width, mobile ? 260 : anchor.width), Math.max(0, viewport.width - gap * 2))
   const left = Math.max(viewport.left + gap, Math.min(anchor.left, viewport.right - width - gap))
   // 键盘展开/页面平移期间锚点可能短暂离开视口，不在键盘下面显示不可操作的候选。
   if (anchor.top >= viewport.bottom || anchor.bottom <= viewport.top) {

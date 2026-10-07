@@ -3,7 +3,7 @@ import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { dropdownLayout } from '../domain/dropdownLayout'
 
 const props = defineProps<{ open: boolean, anchor?: globalThis.HTMLElement | null, id: string }>()
-const emit = defineEmits<{ close: [] }>()
+const emit = defineEmits<{ close: [restoreFocus?: boolean], interact: [] }>()
 const panel = ref<globalThis.HTMLElement>()
 const target = computed(() => props.anchor?.closest('dialog') ?? 'body')
 const inline = computed(() => Boolean(props.anchor && !props.anchor.closest('dialog')))
@@ -20,6 +20,10 @@ function place(): void {
   const topEdge = viewport?.offsetTop ?? 0
   const width = viewport?.width ?? globalThis.window.innerWidth
   const height = viewport?.height ?? globalThis.window.innerHeight
+  if (rect.bottom <= topEdge || rect.top >= topEdge + height) {
+    emit('close', false)
+    return
+  }
   const savebar = props.anchor.closest('form')?.querySelector('.entry-savebar')
   const sticky = savebar && globalThis.getComputedStyle(savebar).position === 'sticky'
   const layout = dropdownLayout(rect, { left: leftEdge, top: topEdge, right: leftEdge + width,
@@ -43,7 +47,7 @@ function outside(event: globalThis.PointerEvent): void {
   // iPhone 镜像切换光标时会向 HTML 发送 (-1,-1) 的哨兵事件，不代表页面外部点按。
   if ((node === globalThis.document.documentElement || node === globalThis.document.body)
     && event.clientX < 0 && event.clientY < 0) return
-  if (!field?.contains(node) && !panel.value?.contains(node)) emit('close')
+  if (!field?.contains(node) && !panel.value?.contains(node)) emit('close', false)
 }
 function focusFirst(): void { panel.value?.querySelector<globalThis.HTMLButtonElement>('button:not([disabled])')?.focus() }
 defineExpose({ focusFirst })
@@ -51,7 +55,7 @@ function focusOutside(event: globalThis.FocusEvent): void {
   const node = event.target as globalThis.Node
   // iOS 在按钮切换为输入期间可能短暂把焦点移到 body；真正的外部点按仍由 pointerdown 关闭。
   if (node === globalThis.document.body || node === globalThis.document.documentElement) return
-  if (!field?.contains(node) && !panel.value?.contains(node)) emit('close')
+  if (!field?.contains(node) && !panel.value?.contains(node)) emit('close', false)
 }
 function keydown(event: globalThis.KeyboardEvent): void {
   if (panel.value?.contains(event.target as globalThis.Node) && ['ArrowDown', 'ArrowUp'].includes(event.key)) {
@@ -63,10 +67,14 @@ function keydown(event: globalThis.KeyboardEvent): void {
       buttons[(current + step + buttons.length) % buttons.length]?.focus()
     }
   }
-  if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); emit('close') }
+  if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); emit('close', true) }
 }
+function pageHidden(): void {
+  if (globalThis.document.hidden) emit('close', false)
+}
+function pageHide(): void { emit('close', false) }
 // 保留输入焦点，触摸选择不先触发键盘收缩、重排后再丢失 click。
-function preserveInputFocus(event: globalThis.MouseEvent): void {
+function preserveInputFocus(event: globalThis.MouseEvent | globalThis.PointerEvent): void {
   if ((event.target as globalThis.Element).closest('button')) event.preventDefault()
 }
 function listen(): void {
@@ -77,6 +85,8 @@ function listen(): void {
   globalThis.document.addEventListener('pointerdown', outside, true)
   globalThis.document.addEventListener('keydown', keydown, true)
   globalThis.document.addEventListener('focusin', focusOutside, true)
+  globalThis.document.addEventListener('visibilitychange', pageHidden)
+  globalThis.window.addEventListener('pagehide', pageHide)
   if (panel.value && globalThis.ResizeObserver) {
     panelObserver = new globalThis.ResizeObserver(schedulePlace)
     panelObserver.observe(panel.value)
@@ -94,6 +104,8 @@ function unlisten(): void {
   globalThis.document.removeEventListener('pointerdown', outside, true)
   globalThis.document.removeEventListener('keydown', keydown, true)
   globalThis.document.removeEventListener('focusin', focusOutside, true)
+  globalThis.document.removeEventListener('visibilitychange', pageHidden)
+  globalThis.window.removeEventListener('pagehide', pageHide)
 }
 watch(() => props.open, async (open) => {
   if (open) { await nextTick(); if (!props.open) return; place(); listen() }
@@ -117,6 +129,7 @@ onBeforeUnmount(unlisten)
       ref="panel"
       class="anchored-dropdown"
       :style="position"
+      @pointerdown="emit('interact')"
       @mousedown="preserveInputFocus"
     >
       <slot />

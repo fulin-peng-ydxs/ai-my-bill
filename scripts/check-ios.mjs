@@ -187,6 +187,8 @@ async function main() {
     await checkDate('#expense-occurred-at', '支出填报')
     await evaluate('document.querySelector("#expense-occurred-at").scrollIntoView({ block: "center" })')
     const expenseDateImage = await screenshot('expense-date.png')
+    // 原生点击前将目标放入可见区中部，避开 Safari 工具栏和自动滚动中的命中偏差。
+    await evaluate('document.querySelector("#expense-primary-category").scrollIntoView({ block: "center" })')
 
     await request('POST', `/session/${sessionId}/element/${await find('#expense-primary-category')}/click`)
     await waitFor(async () => evaluate('return document.querySelector("#expense-primary-category")?.getAttribute("aria-expanded") === "true"'), '分类下拉')
@@ -217,8 +219,8 @@ async function main() {
     await waitFor(async () => evaluate('return !document.querySelector("#expense-primary-category-options")'), '重复点击收起')
     await request('POST', `/session/${sessionId}/element/${await find('#expense-primary-category')}/click`)
     await request('POST', `/session/${sessionId}/element/${await find('#expense-primary-category-options .dropdown-search')}/click`)
-    await waitFor(async () => evaluate(`return document.querySelector('#expense-primary-category')?.tagName === 'INPUT'
-      && document.activeElement?.id === 'expense-primary-category'`), '主动搜索聚焦')
+    await waitFor(async () => evaluate(`return document.querySelector('#expense-primary-category')?.tagName === 'BUTTON'
+      && document.activeElement?.id === 'expense-primary-category-search'`), '主动搜索聚焦')
     // 记录真实可见视口，WebDriver 没有唤起键盘时不能用焦点通过冒充键盘验收。
     await new Promise((done) => setTimeout(done, 1000))
     const searchViewport = await evaluate(`
@@ -226,7 +228,7 @@ async function main() {
       const vv = visualViewport
       return { height: vv?.height ?? innerHeight, top: vv?.offsetTop ?? 0,
         scale: vv?.scale ?? 1, popupTop: popup.top, popupBottom: popup.bottom,
-        popupHeight: popup.height, inputFont: getComputedStyle(document.querySelector('#expense-primary-category')).fontSize,
+        popupHeight: popup.height, inputFont: getComputedStyle(document.querySelector('#expense-primary-category-search')).fontSize,
         keyboardOpen: document.querySelector('.app-shell').classList.contains('keyboard-open') }
     `)
     if (searchViewport.scale !== 1 || searchViewport.inputFont !== '16px' || searchViewport.popupHeight > 241
@@ -236,6 +238,12 @@ async function main() {
     }
     console.log(`主动搜索：16px、无自动缩放；${searchViewport.keyboardOpen ? '实际键盘视口已收缩' : '系统软键盘未由 WebDriver 唤起，键盘状态未验证'}`)
     console.log(`搜索截图：${await screenshot('entry-dropdown-search.png')}`)
+    await request('POST', `/session/${sessionId}/element/${await find('#expense-primary-category-options .dropdown-search-header button')}/click`)
+    await waitFor(async () => evaluate(`return !document.querySelector('#expense-primary-category-options')
+      && document.activeElement?.id !== 'expense-primary-category-search'`), '取消搜索关闭候选')
+    console.log('取消搜索：候选关闭，搜索输入失焦')
+    await request('POST', `/session/${sessionId}/element/${await find('#expense-primary-category')}/click`)
+    await request('POST', `/session/${sessionId}/element/${await find('#expense-primary-category-options .dropdown-search')}/click`)
     // 点非编辑页头关闭，不修改当前草稿或触发业务提交。
     await request('POST', `/session/${sessionId}/element/${await find('.page-heading h1')}/click`)
     await waitFor(async () => evaluate(`return !document.querySelector('#expense-primary-category-options')

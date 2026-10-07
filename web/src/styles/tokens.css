@@ -1991,7 +1991,7 @@ body:has(dialog[open]) {
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-control);
-  box-shadow: 0 12px 32px color-mix(in srgb, var(--color-text) 16%, transparent);
+  box-shadow: none;
 }
 .anchored-dropdown .product-options { overflow: visible; max-height: none; min-height: 0; border: 0; border-radius: 0; }
 .anchored-dropdown .product-options li { min-width: 0; }
@@ -2036,6 +2036,29 @@ body:has(dialog[open]) {
 .combobox-trigger svg { flex: 0 0 auto; }
 .combobox-placeholder { color: var(--color-placeholder); }
 .dropdown-search { position: sticky; z-index: 1; top: 0; display: flex; align-items: center; gap: var(--space-sm); border-top: 0; border-bottom: 1px solid var(--color-border); }
+.dropdown-search-header { position: sticky; z-index: 1; top: 0; display: flex; align-items: center; gap: var(--space-xs); padding: var(--space-xs); background: var(--color-surface); border-bottom: 1px solid var(--color-border); }
+.dropdown-search-header input { width: 100%; min-width: 0; min-height: 44px; padding: var(--space-sm); font-size: 16px; line-height: 22px; color: var(--color-text); background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-control); }
+.dropdown-search-header button { flex: 0 0 auto; min-width: 44px; min-height: 44px; }
+
+/* 任务流单列与关联字段并排是两个层次；只对明确的短字段启用紧凑行。 */
+.entry-short-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.entry-amount-fields { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) minmax(96px, .9fr); gap: var(--space-md); align-items: start; }
+.entry-amount-fields > * { min-width: 0; }
+.entry-amount-fields > .entry-combobox, .entry-short-fields > .entry-combobox { line-height: 20px; }
+.entry-amount-fields input, .entry-amount-fields .combobox-trigger { padding-inline: var(--space-sm); }
+.entry-total-field input { font-size: 26px; line-height: 32px; font-variant-numeric: tabular-nums; font-weight: 600; }
+.entry-total-field.money-expense input { color: var(--color-expense-text); }
+.entry-total-field.money-income input { color: var(--color-income-text); }
+.entry-calculation { margin: 0; color: var(--color-muted); font-size: 12px; line-height: 18px; }
+.form-disclosure { display: block; }
+.form-disclosure > summary { display: flex; align-items: center; justify-content: space-between; gap: var(--space-md); min-height: 44px; cursor: pointer; list-style: none; }
+.form-disclosure > summary::-webkit-details-marker { display: none; }
+.form-disclosure > summary span { min-width: 0; display: grid; gap: var(--space-xs); }
+.form-disclosure > summary strong { font-size: var(--font-section-size); font-weight: 600; line-height: var(--font-section-line); }
+.form-disclosure > summary small { color: var(--color-muted); font-size: 12px; line-height: 18px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.form-disclosure > summary svg { flex: 0 0 auto; }
+.form-disclosure[open] > summary svg { transform: rotate(180deg); }
+.form-disclosure[open] > .form-section-fields { margin-top: var(--space-md); }
 
 /* 手机使用紧凑任务流；保留 16px 编辑字号和 44px 命中区域。 */
 @media (max-width: 735px) {
@@ -2053,9 +2076,18 @@ body:has(dialog[open]) {
   }
   .shell-content { padding: max(var(--space-md), env(safe-area-inset-top)) max(var(--space-md), env(safe-area-inset-right)) var(--space-lg) max(var(--space-md), env(safe-area-inset-left)); }
   .entry-preference-page, .entry-type-panel, .entry-form, .ledger-page, .report-page, .dictionary-detail-page, .settings-page { gap: var(--space-md); }
+  .entry-preference-page { width: 100%; max-width: 560px; margin-inline: auto; }
   .entry-form-surface, .settings-section { padding-inline: var(--space-md); }
   .form-section { gap: var(--space-sm); padding-block: var(--space-md); }
   .form-section-fields, .form-grid-two { gap: var(--space-md); }
+  .task-entry-form .form-section { padding-block: var(--space-lg); }
+  .task-entry-form .form-section:first-child { padding-top: var(--space-md); }
+  .task-entry-form .form-section > .section-heading { padding-bottom: var(--space-xs); }
+  .task-entry-form .entry-short-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .entry-setting-field { grid-template-columns: minmax(0, .75fr) minmax(0, 2fr); align-items: center; column-gap: var(--space-md); }
+  .entry-setting-field > small { grid-column: 1 / -1; }
+  .entry-setting-field > label { font-weight: 400; }
+  .entry-total-field input { font-size: 26px; line-height: 32px; }
   .form-field, .entry-combobox { gap: var(--space-xs); }
   .form-field input, .form-field select, .select-control, .entry-combobox > input { line-height: 22px; padding-block: var(--space-sm); }
   .form-field textarea { min-height: 88px; padding: var(--space-sm) var(--space-md); }

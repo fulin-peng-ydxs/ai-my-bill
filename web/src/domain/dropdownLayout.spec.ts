@@ -5,6 +5,12 @@ const viewport = { left: 0, top: 0, right: 390, bottom: 844, width: 390 }
 const anchor = { left: 24, top: 200, right: 366, bottom: 244, width: 342 }
 
 describe('visible dropdown bounds', () => {
+  it('keeps a short rightmost field panel readable without leaving the phone viewport', () => {
+    const result = dropdownLayout({ left: 273, right: 365, top: 400, bottom: 444, width: 92 }, viewport, 1000, true)
+    expect(result.width).toBe(260)
+    expect(result.left + result.width).toBeLessThanOrEqual(viewport.right - 8)
+    expect(result.left).toBeGreaterThanOrEqual(8)
+  })
   it('caps phone and desktop lists independently even with hundreds of candidates', () => {
     expect(dropdownLayout(anchor, viewport, 6000, true).maxHeight).toBe(240)
     expect(dropdownLayout(anchor, viewport, 6000, false).maxHeight).toBe(320)

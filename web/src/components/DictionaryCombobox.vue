@@ -32,9 +32,12 @@ const browsing = ref(false)
 const open = ref(false)
 const typing = ref(false)
 const creating = ref(false)
+let interactionVersion = 0
 const createError = ref('')
 const searchedQuery = ref<string>()
 const resolvedItem = ref<DictionaryChoice>()
+const selectedItem = computed(() => props.items.find((item) => item.id === props.modelValue)
+  ?? (resolvedItem.value?.id === props.modelValue ? resolvedItem.value : undefined))
 const request = useLatestRequest<DictionaryChoice[]>()
 const searchTerm = computed(() => browsing.value ? '' : query.value)
 const normalizedQuery = computed(() => normalizeDictionaryName(searchTerm.value))
@@ -49,7 +52,9 @@ const exactMatch = computed(() => [...candidates.value, ...props.items]
 const nameTooLong = computed(() => [...query.value.trim()].length > 100)
 const canCreate = computed(() => !browsing.value && normalizedQuery.value.length > 0 && !nameTooLong.value && !exactMatch.value)
 
-watch([() => props.modelValue, () => props.items], (_, __, onCleanup) => {
+watch([() => props.modelValue, () => props.items], ([modelValue], previous, onCleanup) => {
+  // 候选刷新不能覆盖正在编辑的搜索词；明确的已选 ID 变化仍正常同步回显。
+  if (typing.value && modelValue === previous?.[0]) return
   if (props.modelValue) {
     const selected = props.items.find((item) => item.id === props.modelValue)
     if (selected) {
@@ -97,6 +102,7 @@ async function search(value: string): Promise<void> {
 const debounced = useDebouncedQuery((value: string) => { void search(value) })
 
 function focus(searching: boolean): void {
+  if (!open.value) interactionVersion++
   browsing.value = !searching
   open.value = true
   if ((searchTerm.value || !props.items.length) && (searchedQuery.value !== searchTerm.value || !request.data.value)) {
@@ -110,7 +116,8 @@ function change(value: string): void {
   typing.value = true
   open.value = true
   createError.value = ''
-  if (props.modelValue && props.clearOnInput !== false) emit('clear')
+  // 搜索只是挑选过程，取消仍保留原值；明确请求即时清除的旧消费者才提前清除。
+  if (props.modelValue && props.clearOnInput === true) emit('clear')
   debounced.schedule(value)
 }
 
@@ -141,12 +148,18 @@ async function create(): Promise<void> {
   if (!canCreate.value || creating.value || props.disabled) return
   creating.value = true
   createError.value = ''
+  const name = query.value.trim()
+  const parentId = props.parentId
+  const version = interactionVersion
   try {
     const item = props.createItem
-      ? await props.createItem(query.value.trim())
-      : await createDictionaryItem(props.type, query.value.trim(), props.parentId)
-    select({ id: item.id, name: item.name, parentId: props.parentId })
+      ? await props.createItem(name)
+      : await createDictionaryItem(props.type, name, parentId)
+    // 创建可能已在服务端完成；取消或切换父分类后不把晚响应写回当前字段。
+    if (!open.value || version !== interactionVersion || query.value.trim() !== name || props.parentId !== parentId) return
+    select({ id: item.id, name: item.name, parentId })
   } catch (cause) {
+    if (!open.value || version !== interactionVersion || query.value.trim() !== name || props.parentId !== parentId) return
     const error = normalizeRequestError(cause)
     createError.value = error.fieldErrors.name?.[0] ?? error.message
   } finally {
@@ -161,6 +174,7 @@ async function create(): Promise<void> {
       :id="inputId"
       :label="`${label}${optional ? '（选填）' : ''}`"
       :value="query"
+      :display-value="selectedItem?.name ?? ''"
       :disabled="disabled"
       :placeholder="!items.length ? '输入名称新增' : '搜索或新增'"
       :open="open"
@@ -221,9 +235,10 @@ async function create(): Promise<void> {
         {{ creating ? '正在新增…' : `＋ 新增${label}“${query.trim()}”` }}
       </button>
       <button
-        v-if="optional && modelValue"
+        v-if="modelValue"
         type="button"
         class="dropdown-action"
+        :disabled="disabled || creating"
         @click="emit('clear'); resolvedItem = undefined; query = ''; open = false"
       >
         清除选择

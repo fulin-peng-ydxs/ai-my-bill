@@ -27,6 +27,7 @@ const browsing = ref(false)
 const listOpen = ref(false)
 const createError = ref<string>()
 const creating = ref(false)
+let interactionVersion = 0
 const request = useLatestRequest<ProductSuggestion[]>()
 const searchedQuery = ref<string>()
 const searchTerm = computed(() => browsing.value ? '' : query.value)
@@ -49,6 +50,7 @@ async function search(value: string): Promise<void> {
 const debounced = useDebouncedQuery((value: string) => { void search(value) })
 
 function focus(searching: boolean): void {
+  if (!listOpen.value) interactionVersion++
   browsing.value = !searching
   listOpen.value = true
   if (searchedQuery.value !== searchTerm.value || !request.data.value) void search(searchTerm.value)
@@ -59,7 +61,6 @@ function changeQuery(value: string): void {
   query.value = value
   listOpen.value = true
   createError.value = undefined
-  if (props.modelValue && value !== props.modelName) emit('clear')
   debounced.schedule(value)
 }
 
@@ -76,10 +77,15 @@ async function createProduct(): Promise<void> {
   if (!canCreate.value || creating.value || props.disabled) return
   creating.value = true
   createError.value = undefined
+  const name = query.value.trim()
+  const version = interactionVersion
   try {
-    const created = await createDictionaryItem('product', query.value.trim())
+    const created = await createDictionaryItem('product', name)
+    // 用户已退出或换了搜索词时，晚到的创建结果不能改写其他操作中的草稿。
+    if (!listOpen.value || version !== interactionVersion || query.value.trim() !== name) return
     select({ id: created.id, name: created.name })
   } catch (error) {
+    if (!listOpen.value || version !== interactionVersion || query.value.trim() !== name) return
     createError.value = normalizeRequestError(error).message
   } finally {
     creating.value = false
@@ -116,6 +122,7 @@ watch(() => props.modelName, (value) => {
       id="expense-product-search"
       label="商品名称"
       :value="query"
+      :display-value="modelName"
       :disabled="disabled"
       placeholder="搜索或输入新商品"
       :open="listOpen"
@@ -166,6 +173,15 @@ watch(() => props.modelName, (value) => {
       >
         暂无匹配商品
       </div>
+      <button
+        v-if="modelValue"
+        type="button"
+        class="dropdown-action"
+        :disabled="disabled || creating"
+        @click="reset(); emit('clear')"
+      >
+        清除选择
+      </button>
       <button
         v-if="canCreate"
         type="button"
