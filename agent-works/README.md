@@ -1,6 +1,6 @@
 # 文档目录与事实源
 
-本目录按业务模块组织；当前个人账单模块为 personal-bill-pwa。根 README 面向使用和开发入门，AGENTS 是 AI 协作规则，CLAUDE 仅引用 AGENTS。当前技术事实、部署方案、实例证据和需求过程分别维护，不能互相替代。
+当前个人账单模块沿用本目录下的需求、计划、架构与部署资料，不另建同主题目录。根 README 面向使用和开发入门，AGENTS 是 AI 协作规则，CLAUDE 仅引用 AGENTS。当前技术事实、部署方案、实例证据和需求过程分别维护，不能互相替代。
 
 | 位置 | 职责 | 何时更新 |
 |---|---|---|
@@ -14,7 +14,7 @@
 | [prototypes/](prototypes/) | 需求页面原型 | 需求/交互变更时；不是实际页面验收证据 |
 | [screenshot/](screenshot/) | 已有截图材料 | 只保存真实生成且注明场景的截图 |
 | [pre-release-test-report.md](pre-release-test-report.md) | 部署前候选及验证证据 | 候选变更或补充验证时，保留版本边界 |
-| [test-report.md](test-report.md) | T29目标环境验收结果与剩余边界 | 部署或补验后，区分用户实机与隔离验证 |
+| [test-report.md](test-report.md) | T29历史验收及后续页面改动验证证据 | 页面验证或补验后，注明版本/环境，区分用户实机与隔离验证；服务器后续操作归实例主题记录 |
 | [performance-test.md](performance-test.md)、[security-test.md](security-test.md) | 性能/安全专项口径和证据 | 相关风险或验证结果改变时 |
 | [DESIGN.md](../DESIGN.md) | 页面登记、组件、视觉与响应式契约 | 页面/组件/设计变更时 |
 | [contracts/openapi.yaml](../contracts/openapi.yaml) | API机器契约 | 接口改变时，同步生成类型与测试 |

@@ -131,7 +131,7 @@ chmod 0600 /etc/my-bill/secrets/*
    ```
 
 4. 在目标机 `/etc/my-bill/production.env` 配好该实例的 IP、端口、来源范围及 TLS 目录，按第4节启动 Caddy。使用 `curl --cacert /etc/my-bill/ca.crt https://实际IP:实际端口/api/v1/health`，应返回健康结果；失败先查 IP SAN、有效期、文件权限和 Caddy 日志，不使用 `-k` 作为通过证据。
-5. 给**该环境的客户端**分发 `ca.crt`，核对本环境指纹后安装并完全信任，再用 Safari/浏览器验证 HTTPS 和主屏幕安装。iPhone/iPad 菜单操作见[案例安装指引](cases/intranet-single-host/baseline.md#iphone--ipad-安装与待验收步骤)，其中的旧主机地址、路径和指纹不能照搬到新环境。
+5. 给**该环境的客户端**分发 `ca.crt`，核对本环境指纹后安装并完全信任，再用 Safari/浏览器验证 HTTPS 和主屏幕安装。iPhone/iPad 菜单操作见 [README 手机安装与使用](../../README.md#手机安装与使用)；具体地址、证书指纹及终端验收结果记录在本环境案例。
 6. 启用巡检定时器并建立本环境案例，登记 CA 指纹、CA/叶证书有效期、签发端保管人和路径、目标路径、客户端验收与下次轮换安排。私钥本身不得写入文档。跨环境 CA 名称可能相同，靠指纹识别。
 
 ### 3.3 后续续签、更换与异常处理
