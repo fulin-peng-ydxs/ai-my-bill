@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 
-import AnchoredDropdown from './AnchoredDropdown.vue'
+import ComboboxField from './ComboboxField.vue'
 
 import { createDictionaryItem } from '../api/dictionaries'
 import { listExpenseProducts, type ProductSuggestion } from '../api/expenses'
@@ -23,21 +23,21 @@ const emit = defineEmits<{
 }>()
 
 const query = ref(props.modelName)
-const anchor = ref<globalThis.HTMLElement>()
-const dropdown = ref<{ focusFirst: () => void }>()
+const browsing = ref(false)
 const listOpen = ref(false)
 const createError = ref<string>()
 const creating = ref(false)
 const request = useLatestRequest<ProductSuggestion[]>()
 const searchedQuery = ref<string>()
+const searchTerm = computed(() => browsing.value ? '' : query.value)
 const candidates = computed(() => (request.data.value ?? []).filter((item) =>
-  normalizeDictionaryName(item.name).includes(normalizeDictionaryName(query.value))))
+  normalizeDictionaryName(item.name).includes(normalizeDictionaryName(searchTerm.value))))
 const exactMatch = computed(() => {
   const normalizedQuery = normalizeDictionaryName(query.value)
   return candidates.value.some((item) => normalizeDictionaryName(item.name) === normalizedQuery)
 })
 const nameTooLong = computed(() => [...query.value.trim()].length > 200)
-const canCreate = computed(() => query.value.trim().length > 0 && !nameTooLong.value && !exactMatch.value)
+const canCreate = computed(() => !browsing.value && query.value.trim().length > 0 && !nameTooLong.value && !exactMatch.value)
 
 async function search(value: string): Promise<void> {
   searchedQuery.value = value
@@ -48,12 +48,14 @@ async function search(value: string): Promise<void> {
 
 const debounced = useDebouncedQuery((value: string) => { void search(value) })
 
-function focus(): void {
+function focus(searching: boolean): void {
+  browsing.value = !searching
   listOpen.value = true
-  if (searchedQuery.value !== query.value || !request.data.value) void search(query.value)
+  if (searchedQuery.value !== searchTerm.value || !request.data.value) void search(searchTerm.value)
 }
 
 function changeQuery(value: string): void {
+  browsing.value = false
   query.value = value
   listOpen.value = true
   createError.value = undefined
@@ -62,6 +64,8 @@ function changeQuery(value: string): void {
 }
 
 function select(item: ProductSuggestion): void {
+  debounced.cancel()
+  request.cancel()
   query.value = item.name
   listOpen.value = false
   createError.value = undefined
@@ -69,7 +73,7 @@ function select(item: ProductSuggestion): void {
 }
 
 async function createProduct(): Promise<void> {
-  if (!canCreate.value || creating.value) return
+  if (!canCreate.value || creating.value || props.disabled) return
   creating.value = true
   createError.value = undefined
   try {
@@ -82,7 +86,16 @@ async function createProduct(): Promise<void> {
   }
 }
 
+function close(): void {
+  listOpen.value = false
+  debounced.cancel()
+  request.cancel()
+  query.value = props.modelValue ? props.modelName : ''
+  createError.value = undefined
+}
+
 function reset(): void {
+  debounced.cancel()
   query.value = ''
   searchedQuery.value = undefined
   listOpen.value = false
@@ -99,30 +112,18 @@ watch(() => props.modelName, (value) => {
 
 <template>
   <div class="entry-combobox product-combobox">
-    <label for="expense-product-search">商品名称</label>
-    <input
+    <ComboboxField
       id="expense-product-search"
-      ref="anchor"
+      label="商品名称"
       :value="query"
       :disabled="disabled"
-      autocomplete="off"
       placeholder="搜索或输入新商品"
-      role="combobox"
-      :aria-expanded="listOpen"
-      aria-controls="expense-product-options"
-      :aria-invalid="Boolean(error)"
-      @input="changeQuery(($event.target as HTMLInputElement).value)"
-      @focus="focus"
-      @keydown.enter.prevent="debounced.submit(query)"
-      @keydown.escape="listOpen = false"
-      @keydown.down.prevent="dropdown?.focusFirst()"
-    >
-    <AnchoredDropdown
-      id="expense-product-options"
-      ref="dropdown"
-      :anchor="anchor"
       :open="listOpen"
-      @close="listOpen = false"
+      :invalid="Boolean(error || createError)"
+      @open="focus"
+      @input="changeQuery"
+      @submit="debounced.submit(searchTerm)"
+      @close="close"
     >
       <small
         v-if="request.status.value === 'loading'"
@@ -136,7 +137,7 @@ watch(() => props.modelName, (value) => {
         {{ request.error.value.message }} <button
           type="button"
           class="inline-action"
-          @click="search(query)"
+          @click="search(searchTerm)"
         >重试</button>
       </small>
       <ul
@@ -179,7 +180,7 @@ watch(() => props.modelName, (value) => {
         class="dropdown-status field-error"
         role="alert"
       >{{ nameTooLong ? '商品名称不能超过 200 个字符。' : createError }}</small>
-    </AnchoredDropdown>
+    </ComboboxField>
     <small
       v-if="error || createError"
       class="field-error"

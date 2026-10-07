@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 
-import AnchoredDropdown from './AnchoredDropdown.vue'
+import ComboboxField from './ComboboxField.vue'
 
 import { createDictionaryItem, getDictionaryItem, listDictionaryCandidates, listDictionaryItems } from '../api/dictionaries'
 import { normalizeRequestError } from '../api/errors'
@@ -28,8 +28,7 @@ const props = defineProps<{
 const emit = defineEmits<{ select: [item: DictionaryChoice], clear: [] }>()
 
 const query = ref('')
-const anchor = ref<globalThis.HTMLElement>()
-const dropdown = ref<{ focusFirst: () => void }>()
+const browsing = ref(false)
 const open = ref(false)
 const typing = ref(false)
 const creating = ref(false)
@@ -37,9 +36,10 @@ const createError = ref('')
 const searchedQuery = ref<string>()
 const resolvedItem = ref<DictionaryChoice>()
 const request = useLatestRequest<DictionaryChoice[]>()
-const normalizedQuery = computed(() => normalizeDictionaryName(query.value))
+const searchTerm = computed(() => browsing.value ? '' : query.value)
+const normalizedQuery = computed(() => normalizeDictionaryName(searchTerm.value))
 const candidates = computed(() => {
-  const source = searchedQuery.value === query.value && request.data.value ? request.data.value : props.items
+  const source = searchedQuery.value === searchTerm.value && request.data.value ? request.data.value : props.items
   const choices = resolvedItem.value && !source.some((item) => item.id === resolvedItem.value?.id)
     ? [...source, resolvedItem.value] : source
   return choices.filter((item) => normalizeDictionaryName(item.name).includes(normalizedQuery.value))
@@ -47,7 +47,7 @@ const candidates = computed(() => {
 const exactMatch = computed(() => [...candidates.value, ...props.items]
   .some((item) => normalizeDictionaryName(item.name) === normalizedQuery.value))
 const nameTooLong = computed(() => [...query.value.trim()].length > 100)
-const canCreate = computed(() => normalizedQuery.value.length > 0 && !nameTooLong.value && !exactMatch.value)
+const canCreate = computed(() => !browsing.value && normalizedQuery.value.length > 0 && !nameTooLong.value && !exactMatch.value)
 
 watch([() => props.modelValue, () => props.items], (_, __, onCleanup) => {
   if (props.modelValue) {
@@ -96,14 +96,16 @@ async function search(value: string): Promise<void> {
 }
 const debounced = useDebouncedQuery((value: string) => { void search(value) })
 
-function focus(): void {
+function focus(searching: boolean): void {
+  browsing.value = !searching
   open.value = true
-  if ((query.value || !props.items.length) && (searchedQuery.value !== query.value || !request.data.value)) {
-    void search(query.value)
+  if ((searchTerm.value || !props.items.length) && (searchedQuery.value !== searchTerm.value || !request.data.value)) {
+    void search(searchTerm.value)
   }
 }
 
 function change(value: string): void {
+  browsing.value = false
   query.value = value
   typing.value = true
   open.value = true
@@ -155,29 +157,17 @@ async function create(): Promise<void> {
 
 <template>
   <div class="entry-combobox dictionary-combobox">
-    <label :for="inputId">{{ label }}{{ optional ? '（选填）' : '' }}</label>
-    <input
+    <ComboboxField
       :id="inputId"
-      ref="anchor"
+      :label="`${label}${optional ? '（选填）' : ''}`"
       :value="query"
       :disabled="disabled"
-      autocomplete="off"
       :placeholder="!items.length ? '输入名称新增' : '搜索或新增'"
-      role="combobox"
-      :aria-expanded="open"
-      :aria-controls="`${inputId}-options`"
-      :aria-invalid="Boolean(error || createError)"
-      @input="change(($event.target as HTMLInputElement).value)"
-      @focus="focus"
-      @keydown.enter.prevent="debounced.submit(query)"
-      @keydown.escape="close"
-      @keydown.down.prevent="dropdown?.focusFirst()"
-    >
-    <AnchoredDropdown
-      :id="`${inputId}-options`"
-      ref="dropdown"
-      :anchor="anchor"
       :open="open"
+      :invalid="Boolean(error || createError)"
+      @open="focus"
+      @input="change"
+      @submit="debounced.submit(searchTerm)"
       @close="close"
     >
       <small
@@ -193,7 +183,7 @@ async function create(): Promise<void> {
         <button
           type="button"
           class="inline-action"
-          @click="search(query)"
+          @click="search(searchTerm)"
         >重试</button>
       </small>
       <ul
@@ -243,7 +233,7 @@ async function create(): Promise<void> {
         class="dropdown-status field-error"
         role="alert"
       >{{ nameTooLong ? '名称不能超过 100 个字符。' : createError }}</small>
-    </AnchoredDropdown>
+    </ComboboxField>
     <small
       v-if="error"
       class="field-error"

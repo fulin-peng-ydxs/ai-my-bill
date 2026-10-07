@@ -29,7 +29,7 @@ flowchart LR
 
 加载、空、错误和就绪状态登记为 pageStates；权限态由角色守卫和 AppShell 承接。普通用户访问管理 URL 时保留地址并呈现权限反馈，管理员访问个人页面回管理入口。未保存内容通过 unsavedChanges 统一拦截。样式 token、组件选择、响应式和页面维护矩阵以 [DESIGN](../../DESIGN.md) 为准，不在页面私有复制共享状态或样式。
 
-普通用户页头共用 `PageHeading`，不重复显示品牌栏；两类记账表单共用表面与保存栏样式。明细与报表的清除入口通过 `hasFilterChanges` 对照各自默认条件决定是否显示。
+普通用户页头共用 `PageHeading`，不重复显示品牌栏；两类记账表单共用表面与保存栏样式。 手机和平板/PC通过共享字号、控件高度与留白 token 区分密度。商品和字典共用 `ComboboxField`：手机先用按钮浏览候选，主动搜索才显示输入和聚焦；PC直接输入。`AnchoredDropdown` 按 `visualViewport` 与锚点定位，使用 `domain/dropdownLayout` 计算有界上下方空间；候选统一内滚，关闭取消查询。`useKeyboardViewport` 仅在编辑聚焦与可见视口实际收缩时让导航让出空间，并将保存栏恢复自然流，收起动画完成后恢复。明细与报表的清除入口通过 `hasFilterChanges` 对照各自默认条件决定是否显示。
 
 “我的”使用 `panel=dictionaries` 打开共享 `DictionaryIndexPanel`，字典详情携带来源并返回原索引抽屉；独立索引路由保持可访问。修改密码由 `PasswordChangeSheet` 调用既有 `session.changePassword`，接受服务端轮换会话；临时输入只存在组件内存，成功或关闭即清空，不进入持久化存储。
 

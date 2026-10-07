@@ -13,7 +13,7 @@ function rule(selector: string): string {
 
 describe('responsive and accessibility style contracts', () => {
   it('keeps mobile navigation and low-frequency actions at least 44px tall', () => {
-    expect(styles).toMatch(/\.form-field select,\s*\.select-control\s*\{[\s\S]*?min-height: 48px;/)
+    expect(styles).toMatch(/\.form-field select,\s*\.select-control\s*\{[\s\S]*?min-height: var\(--control-height\);/)
     expect(rule('.admin-mobile-navigation a')).toContain('min-height: 44px')
     expect(rule('.reset-preferences-action')).toContain('min-height: 44px')
     expect(rule('.admin-search input')).toContain('height: 44px')

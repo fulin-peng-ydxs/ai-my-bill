@@ -4,6 +4,7 @@ import { computed, onUnmounted, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 
 import { useLogout } from '../composables/useLogout'
+import { useKeyboardViewport } from '../composables/useKeyboardViewport'
 import { clearAccountMemory } from '../composables/accountMemory'
 import { registerUnsavedChanges } from '../composables/unsavedChanges'
 import { useSessionStore } from '../stores/session'
@@ -14,6 +15,7 @@ import BottomNavigation from './BottomNavigation.vue'
 const sessionStore = useSessionStore()
 const preferencesStore = usePreferencesStore()
 const isAdmin = computed(() => sessionStore.session?.role === 'ADMIN')
+const { keyboardOpen } = useKeyboardViewport()
 const { loggingOut, logoutError, logout } = useLogout()
 const hasUnsavedPreferences = computed(() => Object.values(preferencesStore.fieldStates).includes('error'))
 const unregisterPreferenceGuard = registerUnsavedChanges(
@@ -34,7 +36,7 @@ watch(() => sessionStore.session?.accountId, (accountId, previousAccountId) => {
 <template>
   <div
     class="app-shell"
-    :class="{ 'admin-shell': isAdmin }"
+    :class="{ 'admin-shell': isAdmin, 'keyboard-open': keyboardOpen }"
   >
     <aside
       v-if="isAdmin"

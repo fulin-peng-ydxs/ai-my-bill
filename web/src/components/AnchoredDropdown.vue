@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
+import { dropdownLayout } from '../domain/dropdownLayout'
 
 const props = defineProps<{ open: boolean, anchor?: globalThis.HTMLElement | null, id: string }>()
 const emit = defineEmits<{ close: [] }>()
@@ -8,6 +9,8 @@ const target = computed(() => props.anchor?.closest('dialog') ?? 'body')
 const inline = computed(() => Boolean(props.anchor && !props.anchor.closest('dialog')))
 const position = ref<Record<string, string>>({})
 let panelObserver: globalThis.ResizeObserver | undefined
+let frame: number | undefined
+let field: globalThis.Element | null = null
 
 function place(): void {
   if (!props.anchor || !props.open) return
@@ -17,33 +20,38 @@ function place(): void {
   const topEdge = viewport?.offsetTop ?? 0
   const width = viewport?.width ?? globalThis.window.innerWidth
   const height = viewport?.height ?? globalThis.window.innerHeight
-  const horizontalGap = 12
-  const panelWidth = Math.min(rect.width, Math.max(0, width - horizontalGap * 2))
-  const left = Math.max(leftEdge + horizontalGap, Math.min(rect.left, leftEdge + width - panelWidth - horizontalGap))
-  const savebarTop = props.anchor.closest('form')?.querySelector('.entry-savebar')?.getBoundingClientRect().top
-  const bottomEdge = Math.min(topEdge + height, savebarTop ?? Number.POSITIVE_INFINITY)
-  const below = Math.max(0, bottomEdge - rect.bottom - horizontalGap - 4)
-  const above = Math.max(0, rect.top - topEdge - horizontalGap - 4)
-  const desiredHeight = Math.min(320, panel.value?.scrollHeight ?? 320)
-  const opensAbove = below < Math.min(96, desiredHeight) && above > below
-  const room = opensAbove ? above : below
-  const panelHeight = Math.min(desiredHeight, room)
-  const top = opensAbove ? rect.top - 4 - panelHeight : rect.bottom + 4
-  const parentRect = (props.anchor.closest('dialog') ?? props.anchor.closest('.entry-combobox'))?.getBoundingClientRect()
+  const savebar = props.anchor.closest('form')?.querySelector('.entry-savebar')
+  const sticky = savebar && globalThis.getComputedStyle(savebar).position === 'sticky'
+  const layout = dropdownLayout(rect, { left: leftEdge, top: topEdge, right: leftEdge + width,
+    bottom: topEdge + height, width }, panel.value?.scrollHeight ?? 320,
+  globalThis.window.matchMedia('(max-width: 735px)').matches, sticky ? savebar.getBoundingClientRect() : undefined)
+  const parent = props.anchor.closest('dialog') ?? props.anchor.closest('.entry-combobox')
+  const parentRect = parent?.getBoundingClientRect()
   position.value = {
-    left: `${left - (parentRect?.left ?? 0)}px`, width: `${panelWidth}px`, maxHeight: `${room}px`,
-    top: `${top - (parentRect?.top ?? 0)}px`,
+    left: `${layout.left - (parentRect?.left ?? 0) + (parent?.scrollLeft ?? 0)}px`,
+    width: `${layout.width}px`, maxHeight: `${layout.maxHeight}px`,
+    top: `${layout.top - (parentRect?.top ?? 0) + (parent?.scrollTop ?? 0)}px`,
+    visibility: layout.maxHeight > 0 ? 'visible' : 'hidden',
   }
+}
+function schedulePlace(): void {
+  if (frame !== undefined) return
+  frame = globalThis.window.requestAnimationFrame(() => { frame = undefined; place() })
 }
 function outside(event: globalThis.PointerEvent): void {
   const node = event.target as globalThis.Node
-  if (!props.anchor?.contains(node) && !panel.value?.contains(node)) emit('close')
+  // iPhone 镜像切换光标时会向 HTML 发送 (-1,-1) 的哨兵事件，不代表页面外部点按。
+  if ((node === globalThis.document.documentElement || node === globalThis.document.body)
+    && event.clientX < 0 && event.clientY < 0) return
+  if (!field?.contains(node) && !panel.value?.contains(node)) emit('close')
 }
 function focusFirst(): void { panel.value?.querySelector<globalThis.HTMLButtonElement>('button:not([disabled])')?.focus() }
 defineExpose({ focusFirst })
 function focusOutside(event: globalThis.FocusEvent): void {
   const node = event.target as globalThis.Node
-  if (!props.anchor?.contains(node) && !panel.value?.contains(node)) emit('close')
+  // iOS 在按钮切换为输入期间可能短暂把焦点移到 body；真正的外部点按仍由 pointerdown 关闭。
+  if (node === globalThis.document.body || node === globalThis.document.documentElement) return
+  if (!field?.contains(node) && !panel.value?.contains(node)) emit('close')
 }
 function keydown(event: globalThis.KeyboardEvent): void {
   if (panel.value?.contains(event.target as globalThis.Node) && ['ArrowDown', 'ArrowUp'].includes(event.key)) {
@@ -55,35 +63,45 @@ function keydown(event: globalThis.KeyboardEvent): void {
       buttons[(current + step + buttons.length) % buttons.length]?.focus()
     }
   }
-  if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); emit('close'); props.anchor?.focus() }
+  if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); emit('close') }
+}
+// 保留输入焦点，触摸选择不先触发键盘收缩、重排后再丢失 click。
+function preserveInputFocus(event: globalThis.MouseEvent): void {
+  if ((event.target as globalThis.Element).closest('button')) event.preventDefault()
 }
 function listen(): void {
-  globalThis.window.addEventListener('resize', place)
-  globalThis.window.addEventListener('scroll', place, true)
-  globalThis.window.visualViewport?.addEventListener('resize', place)
-  globalThis.window.visualViewport?.addEventListener('scroll', place)
+  globalThis.window.addEventListener('resize', schedulePlace)
+  globalThis.window.addEventListener('scroll', schedulePlace, true)
+  globalThis.window.visualViewport?.addEventListener('resize', schedulePlace)
+  globalThis.window.visualViewport?.addEventListener('scroll', schedulePlace)
   globalThis.document.addEventListener('pointerdown', outside, true)
   globalThis.document.addEventListener('keydown', keydown, true)
   globalThis.document.addEventListener('focusin', focusOutside, true)
   if (panel.value && globalThis.ResizeObserver) {
-    panelObserver = new globalThis.ResizeObserver(place)
+    panelObserver = new globalThis.ResizeObserver(schedulePlace)
     panelObserver.observe(panel.value)
   }
 }
 function unlisten(): void {
+  if (frame !== undefined) globalThis.window.cancelAnimationFrame(frame)
+  frame = undefined
   panelObserver?.disconnect()
   panelObserver = undefined
-  globalThis.window.removeEventListener('resize', place)
-  globalThis.window.removeEventListener('scroll', place, true)
-  globalThis.window.visualViewport?.removeEventListener('resize', place)
-  globalThis.window.visualViewport?.removeEventListener('scroll', place)
+  globalThis.window.removeEventListener('resize', schedulePlace)
+  globalThis.window.removeEventListener('scroll', schedulePlace, true)
+  globalThis.window.visualViewport?.removeEventListener('resize', schedulePlace)
+  globalThis.window.visualViewport?.removeEventListener('scroll', schedulePlace)
   globalThis.document.removeEventListener('pointerdown', outside, true)
   globalThis.document.removeEventListener('keydown', keydown, true)
   globalThis.document.removeEventListener('focusin', focusOutside, true)
 }
 watch(() => props.open, async (open) => {
-  if (open) { await nextTick(); place(); listen() }
+  if (open) { await nextTick(); if (!props.open) return; place(); listen() }
   else unlisten()
+}, { immediate: true })
+watch(() => props.anchor, (anchor) => {
+  field = anchor?.closest('.entry-combobox') ?? field
+  if (props.open) schedulePlace()
 }, { immediate: true })
 onBeforeUnmount(unlisten)
 </script>
@@ -99,6 +117,7 @@ onBeforeUnmount(unlisten)
       ref="panel"
       class="anchored-dropdown"
       :style="position"
+      @mousedown="preserveInputFocus"
     >
       <slot />
     </div>

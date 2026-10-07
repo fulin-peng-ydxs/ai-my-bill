@@ -204,6 +204,43 @@ async function main() {
     const dropdownImage = await screenshot('entry-dropdown.png')
     console.log(`分类下拉：左侧 ${Math.round(dropdown.popupLeft)}px，右侧 ${Math.round(dropdown.popupRight)}px，可见宽度 ${Math.round(dropdown.viewportWidth)}px`)
 
+    const browse = await evaluate(`return {
+      tag: document.querySelector('#expense-primary-category').tagName,
+      height: document.querySelector('#expense-primary-category-options').getBoundingClientRect().height,
+      scale: visualViewport?.scale ?? 1,
+      viewportHeight: visualViewport?.height ?? innerHeight,
+    }`)
+    if (browse.tag !== 'BUTTON' || browse.height > 241 || browse.scale !== 1) {
+      throw new Error(`手机分类选择入口或密度不符合约定：${JSON.stringify(browse)}`)
+    }
+    await request('POST', `/session/${sessionId}/element/${await find('#expense-primary-category')}/click`)
+    await waitFor(async () => evaluate('return !document.querySelector("#expense-primary-category-options")'), '重复点击收起')
+    await request('POST', `/session/${sessionId}/element/${await find('#expense-primary-category')}/click`)
+    await request('POST', `/session/${sessionId}/element/${await find('#expense-primary-category-options .dropdown-search')}/click`)
+    await waitFor(async () => evaluate(`return document.querySelector('#expense-primary-category')?.tagName === 'INPUT'
+      && document.activeElement?.id === 'expense-primary-category'`), '主动搜索聚焦')
+    // 记录真实可见视口，WebDriver 没有唤起键盘时不能用焦点通过冒充键盘验收。
+    await new Promise((done) => setTimeout(done, 1000))
+    const searchViewport = await evaluate(`
+      const popup = document.querySelector('#expense-primary-category-options').getBoundingClientRect()
+      const vv = visualViewport
+      return { height: vv?.height ?? innerHeight, top: vv?.offsetTop ?? 0,
+        scale: vv?.scale ?? 1, popupTop: popup.top, popupBottom: popup.bottom,
+        popupHeight: popup.height, inputFont: getComputedStyle(document.querySelector('#expense-primary-category')).fontSize,
+        keyboardOpen: document.querySelector('.app-shell').classList.contains('keyboard-open') }
+    `)
+    if (searchViewport.scale !== 1 || searchViewport.inputFont !== '16px' || searchViewport.popupHeight > 241
+      || searchViewport.popupTop < searchViewport.top - 1
+      || searchViewport.popupBottom > searchViewport.top + searchViewport.height + 1) {
+      throw new Error(`搜索浮层不在可见区域：${JSON.stringify(searchViewport)}`)
+    }
+    console.log(`主动搜索：16px、无自动缩放；${searchViewport.keyboardOpen ? '实际键盘视口已收缩' : '系统软键盘未由 WebDriver 唤起，键盘状态未验证'}`)
+    console.log(`搜索截图：${await screenshot('entry-dropdown-search.png')}`)
+    // 点非编辑页头关闭，不修改当前草稿或触发业务提交。
+    await request('POST', `/session/${sessionId}/element/${await find('.page-heading h1')}/click`)
+    await waitFor(async () => evaluate(`return !document.querySelector('#expense-primary-category-options')
+      && document.querySelector('#expense-primary-category')?.tagName === 'BUTTON'`), '外部点击收起搜索')
+
     await request('POST', `/session/${sessionId}/url`, { url: `${baseUrl}/entry?ios-check=income` })
     await waitFor(async () => evaluate('return !!document.querySelector(".entry-type-panel > .entry-type-switch button:last-child")'), '记账类型切换')
     await request('POST', `/session/${sessionId}/element/${await find('.entry-type-panel > .entry-type-switch button:last-child')}/click`)
