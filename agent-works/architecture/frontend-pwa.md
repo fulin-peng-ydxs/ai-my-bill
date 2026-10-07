@@ -72,6 +72,8 @@ flowchart LR
 
 `npm --prefix web run check` 覆盖 typecheck、lint、Vitest、OpenAPI 漂移和构建；位于 stores/router/domain/pwa 的测试用于行为边界。命令也由根 `npm run check` 调用。自动化检查不能代替目标设备上的安装、系统信任与独立窗口验收。
 
+页面复测的五种方式、数据环境、执行路径和证据边界统一维护于 [README 页面复测](../../README.md#页面复测方式与选择)，强制选择条件见 [AGENTS](../../AGENTS.md#页面改动的复测选择)。本节的历史环境证据不能替代本次源码版本的真机与安装版验收。
+
 | 类型 | 证据状态 | 限制及验证方式 |
 |---|---|---|
 | PWA 发布 | 按环境验收 | 当前内网iOS由用户确认通过，浏览器机制补验见验收报告；Android真机未验证，新环境不得复用结论 |
