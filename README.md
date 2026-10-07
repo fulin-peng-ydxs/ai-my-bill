@@ -314,7 +314,7 @@ npm run dev
 
 ### 页面复测方式与选择
 
-页面复测检查真正运行的界面与操作结果；typecheck、lint、Vitest、契约检查和构建属于工程检查，不能代替页面验收。AI 的强制执行要求见 [AGENTS](AGENTS.md#页面改动的复测选择)，布局、主题和关键视口以 [DESIGN §8](DESIGN.md#8-responsive-behavior) 为准。以下方式按风险组合使用，不要求每次都运行全部方式。
+页面复测检查真正运行的界面与操作结果；typecheck、lint、Vitest、契约检查和构建属于工程检查，不能代替页面验收。AI 的强制执行要求见 [AGENTS](AGENTS.md#页面改动的复测选择)，布局、主题和关键视口以 [DESIGN §8](DESIGN.md#8-responsive-behavior) 为准。以下方式按风险组合使用，不要求每次都运行全部方式；局部改动不默认检查全页或全部视口。
 
 #### 方式选择
 
@@ -343,7 +343,7 @@ npm run dev
 
 将 iPhone 解锁并连接 Mac，在手机「设置 → App → Safari → 高级」打开「网页检查器」和「远程自动化」。Mac Safari 的「开发」菜单应能看到该 iPhone；首次用线缆配对时需在手机上信任 Mac。保持手机亮屏、前后端本地服务运行，确认手机能访问本机前端地址。Mac 安装的 `safaridriver` 通过 WebDriver 启动独立的 iPhone Safari 测试会话；若 Mac 提示启用远程自动化，需在 Safari 开发者设置中开启。Apple 的[真机检查](https://developer.apple.com/documentation/safari-developer-tools/inspecting-ios)和[远程自动化](https://developer.apple.com/documentation/safari-developer-tools/ios-enabling-webdriver)说明可用于排查连接问题。
 
-将 `admin` 和 `pengfulin` 的本地测试密码保存在 `.local/real-device-test/accounts.md`，格式为用户名与密码两列表格；在同目录的 `config.json` 保存手机可访问的本机开发地址 `baseUrl`（`http://<本机地址>:5174`）和可选的实体手机 `deviceUDID`。运行前读取当前地址并确认手机可达，不沿用历史测试地址。目录权限设为 `700`、文件权限设为 `600`；该目录被 Git 忽略。不要在命令或仓库文档中写密码。在仓库根目录运行：
+将 `admin` 和 `pengfulin` 的本地测试密码保存在 `.local/real-device-test/accounts.md`，格式为用户名与密码两列表格；测试凭据仅从该文件读取，不写入仓库、命令输出或日志。在同目录的 `config.json` 保存手机可访问的本机开发地址 `baseUrl`（`http://<本机地址>:5174`）和可选的实体手机 `deviceUDID`。运行前读取当前地址并确认手机可达，不沿用历史测试地址。目录权限设为 `700`、文件权限设为 `600`；该目录被 Git 忽略。在仓库根目录运行：
 
 ```bash
 npm run check:ios
