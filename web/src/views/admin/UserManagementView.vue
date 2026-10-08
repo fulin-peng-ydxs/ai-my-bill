@@ -21,7 +21,7 @@ import AppToast from '../../components/AppToast.vue'
 import AppPagination from '../../components/AppPagination.vue'
 import FormField from '../../components/FormField.vue'
 import { useLatestRequest } from '../../composables/useLatestRequest'
-import { formatAdminTime } from '../../domain/adminPresentation'
+import { adminUserStatusLabel as statusLabel, formatAdminTime } from '../../domain/adminPresentation'
 
 type UserAction = 'disable' | 'restore' | 'reset-password' | 'deletion'
 
@@ -68,14 +68,6 @@ const actionDescription = computed(() => pendingAction.value === 'deletion'
       ? '用户会立即无法登录，全部旧会话也会失效。'
       : '账号恢复后可继续使用现有密码登录。')
 
-function statusLabel(value: AdminUserStatus): string {
-  return {
-    ACTIVE: '正常',
-    PENDING_FIRST_LOGIN: '待首次登录',
-    DISABLED: '已停用',
-    DELETION_PENDING: '注销处理中',
-  }[value]
-}
 
 async function load(intent: 'replace' | 'refresh' = 'replace'): Promise<void> {
   const result = await execute(

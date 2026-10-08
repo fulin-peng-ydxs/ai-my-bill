@@ -31,7 +31,7 @@ const emit = defineEmits<{ select: [item: DictionaryListItem] }>()
       <div class="dictionary-item-copy">
         <strong>{{ item.name }}</strong>
         <span v-if="item.parentName">归属 {{ item.parentName }}</span>
-        <span v-else>{{ item.status === 'ACTIVE' ? '启用中' : '已停用' }}{{ historyHint && item.referenced ? ' · 已被历史记录引用' : '' }}</span>
+        <span v-if="historyHint && item.referenced">已被历史记录引用</span>
       </div>
       <span
         class="status-badge"

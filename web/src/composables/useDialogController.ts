@@ -26,9 +26,10 @@ export function useDialogController(open: Ref<boolean>, setOpen: (value: boolean
 
   function handleClose(): void {
     if (suspendedCloses > 0) { suspendedCloses -= 1; return }
-    if (!active) return
+    // close 异步投递；快速重新打开后，旧事件不能关闭新弹层。
+    if (!active || dialog.value?.open) return
     if (open.value) setOpen(false)
-    if (returnFocus?.isConnected) returnFocus.focus()
+    if (returnFocus?.isConnected && !document.querySelector('dialog[open]')) returnFocus.focus({ preventScroll: true })
     returnFocus = null
   }
 

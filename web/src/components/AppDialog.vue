@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 
 import { useDialogController } from '../composables/useDialogController'
+import { useKeyboardViewport } from '../composables/useKeyboardViewport'
 
 const props = withDefaults(defineProps<{
   id: string
@@ -29,7 +30,8 @@ const emit = defineEmits<{
   confirm: []
 }>()
 const isOpen = computed(() => props.open)
-const { dialog, handleCancel, handleClose } = useDialogController(isOpen, (value) => emit('update:open', value))
+const { visibleHeight, bottomInset, topInset } = useKeyboardViewport()
+const { dialog, handleCancel, handleClose } = useDialogController(isOpen, (value) => { if (!props.busy) emit('update:open', value) })
 </script>
 
 <template>
@@ -37,6 +39,7 @@ const { dialog, handleCancel, handleClose } = useDialogController(isOpen, (value
     :id="id"
     ref="dialog"
     class="app-dialog"
+    :style="visibleHeight ? { '--dialog-viewport-height': `${visibleHeight}px`, '--dialog-viewport-top': `${topInset}px`, '--dialog-viewport-bottom': `${bottomInset}px` } : undefined"
     :aria-labelledby="`${id}-title`"
     :aria-describedby="description ? `${id}-description` : undefined"
     @cancel="handleCancel"

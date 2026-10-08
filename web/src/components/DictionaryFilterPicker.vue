@@ -119,7 +119,7 @@ watch(() => [props.type, props.modelValue], () => {
         <button
           v-if="request.error.value.kind !== 'forbidden'"
           type="button"
-          class="inline-action"
+          class="compact-action"
           @click="load"
         >重试</button>
       </small>

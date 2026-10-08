@@ -1,8 +1,10 @@
 <script setup lang="ts">
-import { computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, ref, watch } from 'vue'
+import { computed, inject, nextTick, onActivated, onBeforeUnmount, onDeactivated, ref, watch } from 'vue'
 import { dropdownLayout } from '../domain/dropdownLayout'
+import { reserveDrawerCandidateSpace } from '../composables/drawerCandidateSpace'
 
 let active = true
+const reserveSpace = inject(reserveDrawerCandidateSpace, undefined)
 const props = defineProps<{ open: boolean, anchor?: globalThis.HTMLElement | null, id: string }>()
 const emit = defineEmits<{ close: [restoreFocus?: boolean], interact: [] }>()
 const panel = ref<globalThis.HTMLElement>()
@@ -113,7 +115,7 @@ function unlisten(): void {
   globalThis.window.removeEventListener('pagehide', pageHide)
 }
 watch(() => props.open, async (open) => {
-  if (open) { await nextTick(); if (!active || !props.open) return; place(); listen() }
+  if (open) { reserveSpace?.(); await nextTick(); if (!active || !props.open) return; place(); listen() }
   else unlisten()
 }, { immediate: true })
 watch(() => props.anchor, (anchor) => {

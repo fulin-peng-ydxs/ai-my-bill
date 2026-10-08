@@ -143,7 +143,7 @@ watch(() => props.modelName, (value) => {
       >
         {{ request.error.value.message }} <button
           type="button"
-          class="inline-action"
+          class="compact-action"
           @click="search(searchTerm)"
         >重试</button>
       </small>
@@ -168,7 +168,7 @@ watch(() => props.modelName, (value) => {
         </li>
       </ul>
       <div
-        v-else-if="request.status.value !== 'loading'"
+        v-else-if="request.status.value !== 'loading' && !request.error.value"
         class="dropdown-status"
       >
         暂无匹配商品
@@ -189,7 +189,7 @@ watch(() => props.modelName, (value) => {
         :disabled="disabled || creating"
         @click="createProduct"
       >
-        {{ creating ? '正在新增…' : `＋ 新增商品“${query.trim()}”` }}
+        {{ creating ? '正在新增…' : `新增商品“${query.trim()}”` }}
       </button>
       <small
         v-if="nameTooLong || createError"

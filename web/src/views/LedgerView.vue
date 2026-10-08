@@ -242,6 +242,18 @@ async function requestEditOpen(value: boolean): Promise<void> {
   if (await requestDiscardChanges('navigation')) editOpen.value = false
 }
 
+async function manageDetail(source: 'edit' | 'trash' | 'adjustment'): Promise<void> {
+  const item = source === 'edit' ? editTarget.value : source === 'trash' ? trashDetailTarget.value : adjustmentTarget.value
+  if (!item) return
+  if (source === 'edit') {
+    await requestEditOpen(false)
+    if (editOpen.value) return
+  } else if (source === 'trash') trashDetailOpen.value = false
+  else adjustmentDetailOpen.value = false
+  await nextTick()
+  openContext(item)
+}
+
 async function editSaved(value: ExpenseResponse | IncomeResponse): Promise<void> {
   editOpen.value = false
   pendingUndo.value = undefined
@@ -544,8 +556,17 @@ useRefreshOnReturn(() => list.refresh())
       id="trash-ledger-detail"
       v-model:open="trashDetailOpen"
       :title="trashDetailTarget ? `查看“${trashDetailTarget.title}”` : '查看回收站账目'"
-      description="这里只展示删除前的账目信息；恢复或永久删除请使用长按、右键或 Shift+F10。"
+      description="这里只展示删除前的账目信息；恢复或永久删除请打开更多操作。"
     >
+      <template #footer>
+        <button
+          type="button"
+          class="compact-action"
+          @click="manageDetail('trash')"
+        >
+          更多操作
+        </button>
+      </template>
       <dl
         v-if="trashDetailTarget"
         class="adjustment-metadata"
@@ -572,6 +593,15 @@ useRefreshOnReturn(() => list.refresh())
       description="修改只作用于当前账目；账目类型不可转换。"
       @update:open="requestEditOpen"
     >
+      <template #footer>
+        <button
+          type="button"
+          class="compact-action"
+          @click="manageDetail('edit')"
+        >
+          更多操作
+        </button>
+      </template>
       <AppStateBlock
         v-if="editRequest.status.value === 'loading'"
         kind="loading"
@@ -621,6 +651,16 @@ useRefreshOnReturn(() => list.refresh())
       description="已撤销记录仍保留，用于还原调整轨迹。"
       @update:open="adjustmentDetailOpen = $event"
     >
+      <template #footer>
+        <button
+          type="button"
+          class="compact-action"
+          :disabled="revoking"
+          @click="manageDetail('adjustment')"
+        >
+          更多操作
+        </button>
+      </template>
       <AppStateBlock
         v-if="adjustmentRequest.status.value === 'loading'"
         kind="loading"

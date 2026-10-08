@@ -44,8 +44,10 @@ describe('shared keyboard viewport', () => {
     expect(state.bottomInset.value).toBe(54)
     env.viewport.offsetTop = 20
     env.resize(500)
+    expect(state.topInset.value).toBe(20)
     expect(state.bottomInset.value).toBe(324)
     env.resize(300, 2)
+    expect(state.topInset.value).toBe(20)
     expect(state.visibleHeight.value).toBe(500)
     expect(state.bottomInset.value).toBe(324)
   })

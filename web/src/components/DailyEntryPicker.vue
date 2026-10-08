@@ -96,7 +96,7 @@ async function remove(item: DailyTemplateSummary): Promise<void> {
     id="daily-entry-picker"
     v-model:open="open"
     :title="title"
-    description="只回填可复用字段，不会自动保存，也不会覆盖本次时间和备注。"
+    description="回填可复用字段，时间更新为当前时间，备注清空；请核对后保存。"
   >
     <div class="daily-entry-picker">
       <EntryTypeSwitch

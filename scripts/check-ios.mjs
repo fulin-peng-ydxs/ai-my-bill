@@ -236,7 +236,7 @@ async function main() {
       || searchViewport.popupBottom > searchViewport.top + searchViewport.height + 1) {
       throw new Error(`搜索浮层不在可见区域：${JSON.stringify(searchViewport)}`)
     }
-    console.log(`主动搜索：16px、无自动缩放；${searchViewport.keyboardOpen ? '实际键盘视口已收缩' : '系统软键盘未由 WebDriver 唤起，键盘状态未验证'}`)
+    console.log(`主动搜索：16px、无自动缩放；${searchViewport.keyboardOpen ? '实际键盘视口已收缩（须核对完整键盘画面）' : 'Safari WebDriver 抑制软件键盘，完整键盘状态未验证'}`)
     console.log(`搜索截图：${await screenshot('entry-dropdown-search.png')}`)
     await request('POST', `/session/${sessionId}/element/${await find('#expense-primary-category-options .dropdown-search-header button')}/click`)
     await waitFor(async () => evaluate(`return !document.querySelector('#expense-primary-category-options')

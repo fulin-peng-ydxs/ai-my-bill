@@ -1,4 +1,7 @@
+import { dictionaryDefinitions } from './dictionaries'
+
 const ACTION_LABELS: Record<string, string> = {
+  BOOTSTRAP_ADMIN: '初始化管理员',
   CREATE_USER: '创建用户',
   CHANGE_USER_STATUS: '变更账号状态',
   RESET_USER_PASSWORD: '重置用户密码',
@@ -13,6 +16,8 @@ const OBJECT_LABELS: Record<string, string> = {
   ACCOUNT_DELETION: '账号注销',
   DEFAULT_DICTIONARY: '默认字典',
 }
+
+export const adminActionOptions = Object.entries(ACTION_LABELS).map(([value, label]) => ({ value, label }))
 
 export function formatAdminTime(value?: string | null): string {
   return value
@@ -42,13 +47,36 @@ export function adminObjectLabel(value: string): string {
   return OBJECT_LABELS[value] ?? value
 }
 
-export function auditChanges(summary: Record<string, unknown>): { field: string, before: string, after: string }[] {
+const FIELD_LABELS: Record<string, string> = {
+  username: '用户名', status: '状态', dictionaryType: '字典类型', direction: '排序方向',
+}
+const STATUS_LABELS: Record<string, string> = {
+  ACTIVE: '正常', INACTIVE: '已停用', DISABLED: '已停用', PENDING_FIRST_LOGIN: '待首次登录',
+  DELETION_PENDING: '注销处理中', DELETED: '已注销',
+}
+
+export function adminUserStatusLabel(value: string): string {
+  return STATUS_LABELS[value] ?? value
+}
+
+export function auditChanges(summary: Record<string, unknown>, objectType?: string): { field: string, before: string, after: string }[] {
   const changes = summary.changes
   if (!changes || typeof changes !== 'object' || Array.isArray(changes)) return []
   return Object.entries(changes).flatMap(([field, raw]) => {
     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return []
     const change = raw as Record<string, unknown>
-    return [{ field, before: displayValue(change.before), after: displayValue(change.after) }]
+    const format = (value: unknown) => {
+      if (field === 'status' && typeof value === 'string') {
+        if (value === 'ACTIVE' && objectType === 'DEFAULT_DICTIONARY') return '启用'
+        return adminUserStatusLabel(value)
+      }
+      if (field === 'direction') return value === 'UP' ? '上移' : value === 'DOWN' ? '下移' : displayValue(value)
+      if (field === 'dictionaryType' && typeof value === 'string') {
+        return dictionaryDefinitions.find(item => item.type.toUpperCase().replaceAll('-', '_') === value || item.type === value)?.label ?? value
+      }
+      return displayValue(value)
+    }
+    return [{ field: FIELD_LABELS[field] ?? field, before: format(change.before), after: format(change.after) }]
   })
 }
 

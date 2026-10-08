@@ -17,6 +17,7 @@ import AppPagination from '../../components/AppPagination.vue'
 import { useLatestRequest } from '../../composables/useLatestRequest'
 import {
   adminActionLabel,
+  adminActionOptions,
   adminObjectLabel,
   auditChanges,
   formatAdminTime,
@@ -135,13 +136,13 @@ useRefreshOnReturn(() => load(true))
         <span class="sr-only">按动作筛选</span>
         <select v-model="actionDraft">
           <option value="">全部动作</option>
-          <option value="CREATE_USER">创建用户</option>
-          <option value="CHANGE_USER_STATUS">变更账号状态</option>
-          <option value="RESET_USER_PASSWORD">重置用户密码</option>
-          <option value="DELETE_USER_ACCOUNT">注销用户账号</option>
-          <option value="CREATE_DEFAULT_DICTIONARY">新增默认字典</option>
-          <option value="CHANGE_DEFAULT_DICTIONARY_STATUS">变更默认字典状态</option>
-          <option value="MOVE_DEFAULT_DICTIONARY">调整默认字典排序</option>
+          <option
+            v-for="option in adminActionOptions"
+            :key="option.value"
+            :value="option.value"
+          >
+            {{ option.label }}
+          </option>
         </select>
       </label>
       <label class="admin-search">
@@ -324,11 +325,11 @@ useRefreshOnReturn(() => load(true))
           <dt>结果</dt><dd>{{ resultLabel(selected.result) }}</dd>
         </dl>
         <div
-          v-if="auditChanges(selected.safeSummary).length"
+          v-if="auditChanges(selected.safeSummary, selected.objectType).length"
           class="audit-change-list"
         >
           <div
-            v-for="change in auditChanges(selected.safeSummary)"
+            v-for="change in auditChanges(selected.safeSummary, selected.objectType)"
             :key="change.field"
           >
             <strong>{{ change.field }}</strong>

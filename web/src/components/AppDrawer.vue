@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { X } from 'lucide-vue-next'
-import { computed } from 'vue'
+import { computed, provide, ref, watch } from 'vue'
+import { reserveDrawerCandidateSpace } from '../composables/drawerCandidateSpace'
 
 import { useDialogController } from '../composables/useDialogController'
 import { useKeyboardViewport } from '../composables/useKeyboardViewport'
@@ -16,6 +17,9 @@ const emit = defineEmits<{
   'update:open': [value: boolean]
 }>()
 const isOpen = computed(() => props.open)
+const candidateSpace = ref(false)
+provide(reserveDrawerCandidateSpace, () => { candidateSpace.value = true })
+watch(isOpen, (open) => { if (open) candidateSpace.value = false })
 const { visibleHeight, bottomInset } = useKeyboardViewport()
 const { dialog, handleCancel, handleClose } = useDialogController(isOpen, (value) => { if (!props.busy) emit('update:open', value) })
 </script>
@@ -25,6 +29,7 @@ const { dialog, handleCancel, handleClose } = useDialogController(isOpen, (value
     :id="id"
     ref="dialog"
     class="app-drawer"
+    :class="{ 'candidate-space': candidateSpace }"
     :style="visibleHeight ? { '--drawer-viewport-height': `${visibleHeight}px`, '--drawer-viewport-bottom': `${bottomInset}px` } : undefined"
     :aria-labelledby="`${id}-title`"
     :aria-describedby="description ? `${id}-description` : undefined"

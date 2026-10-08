@@ -31,9 +31,13 @@ describe('admin presentation', () => {
       status: { before: 'ACTIVE', after: 'DISABLED' },
       metadata: { before: null, after: { count: 2 } },
     } })).toEqual([
-      { field: 'status', before: 'ACTIVE', after: 'DISABLED' },
+      { field: '状态', before: '正常', after: '已停用' },
       { field: 'metadata', before: '无', after: '{"count":2}' },
     ])
     expect(auditChanges({ changes: 'invalid' })).toEqual([])
+    expect(adminActionLabel('BOOTSTRAP_ADMIN')).toBe('初始化管理员')
+    expect(auditChanges({ changes: { status: { before: null, after: 'PENDING_FIRST_LOGIN' } } })[0]?.after).toBe('待首次登录')
+    expect(auditChanges({ changes: { status: { before: 'ACTIVE', after: 'INACTIVE' } } }, 'DEFAULT_DICTIONARY')[0]?.before).toBe('启用')
+    expect(auditChanges({ changes: { status: { before: 'FUTURE_STATUS', after: 'ACTIVE' } } })[0]?.before).toBe('FUTURE_STATUS')
   })
 })

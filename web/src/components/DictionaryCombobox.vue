@@ -196,7 +196,7 @@ async function create(): Promise<void> {
         {{ request.error.value.message }}
         <button
           type="button"
-          class="inline-action"
+          class="compact-action"
           @click="search(searchTerm)"
         >重试</button>
       </small>
@@ -220,7 +220,7 @@ async function create(): Promise<void> {
         </li>
       </ul>
       <div
-        v-else-if="request.status.value !== 'loading'"
+        v-else-if="request.status.value !== 'loading' && !request.error.value"
         class="dropdown-status"
       >
         暂无匹配选项
@@ -232,7 +232,7 @@ async function create(): Promise<void> {
         :disabled="disabled || creating"
         @click="create"
       >
-        {{ creating ? '正在新增…' : `＋ 新增${label}“${query.trim()}”` }}
+        {{ creating ? '正在新增…' : `新增${label}“${query.trim()}”` }}
       </button>
       <button
         v-if="modelValue"
