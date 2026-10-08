@@ -7,6 +7,7 @@ import { computed, watch } from 'vue'
 import type { ExpenseReport, IncomeReport } from '../api/reports'
 import { useReportChart } from '../composables/useReportChart'
 import { formatCny } from '../domain/money'
+import AppStateBlock from './AppStateBlock.vue'
 
 use([BarChart, GridComponent, TooltipComponent])
 type Point = ExpenseReport['points'][number] | IncomeReport['points'][number]
@@ -112,13 +113,12 @@ watch(() => props.report, refresh, { deep: true })
         </span>
       </button>
     </div>
-    <div
+    <AppStateBlock
       v-else
-      class="dimension-empty"
-    >
-      <strong>{{ isQuality ? '当前没有质量线索' : '当前维度没有可分析数据' }}</strong>
-      <span>{{ isQuality ? '账目仍保持原样，规则会随筛选重新计算。' : '可调整日期或高级筛选后重试。' }}</span>
-    </div>
+      kind="empty"
+      :title="isQuality ? '当前没有质量线索' : '当前维度没有可分析数据'"
+      :message="isQuality ? '账目仍保持原样，规则会随筛选重新计算。' : '可调整日期或高级筛选后重试。'"
+    />
     <p
       v-if="report.truncated"
       class="caption"

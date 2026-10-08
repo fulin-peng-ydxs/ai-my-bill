@@ -11,8 +11,9 @@ export function listAdminUsers(
   query: string,
   status: AdminUserStatus | '',
   signal?: AbortSignal,
+  page = 0,
 ): Promise<AdminUserPage> {
-  const params = new URLSearchParams({ query, page: '0', size: '50' })
+  const params = new URLSearchParams({ query, page: String(page), size: '50' })
   if (status) params.set('status', status)
   return apiRequest<AdminUserPage>(`/admin/users?${params}`, { signal })
 }

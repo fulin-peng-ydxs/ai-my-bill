@@ -2,112 +2,24 @@
 version: alpha
 name: 我的账单
 description: 面向中国大陆个人用户的手机优先账单 PWA，以快速录入、清晰核对和可追溯报表为核心，采用雾灰画布、纯白工具卡、近黑夜间表面、系统字体和单一 Action Blue 交互色。
-colors:
-  primary-light: "#0066CC"
-  primary-dark: "#2997FF"
-  primary-focus: "#0071E3"
-  on-primary-light: "#FFFFFF"
-  on-primary-dark: "#000000"
-  on-disabled-light: "#FFFFFF"
-  on-disabled-dark: "#FFFFFF"
-  income-accent-light: "#FF3B30"
-  income-accent-dark: "#FF3B30"
-  income-text-light: "#D70015"
-  income-text-dark: "#FF6961"
-  expense-accent-light: "#34C759"
-  expense-accent-dark: "#34C759"
-  expense-text-light: "#188038"
-  expense-text-dark: "#34C759"
-  background-light: "#F5F5F7"
-  background-dark: "#000000"
-  surface-light: "#FFFFFF"
-  surface-dark: "#272729"
-  text-primary-light: "#1D1D1F"
-  text-primary-dark: "#FFFFFF"
-  text-secondary-light: "#6E6E73"
-  text-secondary-dark: "#CCCCCC"
-  border-light: "#E0E0E0"
-  border-dark: "#333333"
-  success-light: "#188038"
-  success-dark: "#34C759"
-  warning-light: "#9A4A00"
-  warning-dark: "#FF9F0A"
-  danger-light: "#D70015"
-  danger-dark: "#FF6961"
-typography:
-  heading-lg:
-    fontFamily: "-apple-system, BlinkMacSystemFont, 'SF Pro Display', system-ui, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei UI', sans-serif"
-    fontSize: 28px
-    fontWeight: 600
-    lineHeight: 34px
-  heading-md:
-    fontFamily: "-apple-system, BlinkMacSystemFont, 'SF Pro Display', system-ui, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei UI', sans-serif"
-    fontSize: 20px
-    fontWeight: 600
-    lineHeight: 28px
-  body-md:
-    fontFamily: "-apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei UI', sans-serif"
-    fontSize: 17px
-    fontWeight: 400
-    lineHeight: 25px
-  label-sm:
-    fontFamily: "-apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei UI', sans-serif"
-    fontSize: 14px
-    fontWeight: 400
-    lineHeight: 20px
-  data-lg:
-    fontFamily: "ui-monospace, 'SFMono-Regular', Menlo, Monaco, 'Cascadia Mono', monospace"
-    fontSize: 28px
-    fontWeight: 600
-    lineHeight: 36px
-rounded:
-  xs: 5px
-  sm: 8px
-  md: 11px
-  lg: 18px
-  pill: 9999px
-spacing:
-  xs: 4px
-  sm: 8px
-  md: 12px
-  lg: 16px
-  xl: 24px
-  xxl: 32px
-components:
-  button-primary:
-    backgroundColor: "{colors.primary-light}"
-    textColor: "{colors.on-primary-light}"
-    rounded: "{rounded.pill}"
-    minHeight: 44px
-  input-default:
-    backgroundColor: "{colors.surface-light}"
-    borderColor: "{colors.border-light}"
-    rounded: "{rounded.md}"
-    minHeight: 44px
-  panel-default:
-    backgroundColor: "{colors.surface-light}"
-    borderColor: "{colors.border-light}"
-    rounded: "{rounded.lg}"
-  receipt-summary:
-    backgroundColor: "{colors.surface-light}"
-    borderColor: "{colors.border-light}"
-    rounded: "{rounded.lg}"
-  bottom-navigation:
-    backgroundColor: "{colors.background-light}"
-    backgroundOpacity: 0.8
-    backdropFilter: "saturate(180%) blur(20px)"
-    borderColor: "{colors.border-light}"
-    minHeight: 64px
+sources:
+  colors: section-2
+  typography: section-3
+  spacing: section-3
+  rounded: section-6
+  components: section-4
+  layout: section-5
+  tokens: web/src/styles/tokens.css
 ---
 
 # 我的账单 Design System
 
-> 本文是“我的账单”前端视觉、交互、响应式、组件复用和页面设计约束的长期事实源。当前正式工程已建立页面登记、路由、主题与 PWA 基线、登录页和双角色响应式外壳，并已落地六页全部第一期业务能力及 T25 本地页面验收；后续仍按性能、安全、发布候选和目标环境阶段逐项补证。实际代码和自动化测试是机器事实源，并与本文同步维护。
+> 本文是“我的账单”前端视觉、交互、响应式、组件复用和页面设计约束的长期事实源。实际代码和自动化测试是机器事实源，并与本文同步维护。
 
 事实源边界：
 
 - 业务与页面范围：[初始需求闭环](agent-works/initial-development/requirement-closure.md)及用户后续确认；仅在用户明确要求时编写后续需求文档。
-- 当前设计契约：本文件。
+- 当前设计契约：本文件；颜色取值只在 §2 定义，文字与间距只在 §3 定义，圆角只在 §6 定义，组件只在 §4 定义。front matter 及提示示例只提供入口，不重复维护数值。
 - 初始原型：`agent-works/initial-development/prototypes/`，仅供历史需求与结构查阅，后续页面变更不回写初始原型，不能覆盖用户当前确认或本文件。
 - 代码事实源：主题 token 为 `web/src/styles/tokens.css`，页面登记为 `web/src/app/pageRegistry.ts`，路由为 `web/src/router/index.ts`，登记契约测试为 `web/src/app/pageRegistry.spec.ts`。前端技术基线为 Vue 3 + Vite + TypeScript + Pinia + Vue Router。
 - 本文件维护稳定规则、组件关系和页面索引；临时开发步骤、一次性迁移说明和历史流水不进入本文。
@@ -149,7 +61,8 @@ Key Characteristics：
 | --- | --- | --- | --- |
 | 主交互 | `#0066CC` | `#2997FF` | 主按钮、当前导航、链接、焦点环、选中态 |
 | 主按钮文字 | `#FFFFFF` | `#000000` | 主按钮前景；必须与主交互填充达到普通文字 AA |
-| 禁用填充 | `#6E6E73` | `#6E6E73` | 禁用按钮背景；配合白色禁用文字并保留可读标签 |
+| 禁用动作填充 | `#EDEDF0` | `#323235` | 主按钮及危险按钮禁用表面；不得覆盖列表、排行或下钻卡片 |
+| 禁用动作文字 | `#86868B` | `#929297` | 禁用动作保留可辨认标签，降低视觉权重；次按钮及文字动作保留原表面 |
 | 聚焦 | `#0071E3` | `#0071E3` | 2px 键盘焦点环和选中控件边界 |
 | 页面背景 | `#F5F5F7` | `#000000` | 应用主画布 |
 | 内容表面 | `#FFFFFF` | `#272729` | 表单、列表、图表、弹窗 |
@@ -163,6 +76,9 @@ Key Characteristics：
 | 收入文字 | `#D70015` | `#FF6961` | 收入标签和正金额；保持红色语义并达到普通文字 AA |
 | 支出强调 | `#34C759` | `#34C759` | 支出图表填充和非文字强调；两种主题固定不变 |
 | 支出文字 | `#188038` | `#34C759` | 支出标签和负金额；保持绿色语义并达到普通文字 AA |
+| 成功文字 | `#188038` | `#34C759` | 成功反馈的独立前景 token |
+| 危险文字与填充 | `#D70015` | `#FF6961` | 错误、危险确认与危险按钮 |
+| 危险按钮文字 | `#FFFFFF` | `#000000` | 与危险填充配对，禁用后转为中性色 |
 | 警告文字 | `#9A4A00` | `#FF9F0A` | 异常但可继续、数据质量提示；不得作为操作色 |
 
 规则：
@@ -214,8 +130,9 @@ Key Characteristics：
 | 轻工具入口 | `14px / 500 / 20px` | 页头常用选项、日常模板与筛选工具，统一消费 compact-action |
 | 已应用条件 | `13px / 400或500 / 20px` | 字段名 400、可编辑当前值 500；具体底板与排布见 AppliedFilterBar 契约 |
 | 辅助文字 | `12px / 400 / 18px` | 时间、来源、口径、单位 |
-| 金额强调 | 填报输入 `26px / 600 / 32px`；其他 `28px / 600 / 36px` | 实付金额、月份总额 |
-| 数据强调 | `18px / 600 / 26px` | KPI、排行数值、列表金额 |
+| 金额输入 | `26px / 600 / 32px` | 填报主金额输入；不得套用于摘要或排行 |
+| 金额摘要与报表排行 | 手机 `15px / 600 / 22px`；平板/PC `17px / 600 / 25px` | MoneySummary、报表可下钻指标与排行；与正文形成紧凑阅读密度 |
+| 数据强调 | `18px / 600 / 26px` | 管理 KPI、账目列表金额；不适用于报表摘要和排行 |
 
 排版规则：
 
@@ -246,7 +163,7 @@ Key Characteristics：
 
 ## 4. Component Stylings
 
-以下清单是用户已确认的组件契约；`AppShell`、`ThemeModeControl`、`BottomNavigation`、`PwaInstallPrompt`、`AppStateBlock`、T5 通用表单/分段选择/金额/浮层/设置披露/搜索筛选/账目上下文动作基础、T7 `AppDataTable` 与 `AppToast`，T8/T9 字典治理页面，T10 `EntryTypeSwitch`、账号隔离草稿和统一未保存内容守卫，以及 T11 `ProductCombobox`、`FundingChannelPicker`、`LocationLabelPicker` 和支出表单已实现。个人与默认字典维护共享 `DictionaryToolbar` 和 `DictionaryItemList`，并直接复用 `GlobalLedgerSearch`、`SegmentedControl`、`AppDrawer`、`AppDialog`、`AppStateBlock`、`AppToast` 和统一请求代次；个人字典成功变更通过统一字典事件通知候选组件刷新，取消不发出事件。真实账目列表和图表等领域组件按对应业务任务落地。代码出现第二个同类消费场景时，必须抽取或消费复用单元，不允许页面继续复制结构和交互。
+以下清单维护当前复用组件的职责与交互契约。个人与默认字典维护共享 `DictionaryToolbar` 和 `DictionaryItemList`，用户、操作日志及两类字典列表共享 `AppPagination`；请求代次与状态处理共享 `useLatestRequest`。个人字典成功变更通过统一字典事件通知候选组件刷新，取消不发出事件。代码出现第二个同类消费场景时，必须抽取或消费复用单元，不允许页面继续复制结构和交互。
 
 ### 4.1 组件复用与事实源
 
@@ -276,7 +193,7 @@ Key Characteristics：
 | `LedgerContextActions` | 有效账目低频操作 | 明细列表左滑、长按、桌面右键或 `Shift+F10` 打开同一底部操作面板；短按只查看或编辑；删除、加入日常和支出调整不得散落为常驻按钮 |
 | `ExpenseAdjustmentForm` | 支出调整创建 | 锁定原支出，复用字段分组、分段选择、金额摘要和固定保存操作；实时展示累计调整、剩余额度和本次后净支出 |
 | `ExpenseAdjustmentDetail` | 调整轨迹详情 | 展示类型、状态、原支出、金额口径、时间和备注；仅生效调整提供带二次确认的撤销操作 |
-| `MoneySummary` | 收支金额汇总 | 用于账目详情和报表摘要；收支填报以主金额输入和辅助计算提示呈现，避免重复金额卡片；收入固定红色、支出固定绿色且带文字与正负号，金额使用等宽字体右对齐 |
+| `MoneySummary` | 收支金额汇总 | 用于账目详情和报表摘要；收支填报以主金额输入和辅助计算提示呈现，避免重复金额卡片；收入固定红色、支出固定绿色且带文字与正负号，金额使用等宽字体右对齐，字号按 §3.2 的金额摘要层级，不套用填报主金额输入 |
 | `ProductCombobox` | 商品搜索、最近使用、快捷新增和判重 | 商品名规范化与租户内唯一规则统一消费领域 helper |
 | `FormField` | 标签、控件、辅助说明、校验错误 | 错误在字段附近呈现，不只弹 toast |
 | `FormSection` / `FormDisclosure` | 任务分组与可展开的补充信息 | 常用字段常驻，选填补充默认折叠并显示已有内容摘要；错误自动展开，不为每组新增嵌套卡片；收支与编辑表单共享 |
@@ -297,14 +214,15 @@ Key Characteristics：
 | `SettingsDisclosureList` | 设置分类、当前值和下级入口 | 首页只展示分类和值；同域多项先进入索引抽屉，再进入具体维护视图 |
 | `DictionaryToolbar` | 字典搜索、生命周期筛选和新增入口 | 个人与默认字典共享；搜索提交和清空语义统一，类型选择仍由页面承载 |
 | `DictionaryItemList` | 字典项、层级、状态和管理入口 | 同时承载桌面与窄屏，分类缩进和状态文字不可只靠颜色表达 |
-| `AppDataTable` | 桌面管理表格 | 表头稳定、表体滚动、分页和操作列稳定；不用于手机核心账单流 |
+| `AppDataTable` | 桌面管理表格 | 834px 起且视口高度至少 600px 时，主表占据剩余空间、表体内部滚动且表头粘附；工具栏和分页置于表体外，不用于手机核心账单流 |
+| `AppPagination` | 用户、操作日志、个人及默认字典分页 | 零基页码、总页数、可访问名称、刷新中禁用与边界控制；条件替换回到首页，翻页替换结果，单页不显示 |
 | `ChartPanel` | 图表、口径、加载和下钻 | 标题附近显示统计口径；点击后带筛选上下文进入明细 |
 | `TimeTrendPanel` | 单指标时间趋势、累计与对比 | 单图展示当期实线和累计虚线；提供图表点击及键盘时间点下钻，不可计算时原位说明原因 |
 | `ReportDimensionPanel` | 收支维度排行、质量线索与下钻 | 收支共享水平排行、空态、截断提示和可访问列表；通过 tone/文案显式区分收入与支出，质量模式只显示版本化线索 |
 | `AppStateBlock` | loading/empty/error/permission | 四态视觉和文案单一事实源；无权是 error 变体，不是假空态 |
 | `AppDialog` | 确认和短表单 | 删除、停用和少字段编辑；不可承载复杂长流程 |
-| `AppDrawer` | 筛选、字典编辑、账单详情 | 手机从底部出现，桌面从右侧出现；正文 flex 收缩并内部滚动，头尾不参与滚动；短抽屉展开候选时为搜索和列表增高，不能裁成一条；高度与底部偏移消费共享可见视口，避让键盘及输入工具栏 |
-| `Toast` | 短暂动作反馈和撤销 | 保存、删除成功等；失败若影响区域可用性，还必须保留页内错误态 |
+| `AppDrawer` | 管理导航、筛选、字典编辑、账单详情 | 手机从底部出现，桌面从右侧出现；正文 flex 收缩并内部滚动，头尾不参与滚动；短抽屉展开候选时为搜索和列表增高，不能裁成一条；高度与底部偏移消费共享可见视口，避让键盘及输入工具栏 |
+| `AppToast` | 短暂动作反馈和撤销 | 保存、删除成功等；失败若影响区域可用性，还必须保留页内错误态 |
 | `PwaInstallPrompt` | 登录页与“我的”的安装能力引导 | 复用同一检测状态源；只有浏览器提供安装事件时显示真实安装动作，否则显示分平台步骤或已安装状态 |
 
 共享组件消费关系按页面维护，不按开发阶段堆叠记录：
@@ -326,10 +244,21 @@ Key Characteristics：
 
 ### 4.3 按钮与输入
 
+常用组件的样式登记如下；颜色、字号、圆角和间距分别引用 §2、§3、§6，不省略组件消费关系。
+
+| 样式角色 | 共享入口 | 表面与形态 |
+| --- | --- | --- |
+| 主动作 | `.primary-button` | 主交互与主按钮文字 token；胶囊圆角；尺寸按下方控件契约 |
+| 编辑输入 | `FormField` / `.select-control` | 内容表面、边框与主文字 token；控件圆角；手机 44px、平板/PC 48px |
+| 内容工具卡 | `.chart-panel` / `.auth-card` | 内容表面与边框 token；面板圆角；不使用装饰阴影 |
+| 金额摘要 | `MoneySummary` | 内容表面与分隔线 token；两列摘要，奇数末项通栏；字号见 §3.2 |
+| 固定导航 | `BottomNavigation` | 磨砂固定层见 §6；高度与底部安全区共用 §5.4 的计算 |
+
 - 按钮和链接统一使用 `touch-action: manipulation`，避免快速连续点按触发页面双击放大，保留捏合缩放。
 - 标准触摸控件最小高度 44px、最小命中区域 44×44px；独立 select 必须复用 `select-control`，与 `FormField` 内 select 共用手机 44px、平板/PC 48px 样式；密度来自共享 token。
 - 每个页面或浮层同时最多一个实体主按钮；“保存并继续”作为次按钮。
 - 主按钮使用主交互色；危险按钮使用危险色；普通次操作使用描边或文字按钮。
+- 禁用动作按 §2.2 的主题 token 降低视觉权重：实体主/危险按钮使用柔和填充，次操作保留原表面；不得用全局 `button:disabled` 强制填充所有按钮。报表刷新期间仍保留原快照并暂停下钻，卡片、排行、数字的颜色和透明度保持稳定，更新提示放在分析维度标签旁，不能插入整块加载区推动已有结果。原生 disabled 与下钻守卫均须保留。
 - 按钮和图标动作标签保持单行，不得被挤压成逐字换行；按钮周围的业务摘要负责自然换行并让出稳定命中区域。
 - 退出登录使用主交互色表达普通会话动作，注销账号继续使用危险色；两者归入独立“账号操作”分组，分组标题左对齐，操作保持整行命中且不得共享危险语义。
 - 设置列表中的链接使用整行命中、颜色和披露指示表达可操作性，不显示浏览器默认文字下划线。
@@ -395,7 +324,7 @@ Key Characteristics：
 
 | 原型 | 适用页面 | 结构原则 |
 | --- | --- | --- |
-| `auth` | 登录与安装引导 | 单一账号任务，主题入口可见，说明不过度占首屏 |
+| `auth` | 登录与安装引导 | 各视口均为居中的单一账号任务，主题入口可见，说明不过度占首屏 |
 | `quick-entry` | 记一笔 | 表单自然滚动，金额与保存区靠近底部，键盘弹出仍可操作 |
 | `dashboard` | 报表 | 常驻搜索 → 已应用高级条件 → 摘要 → 分析维度 → 图表 → 排行/下钻，按阅读顺序单列退化 |
 | `list` | 明细、字典 | 页头可承载导出；明细正文按常驻搜索 → 已应用高级条件 → 生命周期 → 日期分组列表（类型选择放入筛选抽屉）排列，低频业务动作收进上下文面板 |
@@ -410,7 +339,7 @@ Key Characteristics：
 
 - 普通用户登录后默认进入“记一笔”。
 - 底部导航固定四项，底部包含安全区；页面正文为唯一主滚动区域。
-- 同账号内切换已访问的登记页面，保留填写、展开、筛选与滚动状态，不直接卸载；支出/收入切换也保留各自表单。隐藏页的候选必须关闭，原生 dialog 退出顶层，导出轮询和图表观察器暂停；返回刷新可变数据，失败保留已有结果。登录不缓存，退出/换账号清除页面缓存；密码输入离页清空。
+- 同账号内切换已访问的登记页面，保留填写、展开、筛选与滚动状态，不直接卸载；支出/收入切换也保留各自表单。隐藏页的候选必须关闭，原生 dialog 退出顶层，导出轮询和图表观察器暂停；返回刷新可变数据，同条件网络/服务异常保留已有结果并提示过期；替换条件失败显示区域错误，401/403 清除旧结果并显示认证/权限状态。登录不缓存，退出/换账号清除页面缓存；密码输入离页清空。
 - 页面存在固定保存栏时，在所有仍显示底部导航的断点均位于导航上方，不遮挡最后一个表单字段；导航实际高度和保存栏偏移必须共用包含底部安全区的高度计算，不能混用 max 与相加而形成缝隙。新增保存栏固定于视口，不因表单末尾或外层留白离开导航；操作栏本身透明且无边框，按钮保持既有外观并与表单内容对齐，透明留白不拦截正文点击；正文按实际栏高预留空间。抽屉内保存栏只贴抽屉底部。键盘期间回归自然流，取消固定定位和额外占位。
 - 编辑控件聚焦且 visualViewport 实际收缩时隐藏手机底部导航，保存栏转为表单自然流、可滚动到达，避免导航和粘性保存栏挤占候选区域。键盘收起动画结束后恢复；页面缩放不误判为键盘。
 - 弹层开启后，背景页面锁定滚动；抽屉正文内部滚动，操作栏稳定。
@@ -419,7 +348,7 @@ Key Characteristics：
 
 - 桌面主容器最大阅读宽度不限制主表，但普通表单和说明区控制在 720px 内。
 - 侧栏建议 224px；顶栏 56-64px；主内容 padding 24px。
-- 主数据表占据剩余空间。页面、表体和弹窗不得形成三层滚动。
+- 主数据表占据剩余空间。视口高度不足 600px 时复用窄屏摘要列表，由页面正文单独滚动，保证筛选、全部结果和分页均可达；不保留被工具栏挤到零高度的表体。页面、表体和弹窗不得形成三层滚动。
 - 1366px 下优先保留主操作、用户状态、最近活跃、时间和操作列；次要说明进入详情。
 
 ### 5.4 滚动与安全区
@@ -545,13 +474,9 @@ Key Characteristics：
 
 ## 9. Agent Prompt Guide
 
-### Quick Color Reference
+### Color Reference
 
-- 主交互：白天 Action Blue `#0066CC`，夜晚 Sky Link Blue `#2997FF`。
-- 页面背景：白天 `#F5F5F7`，夜晚 `#000000`。
-- 内容表面：白天 `#FFFFFF`，夜晚 `#272729`。
-- 收支语义：收入强调色固定 `#FF3B30`，支出强调色固定 `#34C759`，不随主题改变；金额、标签和状态文字消费对应主题前景 token。
-- 任何页面不得直接复制这些值，应消费项目主题 token。
+颜色角色、取值及业务语义统一见 §2；实现消费 `web/src/styles/tokens.css` 的语义 token，不在提示、页面或组件中复制明暗取值。
 
 ### Example Component Prompts
 
@@ -581,11 +506,11 @@ Key Characteristics：
 | `bill-details` | 收支明细 | `list` | 查询和纠正支出、收入及调整 | `GlobalLedgerSearch` / `LedgerListItem` / `LedgerContextActions` / `IncrementalLedgerList` / `DictionaryFilterPicker` / `FilterSheet` / `AppDrawer` |
 | `profile-settings` | 我的 | `settings` | 从单一“管理个人字典”入口进入八类维护，并管理偏好、安装帮助和个人数据 | `SettingsDisclosureList` / `ThemeModeControl` / `PwaInstallPrompt` / `AppDrawer` / `AppDialog` |
 | `personal-dictionaries` | 个人字典 | `settings` | 查看八类真实启用数与总数并进入对应维护页 | `SettingsDisclosureList` / `AppStateBlock` |
-| `personal-dictionary-detail` | 字典维护 | `settings` | 按类型新增、改名、排序、停用和恢复；分类最多两级 | `GlobalLedgerSearch` / `SegmentedControl` / `AppDrawer` / `AppDialog` / `AppToast` |
-| `admin-console` | 系统管理 | `admin` | 管理用户、默认字典、运行概况和操作日志 | `AppDataTable` / `AppDrawer` / `AppDialog` |
-| `admin-default-dictionaries` | 默认字典管理 | `admin` | 维护五类新用户默认项并明确不回写既有用户 | `DictionaryToolbar` / `DictionaryItemList` / `AppDrawer` / `AppDialog` / `AppToast` |
+| `personal-dictionary-detail` | 字典维护 | `settings` | 按类型新增、改名、排序、停用和恢复；分类最多两级 | `GlobalLedgerSearch` / `SegmentedControl` / `AppDrawer` / `AppDialog` / `AppToast` / `AppPagination` |
+| `admin-console` | 系统管理 | `admin` | 管理用户、默认字典、运行概况和操作日志 | `AppDataTable` / `AppDrawer` / `AppDialog` / `AppPagination` |
+| `admin-default-dictionaries` | 默认字典管理 | `admin` | 维护五类新用户默认项并明确不回写既有用户 | `DictionaryToolbar` / `DictionaryItemList` / `AppDrawer` / `AppDialog` / `AppToast` / `AppPagination` |
 | `admin-overview` | 运行概况 | `admin` | 查看账号、服务、备份配置和数据库占用概况 | `AppStateBlock` / `AppToast` |
-| `admin-audit-logs` | 操作日志 | `admin` | 按管理员、动作、对象、结果和时间只读检索脱敏审计记录 | `AppDataTable` / `AppDrawer` / `AppStateBlock` |
+| `admin-audit-logs` | 操作日志 | `admin` | 按管理员、动作、对象、结果和时间只读检索脱敏审计记录 | `AppDataTable` / `AppDrawer` / `AppStateBlock` / `AppPagination` |
 <!-- page-registry:end -->
 
 ## 10. Known Gaps

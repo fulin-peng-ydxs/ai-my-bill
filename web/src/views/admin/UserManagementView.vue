@@ -18,6 +18,7 @@ import AppDialog from '../../components/AppDialog.vue'
 import AppDrawer from '../../components/AppDrawer.vue'
 import AppStateBlock from '../../components/AppStateBlock.vue'
 import AppToast from '../../components/AppToast.vue'
+import AppPagination from '../../components/AppPagination.vue'
 import FormField from '../../components/FormField.vue'
 import { useLatestRequest } from '../../composables/useLatestRequest'
 import { formatAdminTime } from '../../domain/adminPresentation'
@@ -27,6 +28,7 @@ type UserAction = 'disable' | 'restore' | 'reset-password' | 'deletion'
 const queryDraft = ref('')
 const appliedQuery = ref('')
 const statusFilter = ref<AdminUserStatus | ''>('')
+const pageIndex = ref(0)
 const selectedUser = ref<AdminUser>()
 const userActionsOpen = ref(false)
 const createOpen = ref(false)
@@ -39,9 +41,16 @@ const credential = ref<TemporaryCredential>()
 const toastOpen = ref(false)
 const toastMessage = ref('')
 const toastKind = ref<'success' | 'error'>('success')
-const { data, status, error, staleWarning, refreshing, execute } = useLatestRequest<Awaited<ReturnType<typeof listAdminUsers>>>()
+const { data, status, error, staleWarning, refreshing, execute } = useLatestRequest<Awaited<ReturnType<typeof listAdminUsers>>>(() => {
+  selectedUser.value = undefined
+  userActionsOpen.value = false
+  pendingAction.value = undefined
+  credential.value = undefined
+  createOpen.value = false
+})
 
 const users = computed(() => data.value?.items ?? [])
+const totalPages = computed(() => Math.max(1, Math.ceil((data.value?.total ?? 0) / 50)))
 const actionTitle = computed(() => {
   const labels: Record<UserAction, string> = {
     disable: '确认停用账号？',
@@ -69,15 +78,31 @@ function statusLabel(value: AdminUserStatus): string {
 }
 
 async function load(intent: 'replace' | 'refresh' = 'replace'): Promise<void> {
-  await execute(
-    (signal) => listAdminUsers(appliedQuery.value, statusFilter.value, signal),
+  const result = await execute(
+    (signal) => listAdminUsers(appliedQuery.value, statusFilter.value, signal, pageIndex.value),
     { intent: intent === 'refresh' ? 'silent' : 'replace', isEmpty: (page) => page.items.length === 0 },
   )
+  // 删除末页最后一项后回到仍有效的页码，不留下无法导航的空末页。
+  if (result && pageIndex.value > 0 && result.items.length === 0) {
+    pageIndex.value = Math.max(0, Math.ceil(result.total / 50) - 1)
+    if (result.total > 0) await load()
+  }
 }
 
 function search(): void {
   appliedQuery.value = queryDraft.value.trim()
+  pageIndex.value = 0
   void load('replace')
+}
+
+function changeStatus(): void {
+  pageIndex.value = 0
+  void load()
+}
+
+function changePage(page: number): void {
+  pageIndex.value = page
+  void load()
 }
 
 function openUser(user: AdminUser): void {
@@ -90,6 +115,7 @@ function handleEmptyAction(): void {
     queryDraft.value = ''
     appliedQuery.value = ''
     statusFilter.value = ''
+    pageIndex.value = 0
     void load()
     return
   }
@@ -113,7 +139,8 @@ async function submitCreate(): Promise<void> {
     credential.value = await createAdminUser(username)
     createOpen.value = false
     createUsername.value = ''
-    await load('refresh')
+    pageIndex.value = 0
+    await load()
   } catch (cause) {
     const requestError = normalizeRequestError(cause)
     createError.value = requestError.fieldErrors.username?.[0] ?? requestError.message
@@ -149,16 +176,8 @@ async function confirmAction(): Promise<void> {
     await load('refresh')
   } catch (cause) {
     if (action === 'deletion') {
-      // 响应可能在提交后丢失；刷新成功且目标已消失时按已完成收口。
+      // 当前分页或筛选中没有目标，不能证明注销成功；响应不明只刷新并保留失败反馈。
       await load('refresh')
-      if (!users.value.some((user) => user.accountId === target.accountId)) {
-        selectedUser.value = undefined
-        pendingAction.value = undefined
-        toastMessage.value = '账号及在线个人数据已永久删除'
-        toastKind.value = 'success'
-        toastOpen.value = true
-        return
-      }
     }
     toastMessage.value = normalizeRequestError(cause).message
     toastKind.value = 'error'
@@ -186,7 +205,7 @@ useRefreshOnReturn(() => load('refresh'))
 </script>
 
 <template>
-  <section class="admin-users-page">
+  <section class="admin-users-page admin-table-page">
     <header class="admin-page-heading">
       <div>
         <h1>用户管理</h1>
@@ -226,7 +245,7 @@ useRefreshOnReturn(() => load('refresh'))
         <span class="sr-only">账号状态</span>
         <select
           v-model="statusFilter"
-          @change="load('replace')"
+          @change="changeStatus"
         >
           <option value="">全部状态</option>
           <option value="ACTIVE">正常</option>
@@ -275,7 +294,7 @@ useRefreshOnReturn(() => load('refresh'))
       :kind="error?.kind === 'forbidden' ? 'permission' : 'error'"
       title="用户列表不可用"
       :message="error?.message"
-      action-label="重试"
+      :action-label="error?.retryable ? '重试' : undefined"
       @action="load()"
     />
     <AppStateBlock
@@ -300,7 +319,10 @@ useRefreshOnReturn(() => load('refresh'))
           :key="user.accountId"
         >
           <th scope="row">
-            {{ user.username }}
+            <span
+              class="table-identity"
+              :title="user.username"
+            >{{ user.username }}</span>
           </th>
           <td>
             <span
@@ -351,6 +373,13 @@ useRefreshOnReturn(() => load('refresh'))
           </button>
         </li>
       </ul>
+      <AppPagination
+        :page="pageIndex"
+        :total-pages="totalPages"
+        label="用户分页"
+        :busy="refreshing"
+        @update:page="changePage"
+      />
     </template>
 
     <AppDialog

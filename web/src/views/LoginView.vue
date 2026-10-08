@@ -85,33 +85,14 @@ async function setFirstPassword(): Promise<void> {
 
 <template>
   <main class="auth-shell">
-    <section
-      class="auth-story"
-      aria-label="产品说明"
-    >
-      <div class="auth-brand">
-        我的账单
-      </div>
-      <div class="auth-thesis">
-        <p class="eyebrow">
-          收入有来源 · 支出有去处
-        </p>
-        <h1>每一笔，<br>都有来处。</h1>
-        <p>快速记下日常收支，再从清晰的明细与报表里核对生活选择。</p>
-      </div>
-      <p class="auth-caption">
-        可作为 PWA 添加到手机桌面
-      </p>
-    </section>
-
     <section class="auth-workspace">
       <div class="auth-card">
         <header class="auth-card-header">
           <div>
-            <p class="eyebrow">
-              安全会话
+            <p class="auth-brand">
+              我的账单
             </p>
-            <h2>{{ needsFirstPassword ? '设置正式密码' : '欢迎回来' }}</h2>
+            <h1>{{ needsFirstPassword ? '设置正式密码' : '欢迎回来' }}</h1>
           </div>
           <ThemeModeControl />
         </header>

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { useRefreshOnReturn } from '../../../composables/useRefreshOnReturn'
-import { ArrowDown, ArrowLeft, ArrowUp, ChevronLeft, ChevronRight, Plus } from 'lucide-vue-next'
+import { ArrowDown, ArrowLeft, ArrowUp, Plus } from 'lucide-vue-next'
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
@@ -20,6 +20,7 @@ import {
 import { normalizeRequestError } from '../../../api/errors'
 import AppDialog from '../../../components/AppDialog.vue'
 import AppDrawer from '../../../components/AppDrawer.vue'
+import AppPagination from '../../../components/AppPagination.vue'
 import AppStateBlock from '../../../components/AppStateBlock.vue'
 import AppToast from '../../../components/AppToast.vue'
 import DictionaryCombobox, { type DictionaryChoice } from '../../../components/DictionaryCombobox.vue'
@@ -63,7 +64,13 @@ const mergePreview = ref<ProductMergePreview>()
 const mergeError = ref('')
 const mergeBusy = ref(false)
 const mergeConfirmOpen = ref(false)
-const { data, status, error, staleWarning, refreshing, execute, cancel } = useLatestRequest<Awaited<ReturnType<typeof listDictionaryItems>>>()
+const { data, status, error, staleWarning, refreshing, execute, cancel } = useLatestRequest<Awaited<ReturnType<typeof listDictionaryItems>>>(() => {
+  selected.value = undefined
+  actionsOpen.value = false
+  editorOpen.value = false
+  mergeOpen.value = false
+  mergeConfirmOpen.value = false
+})
 
 const items = computed(() => data.value?.items ?? [])
 const totalPages = computed(() => Math.max(1, Math.ceil((data.value?.total ?? 0) / 100)))
@@ -381,7 +388,7 @@ useRefreshOnReturn(() => load('refresh'))
       :kind="error?.kind === 'forbidden' ? 'permission' : 'error'"
       :title="`${definition.label}暂不可用`"
       :message="error?.message"
-      action-label="重试"
+      :action-label="error?.retryable ? '重试' : undefined"
       @action="load()"
     />
     <AppStateBlock
@@ -401,35 +408,14 @@ useRefreshOnReturn(() => load('refresh'))
       @select="openActions"
     />
 
-    <nav
-      v-if="status === 'ready' && totalPages > 1"
-      class="dictionary-pagination"
-      aria-label="字典分页"
-    >
-      <button
-        type="button"
-        class="secondary-button"
-        :disabled="pageIndex === 0"
-        @click="pageIndex -= 1; load()"
-      >
-        <ChevronLeft
-          :size="18"
-          aria-hidden="true"
-        />上一页
-      </button>
-      <span>第 {{ pageIndex + 1 }} / {{ totalPages }} 页</span>
-      <button
-        type="button"
-        class="secondary-button"
-        :disabled="pageIndex + 1 >= totalPages"
-        @click="pageIndex += 1; load()"
-      >
-        下一页<ChevronRight
-          :size="18"
-          aria-hidden="true"
-        />
-      </button>
-    </nav>
+    <AppPagination
+      v-if="status === 'ready'"
+      :page="pageIndex"
+      :total-pages="totalPages"
+      label="字典分页"
+      :busy="refreshing"
+      @update:page="pageIndex = $event; load()"
+    />
 
     <AppDrawer
       id="dictionary-actions"

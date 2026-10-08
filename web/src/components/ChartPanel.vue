@@ -41,6 +41,9 @@ const { host, token, refresh } = useReportChart(() => {
       barMaxWidth: 64,
     }],
   }
+}, (index) => {
+  const point = props.points[index]
+  if (point) emit('select', point)
 })
 
 watch(() => props.points, refresh, { deep: true })

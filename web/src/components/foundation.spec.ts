@@ -3,6 +3,7 @@ import { renderToString } from 'vue/server-renderer'
 import { describe, expect, it } from 'vitest'
 
 import AppDialog from './AppDialog.vue'
+import AppPagination from './AppPagination.vue'
 import AppDataTable from './AppDataTable.vue'
 import AppStateBlock from './AppStateBlock.vue'
 import AppToast from './AppToast.vue'
@@ -21,6 +22,19 @@ async function render(component: Parameters<typeof h>[0], props?: Record<string,
 }
 
 describe('shared frontend foundations', () => {
+  it('exposes page boundaries and prevents paging during a refresh', async () => {
+    expect(await render(AppPagination, { page: 0, totalPages: 1, label: '用户分页' })).not.toContain('<nav')
+    const first = await render(AppPagination, { page: 0, totalPages: 3, label: '用户分页' })
+    expect(first).toContain('aria-label="用户分页"')
+    expect(first).toContain('第 1 / 3 页')
+    expect(first.match(/<button[^>]*disabled/g)).toHaveLength(1)
+    const last = await render(AppPagination, { page: 2, totalPages: 3, label: '用户分页' })
+    expect(last).toContain('第 3 / 3 页')
+    expect(last.match(/<button[^>]*disabled/g)).toHaveLength(1)
+    const busy = await render(AppPagination, { page: 1, totalPages: 3, label: '用户分页', busy: true })
+    expect(busy).toContain('aria-busy="true"')
+    expect(busy.match(/<button[^>]*disabled/g)).toHaveLength(2)
+  })
   it('renders mutually exclusive loading and permission states accessibly', async () => {
     const loading = await render(AppStateBlock, { kind: 'loading', title: '正在加载' })
     expect(loading).toContain('aria-busy="true"')

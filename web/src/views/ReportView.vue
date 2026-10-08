@@ -273,7 +273,7 @@ useRefreshOnReturn(() => load())
     />
 
     <AppStateBlock
-      v-if="request.status.value === 'loading' || request.refreshing.value"
+      v-if="request.status.value === 'loading' && !request.data.value"
       kind="loading"
       title="正在计算报表"
       message="正在更新，请稍候。"
@@ -293,7 +293,14 @@ useRefreshOnReturn(() => load())
     />
     <section class="report-dimension">
       <div>
-        <label for="report-dimension">分析维度</label>
+        <label for="report-dimension">
+          分析维度
+          <span
+            class="report-refresh-status"
+            role="status"
+            aria-live="polite"
+          >{{ request.refreshing.value ? '更新中…' : '' }}</span>
+        </label>
         <select
           id="report-dimension"
           class="select-control"

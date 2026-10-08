@@ -11,9 +11,9 @@ export interface LatestRequestOptions<T> {
 }
 
 /**
- * 管理可切换查询的取消和单调代次。晚响应永不覆盖新条件；静默刷新失败时仅标记旧数据可能过期。
+ * 管理可切换查询的取消和单调代次。晚响应永不覆盖新条件；静默刷新网络失败标记过期，身份失效撤下旧结果及关联弹层。
  */
-export function useLatestRequest<T>() {
+export function useLatestRequest<T>(onAccessDenied?: () => void) {
   const data = shallowRef<T>()
   const status = ref<DataRegionStatus>('idle')
   const error = shallowRef<RequestError>()
@@ -60,7 +60,13 @@ export function useLatestRequest<T>() {
         status.value = data.value === undefined ? 'idle' : 'ready'
         return undefined
       }
-      if (intent === 'silent' && data.value !== undefined) {
+      // 身份或权限失效时，任何刷新方式都必须撤下旧数据。
+      if (normalized.kind === 'unauthorized' || normalized.kind === 'forbidden') {
+        data.value = undefined
+        error.value = normalized
+        status.value = 'error'
+        onAccessDenied?.()
+      } else if (intent === 'silent' && data.value !== undefined) {
         staleWarning.value = normalized
         status.value = options.isEmpty?.(data.value) ? 'empty' : 'ready'
       } else {

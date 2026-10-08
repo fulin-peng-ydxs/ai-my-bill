@@ -1,6 +1,7 @@
 import { effectScope } from 'vue'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
+import { ApiClientError } from '../api/http'
 import { useLatestRequest } from './useLatestRequest'
 
 function deferred<T>() {
@@ -10,6 +11,30 @@ function deferred<T>() {
 }
 
 describe('useLatestRequest', () => {
+  it.each([401, 403])('clears protected results on HTTP %i even during silent refresh', async (code) => {
+    const scope = effectScope()
+    const onAccessDenied = vi.fn()
+    const state = scope.run(() => useLatestRequest<string[]>(onAccessDenied))!
+    await state.execute(async () => ['受保护的数据'])
+    await state.execute(async () => { throw new ApiClientError(code) }, { intent: 'silent' })
+    expect(state.data.value).toBeUndefined()
+    expect(state.status.value).toBe('error')
+    expect(state.error.value?.kind).toBe(code === 401 ? 'unauthorized' : 'forbidden')
+    expect(state.staleWarning.value).toBeUndefined()
+    expect(onAccessDenied).toHaveBeenCalledOnce()
+    scope.stop()
+  })
+
+  it('does not associate old results with failed replacement criteria', async () => {
+    const scope = effectScope()
+    const state = scope.run(() => useLatestRequest<string[]>())!
+    await state.execute(async () => ['旧条件结果'])
+    await state.execute(async () => { throw new TypeError('offline') }, { intent: 'replace' })
+    expect(state.data.value).toBeUndefined()
+    expect(state.status.value).toBe('error')
+    expect(state.staleWarning.value).toBeUndefined()
+    scope.stop()
+  })
   it('retains the successful empty state after a silent refresh failure', async () => {
     const scope = effectScope()
     const state = scope.run(() => useLatestRequest<string[]>())!

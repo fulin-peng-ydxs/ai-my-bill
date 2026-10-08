@@ -16,6 +16,7 @@ import {
 import { normalizeRequestError } from '../../api/errors'
 import AppDialog from '../../components/AppDialog.vue'
 import AppDrawer from '../../components/AppDrawer.vue'
+import AppPagination from '../../components/AppPagination.vue'
 import AppStateBlock from '../../components/AppStateBlock.vue'
 import AppToast from '../../components/AppToast.vue'
 import DictionaryCombobox, { type DictionaryChoice } from '../../components/DictionaryCombobox.vue'
@@ -45,7 +46,11 @@ const toastOpen = ref(false)
 const toastMessage = ref('')
 const toastKind = ref<'success' | 'error'>('success')
 const summaries = ref<Awaited<ReturnType<typeof listDefaultDictionarySummaries>>>()
-const { data, status, error, staleWarning, refreshing, execute, cancel } = useLatestRequest<Awaited<ReturnType<typeof listDefaultDictionaryItems>>>()
+const { data, status, error, staleWarning, refreshing, execute, cancel } = useLatestRequest<Awaited<ReturnType<typeof listDefaultDictionaryItems>>>(() => {
+  selected.value = undefined
+  actionsOpen.value = false
+  createOpen.value = false
+})
 
 const items = computed(() => data.value?.items ?? [])
 const totalPages = computed(() => Math.max(1, Math.ceil((data.value?.total ?? 0) / 100)))
@@ -272,7 +277,7 @@ useRefreshOnReturn(() => Promise.all([load('refresh'), loadSummaries()]).then(()
       :kind="error?.kind === 'forbidden' ? 'permission' : 'error'"
       :title="`${definition.label}暂不可用`"
       :message="error?.message"
-      action-label="重试"
+      :action-label="error?.retryable ? '重试' : undefined"
       @action="load()"
     />
     <AppStateBlock
@@ -290,29 +295,14 @@ useRefreshOnReturn(() => Promise.all([load('refresh'), loadSummaries()]).then(()
       @select="openActions"
     />
 
-    <nav
-      v-if="status === 'ready' && totalPages > 1"
-      class="dictionary-pagination"
-      aria-label="默认字典分页"
-    >
-      <button
-        type="button"
-        class="secondary-button"
-        :disabled="pageIndex === 0"
-        @click="pageIndex -= 1; load()"
-      >
-        上一页
-      </button>
-      <span>第 {{ pageIndex + 1 }} / {{ totalPages }} 页</span>
-      <button
-        type="button"
-        class="secondary-button"
-        :disabled="pageIndex + 1 >= totalPages"
-        @click="pageIndex += 1; load()"
-      >
-        下一页
-      </button>
-    </nav>
+    <AppPagination
+      v-if="status === 'ready'"
+      :page="pageIndex"
+      :total-pages="totalPages"
+      label="默认字典分页"
+      :busy="refreshing"
+      @update:page="pageIndex = $event; load()"
+    />
 
     <AppDrawer
       id="default-dictionary-actions"

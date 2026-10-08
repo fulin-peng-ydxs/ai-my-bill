@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { LogOut } from 'lucide-vue-next'
-import { computed, onUnmounted, watch } from 'vue'
-import { RouterLink } from 'vue-router'
+import { LogOut, Menu } from 'lucide-vue-next'
+import { computed, onUnmounted, ref, watch } from 'vue'
+import { RouterLink, useRoute } from 'vue-router'
 
 import { useLogout } from '../composables/useLogout'
 import { useKeyboardViewport } from '../composables/useKeyboardViewport'
@@ -9,8 +9,19 @@ import { clearAccountMemory } from '../composables/accountMemory'
 import { registerUnsavedChanges } from '../composables/unsavedChanges'
 import { useSessionStore } from '../stores/session'
 import { usePreferencesStore } from '../stores/preferences'
+import AppDrawer from './AppDrawer.vue'
 import AppStateBlock from './AppStateBlock.vue'
 import BottomNavigation from './BottomNavigation.vue'
+
+const route = useRoute()
+const navigationOpen = ref(false)
+const adminLinks = [
+  { to: '/admin', label: '用户管理' },
+  { to: '/admin/default-dictionaries', label: '默认字典' },
+  { to: '/admin/overview', label: '运行概况' },
+  { to: '/admin/audit-logs', label: '操作日志' },
+]
+watch(() => route.fullPath, () => { navigationOpen.value = false })
 
 const sessionStore = useSessionStore()
 const preferencesStore = usePreferencesStore()
@@ -50,17 +61,13 @@ watch(() => sessionStore.session?.accountId, (accountId, previousAccountId) => {
         我的账单
       </RouterLink>
       <nav>
-        <RouterLink to="/admin">
-          用户管理
-        </RouterLink>
-        <RouterLink to="/admin/default-dictionaries">
-          默认字典
-        </RouterLink>
-        <RouterLink to="/admin/overview">
-          运行概况
-        </RouterLink>
-        <RouterLink to="/admin/audit-logs">
-          操作日志
+        <RouterLink
+          v-for="link in adminLinks"
+          :key="link.to"
+          :to="link.to"
+          :class="{ 'admin-link-current': route.path === link.to }"
+        >
+          {{ link.label }}
         </RouterLink>
       </nav>
     </aside>
@@ -69,9 +76,20 @@ watch(() => sessionStore.session?.accountId, (accountId, previousAccountId) => {
       class="shell-header"
       :class="{ 'admin-shell-header': isAdmin }"
     >
-      <div
-        class="admin-mobile-title"
-      >
+      <div class="admin-mobile-title">
+        <button
+          type="button"
+          class="icon-button admin-navigation-trigger"
+          aria-label="打开管理导航"
+          aria-controls="admin-navigation"
+          :aria-expanded="navigationOpen"
+          @click="navigationOpen = true"
+        >
+          <Menu
+            :size="20"
+            aria-hidden="true"
+          />
+        </button>
         <span>系统管理</span>
       </div>
       <button
@@ -88,25 +106,28 @@ watch(() => sessionStore.session?.accountId, (accountId, previousAccountId) => {
         />
         <span>{{ loggingOut ? '正在退出…' : '退出' }}</span>
       </button>
+    </header>
+    <AppDrawer
+      v-if="isAdmin"
+      id="admin-navigation"
+      v-model:open="navigationOpen"
+      title="管理导航"
+    >
       <nav
-        v-if="isAdmin"
         class="admin-mobile-navigation"
         aria-label="移动端管理导航"
       >
-        <RouterLink to="/admin">
-          用户管理
-        </RouterLink>
-        <RouterLink to="/admin/default-dictionaries">
-          默认字典
-        </RouterLink>
-        <RouterLink to="/admin/overview">
-          运行概况
-        </RouterLink>
-        <RouterLink to="/admin/audit-logs">
-          操作日志
+        <RouterLink
+          v-for="link in adminLinks"
+          :key="link.to"
+          :to="link.to"
+          :class="{ 'admin-link-current': route.path === link.to }"
+          @click="navigationOpen = false"
+        >
+          {{ link.label }}
         </RouterLink>
       </nav>
-    </header>
+    </AppDrawer>
     <main class="shell-content">
       <AppStateBlock
         v-if="logoutError"

@@ -13,6 +13,7 @@ import {
 import AppDataTable from '../../components/AppDataTable.vue'
 import AppDrawer from '../../components/AppDrawer.vue'
 import AppStateBlock from '../../components/AppStateBlock.vue'
+import AppPagination from '../../components/AppPagination.vue'
 import { useLatestRequest } from '../../composables/useLatestRequest'
 import {
   adminActionLabel,
@@ -31,7 +32,10 @@ const applied = ref<AdminAuditFilters>({
 })
 const selected = ref<AdminAuditLogItem>()
 const detailOpen = ref(false)
-const { data, status, error, staleWarning, refreshing, execute } = useLatestRequest<Awaited<ReturnType<typeof listAdminAuditLogs>>>()
+const { data, status, error, staleWarning, refreshing, execute } = useLatestRequest<Awaited<ReturnType<typeof listAdminAuditLogs>>>(() => {
+  selected.value = undefined
+  detailOpen.value = false
+})
 const items = computed(() => data.value?.items ?? [])
 const totalPages = computed(() => Math.max(1, Math.ceil((data.value?.total ?? 0) / 50)))
 const hasAppliedFilters = computed(() => Boolean(
@@ -58,7 +62,7 @@ function applyFilters(): void {
     period: periodDraft.value,
     page: 0,
   }
-  void load(data.value !== undefined)
+  void load()
 }
 
 function clearFilters(): void {
@@ -75,8 +79,8 @@ function openDetail(item: AdminAuditLogItem): void {
   detailOpen.value = true
 }
 
-function changePage(delta: number): void {
-  applied.value = { ...applied.value, page: applied.value.page + delta }
+function changePage(page: number): void {
+  applied.value = { ...applied.value, page }
   void load()
 }
 
@@ -89,7 +93,7 @@ useRefreshOnReturn(() => load(true))
 </script>
 
 <template>
-  <section class="admin-audit-page">
+  <section class="admin-audit-page admin-table-page">
     <header class="admin-page-heading">
       <div>
         <h1>操作日志</h1>
@@ -207,7 +211,7 @@ useRefreshOnReturn(() => load(true))
       :kind="error?.kind === 'forbidden' ? 'permission' : 'error'"
       title="操作日志不可用"
       :message="error?.message"
-      action-label="重试"
+      :action-label="error?.retryable ? '重试' : undefined"
       @action="load()"
     />
     <AppStateBlock
@@ -232,9 +236,19 @@ useRefreshOnReturn(() => load(true))
           :key="item.id"
         >
           <td>{{ formatAdminTime(item.occurredAt) }}</td>
-          <td>{{ item.administrator }}</td>
+          <td>
+            <span
+              class="table-identity"
+              :title="item.administrator"
+            >{{ item.administrator }}</span>
+          </td>
           <td>{{ adminActionLabel(item.action) }}</td>
-          <td>{{ adminObjectLabel(item.objectType) }} · {{ item.objectId }}</td>
+          <td>
+            <span
+              class="table-identity"
+              :title="`${adminObjectLabel(item.objectType)} · ${item.objectId}`"
+            >{{ adminObjectLabel(item.objectType) }} · {{ item.objectId }}</span>
+          </td>
           <td>
             <span
               class="status-badge"
@@ -285,29 +299,14 @@ useRefreshOnReturn(() => load(true))
         </li>
       </ul>
 
-      <nav
-        v-if="totalPages > 1"
-        class="dictionary-pagination"
-        aria-label="操作日志分页"
-      >
-        <button
-          type="button"
-          class="secondary-button"
-          :disabled="applied.page === 0"
-          @click="changePage(-1)"
-        >
-          上一页
-        </button>
-        <span>第 {{ applied.page + 1 }} / {{ totalPages }} 页</span>
-        <button
-          type="button"
-          class="secondary-button"
-          :disabled="applied.page + 1 >= totalPages"
-          @click="changePage(1)"
-        >
-          下一页
-        </button>
-      </nav>
+      <AppPagination
+        v-if="status === 'ready'"
+        :page="applied.page"
+        :total-pages="totalPages"
+        label="操作日志分页"
+        :busy="refreshing"
+        @update:page="changePage"
+      />
     </template>
 
     <AppDrawer

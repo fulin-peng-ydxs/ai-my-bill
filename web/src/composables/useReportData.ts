@@ -33,9 +33,6 @@ export function useReportData() {
       const [summary] = await Promise.all([summaryPromise, detailPromise])
       return { filters: snapshot, presentation: view, summary, ...details }
     }, { intent: request.data.value ? 'refresh' : 'replace' })
-    if (request.error.value?.kind === 'forbidden' || request.error.value?.kind === 'unauthorized') {
-      request.data.value = undefined
-    }
   }
   return { ...request, canDrill, load }
 }

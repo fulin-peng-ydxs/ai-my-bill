@@ -2,6 +2,7 @@ import { effectScope } from 'vue'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { LedgerFilters, LedgerItem, LedgerPage } from '../api/ledgerEntries'
 import { listLedgerEntries } from '../api/ledgerEntries'
+import { ApiClientError } from '../api/http'
 import { useIncrementalLedgerQuery } from './useIncrementalLedgerQuery'
 
 vi.mock('../api/ledgerEntries', () => ({ listLedgerEntries: vi.fn() }))
@@ -11,6 +12,19 @@ const page = (ids: string[], nextCursor?: string): LedgerPage => ({ items: ids.m
 afterEach(() => vi.resetAllMocks())
 
 describe('cached ledger refresh', () => {
+  it.each([401, 403])('clears accumulated ledger pages when access fails with %i', async (code) => {
+    const scope = effectScope()
+    const state = scope.run(useIncrementalLedgerQuery)!
+    vi.mocked(listLedgerEntries).mockResolvedValueOnce(page(['private'], 'next'))
+    await state.replace(filters)
+    vi.mocked(listLedgerEntries).mockRejectedValueOnce(new ApiClientError(code))
+    await state.refresh()
+    expect(state.items.value).toEqual([])
+    expect(state.hasMore.value).toBe(false)
+    expect(state.status.value).toBe('error')
+    expect(state.error.value?.kind).toBe(code === 401 ? 'unauthorized' : 'forbidden')
+    scope.stop()
+  })
   it('refreshes exactly the loaded depth, deduplicates and retains the next cursor', async () => {
     const scope = effectScope()
     const state = scope.run(useIncrementalLedgerQuery)!

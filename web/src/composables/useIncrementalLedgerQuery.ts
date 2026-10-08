@@ -5,7 +5,6 @@ import { useLatestRequest } from './useLatestRequest'
 
 /** 复用统一请求代次与取消，并在稳定游标分页时按 ID 防御性去重。 */
 export function useIncrementalLedgerQuery() {
-  const request = useLatestRequest<LedgerPage>()
   const items = ref<LedgerItem[]>([])
   const cursor = ref<string>()
   const hasMore = ref(false)
@@ -13,6 +12,12 @@ export function useIncrementalLedgerQuery() {
   const lastOperation = ref<'replace' | 'refresh' | 'more'>('replace')
   let loadedPages = 1
   const loadingMore = ref(false)
+  const request = useLatestRequest<LedgerPage>(() => {
+    items.value = []
+    cursor.value = undefined
+    hasMore.value = false
+    loadedPages = 1
+  })
 
   async function replace(filters: LedgerFilters): Promise<void> {
     lastOperation.value = 'replace'
