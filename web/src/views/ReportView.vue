@@ -10,10 +10,11 @@ import type { ExpenseReport,
   ReportTimeMetric, TimeReport } from '../api/reports'
 import PageHeading from '../components/PageHeading.vue'
 import { hasFilterChanges } from '../domain/filterChanges'
-import AppliedFilterBar from '../components/AppliedFilterBar.vue'
+import AppliedFilterBar, { type AppliedFilterSummary } from '../components/AppliedFilterBar.vue'
 import AppStateBlock from '../components/AppStateBlock.vue'
 import ChartPanel from '../components/ChartPanel.vue'
 import FilterSheet from '../components/FilterSheet.vue'
+import DateTimeControl from '../components/DateTimeControl.vue'
 import FormField from '../components/FormField.vue'
 import GlobalLedgerSearch from '../components/GlobalLedgerSearch.vue'
 import MoneySummary, { type MoneySummaryItem } from '../components/MoneySummary.vue'
@@ -40,6 +41,7 @@ const searchText = ref('')
 const filters = ref<ReportFilters>({ query: '', scope: 'ALL', range: 'THIS_MONTH' })
 const draft = ref<ReportFilters>({ ...filters.value })
 const filterOpen = ref(false)
+const focusedFilter = ref<keyof ReportFilters>()
 const rangeError = ref('')
 const defaultRange = computed<LedgerDateRange>(() => preferences.values.reportDefaultRange)
 const hasFilters = computed(() => hasFilterChanges(filters.value, clearedReportFilters(defaultRange.value, filters.value.scope)))
@@ -66,20 +68,31 @@ function optionsFor(scope: ReportScope): { value: ReportDimension, label: string
 const dimensionOptions = computed(() => optionsFor(filters.value.scope))
 const dimensionTitle = computed(() => optionsFor(shownFilters.value.scope).find(item => item.value === shownPresentation.value.dimension)?.label ?? '分析维度')
 
-const filterSummaries = computed(() => [
-  optionLabel(reportScopeOptions, shownFilters.value.scope),
-  shownFilters.value.range === 'CUSTOM' ? `${shownFilters.value.startDate} 至 ${shownFilters.value.endDate}` : optionLabel(ledgerRangeOptions, shownFilters.value.range),
-  ...(shownFilters.value.query ? [`搜索：${shownFilters.value.query}`] : []),
-  ...(shownFilters.value.fundingChannelId ? [nameFor('fundingChannelId') ?? '指定资金渠道'] : []),
-  ...(shownFilters.value.primaryCategoryId ? [nameFor('primaryCategoryId') ?? '指定一级分类'] : []),
-  ...(shownFilters.value.secondaryCategoryId ? [nameFor('secondaryCategoryId') ?? '指定二级分类'] : []),
-  ...(shownFilters.value.productId ? [nameFor('productId') ?? '指定商品'] : []),
-  ...(shownFilters.value.purchaseChannelId ? [nameFor('purchaseChannelId') ?? '指定购买渠道'] : []),
-  ...(shownFilters.value.locationLabelId ? [nameFor('locationLabelId') ?? '指定地点'] : []),
-  ...(shownFilters.value.incomeCategoryId ? [nameFor('incomeCategoryId') ?? '指定收入分类'] : []),
-  ...(shownFilters.value.payerId ? [nameFor('payerId') ?? '指定付款方'] : []),
-  ...(shownFilters.value.incomeName ? [`收入名称：${shownFilters.value.incomeName}`] : []),
-])
+const filterSummaries = computed<AppliedFilterSummary[]>(() => {
+  const shown = shownFilters.value
+  const fields = [
+    ['fundingChannelId', '资金渠道'], ['primaryCategoryId', '一级分类'], ['secondaryCategoryId', '二级分类'],
+    ['productId', '商品'], ['purchaseChannelId', '购买渠道'], ['locationLabelId', '地点'],
+    ['incomeCategoryId', '收入分类'], ['payerId', '付款方'],
+  ] as const
+  return [
+    { key: 'range', label: '日期', value: shown.range === 'CUSTOM' ? `${shown.startDate} 至 ${shown.endDate}` : optionLabel(ledgerRangeOptions, shown.range) },
+    ...fields.filter(([key]) => shown[key]).map(([key, label]) => ({ key, label, value: nameFor(key) ?? '指定选项' })),
+    ...(shown.incomeName ? [{ key: 'incomeName', label: '收入名称', value: shown.incomeName }] : []),
+  ]
+})
+const filterTitle = computed(() => focusedFilter.value
+  ? `修改${filterSummaries.value.find(item => item.key === focusedFilter.value)?.label ?? '筛选条件'}` : '报表筛选')
+function openFilters(key?: string): void {
+  focusedFilter.value = key as keyof ReportFilters | undefined
+  draft.value = { ...(key ? shownFilters.value : filters.value) }
+  rangeError.value = ''
+  filterOpen.value = true
+}
+function showFilter(key: keyof ReportFilters): boolean {
+  return filterOpen.value && (!focusedFilter.value || focusedFilter.value === key
+    || (focusedFilter.value === 'secondaryCategoryId' && key === 'primaryCategoryId'))
+}
 
 const summaryItems = computed<MoneySummaryItem[]>(() => {
   const data = request.data.value?.summary
@@ -114,12 +127,6 @@ watch([() => route.fullPath, () => preferences.status], () => {
   draft.value = { ...filters.value }
   void load()
 }, { immediate: true })
-
-watch(filterOpen, (open) => {
-  if (!open) return
-  draft.value = { ...filters.value }
-  rangeError.value = ''
-})
 
 function navigate(next: ReportFilters): void {
   void router.replace({ query: reportPresentationQuery(next, parseReportPresentation(route.query, next)) })
@@ -260,7 +267,8 @@ useRefreshOnReturn(() => load())
       :summaries="filterSummaries"
       :clearable="hasFilters"
       label="报表已应用筛选"
-      @open="filterOpen = true"
+      @open="openFilters()"
+      @edit="openFilters"
       @clear="clearFilters"
     />
 
@@ -412,10 +420,12 @@ useRefreshOnReturn(() => load())
     <FilterSheet
       id="report-filter"
       v-model:open="filterOpen"
-      title="报表筛选"
+      :title="filterTitle"
+      :apply-label="focusedFilter ? '确定' : '应用筛选'"
       @apply="applyFilters"
     >
       <FormField
+        v-if="showFilter('range')"
         field-id="report-range"
         label="日期范围"
         :error="rangeError"
@@ -438,34 +448,36 @@ useRefreshOnReturn(() => load())
         </template>
       </FormField>
       <div
-        v-if="draft.range === 'CUSTOM'"
+        v-if="showFilter('range') && draft.range === 'CUSTOM'"
         class="form-grid-two"
       >
         <FormField
           field-id="report-start-date"
           label="开始日期"
-          :error="rangeError"
         >
-          <input
+          <DateTimeControl
             id="report-start-date"
             v-model="draft.startDate"
+            :aria-describedby="rangeError ? 'report-range-error' : undefined"
+            :aria-invalid="Boolean(rangeError)"
             type="date"
-          >
+          />
         </FormField>
         <FormField
           field-id="report-end-date"
           label="结束日期"
-          :error="rangeError"
         >
-          <input
+          <DateTimeControl
             id="report-end-date"
             v-model="draft.endDate"
+            :aria-describedby="rangeError ? 'report-range-error' : undefined"
+            :aria-invalid="Boolean(rangeError)"
             type="date"
-          >
+          />
         </FormField>
       </div>
       <DictionaryFilterPicker
-        v-if="filterOpen"
+        v-if="showFilter('fundingChannelId')"
         id="report-funding"
         v-model="draft.fundingChannelId"
         type="funding-channel"
@@ -473,6 +485,7 @@ useRefreshOnReturn(() => load())
       />
       <template v-if="filterOpen && draft.scope === 'EXPENSE'">
         <DictionaryFilterPicker
+          v-if="showFilter('primaryCategoryId')"
           id="report-primary-category"
           :model-value="draft.primaryCategoryId"
           type="expense-category"
@@ -481,6 +494,7 @@ useRefreshOnReturn(() => load())
           @update:model-value="updatePrimaryCategory"
         />
         <DictionaryFilterPicker
+          v-if="showFilter('secondaryCategoryId')"
           id="report-secondary-category"
           v-model="draft.secondaryCategoryId"
           type="expense-category"
@@ -489,18 +503,21 @@ useRefreshOnReturn(() => load())
           :disabled="!draft.primaryCategoryId"
         />
         <DictionaryFilterPicker
+          v-if="showFilter('productId')"
           id="report-product"
           v-model="draft.productId"
           type="product"
           label="商品"
         />
         <DictionaryFilterPicker
+          v-if="showFilter('purchaseChannelId')"
           id="report-purchase"
           v-model="draft.purchaseChannelId"
           type="purchase-channel"
           label="购买渠道"
         />
         <DictionaryFilterPicker
+          v-if="showFilter('locationLabelId')"
           id="report-location"
           v-model="draft.locationLabelId"
           type="location"
@@ -509,18 +526,21 @@ useRefreshOnReturn(() => load())
       </template>
       <template v-if="filterOpen && draft.scope === 'INCOME'">
         <DictionaryFilterPicker
+          v-if="showFilter('incomeCategoryId')"
           id="report-income-category"
           v-model="draft.incomeCategoryId"
           type="income-category"
           label="收入分类"
         />
         <DictionaryFilterPicker
+          v-if="showFilter('payerId')"
           id="report-payer"
           v-model="draft.payerId"
           type="payer"
           label="付款方"
         />
         <FormField
+          v-if="showFilter('incomeName')"
           field-id="report-income-name"
           label="收入名称"
         >

@@ -15,13 +15,14 @@ import DictionaryFilterPicker from '../components/DictionaryFilterPicker.vue'
 import { useDictionaryFilterLabels } from '../composables/useDictionaryFilterLabels'
 import PageHeading from '../components/PageHeading.vue'
 import { hasFilterChanges } from '../domain/filterChanges'
-import AppliedFilterBar from '../components/AppliedFilterBar.vue'
+import AppliedFilterBar, { type AppliedFilterSummary } from '../components/AppliedFilterBar.vue'
 import AppDialog from '../components/AppDialog.vue'
 import AppDrawer from '../components/AppDrawer.vue'
 import AppStateBlock from '../components/AppStateBlock.vue'
 import AppToast from '../components/AppToast.vue'
 import DataExportAction from '../components/DataExportAction.vue'
 import FilterSheet from '../components/FilterSheet.vue'
+import DateTimeControl from '../components/DateTimeControl.vue'
 import ExpenseEntryForm from '../components/ExpenseEntryForm.vue'
 import ExpenseAdjustmentDetail from '../components/ExpenseAdjustmentDetail.vue'
 import ExpenseAdjustmentForm from '../components/ExpenseAdjustmentForm.vue'
@@ -56,6 +57,7 @@ const searchText = ref('')
 const filters = ref<LedgerFilters>({ query: '', type: 'ALL', lifecycle: 'ACTIVE', range: 'TODAY' })
 const draft = ref<LedgerFilters>({ ...filters.value })
 const filterOpen = ref(false)
+const focusedFilter = ref<'range' | 'type' | 'fundingChannelId'>()
 const rangeError = ref('')
 const contextItem = ref<LedgerItem>()
 const contextOpen = ref(false)
@@ -85,11 +87,22 @@ const hasFilters = computed(() => hasFilterChanges(filters.value, clearedLedgerF
 const parsed = computed(() => parseLedgerRoute(route.query, defaultRange.value))
 const drill = computed(() => parsed.value.drill)
 const filterName = useDictionaryFilterLabels(() => ({ fundingChannelId: filters.value.fundingChannelId }))
-const filterSummaries = computed(() => [
-  filters.value.range === 'CUSTOM' ? `${filters.value.startDate} 至 ${filters.value.endDate}` : optionLabel(ledgerRangeOptions, filters.value.range),
-  ...(filters.value.type === 'ALL' ? [] : [optionLabel(ledgerTypeOptions, filters.value.type)]),
-  ...(filters.value.fundingChannelId ? [filterName('fundingChannelId') ?? '指定资金渠道'] : []),
+const filterSummaries = computed<AppliedFilterSummary[]>(() => [
+  { key: 'range', label: '日期', value: filters.value.range === 'CUSTOM' ? `${filters.value.startDate} 至 ${filters.value.endDate}` : optionLabel(ledgerRangeOptions, filters.value.range) },
+  ...(filters.value.type === 'ALL' ? [] : [{ key: 'type', label: '类型', value: optionLabel(ledgerTypeOptions, filters.value.type) }]),
+  ...(filters.value.fundingChannelId ? [{ key: 'fundingChannelId', label: '资金渠道', value: filterName('fundingChannelId') ?? '指定选项' }] : []),
 ])
+const filterTitle = computed(() => focusedFilter.value
+  ? `修改${filterSummaries.value.find(item => item.key === focusedFilter.value)?.label ?? '筛选条件'}` : '筛选收支明细')
+function openFilters(key?: string): void {
+  focusedFilter.value = key as typeof focusedFilter.value
+  draft.value = { ...filters.value }
+  rangeError.value = ''
+  filterOpen.value = true
+}
+function showFilter(key: NonNullable<typeof focusedFilter.value>): boolean {
+  return filterOpen.value && (!focusedFilter.value || focusedFilter.value === key)
+}
 const currentScrollKey = computed(() => ledgerScrollKey(session.session?.accountId ?? '', route.fullPath))
 const exportRequest = computed(() => ({ scope: 'CURRENT_FILTERS' as const, ...filters.value }))
 
@@ -109,12 +122,6 @@ watch([() => route.fullPath, () => preferences.status], async () => {
   const saved = readLedgerScroll(currentScrollKey.value)
   await nextTick(() => { if (pageActive.value) globalThis.scrollTo({ top: saved ?? 0 }) })
 }, { immediate: true })
-
-watch(filterOpen, (open) => {
-  if (!open) return
-  draft.value = { ...filters.value }
-  rangeError.value = ''
-})
 
 function navigate(next: LedgerFilters): void {
   void router.replace({ query: ledgerRouteQuery(next, drill.value) })
@@ -375,7 +382,8 @@ useRefreshOnReturn(() => list.refresh())
     <AppliedFilterBar
       :summaries="filterSummaries"
       :clearable="hasFilters"
-      @open="filterOpen = true"
+      @open="openFilters()"
+      @edit="openFilters"
       @clear="clearFilters"
     />
 
@@ -442,11 +450,13 @@ useRefreshOnReturn(() => list.refresh())
     <FilterSheet
       id="ledger-filter"
       v-model:open="filterOpen"
-      title="筛选收支明细"
+      :title="filterTitle"
+      :apply-label="focusedFilter ? '确定' : '应用筛选'"
       @apply="applyFilters"
     >
-      <div class="form-grid-two entry-short-fields">
+      <div :class="focusedFilter ? undefined : 'form-grid-two entry-short-fields'">
         <FormField
+          v-if="showFilter('range')"
           field-id="ledger-range"
           label="日期范围"
           :error="rangeError"
@@ -466,6 +476,7 @@ useRefreshOnReturn(() => list.refresh())
           </select>
         </FormField>
         <FormField
+          v-if="showFilter('type')"
           field-id="ledger-filter-type"
           label="账目类型"
         >
@@ -484,32 +495,36 @@ useRefreshOnReturn(() => list.refresh())
         </FormField>
       </div>
       <div
-        v-if="draft.range === 'CUSTOM'"
+        v-if="showFilter('range') && draft.range === 'CUSTOM'"
         class="custom-date-range"
       >
         <FormField
           field-id="ledger-start-date"
           label="开始日期"
         >
-          <input
+          <DateTimeControl
             id="ledger-start-date"
             v-model="draft.startDate"
+            :aria-describedby="rangeError ? 'ledger-range-error' : undefined"
+            :aria-invalid="Boolean(rangeError)"
             type="date"
-          >
+          />
         </FormField>
         <FormField
           field-id="ledger-end-date"
           label="结束日期"
         >
-          <input
+          <DateTimeControl
             id="ledger-end-date"
             v-model="draft.endDate"
+            :aria-describedby="rangeError ? 'ledger-range-error' : undefined"
+            :aria-invalid="Boolean(rangeError)"
             type="date"
-          >
+          />
         </FormField>
       </div>
       <DictionaryFilterPicker
-        v-if="filterOpen"
+        v-if="showFilter('fundingChannelId')"
         id="ledger-funding"
         v-model="draft.fundingChannelId"
         type="funding-channel"

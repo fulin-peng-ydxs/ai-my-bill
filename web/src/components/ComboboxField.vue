@@ -9,6 +9,8 @@ const props = defineProps<{
   id: string, label: string, value: string, open: boolean,
   disabled?: boolean, invalid?: boolean, placeholder: string,
   displayValue?: string,
+  searchLabel?: string,
+  maxLength?: number,
 }>()
 const emit = defineEmits<{
   open: [searching: boolean], close: [], input: [value: string], submit: [],
@@ -142,6 +144,7 @@ watch(() => props.disabled, (disabled) => { if (disabled) close(false) })
     :value="value"
     :disabled="disabled"
     :placeholder="placeholder"
+    :maxlength="maxLength"
     autocomplete="off"
     enterkeyhint="search"
     role="combobox"
@@ -172,7 +175,7 @@ watch(() => props.disabled, (disabled) => { if (disabled) close(false) })
       <Search
         :size="16"
         aria-hidden="true"
-      /> 搜索或新增
+      /> {{ searchLabel ?? '搜索或新增' }}
     </button>
     <div
       v-if="mobile"
@@ -188,6 +191,7 @@ watch(() => props.disabled, (disabled) => { if (disabled) close(false) })
         :aria-controls="`${id}-options`"
         :disabled="disabled"
         :placeholder="placeholder"
+        :maxlength="maxLength"
         autocomplete="off"
         enterkeyhint="search"
         @input="emit('input', ($event.target as HTMLInputElement).value)"

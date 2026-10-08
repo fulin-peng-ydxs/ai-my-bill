@@ -86,7 +86,7 @@ async function remove(item: DailyTemplateSummary): Promise<void> {
 <template>
   <button
     type="button"
-    class="text-action daily-entry-trigger"
+    class="compact-action"
     @click="open = true"
   >
     {{ entryType === 'EXPENSE' ? '日常支出' : '日常收入' }}

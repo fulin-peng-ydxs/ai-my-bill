@@ -425,198 +425,200 @@ useRefreshOnReturn(() => loadOptions())
     </section>
 
     <form
-      class="entry-form-surface task-entry-form"
+      class="entry-form task-entry-form"
       @submit.prevent="submit(false)"
     >
-      <FormSection
-        title="买了什么"
-        :icon="ShoppingBag"
-      >
-        <ProductCombobox
-          ref="productCombobox"
-          :model-value="form.productId"
-          :model-name="form.productName"
-          :disabled="submitting"
-          :error="errors.productId"
-          @select="selectProduct"
-          @clear="clearProduct"
-        />
-        <div class="form-grid-two entry-short-fields">
-          <DictionaryCombobox
-            input-id="expense-primary-category"
-            type="expense-category"
-            label="一级分类"
-            :items="rootCategories"
-            :model-value="form.primaryCategoryId"
-            :disabled="submitting || optionsLoading"
-            :error="errors.primaryCategoryId"
-            @select="selectCategory($event, 'primary')"
-            @clear="updatePrimaryCategory('')"
-          />
-          <DictionaryCombobox
-            input-id="expense-secondary-category"
-            type="expense-category"
-            label="二级分类"
-            optional
-            :items="secondaryCategories"
-            :model-value="form.secondaryCategoryId"
-            :parent-id="form.primaryCategoryId"
-            :disabled="submitting || optionsLoading || !form.primaryCategoryId"
-            :error="errors.secondaryCategoryId"
-            @select="selectCategory($event, 'secondary')"
-            @clear="form.secondaryCategoryId = ''; clearError('secondaryCategoryId'); persist()"
-          />
-        </div>
-      </FormSection>
-
-      <FormSection
-        title="花了多少"
-        :icon="ReceiptText"
-      >
-        <div class="entry-amount-fields">
-          <FormField
-            field-id="expense-unit-price"
-            label="单位价格"
-            :error="errors.unitPrice"
-          >
-            <template #default="{ describedBy }">
-              <input
-                id="expense-unit-price"
-                v-model="form.unitPrice"
-                inputmode="decimal"
-                :aria-describedby="describedBy"
-                :disabled="submitting"
-                @input="amountChanged"
-              >
-            </template>
-          </FormField>
-          <FormField
-            field-id="expense-quantity"
-            label="数量"
-            :error="errors.quantity"
-          >
-            <template #default="{ describedBy }">
-              <input
-                id="expense-quantity"
-                v-model="form.quantity"
-                inputmode="decimal"
-                :aria-describedby="describedBy"
-                :disabled="submitting"
-                @input="amountChanged"
-              >
-            </template>
-          </FormField>
-          <DictionaryCombobox
-            input-id="expense-unit"
-            type="unit"
-            label="单位"
-            :items="optionItems.units"
-            :model-value="form.unitId"
+      <div class="entry-form-surface">
+        <FormSection
+          title="买了什么"
+          :icon="ShoppingBag"
+        >
+          <ProductCombobox
+            ref="productCombobox"
+            :model-value="form.productId"
+            :model-name="form.productName"
             :disabled="submitting"
-            :error="errors.unitId"
-            @select="ensureOption('units', $event.id, $event.name); form.unitId = $event.id; clearError('unitId'); persist()"
-            @clear="form.unitId = ''; clearError('unitId'); persist()"
+            :error="errors.productId"
+            @select="selectProduct"
+            @clear="clearProduct"
           />
-        </div>
-        <FormField
-          field-id="expense-paid-amount"
-          class="entry-total-field money-expense"
-          label="实付金额（¥）"
-          :help="differenceText"
-          :error="errors.paidAmount || errors.calculatedAmount"
+          <div class="form-grid-two entry-short-fields">
+            <DictionaryCombobox
+              input-id="expense-primary-category"
+              type="expense-category"
+              label="一级分类"
+              :items="rootCategories"
+              :model-value="form.primaryCategoryId"
+              :disabled="submitting || optionsLoading"
+              :error="errors.primaryCategoryId"
+              @select="selectCategory($event, 'primary')"
+              @clear="updatePrimaryCategory('')"
+            />
+            <DictionaryCombobox
+              input-id="expense-secondary-category"
+              type="expense-category"
+              label="二级分类"
+              optional
+              :items="secondaryCategories"
+              :model-value="form.secondaryCategoryId"
+              :parent-id="form.primaryCategoryId"
+              :disabled="submitting || optionsLoading || !form.primaryCategoryId"
+              :error="errors.secondaryCategoryId"
+              @select="selectCategory($event, 'secondary')"
+              @clear="form.secondaryCategoryId = ''; clearError('secondaryCategoryId'); persist()"
+            />
+          </div>
+        </FormSection>
+
+        <FormSection
+          title="花了多少"
+          :icon="ReceiptText"
         >
-          <template #default="{ describedBy }">
-            <input
-              id="expense-paid-amount"
-              v-model="form.paidAmount"
-              inputmode="decimal"
-              :aria-describedby="describedBy"
-              :disabled="submitting"
-              @input="paidChanged"
+          <div class="entry-amount-fields">
+            <FormField
+              field-id="expense-unit-price"
+              label="单位价格"
+              :error="errors.unitPrice"
             >
-          </template>
-        </FormField>
-        <p class="entry-calculation">
-          计算金额 {{ formatCny(calculatedAmount) }}
-        </p>
-      </FormSection>
-
-      <FormSection
-        title="如何付款"
-        :icon="WalletCards"
-      >
-        <FundingChannelPicker
-          class="entry-setting-field"
-          :items="optionItems.funding"
-          :loading="optionsLoading"
-          :model-value="form.fundingChannelId"
-          :disabled="submitting"
-          :error="errors.fundingChannelId"
-          @selected="ensureOption('funding', $event.id, $event.name)"
-          @update:model-value="form.fundingChannelId = $event; clearError('fundingChannelId'); persist()"
-        />
-
-        <FormField
-          field-id="expense-occurred-at"
-          class="entry-setting-field"
-          label="消费时间"
-          :error="errors.occurredAt"
-        >
-          <template #default="{ describedBy }">
-            <DateTimeControl
-              id="expense-occurred-at"
-              v-model="form.occurredAt"
-              :aria-describedby="describedBy"
+              <template #default="{ describedBy }">
+                <input
+                  id="expense-unit-price"
+                  v-model="form.unitPrice"
+                  inputmode="decimal"
+                  :aria-describedby="describedBy"
+                  :disabled="submitting"
+                  @input="amountChanged"
+                >
+              </template>
+            </FormField>
+            <FormField
+              field-id="expense-quantity"
+              label="数量"
+              :error="errors.quantity"
+            >
+              <template #default="{ describedBy }">
+                <input
+                  id="expense-quantity"
+                  v-model="form.quantity"
+                  inputmode="decimal"
+                  :aria-describedby="describedBy"
+                  :disabled="submitting"
+                  @input="amountChanged"
+                >
+              </template>
+            </FormField>
+            <DictionaryCombobox
+              input-id="expense-unit"
+              type="unit"
+              label="单位"
+              :items="optionItems.units"
+              :model-value="form.unitId"
               :disabled="submitting"
-              @change="clearError('occurredAt'); persist()"
+              :error="errors.unitId"
+              @select="ensureOption('units', $event.id, $event.name); form.unitId = $event.id; clearError('unitId'); persist()"
+              @clear="form.unitId = ''; clearError('unitId'); persist()"
             />
-          </template>
-        </FormField>
-      </FormSection>
+          </div>
+          <FormField
+            field-id="expense-paid-amount"
+            class="entry-total-field money-expense"
+            label="实付金额（¥）"
+            :help="differenceText"
+            :error="errors.paidAmount || errors.calculatedAmount"
+          >
+            <template #default="{ describedBy }">
+              <input
+                id="expense-paid-amount"
+                v-model="form.paidAmount"
+                inputmode="decimal"
+                :aria-describedby="describedBy"
+                :disabled="submitting"
+                @input="paidChanged"
+              >
+            </template>
+          </FormField>
+          <p class="entry-calculation">
+            计算金额 {{ formatCny(calculatedAmount) }}
+          </p>
+        </FormSection>
 
-      <FormDisclosure
-        :icon="NotebookPen"
-        title="补充信息"
-        :summary="supplementSummary"
-        :invalid="Boolean(errors.purchaseChannelId || errors.locationLabelId || errors.note)"
-      >
-        <DictionaryPicker
-          type="purchase-channel"
-          input-id="expense-purchase-channel"
-          label="购买渠道"
-          optional
-          :items="optionItems.purchase"
-          :model-value="form.purchaseChannelId"
-          :disabled="submitting"
-          :error="errors.purchaseChannelId"
-          @selected="ensureOption('purchase', $event.id, $event.name)"
-          @update:model-value="form.purchaseChannelId = $event; clearError('purchaseChannelId'); persist()"
-        />
-        <LocationLabelPicker
-          :items="optionItems.locations"
-          :model-value="form.locationLabelId"
-          :disabled="submitting"
-          :error="errors.locationLabelId"
-          @selected="ensureOption('locations', $event.id, $event.name)"
-          @update:model-value="form.locationLabelId = $event; clearError('locationLabelId'); persist()"
-        />
-        <FormField
-          field-id="expense-note"
-          label="备注（选填）"
-          help="最多 500 个字符。"
-          :error="errors.note"
+        <FormSection
+          title="如何付款"
+          :icon="WalletCards"
         >
-          <template #default="{ describedBy }">
-            <textarea
-              id="expense-note"
-              v-model="form.note"
-              :aria-describedby="describedBy"
-              :disabled="submitting"
-              @input="clearError('note'); persist()"
-            />
-          </template>
-        </FormField>
-      </FormDisclosure>
+          <FundingChannelPicker
+            class="entry-setting-field"
+            :items="optionItems.funding"
+            :loading="optionsLoading"
+            :model-value="form.fundingChannelId"
+            :disabled="submitting"
+            :error="errors.fundingChannelId"
+            @selected="ensureOption('funding', $event.id, $event.name)"
+            @update:model-value="form.fundingChannelId = $event; clearError('fundingChannelId'); persist()"
+          />
+
+          <FormField
+            field-id="expense-occurred-at"
+            class="entry-setting-field"
+            label="消费时间"
+            :error="errors.occurredAt"
+          >
+            <template #default="{ describedBy }">
+              <DateTimeControl
+                id="expense-occurred-at"
+                v-model="form.occurredAt"
+                :aria-describedby="describedBy"
+                :disabled="submitting"
+                @change="clearError('occurredAt'); persist()"
+              />
+            </template>
+          </FormField>
+        </FormSection>
+
+        <FormDisclosure
+          :icon="NotebookPen"
+          title="补充信息"
+          :summary="supplementSummary"
+          :invalid="Boolean(errors.purchaseChannelId || errors.locationLabelId || errors.note)"
+        >
+          <DictionaryPicker
+            type="purchase-channel"
+            input-id="expense-purchase-channel"
+            label="购买渠道"
+            optional
+            :items="optionItems.purchase"
+            :model-value="form.purchaseChannelId"
+            :disabled="submitting"
+            :error="errors.purchaseChannelId"
+            @selected="ensureOption('purchase', $event.id, $event.name)"
+            @update:model-value="form.purchaseChannelId = $event; clearError('purchaseChannelId'); persist()"
+          />
+          <LocationLabelPicker
+            :items="optionItems.locations"
+            :model-value="form.locationLabelId"
+            :disabled="submitting"
+            :error="errors.locationLabelId"
+            @selected="ensureOption('locations', $event.id, $event.name)"
+            @update:model-value="form.locationLabelId = $event; clearError('locationLabelId'); persist()"
+          />
+          <FormField
+            field-id="expense-note"
+            label="备注（选填）"
+            help="最多 500 个字符。"
+            :error="errors.note"
+          >
+            <template #default="{ describedBy }">
+              <textarea
+                id="expense-note"
+                v-model="form.note"
+                :aria-describedby="describedBy"
+                :disabled="submitting"
+                @input="clearError('note'); persist()"
+              />
+            </template>
+          </FormField>
+        </FormDisclosure>
+      </div>
 
       <EntrySaveBar
         :submitting="submitting"

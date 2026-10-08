@@ -3,6 +3,7 @@ import { X } from 'lucide-vue-next'
 import { computed } from 'vue'
 
 import { useDialogController } from '../composables/useDialogController'
+import { useKeyboardViewport } from '../composables/useKeyboardViewport'
 
 const props = defineProps<{
   id: string
@@ -15,6 +16,7 @@ const emit = defineEmits<{
   'update:open': [value: boolean]
 }>()
 const isOpen = computed(() => props.open)
+const { visibleHeight, bottomInset } = useKeyboardViewport()
 const { dialog, handleCancel, handleClose } = useDialogController(isOpen, (value) => { if (!props.busy) emit('update:open', value) })
 </script>
 
@@ -23,6 +25,7 @@ const { dialog, handleCancel, handleClose } = useDialogController(isOpen, (value
     :id="id"
     ref="dialog"
     class="app-drawer"
+    :style="visibleHeight ? { '--drawer-viewport-height': `${visibleHeight}px`, '--drawer-viewport-bottom': `${bottomInset}px` } : undefined"
     :aria-labelledby="`${id}-title`"
     :aria-describedby="description ? `${id}-description` : undefined"
     @cancel="handleCancel"

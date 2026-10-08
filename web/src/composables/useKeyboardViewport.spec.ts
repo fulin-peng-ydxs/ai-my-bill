@@ -10,7 +10,7 @@ import { useKeyboardViewport } from './useKeyboardViewport'
 
 function environment() {
   class Input { type = 'text'; readOnly = false }
-  const viewport = Object.assign(new EventTarget(), { height: 844, scale: 1 })
+  const viewport = Object.assign(new EventTarget(), { height: 844, offsetTop: 0, scale: 1 })
   const frames: Array<() => void> = []
   const window = Object.assign(new EventTarget(), {
     innerHeight: 844, visualViewport: viewport,
@@ -35,6 +35,21 @@ afterEach(() => {
 })
 
 describe('shared keyboard viewport', () => {
+  it('reserves the actual input-toolbar space without confusing it with a full keyboard or zoom', () => {
+    const env = environment()
+    const state = useKeyboardViewport()
+    env.resize(790)
+    expect(state.keyboardOpen.value).toBe(false)
+    expect(state.visibleHeight.value).toBe(790)
+    expect(state.bottomInset.value).toBe(54)
+    env.viewport.offsetTop = 20
+    env.resize(500)
+    expect(state.bottomInset.value).toBe(324)
+    env.resize(300, 2)
+    expect(state.visibleHeight.value).toBe(500)
+    expect(state.bottomInset.value).toBe(324)
+  })
+
   it('observes keyboard dismissal even if iOS keeps the search input focused', () => {
     const env = environment()
     const { keyboardOpen } = useKeyboardViewport()
@@ -66,13 +81,13 @@ describe('shared keyboard viewport', () => {
     const shell = useKeyboardViewport()
     const field = useKeyboardViewport()
     expect(shell.keyboardOpen).toBe(field.keyboardOpen)
-    expect(subscribe).toHaveBeenCalledOnce()
+    expect(subscribe).toHaveBeenCalledTimes(2)
     cleanups.shift()!()
     expect(unsubscribe).not.toHaveBeenCalled()
     env.resize(500)
     expect(field.keyboardOpen.value).toBe(true)
     cleanups.shift()!()
-    expect(unsubscribe).toHaveBeenCalledOnce()
+    expect(unsubscribe).toHaveBeenCalledTimes(2)
     expect(field.keyboardOpen.value).toBe(false)
   })
 })

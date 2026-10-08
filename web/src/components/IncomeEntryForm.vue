@@ -261,136 +261,139 @@ useRefreshOnReturn(() => loadOptions())
       </div>
     </section>
     <form
-      class="entry-form-surface task-entry-form"
+      class="entry-form task-entry-form"
       @submit.prevent="submit(false)"
     >
-      <FormSection
-        title="收到什么"
-        :icon="HandCoins"
-      >
-        <FormField
-          field-id="income-name"
-          label="收入名称"
-          :error="errors.incomeName"
+      <div class="entry-form-surface">
+        <FormSection
+          title="收到什么"
+          :icon="HandCoins"
         >
-          <template #default="{ describedBy }">
-            <input
-              id="income-name"
-              v-model="form.incomeName"
-              list="recent-income-names"
-              :aria-describedby="describedBy"
-              :disabled="submitting"
-              @input="clear('incomeName')"
-            ><datalist id="recent-income-names">
-              <option
-                v-for="name in recentNames"
-                :key="name"
-                :value="name"
-              />
-            </datalist>
-          </template>
-        </FormField>
-        <DictionaryCombobox
-          input-id="income-payer-name"
-          type="payer"
-          label="付款方"
-          :items="payers"
-          :model-value="form.payerId"
-          :disabled="submitting"
-          :error="errors.payerId"
-          @select="selectPayer"
-          @clear="form.payerId = ''; form.payerName = ''; clear('payerId')"
-        />
-        <DictionaryPicker
-          type="income-category"
-          input-id="income-category"
-          label="收入分类"
-          :items="categories"
-          :model-value="form.incomeCategoryId"
-          :disabled="submitting"
-          :error="errors.incomeCategoryId"
-          @selected="selectIncomeCategory"
-          @update:model-value="form.incomeCategoryId = $event; clear('incomeCategoryId')"
-        />
-      </FormSection>
-      <FormSection
-        title="收到多少"
-        :icon="Banknote"
-      >
-        <FormField
-          field-id="income-amount"
-          class="entry-total-field money-income"
-          label="收入金额（¥）"
-          :error="errors.amount"
+          <FormField
+            field-id="income-name"
+            label="收入名称"
+            :error="errors.incomeName"
+          >
+            <template #default="{ describedBy }">
+              <input
+                id="income-name"
+                v-model="form.incomeName"
+                list="recent-income-names"
+                :aria-describedby="describedBy"
+                :disabled="submitting"
+                @input="clear('incomeName')"
+              ><datalist id="recent-income-names">
+                <option
+                  v-for="name in recentNames"
+                  :key="name"
+                  :value="name"
+                />
+              </datalist>
+            </template>
+          </FormField>
+          <DictionaryCombobox
+            input-id="income-payer-name"
+            type="payer"
+            label="付款方"
+            :items="payers"
+            :model-value="form.payerId"
+            :disabled="submitting"
+            :error="errors.payerId"
+            @select="selectPayer"
+            @clear="form.payerId = ''; form.payerName = ''; clear('payerId')"
+          />
+          <DictionaryPicker
+            type="income-category"
+            input-id="income-category"
+            label="收入分类"
+            :items="categories"
+            :model-value="form.incomeCategoryId"
+            :disabled="submitting"
+            :error="errors.incomeCategoryId"
+            @selected="selectIncomeCategory"
+            @update:model-value="form.incomeCategoryId = $event; clear('incomeCategoryId')"
+          />
+        </FormSection>
+        <FormSection
+          title="收到多少"
+          :icon="Banknote"
         >
-          <template #default="{ describedBy }">
-            <input
-              id="income-amount"
-              v-model="form.amount"
-              inputmode="decimal"
-              :aria-describedby="describedBy"
-              :disabled="submitting"
-              @input="clear('amount')"
-            >
-          </template>
-        </FormField>
-      </FormSection>
-      <FormSection
-        title="如何收款"
-        :icon="WalletCards"
-      >
-        <FundingChannelPicker
-          class="entry-setting-field"
-          label="收款方式"
-          :items="funding"
-          :loading="loading"
-          :model-value="form.fundingChannelId"
-          :disabled="submitting"
-          :error="errors.fundingChannelId"
-          @selected="selectFundingItem"
-          @update:model-value="form.fundingChannelId = $event; clear('fundingChannelId')"
-        />
+          <FormField
+            field-id="income-amount"
+            class="entry-total-field money-income"
+            label="收入金额（¥）"
+            :error="errors.amount"
+          >
+            <template #default="{ describedBy }">
+              <input
+                id="income-amount"
+                v-model="form.amount"
+                inputmode="decimal"
+                :aria-describedby="describedBy"
+                :disabled="submitting"
+                @input="clear('amount')"
+              >
+            </template>
+          </FormField>
+        </FormSection>
+        <FormSection
+          title="如何收款"
+          :icon="WalletCards"
+        >
+          <FundingChannelPicker
+            class="entry-setting-field"
+            label="收款方式"
+            :items="funding"
+            :loading="loading"
+            :model-value="form.fundingChannelId"
+            :disabled="submitting"
+            :error="errors.fundingChannelId"
+            @selected="selectFundingItem"
+            @update:model-value="form.fundingChannelId = $event; clear('fundingChannelId')"
+          />
 
-        <FormField
-          field-id="income-occurred-at"
-          class="entry-setting-field"
-          label="收入时间"
-          :error="errors.occurredAt"
+          <FormField
+            field-id="income-occurred-at"
+            class="entry-setting-field"
+            label="收入时间"
+            :error="errors.occurredAt"
+          >
+            <template #default="{ describedBy }">
+              <DateTimeControl
+                id="income-occurred-at"
+                v-model="form.occurredAt"
+                :aria-describedby="describedBy"
+                :disabled="submitting"
+                @change="clear('occurredAt')"
+              />
+            </template>
+          </FormField>
+        </FormSection>
+        <FormDisclosure
+          :icon="NotebookPen"
+          title="补充信息"
+          :summary="form.note.trim() || '备注（选填）'"
+          :invalid="Boolean(errors.note)"
         >
-          <template #default="{ describedBy }">
-            <DateTimeControl
-              id="income-occurred-at"
-              v-model="form.occurredAt"
-              :aria-describedby="describedBy"
-              :disabled="submitting"
-              @change="clear('occurredAt')"
-            />
-          </template>
-        </FormField>
-      </FormSection>
-      <FormDisclosure
-        :icon="NotebookPen"
-        title="补充信息"
-        :summary="form.note.trim() || '备注（选填）'"
-        :invalid="Boolean(errors.note)"
-      >
-        <FormField
-          field-id="income-note"
-          label="备注（选填）"
-          help="最多 500 个字符。"
-          :error="errors.note"
-        >
-          <template #default="{ describedBy }">
-            <textarea
-              id="income-note"
-              v-model="form.note"
-              :aria-describedby="describedBy"
-              :disabled="submitting"
-              @input="clear('note')"
-            />
-          </template>
-        </FormField>
-      </FormDisclosure>
+          <FormField
+            field-id="income-note"
+            label="备注（选填）"
+            help="最多 500 个字符。"
+            :error="errors.note"
+          >
+            <template #default="{ describedBy }">
+              <textarea
+                id="income-note"
+                v-model="form.note"
+                :aria-describedby="describedBy"
+                :disabled="submitting"
+                @input="clear('note')"
+              />
+            </template>
+          </FormField>
+        </FormDisclosure>
+      </div>
+
       <EntrySaveBar
         :submitting="submitting"
         :viewport-pinned="!editMode"

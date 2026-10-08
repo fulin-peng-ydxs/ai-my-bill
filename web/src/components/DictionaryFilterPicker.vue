@@ -2,11 +2,10 @@
 import { computed, ref, watch } from 'vue'
 
 import { getDictionaryItem, listDictionaryItems, type DictionaryItem, type DictionaryPage } from '../api/dictionaries'
+import { useDebouncedQuery } from '../composables/useDebouncedQuery'
 import { useLatestRequest } from '../composables/useLatestRequest'
 import type { DictionaryType } from '../domain/dictionaries'
-import AppStateBlock from './AppStateBlock.vue'
-import FormField from './FormField.vue'
-import GlobalLedgerSearch from './GlobalLedgerSearch.vue'
+import ComboboxField from './ComboboxField.vue'
 
 const props = defineProps<{
   id: string
@@ -20,25 +19,39 @@ const props = defineProps<{
 const emit = defineEmits<{ 'update:modelValue': [value: string | undefined] }>()
 const query = ref('')
 const page = ref(0)
+const open = ref(false)
+const searching = ref(false)
 const request = useLatestRequest<DictionaryPage>()
 const selected = useLatestRequest<DictionaryItem>()
-const items = computed(() => {
-  const current = request.data.value?.items ?? []
-  const chosen = selected.data.value
-  return chosen && chosen.id === props.modelValue && !current.some((item) => item.id === chosen.id) ? [chosen, ...current] : current
-})
+const chosen = computed(() => selected.data.value?.id === props.modelValue ? selected.data.value : undefined)
+const displayValue = computed(() => chosen.value?.name ?? (props.modelValue ? '已选项名称待加载' : '不限'))
+const items = computed(() => request.data.value?.items ?? [])
 const pageCount = computed(() => Math.max(1, Math.ceil((request.data.value?.total ?? 0) / 20)))
 
 function load(): void {
-  if (props.disabled) { request.cancel(); return }
-  void request.execute((signal) => listDictionaryItems(props.type, query.value, '', signal, page.value, 20,
+  if (props.disabled || !open.value) { request.cancel(); return }
+  void request.execute((signal) => listDictionaryItems(props.type, query.value.trim(), '', signal, page.value, 20,
     { parentId: props.parentId, rootsOnly: props.rootsOnly }))
 }
-function search(value: string): void { query.value = value; page.value = 0; load() }
+const debounced = useDebouncedQuery(() => { page.value = 0; load() })
+function start(search: boolean): void {
+  if (!open.value) { query.value = ''; page.value = 0 }
+  searching.value = search
+  open.value = true
+  load()
+}
+function change(value: string): void { query.value = value; debounced.schedule(value) }
 function turnPage(next: number): void { page.value = next; load() }
+function close(): void { open.value = false; searching.value = false; debounced.cancel(); request.cancel() }
+function select(item?: DictionaryItem): void {
+  // 搜索与分页只是候选浏览；明确点选后才更改筛选草稿，取消保留原 ID。
+  close()
+  query.value = ''
+  emit('update:modelValue', item?.id)
+}
 watch(() => [props.type, props.parentId, props.rootsOnly, props.disabled], () => {
-  query.value = ''; page.value = 0; load()
-}, { immediate: true })
+  close(); query.value = ''; page.value = 0
+})
 watch(() => [props.type, props.modelValue], () => {
   if (props.modelValue) void selected.execute((signal) => getDictionaryItem(props.type, props.modelValue!, signal))
   else selected.cancel()
@@ -46,72 +59,84 @@ watch(() => [props.type, props.modelValue], () => {
 </script>
 
 <template>
-  <div class="dictionary-filter-picker">
-    <FormField
-      :field-id="id"
+  <div class="entry-combobox dictionary-filter-picker">
+    <ComboboxField
+      :id="id"
       :label="label"
-      help="可搜索或翻页；停用项仍可用于查询历史账目。"
+      :value="open && searching ? query : displayValue"
+      :display-value="displayValue"
+      :disabled="disabled"
+      :placeholder="`搜索${label}`"
+      search-label="搜索选项"
+      :max-length="64"
+      :open="open"
+      @open="start"
+      @input="change"
+      @submit="debounced.submit(query)"
+      @close="close"
     >
-      <select
-        :id="id"
-        :value="modelValue ?? ''"
-        :disabled="disabled"
-        @change="emit('update:modelValue', ($event.target as HTMLSelectElement).value || undefined)"
+      <ul
+        class="product-options"
+        role="listbox"
+        :aria-label="label"
       >
-        <option value="">
-          全部{{ label }}（不限）
-        </option>
-        <option
-          v-if="modelValue && !items.some(item => item.id === modelValue)"
-          :value="modelValue"
-        >
-          已选{{ label }}（名称待加载）
-        </option>
-        <option
-          v-for="item in items"
-          :key="item.id"
-          :value="item.id"
-        >
-          {{ item.name }}{{ item.status === 'INACTIVE' ? '（已停用）' : '' }}
-        </option>
-      </select>
-    </FormField>
-    <template v-if="!disabled">
-      <GlobalLedgerSearch
-        :id="`${id}-search`"
-        v-model="query"
-        :label="`搜索${label}`"
-        :placeholder="`搜索${label}`"
-        :max-length="64"
-        @search="search"
-      />
-      <AppStateBlock
+        <li>
+          <button
+            type="button"
+            role="option"
+            :aria-selected="!modelValue"
+            @click="select()"
+          >
+            <strong>不限{{ label }}</strong>
+          </button>
+        </li>
+        <template v-if="request.status.value !== 'loading' && !request.error.value">
+          <li
+            v-for="item in items"
+            :key="item.id"
+          >
+            <button
+              type="button"
+              role="option"
+              :aria-selected="modelValue === item.id"
+              @click="select(item)"
+            >
+              <strong>{{ item.name }}</strong><span v-if="item.status === 'INACTIVE'">已停用</span>
+            </button>
+          </li>
+        </template>
+      </ul>
+      <small
         v-if="request.status.value === 'loading'"
-        kind="loading"
-        :title="`正在加载${label}`"
-      />
-      <AppStateBlock
+        class="dropdown-status"
+      >正在查询…</small>
+      <small
         v-else-if="request.error.value"
-        :kind="request.error.value.kind === 'forbidden' ? 'permission' : 'error'"
-        :title="`${label}加载失败`"
-        :message="request.error.value.message"
-        :action-label="request.error.value.kind === 'forbidden' ? undefined : '重试'"
-        @action="load"
-      />
+        class="dropdown-status field-error"
+        role="alert"
+      >
+        {{ request.error.value.message }}
+        <button
+          v-if="request.error.value.kind !== 'forbidden'"
+          type="button"
+          class="inline-action"
+          @click="load"
+        >重试</button>
+      </small>
       <p
         v-else-if="request.data.value?.total === 0"
-        class="caption"
+        class="dropdown-status"
       >
-        没有匹配选项，可清空搜索重试。
+        没有匹配选项
       </p>
       <div
-        v-if="pageCount > 1"
+        v-if="pageCount > 1 && !request.error.value"
         class="dictionary-filter-pagination"
         :aria-label="`${label}分页`"
       >
         <button
           type="button"
-          class="secondary-button"
+          class="text-action"
           :disabled="page === 0 || request.status.value === 'loading'"
           @click="turnPage(page - 1)"
         >
@@ -120,20 +145,22 @@ watch(() => [props.type, props.modelValue], () => {
         <span>{{ page + 1 }} / {{ pageCount }}</span>
         <button
           type="button"
-          class="secondary-button"
+          class="text-action"
           :disabled="page + 1 >= pageCount || request.status.value === 'loading'"
           @click="turnPage(page + 1)"
         >
           下一页
         </button>
       </div>
-      <p
-        v-if="selected.error.value"
-        class="field-error"
-        role="alert"
-      >
-        已选项名称暂不可用，筛选值已保留。
-      </p>
-    </template>
+    </ComboboxField>
+    <small
+      v-if="disabled"
+      class="caption"
+    >先选择一级分类</small>
+    <small
+      v-if="selected.error.value && modelValue"
+      class="field-error"
+      role="alert"
+    >已选项名称暂不可用，筛选值已保留。</small>
   </div>
 </template>

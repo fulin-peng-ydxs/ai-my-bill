@@ -55,7 +55,7 @@ function clearTemplate(type: EntryType): void {
     <PageHeading title="记一笔">
       <button
         type="button"
-        class="text-action"
+        class="compact-action"
         aria-label="管理常用选项"
         @click="dictionariesOpen = true"
       >

@@ -18,18 +18,22 @@ function place(): void {
   const rect = props.anchor.getBoundingClientRect()
   const viewport = globalThis.window.visualViewport
   const leftEdge = viewport?.offsetLeft ?? 0
-  const topEdge = viewport?.offsetTop ?? 0
+  const viewportTop = viewport?.offsetTop ?? 0
+  const body = props.anchor.closest('.overlay-body')?.getBoundingClientRect()
+  const topEdge = Math.max(viewportTop, body?.top ?? viewportTop)
   const width = viewport?.width ?? globalThis.window.innerWidth
   const height = viewport?.height ?? globalThis.window.innerHeight
-  if (rect.bottom <= topEdge || rect.top >= topEdge + height) {
+  const bottomEdge = Math.min(viewportTop + height, body?.bottom ?? viewportTop + height)
+  if (rect.bottom <= topEdge || rect.top >= bottomEdge) {
     emit('close', false)
     return
   }
   const savebar = props.anchor.closest('form')?.querySelector('.entry-savebar')
   const sticky = savebar && globalThis.getComputedStyle(savebar).position === 'sticky'
+  const actions = sticky ? savebar : props.anchor.closest('dialog')?.querySelector('.overlay-actions')
   const layout = dropdownLayout(rect, { left: leftEdge, top: topEdge, right: leftEdge + width,
-    bottom: topEdge + height, width }, panel.value?.scrollHeight ?? 320,
-  globalThis.window.matchMedia('(max-width: 735px)').matches, sticky ? savebar.getBoundingClientRect() : undefined)
+    bottom: bottomEdge, width }, panel.value?.scrollHeight ?? 320,
+  globalThis.window.matchMedia('(max-width: 735px)').matches, actions?.getBoundingClientRect())
   const parent = props.anchor.closest('dialog') ?? props.anchor.closest('.entry-combobox')
   const parentRect = parent?.getBoundingClientRect()
   position.value = {
