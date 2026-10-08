@@ -1,6 +1,6 @@
 # 项目验收与后续页面验证记录
 
-本文保存 T29 内网验收及其后页面改动的验证证据；各部分按自己的日期、版本、环境和未覆盖范围读取。T1–T28 的业务需求、自动化测试与需求编号证据沿用 [部署前验收报告](pre-release-test-report.md)。复测操作以 [README](../README.md#页面复测方式与选择) 为准，服务器当前制品与部署状态以[案例总览](deployment/cases/intranet-single-host/README.md)为准。
+本文保存 T29 内网验收及其后页面改动的验证证据；各部分按自己的日期、版本、环境和未覆盖范围读取。T1–T28 的业务需求、自动化测试与需求编号证据沿用 [部署前验收报告](pre-release-test-report.md)。复测操作以 [README](../../README.md#页面复测方式与选择) 为准，服务器当前制品与部署状态以[案例总览](../deployment/cases/intranet-single-host/README.md)为准。
 
 下列四节为 **T29 历史验收（2026-09-29）**，范围仅为当次内网单机实例；公网部署、异机灾备和高可用不在本次范围。后续页面验证从“手机体验整改复验”开始，不自动继承 T29 的验收结论，也不表示新页面已发布。
 
@@ -25,9 +25,9 @@
 
 ## 可复核入口
 
-- [内网部署案例](deployment/cases/intranet-single-host/README.md)：主机、源码与镜像、证书指纹、测试记录和用户确认。
-- [部署操作手册](deployment/runbook.md)：证书签发/轮换、新内网部署及发布/回退流程。
-- [备份恢复](deployment/backup-recovery.md)：隔离工具边界、恢复流程及命令。
+- [内网部署案例](../deployment/cases/intranet-single-host/README.md)：主机、源码与镜像、证书指纹、测试记录和用户确认。
+- [部署操作手册](../deployment/runbook.md)：证书签发/轮换、新内网部署及发布/回退流程。
+- [备份恢复](../deployment/backup-recovery.md)：隔离工具边界、恢复流程及命令。
 - `deploy/scripts/verify-recovery-tool.sh`、`verify-recovery-http.py` 与 `server/src/test/resources/recovery/recovery-business-fixture.sql`：可重复执行的目标机隔离验证；未修改Java业务代码。
 - 目标机专项日志 `/opt/my-bill/recovery-http-validation/result.log`。浏览器结果为本会话内置浏览器观察，不虚构独立截图文件。
 

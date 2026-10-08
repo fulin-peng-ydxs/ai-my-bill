@@ -34,4 +34,4 @@
 | Dockerfile.postgres | 固定PostgreSQL16.14，构建安装发行版补丁的数据库镜像 |
 | monitoring/ | 待实际接入验证的监控告警规则 |
 
-当前内网实例已按本次范围完成T29，证据汇总见[验收报告](../agent-works/test-report.md)。具体地址、例外、凭据位置、镜像摘要和验证结果只维护在案例中；不能把方案命令当作已执行证据。
+当前内网实例已按本次范围完成T29，证据汇总见[验收报告](../agent-works/initial-development/test-report.md)。具体地址、例外、凭据位置、镜像摘要和验证结果只维护在案例中；不能把方案命令当作已执行证据。

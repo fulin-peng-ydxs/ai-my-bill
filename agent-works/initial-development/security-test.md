@@ -50,4 +50,4 @@ T30 首次通过统一入口构建时，OSV 门禁发现 Jackson 新公告并正
 
 ## 后续专项验证入口
 
-统一日志发布的依赖处置、限定风险例外及拒绝测试见[日志专项安全验证](deployment/logging-management/security-verification.md)；不改变本文历史候选的扫描结论。
+统一日志发布的依赖处置、限定风险例外及拒绝测试见[日志专项安全验证](../deployment/logging-management/security-verification.md)；不改变本文历史候选的扫描结论。

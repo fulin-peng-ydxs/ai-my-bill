@@ -2,7 +2,7 @@
 
 ## 范围与结论
 
-面向开发与运维，描述当前单仓库 Vue PWA、Spring Boot 模块化单体和 PostgreSQL 的组成。2026-09-28 按源码静态核对；运行与阶段验收分别见 [部署案例](../deployment/cases/intranet-single-host/README.md) 和 [计划](../plan.md)。不将架构存在等同于完成上线验收。
+面向开发与运维，描述当前单仓库 Vue PWA、Spring Boot 模块化单体和 PostgreSQL 的组成。运行环境见 [部署案例](../deployment/cases/intranet-single-host/README.md)，初始阶段记录见 [归档计划](../initial-development/plan.md)，不据此判断后续任务进度或新版本验收。不将架构存在等同于完成上线验收。
 
 ```mermaid
 flowchart LR

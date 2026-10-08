@@ -53,7 +53,7 @@ V007 对租户表 FORCE ROW LEVEL SECURITY；V010 增加商品合并表策略。
 
 V005 等迁移维护查询和生命周期索引；列表限制分页，导出用游标，清理分批。修改 JOIN/过滤/排序要检查同租户谓词、索引计划及锁范围。数据库变更影响业务、任务和恢复，不能只验证 Java 编译。
 
-`npm run check:database` 在 mktemp 一次性集群先跑 HTTP 集成，再重建 schema 跑迁移/RLS/任务/回滚；不连接开发库，不依赖 Docker/Testcontainers。`check:performance` 使用同类隔离集群，规模和历史结果见 [性能验收](../performance-test.md)。
+`npm run check:database` 在 mktemp 一次性集群先跑 HTTP 集成，再重建 schema 跑迁移/RLS/任务/回滚；不连接开发库，不依赖 Docker/Testcontainers。`check:performance` 使用同类隔离集群，规模和历史结果见 [性能验收](../initial-development/performance-test.md)。
 
 ## 风险与恢复边界
 

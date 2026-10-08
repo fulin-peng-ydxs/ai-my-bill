@@ -2,17 +2,17 @@
 
 ## 1. 需求来源与目标
 
-- 需求文档：`agent-works/requirement.md`。
-- 上游事实源：`agent-works/requirement-closure.md`。
+- 需求文档：`agent-works/initial-development/requirement.md`。
+- 上游事实源：`agent-works/initial-development/requirement-closure.md`。
 - 设计事实源：`DESIGN.md`。
-- 原型依据： `agent-works/prototypes/login.html`、`expense-entry.html`、`reports.html`、`bill-details.html`、`profile-settings.html`、`admin-console.html`；共享样式与交互事实源为同目录 `prototype.css`、`prototype.js`。
+- 原型依据： `agent-works/initial-development/prototypes/login.html`、`expense-entry.html`、`reports.html`、`bill-details.html`、`profile-settings.html`、`admin-console.html`；共享样式与交互事实源为同目录 `prototype.css`、`prototype.js`。
 - 功能目标：建设一套手机优先、可安装、仅受控内网访问、按单用户单租户隔离的个人收支 PWA，闭环支出、收入、退款/报销调整、字典、明细、报表、管理、导出、注销、部署和备份。
 - 已确认技术基线：用户已确认采用 Vue 3 + Vite + TypeScript + Pinia + Vue Router；Java LTS + Spring Boot + Spring Security；PostgreSQL + Flyway；ECharts；Docker Compose。
 - 关键实现取舍：用户已确认采用单机同源部署；后端采用模块化单体和关系型精确数据模型；金额使用 Java `BigDecimal` 与 PostgreSQL `numeric`；第一期不引入 Redis、消息队列、微服务或地图服务；共享状态通过 PostgreSQL 和应用事务闭环。该选择以更可控的中国大陆访问、服务端 Cookie 会话和单一部署边界换取主机、补丁和备份运维责任。
 - 本次不做：R25-R38、R57、R69 对应的后续或明确排除能力；不重新生成或替换已确认 HTML 原型；不把原型演示数据当成生产 seed。
 - 计划输出目录：`agent-works/`。
 - 当前完成状态：T1–T29 已按一期内网范围完成；T30 已完成持续构建更新入口；T31 已完成首次环境初始化自动化的本地实现与验证；T32 已完成宿主准备入口；T33 已完成统一日常运维与异机加密副本入口；T34 已补齐替代主机密钥恢复、异机副本演练与公网演进门禁。新的真实服务器宿主安装和初始化、生产数据覆盖/入口切换仍未执行；后续建议和排除项仍按 §3/§6 处理。
-- 证据入口：T1–T28 的测试与候选见[部署前报告](pre-release-test-report.md)；T29 服务器、浏览器和用户 iOS 实机确认见[验收报告](test-report.md)。实际源码/镜像/前端制品分别以[部署案例](deployment/cases/intranet-single-host/README.md)为准，不混用历史候选摘要。
+- 证据入口：T1–T28 的测试与候选见[部署前报告](pre-release-test-report.md)；T29 服务器、浏览器和用户 iOS 实机确认见[验收报告](test-report.md)。实际源码/镜像/前端制品分别以[部署案例](../deployment/cases/intranet-single-host/README.md)为准，不混用历史候选摘要。
 
 ## 2. 当前项目依据
 
@@ -21,9 +21,9 @@
 - 业务、安全和页面能力已落地；备份由宿主定时执行，管理概况消费只读状态文件，注销恢复重放使用离线维护入口。部署为模块化单体、同源反向代理和 PostgreSQL；自动化测试依旧使用隔离数据库，不连接生产。
 - 当前 Git 分支为 `main`；每阶段均按实际 Git diff 确认改动边界，不把后续待实现能力描述为当前事实。
 - 原型基线命令及结果：
-  - `node agent-works/prototypes/design-contract.test.mjs`：通过。
-  - `node agent-works/prototypes/responsive-contract.test.mjs`：通过，覆盖 6 页。
-  - `node agent-works/prototypes/business-contract.test.mjs`：通过。
+  - `node agent-works/initial-development/prototypes/design-contract.test.mjs`：通过。
+  - `node agent-works/initial-development/prototypes/responsive-contract.test.mjs`：通过，覆盖 6 页。
+  - `node agent-works/initial-development/prototypes/business-contract.test.mjs`：通过。
 - 原型通过 `?state=loading|empty|error|permission` 承载四态，`ready` 为默认；正式工程应保留可复现的测试入口，但不得把查询参数测试钩子暴露为生产业务能力。
 
 ### 2.2 设计与组件依据
@@ -85,7 +85,7 @@
 
 ## 4. 技术方案
 
-本节及 §5、§8 保留已批准的实施方案与任务输入，用于解释实施依赖；当前实现机制和配置消费链以[技术架构](architecture/README.md)、[环境架构](architecture/environment-configuration.md)为准，页面契约以 [DESIGN](../DESIGN.md) 为准。后续改动在责任文档维护稳定细则，本计划只同步受影响任务、依赖及状态。
+本节及 §5、§8 保留已批准的实施方案与任务输入，用于解释实施依赖；当前实现机制和配置消费链以[技术架构](../architecture/README.md)、[环境架构](../architecture/environment-configuration.md)为准，页面契约以 [DESIGN](../../DESIGN.md) 为准。后续改动在责任文档维护稳定细则，本计划只同步受影响任务、依赖及状态。
 
 ### 4.1 工程结构与模块边界
 
@@ -894,7 +894,7 @@ Flyway 高权限凭据边界：
 - 涉及文件：测试数据生成器、查询计划记录、Actuator/Micrometer、日志和告警配置。
 - 目标：建立真实基线并验证 §5.1。
 - 操作：代表性租户数据；候选/明细/报表/导出/清理基准；索引调整；连接池/资源上限；告警。
-- 产出：`agent-works/performance-test.md` 和必要索引 migration。
+- 产出：`agent-works/initial-development/performance-test.md` 和必要索引 migration。
 - 影响范围与边界异常：影响索引、查询、资源配置和运行指标；不为模板补缓存，未达到目标先优化或限制范围，不隐藏结果。
 - 验证：EXPLAIN ANALYZE、负载脚本、前端 profile、任务中断和资源曲线。
 - 完成标准：无 N+1、无无限集合/缓存、无一次性大对象，结果可复现。
@@ -917,7 +917,7 @@ Flyway 高权限凭据边界：
 - 涉及文件：Spring Security、授权测试、依赖/secret 扫描、CSP 和安全报告。
 - 目标：验证 §5.2 的保护对象和失败边界。
 - 操作：跨租户矩阵、复合租户外键/Repository 约束、RLS policy 与数据库角色审查、同连接跨租户复用/事务回滚/后台任务上下文负例、角色矩阵、默认拒绝路由扫描、缺失上下文与认证依赖故障、CSRF、XSS/CSV、限流、会话撤销、敏感日志、下载授权、依赖漏洞处理；同时审查 SW/HTTP 缓存和本地草稿，确保 API/账目/下载不缓存、草稿满足最小字段/TTL/账号匹配/注销清理。
-- 产出：`agent-works/security-test.md`。
+- 产出：`agent-works/initial-development/security-test.md`。
 - 影响范围与边界异常：影响认证、授权、输入输出、日志、依赖和部署配置；测试只用合成数据，不得把攻击载荷写入生产日志。
 - 验证：自动化正反向测试、运行角色直接 SQL、连接池复用、Cache Storage/响应头、本地存储快照、共享设备账号切换和配置审查。
 - 完成标准：高风险失败全部为安全默认拒绝，无未解释严重项。
@@ -938,7 +938,7 @@ Flyway 高权限凭据边界：
 - 涉及文件：前后端测试、OpenAPI contract、系统 PostgreSQL 一次性隔离集群脚本、受环境保护的确定性 fixture、关键 Playwright 链路、验收记录。
 - 目标：按 §6 映射关闭所有不依赖真实部署环境的验收，生成不可变发布候选；R23、R55 以及生产环境 HTTPS/PWA/备份恢复/内网访问边界证据保持“待 T29 验证”。
 - 操作：执行最小但充分的单元、接口、数据库、页面、权限、异常和回归；E2E 写入前校验 dev/test 环境、显式写开关和数据库指纹，使用稳定 selector 与 UUID 数据并在退出时精确清理；记录命令与结果。
-- 产出：`agent-works/pre-release-test-report.md`、不可变后端 JAR/前端产物摘要；容器镜像摘要在 T29 从锁定提交生成，更新本计划中可验证任务的真实状态。
+- 产出：`agent-works/initial-development/pre-release-test-report.md`、不可变后端 JAR/前端产物摘要；容器镜像摘要在 T29 从锁定提交生成，更新本计划中可验证任务的真实状态。
 - 影响范围与边界异常：影响发布候选资格，不冒充最终生产验收；失败关联回对应实现任务，环境项明确留给 T29，不批量标完成。
 - 验证：需求矩阵无缺项、可选/暂不实现无越界代码；R23/R55 的环境证据明确未关闭且不被错误计入失败或通过。
 - 完成标准：所有部署前必须项有可复现证据，全部失败已修复或形成真实阻塞，发布候选摘要已锁定，可安全进入 T29。
@@ -956,13 +956,13 @@ Flyway 高权限凭据边界：
 - 涉及文件：`deploy/compose.yaml`、`deploy/Caddyfile`、`deploy/env/production.env.example`、`deploy/scripts/run-flyway.sh`、`deploy/scripts/run-app.sh`、`server/Dockerfile` 的 `migrate` 构建目标、备份/恢复脚本、生产配置模板、运维文档、README/AGENTS/DESIGN 相关事实入口。
 - 目标：完成 R23、R55，补齐生产环境证据并对 R1-R72 作最终验收结论，交付可恢复的低成本 HTTPS 服务。
 - 操作：只部署经发布门禁锁定的当前候选，T29新增部署实现须重新记录提交与产物，不能沿用T28旧摘要代表新部署；先以只挂载 migration secret 的一次性 `migrate` 服务执行并核对 Flyway schema 版本，成功后才启动只挂载 app runtime secret 的常驻应用，验证常驻容器不可见 migration 凭据；生产启动显式锁定环境并拒绝/清除 E2E 写开关；统一启停、健康检查和服务状态恢复；内网 IP 直连和受信任内部 CA 签发的 IP 证书、续期/加载/到期告警（不购买或绑定自有域名）；数据库和文件备份；隔离环境恢复演练；容量告警；受控内网可达与非授权网络拒绝实测；生产 PWA/SW 缓存与更新验证；发布/回滚 runbook；将最终证据回填需求矩阵和任务状态。
-- 产出：试用环境、`agent-works/test-report.md` 最终验收报告、备份恢复证据、运维说明和迁移路径。
+- 产出：试用环境、`agent-works/initial-development/test-report.md` 最终验收报告、备份恢复证据、运维说明和迁移路径。
 - 影响范围与边界异常：影响内网服务、生产数据、备份和事实文档；不得因内网使用降低 HTTPS、鉴权、租户隔离、主机维护或备份恢复要求；不得擅自配置公网映射，数据库 rollback 以兼容 migration/forward-fix 为主。
 - 验证：内网 IP 直连、终端信任与 HTTPS 证书续期/加载/到期告警、PWA/SW 缓存清单、健康、备份校验、空机恢复、镜像回滚、内网访问边界、告警演练，并复核每个必须项的最终状态与证据链接。
 - 完成标准：发布门禁全部关闭，恢复后的固定样本与发布前校验值一致，R23/R55 及所有仍待环境验证项已关闭，最终报告不存在无证据“通过”。
-- 实际落地情况：基础内网服务、12个迁移、首管理员、HTTPS/登录/CSRF/改密门禁、初始库加密备份与隔离恢复已执行，每日timer已启用。具体主机、路径、资源、版本和证据统一见[内网案例](deployment/cases/intranet-single-host/README.md)，不在计划重复维护实例快照。
+- 实际落地情况：基础内网服务、12个迁移、首管理员、HTTPS/登录/CSRF/改密门禁、初始库加密备份与隔离恢复已执行，每日timer已启用。具体主机、路径、资源、版本和证据统一见[内网案例](../deployment/cases/intranet-single-host/README.md)，不在计划重复维护实例快照。
 - 补丁发布实际落地：4f0af93 已切换，PostgreSQL服务端/客户端保持16.14，迁移12个版本一致；app/db healthy，HTTPS、只读状态与secret边界、登录/概况/退出验证通过。最终三万条隔离样本恢复68秒通过；迁移镜像高危/严重均为0，数据库仍有无发行版补丁的命中，已核实部分触发条件，用户于2026-09-29接受案例中记录的本次内网残余风险例外。详细镜像/源码/制品与回退证据见内网案例。
-- 实施依据：[部署架构](deployment/architecture.md)、[操作手册](deployment/runbook.md)、[持续构建](deployment/continuous-delivery.md)、[备份恢复](deployment/backup-recovery.md)。用户确认的内网范围、独立CA、同机备份及具体宿主例外按需求和案例生效。
+- 实施依据：[部署架构](../deployment/architecture.md)、[操作手册](../deployment/runbook.md)、[持续构建](../deployment/continuous-delivery.md)、[备份恢复](../deployment/backup-recovery.md)。用户确认的内网范围、独立CA、同机备份及具体宿主例外按需求和案例生效。
 - 验收结论与边界：可修复容器漏洞已处置并复扫，剩余项按本次内网风险例外登记；用户已确认根证书完全信任、Safari无警告、主屏幕独立打开、登录及基本操作通过（设备型号/系统版本未提供）；内置浏览器已补验离线/更新、横竖屏与管理页备份展示，目标机隔离入口切换及恢复后HTTP业务通过（101秒）；iOS离线/更新/横竖屏专项已由用户确认真机通过，真实生产入口未切换；更大规模恢复耗时按用户要求本次不处理；证书失败回滚与四类告警注入已通过，概况API已认证实测，三万条样本目标机数据/文件恢复与注销重放最终68秒通过。
 - T29 增量实现：用户确认名称“我的账单”、完善现有图标，手机使用 iPhone/iPad；确认只读状态文件接入备份与本机告警。已实现备份状态有界读取/失败与过期判定、管理页真实状态、宿主巡检、证书受控轮换回滚工具、PNG/Apple 图标及 iPad 安装识别。后端 verify 通过（默认条件跳过不计验证），另在隔离 PostgreSQL 实际通过 90 项 HTTP/业务测试及 7 项 schema/RLS；前端类型/静态检查、6 项定向测试与构建通过，备份失败发布/明文清理负例通过。增量 d7ce73d 已部署并通过健康检查，备份状态文件与巡检成功，受控证书轮换通过；当时管理页展示及手机实机未验证，后续补验证据见上文及案例。用户另确认离线注销审计保全/重放：已实现专用恢复库名和实时指纹门禁、完整文件预检、过期跳过、幂等重放及文件补偿；已通过本地隔离测试；源码 83c6c1f 的独立维护镜像在目标机加密备份副本上完成保全与重复重放，耗时 87 秒，临时资源已清理。该备份无账目，不能以此关闭目标环境完整业务恢复/RTO。
 - 验收报告：当前证据和边界统一见 [T29验收报告](test-report.md)，区分用户实机、内置浏览器转发验证和目标机隔离恢复，不将代理验证等同于iOS引擎专项。
@@ -1066,7 +1066,7 @@ SQL 约束：所有脚本必须有总体、对象/字段、执行前置、影响
 | `deploy/scripts/verify-recovery-tool.sh`、`verify-recovery-http.py` | 目标机隔离数据/文件/入口业务演练 | 随机临时secret、无公开端口、不覆盖线上库，结束清理 |
 | `server/src/test/resources/recovery/recovery-business-fixture.sql` | 合成样本，只在空账目专用临时库且显式标记时执行 | 不是生产seed；公开测试账号仅在销毁式演练使用，临时容器销毁即清理 |
 
-本阶段未新增migration、默认seed、数据库角色授权、菜单或业务API；schema保持012。稳定配置与启动参数见[环境架构](architecture/environment-configuration.md)，部署工具入口见[deploy/README.md](../deploy/README.md)。
+本阶段未新增migration、默认seed、数据库角色授权、菜单或业务API；schema保持012。稳定配置与启动参数见[环境架构](../architecture/environment-configuration.md)，部署工具入口见[deploy/README.md](../../deploy/README.md)。
 
 ## 9. 测试与验证计划
 
@@ -1112,8 +1112,8 @@ SQL 约束：所有脚本必须有总体、对象/字段、执行前置、影响
 ## 10. 发布与回滚
 
 - 发布前检查：T28 的全部部署前必须项证据和不可变候选摘要；明确列出留待 T29 的 R23/R55 与生产环境证据；技术版本和依赖扫描；migration 备份；机密和 Cookie/TLS；正式品牌资产；内网访问边界/主机容量/内部 CA 与终端信任；RPO/RTO；注销保留期；数据质量阈值；容量与告警。
-- 发布实施：首次建设按[初始化入口](deployment/environment-bootstrap.md)和[部署手册](deployment/runbook.md)；既有环境更新按[持续发布](deployment/continuous-delivery.md)。计划关注候选、备份、迁移、服务切换、业务/租户/PWA补验与案例回写是否闭环，不另维护底层命令顺序；迁移失败或 schema 版本不符不得启动新应用。
-- 配置/环境变量：模板与实际消费链以[环境架构](architecture/environment-configuration.md)为准；运行、迁移、初始化凭据分发遵循 Compose 白名单。备份状态仅挂载非敏感状态目录，恢复参数仅由维护入口接受；不把标准 Spring 属性或未实现开关描述为管理能力。生产禁止 E2E 参数和真实机密入库。
+- 发布实施：首次建设按[初始化入口](../deployment/environment-bootstrap.md)和[部署手册](../deployment/runbook.md)；既有环境更新按[持续发布](../deployment/continuous-delivery.md)。计划关注候选、备份、迁移、服务切换、业务/租户/PWA补验与案例回写是否闭环，不另维护底层命令顺序；迁移失败或 schema 版本不符不得启动新应用。
+- 配置/环境变量：模板与实际消费链以[环境架构](../architecture/environment-configuration.md)为准；运行、迁移、初始化凭据分发遵循 Compose 白名单。备份状态仅挂载非敏感状态目录，恢复参数仅由维护入口接受；不把标准 Spring 属性或未实现开关描述为管理能力。生产禁止 E2E 参数和真实机密入库。
 - 应用回滚：回退上一不可变镜像和配置；Service Worker 使用可控版本更新，避免旧前端调用不兼容 API。
 - 数据库回滚：migration 必须向后兼容至少一个应用版本；有数据后不执行破坏性 undo，使用 forward-fix；发布前备份，严重问题从备份恢复到隔离环境验证后再决策。
 - 功能降级：可停用导出/清理调度、限制报表最大范围或隐藏尚未发布维度；不得绕过租户、会话、金额和生命周期规则。
@@ -1154,8 +1154,8 @@ SQL 约束：所有脚本必须有总体、对象/字段、执行前置、影响
 
 ### 当前内网部署决策（2026-09-28）
 
-按[正式需求决策](requirement.md#当前内网部署决策2026-09-28)执行；T29 已于2026-09-29按当次内网范围关闭，状态见 §7 对应任务，授权与实例证据见[案例](deployment/cases/intranet-single-host/README.md)。该关闭状态不覆盖后续页面改动或新环境。
+按[正式需求决策](requirement.md#当前内网部署决策2026-09-28)执行；T29 已于2026-09-29按当次内网范围关闭，状态见 §7 对应任务，授权与实例证据见[案例](../deployment/cases/intranet-single-host/README.md)。该关闭状态不覆盖后续页面改动或新环境。
 
 ## 12. 统一日志管理
 
-本地日志、Java/Caddy、Docker 策略、运维查询与有界归档已实施，已应用到现有内网。首次初始化成功链路仍未验证。阶段计划、实施过程与验证边界见[日志专项](deployment/logging-management/README.md)，目标环境事实见[内网案例](deployment/cases/intranet-single-host/README.md)。
+本地日志、Java/Caddy、Docker 策略、运维查询与有界归档已实施，已应用到现有内网。首次初始化成功链路仍未验证。阶段计划、实施过程与验证边界见[日志专项](../deployment/logging-management/README.md)，目标环境事实见[内网案例](../deployment/cases/intranet-single-host/README.md)。

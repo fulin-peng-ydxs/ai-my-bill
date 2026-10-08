@@ -296,11 +296,10 @@ npm run dev
 │   ├── scripts/                      预检、容器入口、备份/隔离恢复、证书激活与巡检
 │   ├── tls/、systemd/、monitoring/     CA签发、备份/巡检定时、本机告警与可选监控规则
 ├── agent-works/
-│   ├── requirement*.md、plan.md       需求、确认依据、阶段与验收状态
+│   ├── initial-development/          初始需求、计划、原型、截图及历史验收（归档）
 │   ├── architecture/                 当前技术与环境配置说明
 │   ├── deployment/                   通用部署架构、手册、构建、恢复
 │   │   └── cases/                    具体环境的服务器/路径/证据
-│   └── prototypes/、screenshot/       原型及已有截图材料
 └── .local/                           本地数据、凭据、测试/发布临时产物，不入库
 ```
 
@@ -324,7 +323,7 @@ npm run dev
 | npm run check:ios | 页面复测的真机自动检查基线 | 检查范围与连接方式见[页面复测](#页面复测方式与选择)；按改动另补直接操作与安装版检查 |
 | npm run check:deployment | 部署脚本、profile或目标字段变更 | Shell语法、严格字面解析和部署配置负例 |
 
-常规局部修改选择最低充分检查，不默认每次全跑。已有验证证据见[验收记录](agent-works/pre-release-test-report.md)，脚本存在与实际执行结果分开记录。构建产物web/dist用于发布，server/target下JAR用于打包，不手工编辑。
+常规局部修改选择最低充分检查，不默认每次全跑。历史验证证据见[归档验收记录](agent-works/initial-development/pre-release-test-report.md)，不代替当前版本检查；脚本存在与实际执行结果分开说明。构建产物web/dist用于发布，server/target下JAR用于打包，不手工编辑。
 
 ### 页面复测方式与选择
 
@@ -349,7 +348,7 @@ npm run dev
 5. 对输入与候选至少检查：默认展开是否需要键盘、主动搜索是否实际唤起完整键盘且无意外缩放、候选能否看见/滚动/点选、选中回显与收起、外部点击/取消/主动收起键盘/重复展开、切到下个字段时焦点与草稿是否正确，取消搜索是否保留原已选值、折叠补充项的错误是否自动展开；涉及原生日期/选择器、底部动作或横竖屏时检查相应操作和遮挡。确认键盘实际占用可见区域；未出现完整键盘就记录该场景未验证。
 6. 涉及安装版时，从主屏幕进入本次版本，补验对应布局、键盘、安全区；缓存/离线改动还要检查更新、断网提示和恢复联网，不能把缓存命中或 SW 接管单独记为整体验收通过。
 
-每条复测证据至少记录：**本次源码/构建版本（含未提交变更）、环境与页面 URL、数据是真实接口还是模拟、操作者/工具、设备/系统或浏览器/视口、实际步骤、预期与观察结果、通过/失败/未验证及原因**。只列命令或截图不等于证明操作闭环；最终源码有变化时重新检查受影响项目。工具实测、用户确认、隔离模拟分别标注，历史测试不代替当前版本。截图及诊断保存在 Git 忽略的 `.local`，避开凭据和真实敏感数据；结果沿用所属改动的既有验证记录，不为每次复测另建过程文档。
+复测结果在回复中说明：**本次源码/构建版本（含未提交变更）、环境与页面 URL、数据是真实接口还是模拟、操作者/工具、设备/系统或浏览器/视口、实际步骤、预期与观察结果、通过/失败/未验证及原因**。只列命令或截图不等于证明操作闭环；最终源码有变化时重新检查受影响项目。工具实测、用户确认、隔离模拟分别标注，历史测试不代替当前版本。截图及诊断保存在 Git 忽略的 `.local`，避开凭据和真实敏感数据；仅在用户明确要求落盘时维护本次任务的验证文档，不自动新建报告或续写初始开发资料。
 
 工具或设备受限时，AI 先完成能够自主操作的检查，再明确具体缺口；只有确实需要解锁、系统授权或实体触摸时才请求对应用户操作，不能直接把整套复测转交用户。锁屏/断连先检查一次可修复的前置条件，条件未恢复时停止重复连接；镜像与 WebDriver 优先分开操作，镜像结束后重新确认设备已解锁。工程检查与桌面模拟通过时，仍不能把未验证的真机/完整软键盘/PWA写成通过。
 
@@ -437,10 +436,10 @@ npm run ops -- recovery-drill intranet-main YYYY-MM-DD
 | 想了解 | 文档 |
 |---|---|
 | AI协作规则 | [AGENTS](AGENTS.md)、[Claude入口](CLAUDE.md) |
-| 业务范围与进度 | [需求](agent-works/requirement.md)、[计划](agent-works/plan.md) |
+| 一期业务基线与历史开发资料 | [初始开发资料](agent-works/initial-development/README.md)，不追加后续任务 |
 | 技术架构 | [架构索引](agent-works/architecture/README.md) |
 | 环境变量/secret | [配置架构](agent-works/architecture/environment-configuration.md) |
 | 页面规范/接口 | [DESIGN](DESIGN.md)、[OpenAPI](contracts/openapi.yaml) |
 | 可复用部署方案 | [部署架构与手册](agent-works/deployment/README.md) |
 | 当前服务器与部署结果 | [案例索引](agent-works/deployment/cases/README.md) |
-| 部署前验证 | [验收记录](agent-works/pre-release-test-report.md)、[性能](agent-works/performance-test.md)、[安全](agent-works/security-test.md) |
+| 历史部署前验证 | [归档验收记录](agent-works/initial-development/pre-release-test-report.md)、[性能](agent-works/initial-development/performance-test.md)、[安全](agent-works/initial-development/security-test.md) |

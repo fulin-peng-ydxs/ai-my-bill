@@ -23,10 +23,10 @@
 - T1–T28 完成工程、认证/租户、业务、页面与部署前回归；测试规模、候选与阶段证据保留在[部署前报告](pre-release-test-report.md)，不以旧候选代表当前部署制品。
 - T29 完成内网 HTTPS、容器凭据隔离、正式 PWA 资产、只读备份状态、本机告警、证书轮换/回退及目标机隔离恢复与入口切换。用户确认 iOS 安装、基本使用、离线、更新与横竖屏通过；Android 真机未验证，不将 iOS 结论扩大到所有设备。
 - 管理概况只读取账号、会话、服务、备份状态和存储元数据，不聚合个人账目。注销立即物理删除在线数据/导出并撤销会话，匿名审计保留180天；旧备份恢复前保全审计，恢复后通过受保护的离线工具重放注销。
-- 本次内网的宿主及数据库镜像残余风险经用户接受；更大规模恢复测试按用户要求不做。具体实例和验证边界见[部署案例](deployment/cases/intranet-single-host/README.md)。
+- 本次内网的宿主及数据库镜像残余风险经用户接受；更大规模恢复测试按用户要求不做。具体实例和验证边界见[部署案例](../deployment/cases/intranet-single-host/README.md)。
 - 上游闭环事实源为 [requirement-closure.md](requirement-closure.md)。
-- 前端设计事实源为 [DESIGN.md](../DESIGN.md)。
-- 六个页面原型位于 [prototypes](prototypes/)，用于验证结构、交互和状态，不替代本文业务规则。
+- 前端设计事实源为 [DESIGN.md](../../DESIGN.md)。
+- 六个页面原型位于 [prototypes](prototypes)，用于验证结构、交互和状态，不替代本文业务规则。
 
 ### 2.2 用户已明确确认
 
@@ -612,10 +612,10 @@ R22 在阶段 1 只交付共享状态能力，不能提前宣称“六页验收�
 |---|---|---|
 | 页面与发布基线 | 六页状态、权限、响应式、性能/安全专项、构建与候选 | T25–T28分层测试与浏览器证据见[部署前报告](pre-release-test-report.md) |
 | 内网部署与PWA | 同源HTTPS、正式图标、最小凭据挂载、只读schema校验 | 服务器校验、浏览器补验及用户iOS实机确认见[最终报告](test-report.md) |
-| 备份与恢复 | 定时加密备份、只读状态、本机巡检；离线注销审计保全/重放 | 样本规模、耗时、文件/金额/RLS及隔离入口切换证据见[案例](deployment/cases/intranet-single-host/README.md)，不作为其他规模或真实事故的RTO承诺 |
-| 证书与交付资料 | 独立CA、人工签发/激活、到期巡检及失败回退；通用方案与实例分离 | [架构](deployment/architecture.md)、[操作手册](deployment/runbook.md)、[持续构建](deployment/continuous-delivery.md)、[恢复方案](deployment/backup-recovery.md) |
+| 备份与恢复 | 定时加密备份、只读状态、本机巡检；离线注销审计保全/重放 | 样本规模、耗时、文件/金额/RLS及隔离入口切换证据见[案例](../deployment/cases/intranet-single-host/README.md)，不作为其他规模或真实事故的RTO承诺 |
+| 证书与交付资料 | 独立CA、人工签发/激活、到期巡检及失败回退；通用方案与实例分离 | [架构](../deployment/architecture.md)、[操作手册](../deployment/runbook.md)、[持续构建](../deployment/continuous-delivery.md)、[恢复方案](../deployment/backup-recovery.md) |
 
-本阶段没有新增需求编号或扩大建议项范围。系统配置/恢复工具及前端事实分别见[环境架构](architecture/environment-configuration.md)、[任务与注销架构](architecture/jobs-export-deletion.md)、[前端PWA架构](architecture/frontend-pwa.md)。设备信息、真实生产入口未切换和风险例外等证据边界保留在验收报告。
+本阶段没有新增需求编号或扩大建议项范围。系统配置/恢复工具及前端事实分别见[环境架构](../architecture/environment-configuration.md)、[任务与注销架构](../architecture/jobs-export-deletion.md)、[前端PWA架构](../architecture/frontend-pwa.md)。设备信息、真实生产入口未切换和风险例外等证据边界保留在验收报告。
 
 ## 12. 未决事项清单
 
@@ -643,4 +643,4 @@ B1-B9 以及收入表单、账户边界和收支视觉语义均已回写业务�
 
 ### 当前内网部署决策（2026-09-28）
 
-一期仅内网 IP 使用；HTTPS、鉴权、租户隔离、密钥和备份要求保持。当前实例获批的宿主和来源范围例外以[内网部署案例](deployment/cases/intranet-single-host/README.md)为准，不推广为其他环境基线；阶段完成状态与验收证据分别见[计划](plan.md#t29部署恢复与发布后最终验收)和[验收记录](test-report.md#t29-验收结论)。
+一期仅内网 IP 使用；HTTPS、鉴权、租户隔离、密钥和备份要求保持。当前实例获批的宿主和来源范围例外以[内网部署案例](../deployment/cases/intranet-single-host/README.md)为准，不推广为其他环境基线；阶段完成状态与验收证据分别见[计划](plan.md#t29部署恢复与发布后最终验收)和[验收记录](test-report.md#t29-验收结论)。

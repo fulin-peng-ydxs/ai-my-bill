@@ -13,7 +13,7 @@ flowchart LR
   Target --> Images[目标机构建 app / migrate / proxy]
   Images --> Release[备份 / 迁移 / 原子切换]
   Release --> Verify[目标环境验收]
-  Verify --> Case[更新部署案例和计划]
+  Verify --> Case[同步实例当前事实并回复验证结果]
 ```
 
 ## CI 已配置的检查
@@ -81,7 +81,7 @@ npm run release -- build
 
 失败按最早关卡停止：检查失败不出候选；校验失败不解包；备份失败不停服务；迁移失败不启动新 app；健康失败不放入口。停止服务后但迁移尚未开始的失败会尝试恢复旧 app/proxy；迁移一旦尝试，不自动回切应用或数据库，保持入口状态并按 schema 兼容性、错误证据和恢复手册人工判断。不要通过跳过测试、关闭TLS/CSRF/RLS或删除数据库“修复发布”。
 
-验证记录必须区分本地检查、远端CI、镜像扫描和部署验收，并关联同一候选。历史命令结果见[验收记录](../pre-release-test-report.md)，目标环境结果见[案例](cases/README.md)；没有执行的关卡保持未验证。
+验证记录必须区分本地检查、远端CI、镜像扫描和部署验收，并关联同一候选。历史命令结果见[验收记录](../initial-development/pre-release-test-report.md)，目标环境结果见[案例](cases/README.md)；没有执行的关卡保持未验证。
 
 系统包补丁通过重新构建镜像落地，但容器 OS 包扫描与风险审批仍是独立安全门禁：`check:security` 只覆盖依赖与secret，不应被描述为容器扫描。常规持续更新构建 app/migrate/proxy，不替换数据库镜像；数据库补丁发布仍按专项流程构建 `db app migrate proxy`、执行OS复扫、隔离恢复和备份，并保留旧镜像及同一数据库卷。不能在运行容器内临时 apt upgrade，也不能仅凭构建成功宣称漏洞已清零；禁止 `down -v`。
 

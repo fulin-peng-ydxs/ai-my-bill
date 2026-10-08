@@ -1,6 +1,6 @@
 # 技术架构索引
 
-本目录维护个人账单系统的当前实现，沿用已有架构目录。事实核对日期：2026-09-28。架构说明以当前源码为依据；阶段完成情况以 [计划](../plan.md) 为准，环境实测以 [部署案例](../deployment/cases/intranet-single-host/README.md) 为准。
+本目录维护个人账单系统的当前实现，沿用已有架构目录。架构说明以当前源码为依据；[初始计划](../initial-development/plan.md) 只供历史阶段查阅，不承载后续进度，环境实测以 [部署案例](../deployment/cases/intranet-single-host/README.md) 为准。
 
 ## 专题导航
 

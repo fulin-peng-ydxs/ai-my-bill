@@ -106,9 +106,9 @@ components:
 
 事实源边界：
 
-- 业务与页面范围：[需求闭环](agent-works/requirement-closure.md)和后续正式需求文档。
+- 业务与页面范围：[初始需求闭环](agent-works/initial-development/requirement-closure.md)及用户后续确认；仅在用户明确要求时编写后续需求文档。
 - 当前设计契约：本文件。
-- 原型：`agent-works/prototypes/`，只用于需求澄清，不能覆盖正式需求或本文件。
+- 初始原型：`agent-works/initial-development/prototypes/`，仅供历史需求与结构查阅，后续页面变更不回写初始原型，不能覆盖用户当前确认或本文件。
 - 代码事实源：主题 token 为 `web/src/styles/tokens.css`，页面登记为 `web/src/app/pageRegistry.ts`，路由为 `web/src/router/index.ts`，登记契约测试为 `web/src/app/pageRegistry.spec.ts`。前端技术基线为 Vue 3 + Vite + TypeScript + Pinia + Vue Router。
 - 本文件维护稳定规则、组件关系和页面索引；临时开发步骤、一次性迁移说明和历史流水不进入本文。
 
@@ -525,13 +525,13 @@ Key Characteristics：
 - 横竖屏切换、浏览器工具栏收缩和虚拟键盘弹出不得丢失草稿或遮挡保存入口。
 - `prefers-reduced-motion` 下关闭装饰性位移、图表插值和大面积淡入，只保留必要状态变化。
 
-原型视觉与响应式契约检查：
+初始原型的历史结构检查（不能作为当前页面验收）：
 
-`node agent-works/prototypes/design-contract.test.mjs`
+`node agent-works/initial-development/prototypes/design-contract.test.mjs`
 
-`node agent-works/prototypes/responsive-contract.test.mjs`
+`node agent-works/initial-development/prototypes/responsive-contract.test.mjs`
 
-`node agent-works/prototypes/business-contract.test.mjs`
+`node agent-works/initial-development/prototypes/business-contract.test.mjs`
 
 ## 9. Agent Prompt Guide
 
@@ -599,5 +599,5 @@ Key Characteristics：
 
 - 正式名称为“我的账单”；安装图标使用Action Blue背景和白色票据符号，SVG为源，提供192/512 PNG、maskable512及Apple180。
 - 安装能力使用Manifest、Service Worker、浏览器安装事件和分平台手动引导；检测、拒绝、不支持、已安装状态由共享状态源管理，网页使用不依赖安装。
-- 不以图标齐全代替启动、独立窗口或平台状态栏验收。发布到新环境时验证目标设备证书信任、安装、离线与更新；具体实例结果只维护在[验收报告](agent-works/test-report.md)和[部署案例](agent-works/deployment/cases/README.md)。
+- 不以图标齐全代替启动、独立窗口或平台状态栏验收。发布到新环境时验证目标设备证书信任、安装、离线与更新；当前环境事实维护于[部署案例](agent-works/deployment/cases/README.md)，[历史验收](agent-works/initial-development/test-report.md)不续写后续任务。验证结果默认在回复中说明，过程文档写入条件见 AGENTS。
 - 没有原生IPA/APK和离线记账能力；当前SW自动接管并清理旧静态缓存，没有新版提示按钮，不设计与实际能力不符的入口。

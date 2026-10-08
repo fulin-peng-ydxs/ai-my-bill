@@ -4,7 +4,7 @@
 
 本文件约束整个仓库；子目录如新增 AGENTS.md，按就近且更具体规则执行。用户明确要求优先于项目约束，项目约束优先于 `~/ai-agent-config/config/force/collaboration-rule.md` 的兜底规则；代码或文档任务先读取该通用规则。
 
-- 业务以[需求](agent-works/requirement.md)及其[上游闭环](agent-works/requirement-closure.md)为准，顺序、依赖、实施与验收状态以[计划](agent-works/plan.md)为准。
+- 一期业务基线保存在[初始需求](agent-works/initial-development/requirement.md)及其[上游闭环](agent-works/initial-development/requirement-closure.md)；[初始开发资料](agent-works/initial-development/README.md)中的计划、原型与验收仅供历史查阅，不承载后续开发进度。后续变更以用户当前确认及相应代码、契约为准，未被明确变更的业务约束仍有效。
 - 设计以 [DESIGN.md](DESIGN.md) 为准；仅涉及 UI 时读取相应规则。接口以 [OpenAPI](contracts/openapi.yaml) 为准。
 - 当前实现机制见[技术架构](agent-works/architecture/README.md)，变量与加载规则见[环境架构](agent-works/architecture/environment-configuration.md)。有冲突先回查源码、配置和已确认需求；实现缺失不能通过删需求来消除。
 - [README](README.md)负责使用入口，[文档索引](agent-works/README.md)负责目录归属；CLAUDE只链接本文件，不重复规则。
@@ -20,12 +20,12 @@
 | server/src/test、web/src/**/*.spec.ts、web/e2e | 分层测试；E2E只用于低层无法覆盖的关键浏览器链路 |
 | contracts | OpenAPI事实源；web/src/api/generated为生成物，修改契约后重新生成，不手改 |
 | scripts、deploy | 本地工具链/验证/候选构建与部署实现 |
-| agent-works | 需求、计划、原型、验证；architecture放当前技术事实，deployment放通用方案，deployment/cases放具体实例 |
+| agent-works | initial-development归档初始开发资料；architecture放当前技术事实，deployment放通用方案，deployment/cases放具体实例 |
 | .local、node_modules、web/dist、server/target | 本机私密数据、依赖和构建产物；不提交，不为验证清空已有数据 |
 
 文档默认目录沿用通用协作规则；本模块复用现有目录。新增同类架构先更新已有专题，禁止建立第二份变量表或把服务器信息写回通用方案。
 
-专项实施过程、重试与验证记录放所属模块的改动子目录，全局计划只保留必要状态和链接。部署实例按稳定环境名建 cases 子目录，README 维护当前总览，各次操作分主题记录；长期架构与运维文档只同步稳定事实和规则。
+未获用户明确要求，不新建或追加需求文档、开发计划、验收报告、自审报告或过程记录；验证结果与未覆盖项默认在回复中说明，不因开发或验证自动落盘。初始开发资料不追加后续任务；明确要求编写后续过程文档时，放所属模块的本次改动子目录。README、架构、DESIGN、契约与运维说明继续按实际变化同步稳定事实，部署实例按稳定环境名维护 cases 总览。
 
 ## 工程与业务硬约束
 
@@ -65,7 +65,7 @@
 - [部署方案](agent-works/deployment/README.md)定义可复用操作；[案例](agent-works/deployment/cases/README.md)保存具体主机、连接、路径、制品与证据。实例例外不得推广为通用安全基线。
 - secret、CA私钥、初始密码和真实数据不进入Git/镜像/日志。生产禁E2E写开关；迁移凭据不授常驻app。未经相应授权不进行外部写入、破坏性清理、数据库覆盖或宿主升级；只读核查及授权范围内可逆工作直接完成。
 - 运行成功、脚本存在、历史测试通过分别记录；未验证写“未验证”。部署验收不得以基础服务启动替代目标终端PWA、续期、恢复/注销重放等验证；用户实测、工具实测与隔离模拟需分别标注。
-- 一次实施一个任务阶段；验证通过并更新计划实际落地后进入下一阶段。
-- 改动完成必须以第三方视角审查完整业务闭环、同类问题、复用、权限、安全、性能与错误路径，并修复；检查是否需同步README、架构、环境、部署、DESIGN、契约与计划。报告验证及未覆盖项。
+- 一次实施一个任务阶段；验证与自审完成后进入下一阶段。仅在用户明确要求编写计划时同步该任务的计划状态，不更新初始计划。
+- 改动完成必须以第三方视角审查完整业务闭环、同类问题、复用、权限、安全、性能与错误路径，并修复；检查是否需同步README、架构、环境、部署、DESIGN与契约等长期事实文档。在回复中报告验证及未覆盖项，不默认写入过程文档。
 
 同步时间、测试轮次和实例进度属于临时执行记录，不进入本文件。改代码前按通用规则核实最近成功同步时间；无法核实时先同步。

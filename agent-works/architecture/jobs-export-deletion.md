@@ -64,7 +64,7 @@ ExpiredLedgerPurgeJob 按租户与到期分钟合并调度，每批最多 100 �
 
 ## 验证与风险
 
-JobCoordinatorTest、PersonalExportJobTest、ExportFileStoreTest、ExportHttpIntegrationTest、AccountDeletionHttpIntegrationTest 和 PostgresSchemaIntegrationTest 覆盖协调、文件、HTTP、补偿与 RLS；由 check:server/check:database 按类型执行。性能数据见 [性能记录](../performance-test.md)。
+JobCoordinatorTest、PersonalExportJobTest、ExportFileStoreTest、ExportHttpIntegrationTest、AccountDeletionHttpIntegrationTest 和 PostgresSchemaIntegrationTest 覆盖协调、文件、HTTP、补偿与 RLS；由 check:server/check:database 按类型执行。性能数据见 [性能记录](../initial-development/performance-test.md)。
 
 | 类型 | 证据状态 | 限制与处理 |
 |---|---|---|
