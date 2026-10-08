@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, nextTick, reactive, watch } from 'vue'
 
+import DictionaryManager from '../components/DictionaryManager.vue'
+import { useDictionaryPanel } from '../composables/useDictionaryPanel'
 import type { DailyTemplateSelection } from '../api/dailyTemplates'
 import AppStateBlock from '../components/AppStateBlock.vue'
 import PageHeading from '../components/PageHeading.vue'
@@ -12,6 +14,7 @@ import type { EntryType } from '../domain/preferences'
 import { usePreferencesStore } from '../stores/preferences'
 import { useSessionStore } from '../stores/session'
 
+const dictionariesOpen = useDictionaryPanel('entry')
 const preferences = usePreferencesStore()
 const session = useSessionStore()
 const saveState = computed(() => preferences.fieldStates.recentEntryType)
@@ -50,6 +53,14 @@ function clearTemplate(type: EntryType): void {
     data-page-key="ledger-entry"
   >
     <PageHeading title="记一笔">
+      <button
+        type="button"
+        class="text-action"
+        aria-label="管理常用选项"
+        @click="dictionariesOpen = true"
+      >
+        常用选项
+      </button>
       <DailyEntryPicker
         :entry-type="preferences.values.recentEntryType"
         @select="applyTemplate"
@@ -78,22 +89,28 @@ function clearTemplate(type: EntryType): void {
         action-label="重试"
         @action="preferences.retry('recentEntryType').catch(() => undefined)"
       />
-      <ExpenseEntryForm
-        v-if="preferences.values.recentEntryType === 'EXPENSE'"
-        :account-id="session.session?.accountId"
-        :default-funding-channel-id="preferences.values.defaultFundingChannelId"
-        :template-selection="templateStates.EXPENSE.selection"
-        :template-revision="templateStates.EXPENSE.revision"
-        @template-consumed="clearTemplate('EXPENSE')"
-      />
-      <IncomeEntryForm
-        v-else
-        :account-id="session.session?.accountId"
-        :default-funding-channel-id="preferences.values.defaultFundingChannelId"
-        :template-selection="templateStates.INCOME.selection"
-        :template-revision="templateStates.INCOME.revision"
-        @template-consumed="clearTemplate('INCOME')"
-      />
+      <KeepAlive :max="2">
+        <ExpenseEntryForm
+          v-if="preferences.values.recentEntryType === 'EXPENSE'"
+          :account-id="session.session?.accountId"
+          :default-funding-channel-id="preferences.values.defaultFundingChannelId"
+          :template-selection="templateStates.EXPENSE.selection"
+          :template-revision="templateStates.EXPENSE.revision"
+          @template-consumed="clearTemplate('EXPENSE')"
+        />
+        <IncomeEntryForm
+          v-else
+          :account-id="session.session?.accountId"
+          :default-funding-channel-id="preferences.values.defaultFundingChannelId"
+          :template-selection="templateStates.INCOME.selection"
+          :template-revision="templateStates.INCOME.revision"
+          @template-consumed="clearTemplate('INCOME')"
+        />
+      </KeepAlive>
     </section>
+    <DictionaryManager
+      v-model:open="dictionariesOpen"
+      origin="entry"
+    />
   </article>
 </template>

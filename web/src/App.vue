@@ -2,6 +2,8 @@
 import { computed } from 'vue'
 import { RouterView, useRoute, useRouter } from 'vue-router'
 
+import { pageCacheKey, pageCacheLimit } from './app/pageCache'
+import CachedPageView from './components/CachedPageView.vue'
 import AppShell from './components/AppShell.vue'
 import AppStateBlock from './components/AppStateBlock.vue'
 import UnsavedChangesDialog from './components/UnsavedChangesDialog.vue'
@@ -31,9 +33,21 @@ const hasPagePermission = computed(() => {
   </main>
   <RouterView v-else-if="isAnonymous" />
   <AppShell v-else>
-    <RouterView v-if="hasPagePermission" />
+    <RouterView v-slot="{ Component, route: viewRoute }">
+      <KeepAlive
+        :key="`${sessionStore.session?.accountId}:${sessionStore.session?.role}`"
+        :max="pageCacheLimit"
+      >
+        <CachedPageView
+          v-if="hasPagePermission && Component"
+          :key="pageCacheKey(viewRoute)"
+          :component="Component"
+          :route="viewRoute"
+        />
+      </KeepAlive>
+    </RouterView>
     <AppStateBlock
-      v-else
+      v-if="!hasPagePermission"
       kind="permission"
       title="无权访问此页面"
       message="当前账号没有管理权限，未加载任何管理数据。"

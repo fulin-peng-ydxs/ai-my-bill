@@ -71,7 +71,9 @@ function comparisonText(value: NonNullable<typeof comparison.value>['periodOverP
       <div>
         <p class="eyebrow">
           时间趋势
-        </p><h2>{{ definition.label }}</h2>
+        </p><h2 class="section-title">
+          {{ definition.label }}
+        </h2>
       </div><span>实线为当期，虚线为累计</span>
     </header>
     <div

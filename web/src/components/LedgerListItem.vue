@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onBeforeUnmount } from 'vue'
+import { onBeforeUnmount, onDeactivated } from 'vue'
 
 import type { LedgerItem } from '../api/ledgerEntries'
 import { formatLedgerTime } from '../domain/ledgerFormatting'
@@ -102,10 +102,12 @@ function onKeydown(event: unknown): void {
   }
 }
 
-onBeforeUnmount(() => {
+function clearPress(): void {
   cancelLongPress()
   if (longPressReset) globalThis.clearTimeout(longPressReset)
-})
+}
+onDeactivated(clearPress)
+onBeforeUnmount(clearPress)
 </script>
 
 <template>

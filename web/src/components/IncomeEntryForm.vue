@@ -1,5 +1,7 @@
 <script setup lang="ts">
+import { useRefreshOnReturn } from '../composables/useRefreshOnReturn'
 import { computed, onScopeDispose, reactive, ref, watch } from 'vue'
+import { Banknote, HandCoins, NotebookPen, WalletCards } from 'lucide-vue-next'
 
 import type { DailyTemplateSelection } from '../api/dailyTemplates'
 import { listDictionaryCandidates, type DictionaryItem } from '../api/dictionaries'
@@ -200,6 +202,7 @@ async function undo(): Promise<void> {
   finally { undoing.value = false }
 }
 void loadOptions()
+useRefreshOnReturn(() => loadOptions())
 </script>
 
 <template>
@@ -263,6 +266,7 @@ void loadOptions()
     >
       <FormSection
         title="收到什么"
+        :icon="HandCoins"
       >
         <FormField
           field-id="income-name"
@@ -311,6 +315,7 @@ void loadOptions()
       </FormSection>
       <FormSection
         title="收到多少"
+        :icon="Banknote"
       >
         <FormField
           field-id="income-amount"
@@ -330,7 +335,10 @@ void loadOptions()
           </template>
         </FormField>
       </FormSection>
-      <FormSection title="如何收款">
+      <FormSection
+        title="如何收款"
+        :icon="WalletCards"
+      >
         <FundingChannelPicker
           class="entry-setting-field"
           label="收款方式"
@@ -361,6 +369,7 @@ void loadOptions()
         </FormField>
       </FormSection>
       <FormDisclosure
+        :icon="NotebookPen"
         title="补充信息"
         :summary="form.note.trim() || '备注（选填）'"
         :invalid="Boolean(errors.note)"
@@ -384,6 +393,7 @@ void loadOptions()
       </FormDisclosure>
       <EntrySaveBar
         :submitting="submitting"
+        :viewport-pinned="!editMode"
         :continue-visible="!editMode"
         :primary-label="editMode ? '保存修改' : '保存收入'"
         @continue="submit(true)"

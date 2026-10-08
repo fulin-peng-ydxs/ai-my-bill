@@ -62,7 +62,7 @@ export function useLatestRequest<T>() {
       }
       if (intent === 'silent' && data.value !== undefined) {
         staleWarning.value = normalized
-        status.value = 'ready'
+        status.value = options.isEmpty?.(data.value) ? 'empty' : 'ready'
       } else {
         error.value = normalized
         status.value = 'error'

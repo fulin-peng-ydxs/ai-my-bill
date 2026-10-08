@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useRefreshOnReturn } from '../../../composables/useRefreshOnReturn'
 import { ArrowDown, ArrowLeft, ArrowUp, ChevronLeft, ChevronRight, Plus } from 'lucide-vue-next'
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -27,6 +28,7 @@ import DictionaryToolbar from '../../../components/DictionaryToolbar.vue'
 import FormField from '../../../components/FormField.vue'
 import GlobalLedgerSearch from '../../../components/GlobalLedgerSearch.vue'
 import { useLatestRequest } from '../../../composables/useLatestRequest'
+import { dictionaryIndexTarget } from '../../../domain/dictionaryNavigation'
 import { dictionaryDefinition } from '../../../domain/dictionaries'
 
 type EditorMode = 'create' | 'rename'
@@ -303,10 +305,18 @@ watch(() => route.params.type, () => {
   void load()
 })
 
+function returnToIndex(): void {
+  const target = dictionaryIndexTarget(route.query.from)
+  // 从索引进入就退回已有历史项；直接打开详情时使用受控来源，不制造往返循环。
+  if (router.options.history.state.back === router.resolve(target).fullPath) router.back()
+  else void router.replace(target)
+}
+
 onMounted(() => {
   if (!definition.value) void router.replace({ name: 'personal-dictionaries' })
   else void load()
 })
+useRefreshOnReturn(() => load('refresh'))
 </script>
 
 <template>
@@ -320,7 +330,7 @@ onMounted(() => {
         type="button"
         class="icon-button"
         aria-label="返回个人字典"
-        @click="router.push(route.query.from === 'profile' ? { path: '/me', query: { panel: 'dictionaries' } } : { name: 'personal-dictionaries' })"
+        @click="returnToIndex"
       >
         <ArrowLeft
           :size="20"

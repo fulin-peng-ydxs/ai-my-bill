@@ -53,10 +53,9 @@ watch(() => props.points, refresh, { deep: true })
   >
     <header>
       <div>
-        <p class="eyebrow">
-          统一口径
-        </p>
-        <h2>{{ title }}</h2>
+        <h2 class="section-title">
+          {{ title }}
+        </h2>
       </div>
       <span>点击指标查看明细</span>
     </header>

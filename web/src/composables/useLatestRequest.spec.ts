@@ -10,6 +10,18 @@ function deferred<T>() {
 }
 
 describe('useLatestRequest', () => {
+  it('retains the successful empty state after a silent refresh failure', async () => {
+    const scope = effectScope()
+    const state = scope.run(() => useLatestRequest<string[]>())!
+    const isEmpty = (items: string[]) => items.length === 0
+    await state.execute(async () => [], { isEmpty })
+    await state.execute(async () => { throw new TypeError('offline') }, { intent: 'silent', isEmpty })
+    expect(state.status.value).toBe('empty')
+    expect(state.data.value).toEqual([])
+    expect(state.staleWarning.value?.kind).toBe('network')
+    scope.stop()
+  })
+
   it('drops a late response even when the request implementation ignores abort', async () => {
     const scope = effectScope()
     const state = scope.run(() => useLatestRequest<string[]>())!

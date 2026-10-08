@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ChevronRight, Download, X } from 'lucide-vue-next'
-import { computed, onBeforeUnmount, ref } from 'vue'
+import { computed, onActivated, onBeforeUnmount, onDeactivated, ref } from 'vue'
 
 import { cancelExport, createExport, downloadExport, getExport, type ExportRequest, type ExportResponse } from '../api/exports'
 import { normalizeRequestError } from '../api/errors'
@@ -16,6 +16,7 @@ const emit = defineEmits<{ notify: [message: string, kind: 'success' | 'error'] 
 const task = ref<ExportResponse>()
 const submitting = ref(false)
 const attempt = createIdempotencyAttemptTracker()
+let active = true
 let timer: ReturnType<typeof globalThis.setTimeout> | undefined
 let polling: globalThis.AbortController | undefined
 let pollErrorShown = false
@@ -69,14 +70,18 @@ async function cancel(): Promise<void> {
 
 function schedulePoll(delay = 1000): void {
   clearPoll()
+  if (!active) return
   timer = globalThis.setTimeout(() => { void poll() }, delay)
 }
 
 async function poll(): Promise<void> {
-  if (!task.value) return
+  if (!active || !task.value) return
   polling = new globalThis.AbortController()
+  const currentPoll = polling
   try {
-    task.value = await getExport(task.value.id, polling.signal)
+    const result = await getExport(task.value.id, currentPoll.signal)
+    if (!active || currentPoll.signal.aborted) return
+    task.value = result
     pollErrorShown = false
     if (task.value.status === 'PENDING' || task.value.status === 'RUNNING') schedulePoll()
     else if (task.value.status === 'SUCCEEDED') {
@@ -93,7 +98,7 @@ async function poll(): Promise<void> {
       attempt.reset()
     }
   } catch (cause) {
-    if (!(cause instanceof globalThis.DOMException && cause.name === 'AbortError')) {
+    if (active && !currentPoll.signal.aborted && !(cause instanceof globalThis.DOMException && cause.name === 'AbortError')) {
       if (!pollErrorShown) notify(normalizeRequestError(cause).message, 'error')
       pollErrorShown = true
       schedulePoll(3000)
@@ -115,7 +120,9 @@ function reset(): void {
   task.value = undefined
 }
 
-onBeforeUnmount(clearPoll)
+onActivated(() => { active = true; if (task.value) schedulePoll(0) })
+onDeactivated(() => { active = false; clearPoll() })
+onBeforeUnmount(() => { active = false; clearPoll() })
 </script>
 
 <template>

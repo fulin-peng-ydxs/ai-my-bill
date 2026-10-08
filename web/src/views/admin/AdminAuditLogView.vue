@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useRefreshOnReturn } from '../../composables/useRefreshOnReturn'
 import { MoreHorizontal, RefreshCw, Search } from 'lucide-vue-next'
 import { computed, onMounted, ref } from 'vue'
 
@@ -84,6 +85,7 @@ function resultLabel(result: AdminAuditResult): string {
 }
 
 onMounted(() => void load())
+useRefreshOnReturn(() => load(true))
 </script>
 
 <template>

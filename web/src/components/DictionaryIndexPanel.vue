@@ -1,12 +1,17 @@
 <script setup lang="ts">
+import { useRefreshOnReturn } from '../composables/useRefreshOnReturn'
 import { computed, onMounted } from 'vue'
 import { listDictionarySummaries } from '../api/dictionaries'
 import { useLatestRequest } from '../composables/useLatestRequest'
-import { dictionaryDefinitions } from '../domain/dictionaries'
+import { dictionaryDefinition, dictionaryDefinitions, type DictionaryType } from '../domain/dictionaries'
 import AppStateBlock from './AppStateBlock.vue'
 import SettingsDisclosureList, { type SettingsDisclosureItem } from './SettingsDisclosureList.vue'
 
-defineEmits<{ select: [type: string] }>()
+const emit = defineEmits<{ select: [type: DictionaryType] }>()
+function select(type: string): void {
+  const definition = dictionaryDefinition(type)
+  if (definition) emit('select', definition.type)
+}
 const { data, status, error, staleWarning, execute } = useLatestRequest<Awaited<ReturnType<typeof listDictionarySummaries>>>()
 
 const items = computed<SettingsDisclosureItem[]>(() => dictionaryDefinitions.map((definition) => {
@@ -23,6 +28,7 @@ async function load(intent: 'replace' | 'refresh' = 'replace'): Promise<void> {
 }
 
 onMounted(() => void load())
+useRefreshOnReturn(() => load('refresh'))
 </script>
 
 <template>
@@ -51,6 +57,6 @@ onMounted(() => void load())
     v-else-if="status === 'ready'"
     label="个人字典类型"
     :items="items"
-    @select="$emit('select', $event)"
+    @select="select"
   />
 </template>

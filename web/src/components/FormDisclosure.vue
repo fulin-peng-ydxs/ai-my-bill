@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { ref, watch, type Component } from 'vue'
 import { ChevronDown } from 'lucide-vue-next'
+import SectionTitle from './SectionTitle.vue'
 
-const props = defineProps<{ title: string, summary: string, invalid?: boolean }>()
+const props = defineProps<{ title: string, summary: string, invalid?: boolean, icon?: Component }>()
 const expanded = ref(false)
 // 折叠只降低低频字段的视觉权重，校验失败仍必须让错误立即可见。
 watch(() => props.invalid, (invalid) => { if (invalid) expanded.value = true }, { immediate: true })
@@ -23,7 +24,11 @@ function toggled(event: globalThis.Event): void {
   >
     <summary>
       <span>
-        <strong>{{ title }}</strong>
+        <SectionTitle
+          as="strong"
+          :title="title"
+          :icon="icon"
+        />
         <small>{{ summary }}</small>
       </span>
       <ChevronDown

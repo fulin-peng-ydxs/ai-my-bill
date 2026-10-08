@@ -59,8 +59,7 @@ const router = createRouter({
   routes,
 })
 
-router.beforeEach(async (to) => {
-  if (!await requestDiscardChanges()) return false
+router.beforeEach(async (to, from) => {
   const sessionStore = useSessionStore()
   await sessionStore.initialize()
   const session = sessionStore.session
@@ -82,6 +81,9 @@ router.beforeEach(async (to) => {
   if (to.path === '/login' && sessionStore.isAuthenticated && session && !session.passwordChangeRequired) {
     return session.role === 'ADMIN' ? '/admin' : '/entry'
   }
+  // 内部导航保留缓存中的草稿；退出账号/刷新仍由独立未保存保护处理。
+  if (!(sessionStore.isAuthenticated && to.meta.requiresAuthentication && from.meta.requiresAuthentication)
+    && !await requestDiscardChanges()) return false
   return true
 })
 

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from 'vue'
 import { ChevronDown, Search } from 'lucide-vue-next'
 import AnchoredDropdown from './AnchoredDropdown.vue'
 import { useActiveCombobox } from '../composables/useActiveCombobox'
@@ -52,6 +52,8 @@ onMounted(() => {
   mobile.value = media.matches
   media.addEventListener('change', syncMode)
 })
+onActivated(() => { if (media) { mobile.value = media.matches; media.addEventListener('change', syncMode) } })
+onDeactivated(() => { close(false); searching.value = false; media?.removeEventListener('change', syncMode) })
 onBeforeUnmount(() => { cancelBlur(); media?.removeEventListener('change', syncMode) })
 
 function toggle(): void {

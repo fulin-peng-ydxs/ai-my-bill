@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { usePageActivity } from '../composables/usePageActivity'
+import { useRefreshOnReturn } from '../composables/useRefreshOnReturn'
 import { ArrowLeft } from 'lucide-vue-next'
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
@@ -42,6 +44,7 @@ import {
 import { usePreferencesStore } from '../stores/preferences'
 import { useSessionStore } from '../stores/session'
 
+const pageActive = usePageActivity()
 const route = useRoute()
 const router = useRouter()
 const preferences = usePreferencesStore()
@@ -104,7 +107,7 @@ watch([() => route.fullPath, () => preferences.status], async () => {
   draft.value = { ...filters.value }
   await list.replace(filters.value)
   const saved = readLedgerScroll(currentScrollKey.value)
-  await nextTick(() => globalThis.scrollTo({ top: saved ?? 0 }))
+  await nextTick(() => { if (pageActive.value) globalThis.scrollTo({ top: saved ?? 0 }) })
 }, { immediate: true })
 
 watch(filterOpen, (open) => {
@@ -328,6 +331,7 @@ function returnToReports(context: LedgerDrillContext): void {
 
 onBeforeRouteLeave(() => { rememberLedgerScroll(currentScrollKey.value, globalThis.scrollY) })
 onBeforeUnmount(() => { editRequest.cancel(); adjustmentRequest.cancel() })
+useRefreshOnReturn(() => list.refresh())
 </script>
 
 <template>
@@ -393,6 +397,14 @@ onBeforeUnmount(() => { editRequest.cancel(); adjustmentRequest.cancel() })
     </section>
 
     <AppStateBlock
+      v-if="list.error.value && (list.status.value === 'ready' || list.status.value === 'empty')"
+      kind="error"
+      :title="list.lastOperation.value === 'refresh' ? '明细刷新未完成' : '更多明细加载失败'"
+      :message="list.error.value.message"
+      action-label="重试"
+      @action="list.retry"
+    />
+    <AppStateBlock
       v-if="list.status.value === 'loading'"
       kind="loading"
       title="正在加载收支明细"
@@ -414,14 +426,6 @@ onBeforeUnmount(() => { editRequest.cancel(); adjustmentRequest.cancel() })
       @action="hasFilters ? clearFilters() : router.push('/entry')"
     />
     <template v-else>
-      <AppStateBlock
-        v-if="list.error.value"
-        kind="error"
-        title="更多明细加载失败"
-        :message="list.error.value.message"
-        action-label="重试"
-        @action="list.more"
-      />
       <IncrementalLedgerList
         :items="list.items.value"
         :type="filters.type"
@@ -441,25 +445,44 @@ onBeforeUnmount(() => { editRequest.cancel(); adjustmentRequest.cancel() })
       title="筛选收支明细"
       @apply="applyFilters"
     >
-      <FormField
-        field-id="ledger-range"
-        label="日期范围"
-        :error="rangeError"
-      >
-        <select
-          id="ledger-range"
-          :value="draft.range"
-          @change="setDraftRange(($event.target as HTMLSelectElement).value as LedgerDateRange)"
+      <div class="form-grid-two entry-short-fields">
+        <FormField
+          field-id="ledger-range"
+          label="日期范围"
+          :error="rangeError"
         >
-          <option
-            v-for="option in ledgerRangeOptions"
-            :key="option.value"
-            :value="option.value"
+          <select
+            id="ledger-range"
+            :value="draft.range"
+            @change="setDraftRange(($event.target as HTMLSelectElement).value as LedgerDateRange)"
           >
-            {{ option.label }}
-          </option>
-        </select>
-      </FormField>
+            <option
+              v-for="option in ledgerRangeOptions"
+              :key="option.value"
+              :value="option.value"
+            >
+              {{ option.label }}
+            </option>
+          </select>
+        </FormField>
+        <FormField
+          field-id="ledger-filter-type"
+          label="账目类型"
+        >
+          <select
+            id="ledger-filter-type"
+            v-model="draft.type"
+          >
+            <option
+              v-for="option in ledgerTypeOptions"
+              :key="option.value"
+              :value="option.value"
+            >
+              {{ option.label }}
+            </option>
+          </select>
+        </FormField>
+      </div>
       <div
         v-if="draft.range === 'CUSTOM'"
         class="custom-date-range"
@@ -485,23 +508,6 @@ onBeforeUnmount(() => { editRequest.cancel(); adjustmentRequest.cancel() })
           >
         </FormField>
       </div>
-      <FormField
-        field-id="ledger-filter-type"
-        label="账目类型"
-      >
-        <select
-          id="ledger-filter-type"
-          v-model="draft.type"
-        >
-          <option
-            v-for="option in ledgerTypeOptions"
-            :key="option.value"
-            :value="option.value"
-          >
-            {{ option.label }}
-          </option>
-        </select>
-      </FormField>
       <DictionaryFilterPicker
         v-if="filterOpen"
         id="ledger-funding"

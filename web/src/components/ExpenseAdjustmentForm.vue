@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onScopeDispose, reactive, ref } from 'vue'
+import { ReceiptText, SlidersHorizontal } from 'lucide-vue-next'
 
 import { createExpenseAdjustment, type ExpenseAdjustmentResponse, type ExpenseAdjustmentType } from '../api/expenseAdjustments'
 import { ApiClientError } from '../api/http'
@@ -76,6 +77,7 @@ async function submit(): Promise<void> {
   >
     <FormSection
       title="原支出"
+      :icon="ReceiptText"
       description="来源已锁定，调整不会计入收入。"
     >
       <div class="adjustment-source">
@@ -86,7 +88,10 @@ async function submit(): Promise<void> {
         label="调整前后金额"
       />
     </FormSection>
-    <FormSection title="调整信息">
+    <FormSection
+      title="调整信息"
+      :icon="SlidersHorizontal"
+    >
       <FormField
         field-id="adjustment-type"
         label="调整类型"

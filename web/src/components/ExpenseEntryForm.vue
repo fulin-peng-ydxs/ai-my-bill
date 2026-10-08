@@ -1,5 +1,7 @@
 <script setup lang="ts">
+import { useRefreshOnReturn } from '../composables/useRefreshOnReturn'
 import { computed, onScopeDispose, reactive, ref, watch } from 'vue'
+import { NotebookPen, ReceiptText, ShoppingBag, WalletCards } from 'lucide-vue-next'
 
 import { ApiClientError } from '../api/http'
 import type { DailyTemplateSelection } from '../api/dailyTemplates'
@@ -363,6 +365,7 @@ async function undo(): Promise<void> {
 }
 
 void loadOptions()
+useRefreshOnReturn(() => loadOptions())
 </script>
 
 <template>
@@ -427,6 +430,7 @@ void loadOptions()
     >
       <FormSection
         title="买了什么"
+        :icon="ShoppingBag"
       >
         <ProductCombobox
           ref="productCombobox"
@@ -467,6 +471,7 @@ void loadOptions()
 
       <FormSection
         title="花了多少"
+        :icon="ReceiptText"
       >
         <div class="entry-amount-fields">
           <FormField
@@ -538,6 +543,7 @@ void loadOptions()
 
       <FormSection
         title="如何付款"
+        :icon="WalletCards"
       >
         <FundingChannelPicker
           class="entry-setting-field"
@@ -569,6 +575,7 @@ void loadOptions()
       </FormSection>
 
       <FormDisclosure
+        :icon="NotebookPen"
         title="补充信息"
         :summary="supplementSummary"
         :invalid="Boolean(errors.purchaseChannelId || errors.locationLabelId || errors.note)"
@@ -593,11 +600,6 @@ void loadOptions()
           @selected="ensureOption('locations', $event.id, $event.name)"
           @update:model-value="form.locationLabelId = $event; clearError('locationLabelId'); persist()"
         />
-        <div class="field-heading-action">
-          <RouterLink to="/me?panel=dictionaries">
-            管理常用选项
-          </RouterLink>
-        </div>
         <FormField
           field-id="expense-note"
           label="备注（选填）"
@@ -618,6 +620,7 @@ void loadOptions()
 
       <EntrySaveBar
         :submitting="submitting"
+        :viewport-pinned="!editMode"
         :continue-visible="!editMode"
         :primary-label="editMode ? '保存修改' : '保存支出'"
         @continue="submit(true)"

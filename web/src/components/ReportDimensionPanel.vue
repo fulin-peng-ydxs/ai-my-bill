@@ -63,7 +63,9 @@ watch(() => props.report, refresh, { deep: true })
         <p class="eyebrow">
           {{ eyebrow }}
         </p>
-        <h2>{{ title }}</h2>
+        <h2 class="section-title">
+          {{ title }}
+        </h2>
       </div>
       <span>{{ report.measureLabel }} · 选择排行查看明细</span>
     </header>

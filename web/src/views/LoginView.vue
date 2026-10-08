@@ -245,7 +245,10 @@ async function setFirstPassword(): Promise<void> {
           class="auth-install"
           aria-labelledby="install-title"
         >
-          <h2 id="install-title">
+          <h2
+            id="install-title"
+            class="section-title"
+          >
             安装与离线
           </h2>
           <PwaInstallPrompt />

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useRefreshOnReturn } from '../../composables/useRefreshOnReturn'
 import { Archive, Database, HeartPulse, RefreshCw, Users } from 'lucide-vue-next'
 import { computed, onMounted } from 'vue'
 
@@ -16,6 +17,7 @@ async function load(refresh = false): Promise<void> {
 }
 
 onMounted(() => void load())
+useRefreshOnReturn(() => load(true))
 </script>
 
 <template>

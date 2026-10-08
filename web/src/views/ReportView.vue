@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { usePageActivity } from '../composables/usePageActivity'
+import { useRefreshOnReturn } from '../composables/useRefreshOnReturn'
 import { computed, nextTick, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
@@ -29,6 +31,7 @@ import {
 } from '../domain/reportQuery'
 import { usePreferencesStore } from '../stores/preferences'
 
+const pageActive = usePageActivity()
 const route = useRoute()
 const router = useRouter()
 const preferences = usePreferencesStore()
@@ -101,7 +104,7 @@ const summaryItems = computed<MoneySummaryItem[]>(() => {
 async function load(): Promise<void> {
   await request.load(filters.value, presentation.value)
   const scroll = Number.parseInt(typeof route.query.scroll === 'string' ? route.query.scroll : '', 10)
-  if (Number.isSafeInteger(scroll) && scroll >= 0) await nextTick(() => globalThis.scrollTo({ top: scroll }))
+  if (Number.isSafeInteger(scroll) && scroll >= 0) await nextTick(() => { if (pageActive.value) globalThis.scrollTo({ top: scroll }) })
 }
 
 watch([() => route.fullPath, () => preferences.status], () => {
@@ -230,6 +233,7 @@ function drillIncome(point: IncomeReport['points'][number]): void {
   }
   void router.push({ path: '/ledger', query: ledgerRouteQuery(ledgerFilters, context) })
 }
+useRefreshOnReturn(() => load())
 </script>
 
 <template>
@@ -359,9 +363,6 @@ function drillIncome(point: IncomeReport['points'][number]): void {
           </option>
         </select>
       </div>
-      <p v-if="presentation.dimension === 'OVERVIEW'">
-        点击图表或指标查看明细。
-      </p>
     </section>
     <fieldset
       v-if="request.data.value"

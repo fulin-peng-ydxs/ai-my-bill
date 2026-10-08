@@ -2,6 +2,9 @@ import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import router from './index'
+import { computed } from 'vue'
+import { registerUnsavedChanges } from '../composables/unsavedChanges'
+import { useSessionStore } from '../stores/session'
 
 function jsonResponse(value: unknown, status = 200): Response {
   return new Response(JSON.stringify(value), {
@@ -16,6 +19,18 @@ beforeEach(() => {
 })
 
 describe('session route guard', () => {
+  it('retains dirty drafts during authenticated internal navigation', async () => {
+    useSessionStore().accept({ accountId: 'test-account', username: 'test', role: 'USER', passwordChangeRequired: false })
+    await router.push('/entry')
+    const discard = vi.fn()
+    const unregister = registerUnsavedChanges(computed(() => true), discard)
+    try {
+      await router.push('/me')
+      expect(router.currentRoute.value.path).toBe('/me')
+      expect(discard).not.toHaveBeenCalled()
+    } finally { unregister() }
+  })
+
   it('sends guests to login while retaining their intended route', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({
       code: 'UNAUTHORIZED', message: 'expired', fieldErrors: {}, traceId: 'trace', retryable: false,

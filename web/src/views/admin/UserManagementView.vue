@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useRefreshOnReturn } from '../../composables/useRefreshOnReturn'
 import { MoreHorizontal, Plus, RefreshCw, Search } from 'lucide-vue-next'
 import { computed, onMounted, ref } from 'vue'
 
@@ -181,6 +182,7 @@ async function copyPassword(): Promise<void> {
 }
 
 onMounted(() => void load())
+useRefreshOnReturn(() => load('refresh'))
 </script>
 
 <template>

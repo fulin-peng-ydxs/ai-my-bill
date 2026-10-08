@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { useRouter } from 'vue-router'
 
 import AppDrawer from '../components/AppDrawer.vue'
 import AppDialog from '../components/AppDialog.vue'
@@ -8,7 +8,9 @@ import AppStateBlock from '../components/AppStateBlock.vue'
 import AppToast from '../components/AppToast.vue'
 import DataExportAction from '../components/DataExportAction.vue'
 import PageHeading from '../components/PageHeading.vue'
-import DictionaryIndexPanel from '../components/DictionaryIndexPanel.vue'
+import DictionaryManager from '../components/DictionaryManager.vue'
+import { useRefreshOnReturn } from '../composables/useRefreshOnReturn'
+import { useDictionaryPanel } from '../composables/useDictionaryPanel'
 import PasswordChangeSheet from '../components/PasswordChangeSheet.vue'
 import FormField from '../components/FormField.vue'
 import DictionaryCombobox, { type DictionaryChoice } from '../components/DictionaryCombobox.vue'
@@ -36,16 +38,7 @@ import { themeModeLabel } from '../theme/theme'
 
 const sessionStore = useSessionStore()
 const router = useRouter()
-const route = useRoute()
-const dictionariesOpen = computed({
-  get: () => route.query.panel === 'dictionaries',
-  set: (open: boolean) => {
-    const query = { ...route.query }
-    if (open) query.panel = 'dictionaries'
-    else delete query.panel
-    void router.replace({ query })
-  },
-})
+const dictionariesOpen = useDictionaryPanel('profile')
 const passwordOpen = ref(false)
 const themeStore = useThemeStore()
 const installStore = usePwaInstallStore()
@@ -200,6 +193,7 @@ function showExportNotice(message: string, kind: 'success' | 'error'): void {
   toastOpen.value = true
 }
 
+useRefreshOnReturn(() => { if (!fundingLoading.value) return loadFundingChannels() })
 </script>
 
 <template>
@@ -218,7 +212,10 @@ function showExportNotice(message: string, kind: 'success' | 'error'): void {
     >
       <div class="section-heading">
         <div>
-          <h2 id="preferences-title">
+          <h2
+            id="preferences-title"
+            class="section-title"
+          >
             偏好设置
           </h2>
         </div>
@@ -255,14 +252,17 @@ function showExportNotice(message: string, kind: 'success' | 'error'): void {
     >
       <div class="section-heading">
         <div>
-          <h2 id="data-security-title">
+          <h2
+            id="data-security-title"
+            class="section-title"
+          >
             数据与安全
           </h2>
         </div>
       </div>
       <SettingsDisclosureList
         label="数据与安全"
-        :items="[{ key: 'dictionaries', label: '个人字典', value: '8 类' }, { key: 'password', label: '修改密码', value: '' }]"
+        :items="[{ key: 'dictionaries', label: '常用选项', value: '8 类' }, { key: 'password', label: '修改密码', value: '' }]"
         @select="$event === 'password' ? passwordOpen = true : dictionariesOpen = true"
       >
         <DataExportAction
@@ -279,7 +279,10 @@ function showExportNotice(message: string, kind: 'success' | 'error'): void {
     >
       <div class="section-heading">
         <div>
-          <h2 id="account-title">
+          <h2
+            id="account-title"
+            class="section-title"
+          >
             账号操作
           </h2>
         </div>
@@ -310,16 +313,10 @@ function showExportNotice(message: string, kind: 'success' | 'error'): void {
       </button>
     </section>
 
-    <AppDrawer
-      id="profile-dictionaries"
+    <DictionaryManager
       v-model:open="dictionariesOpen"
-      title="个人字典"
-    >
-      <DictionaryIndexPanel
-        v-if="dictionariesOpen"
-        @select="router.push({ name: 'personal-dictionary-detail', params: { type: $event }, query: { from: 'profile' } })"
-      />
-    </AppDrawer>
+      origin="profile"
+    />
     <PasswordChangeSheet
       v-model:open="passwordOpen"
       @saved="showExportNotice('密码已更新，其他设备需重新登录。', 'success')"

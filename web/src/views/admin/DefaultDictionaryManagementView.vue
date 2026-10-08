@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useRefreshOnReturn } from '../../composables/useRefreshOnReturn'
 import { ArrowDown, ArrowUp, Plus } from 'lucide-vue-next'
 import { computed, onMounted, ref, watch } from 'vue'
 
@@ -199,6 +200,7 @@ watch(statusFilter, () => {
 })
 
 onMounted(() => void Promise.all([load(), loadSummaries()]))
+useRefreshOnReturn(() => Promise.all([load('refresh'), loadSummaries()]).then(() => undefined))
 </script>
 
 <template>

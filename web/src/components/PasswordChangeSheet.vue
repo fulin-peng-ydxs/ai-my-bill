@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { reactive, ref, watch } from 'vue'
+import { onDeactivated, reactive, ref, watch } from 'vue'
 import { normalizeRequestError } from '../api/errors'
 import { validatePasswordChange } from '../auth/password'
 import { useSessionStore } from '../stores/session'
@@ -22,6 +22,7 @@ function reset(): void {
 }
 
 watch(() => props.open, () => reset())
+onDeactivated(() => { reset(); emit('update:open', false) })
 
 function close(open: boolean): void {
   if (!busy.value) emit('update:open', open)
