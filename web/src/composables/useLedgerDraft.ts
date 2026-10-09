@@ -2,7 +2,7 @@ import { computed, onScopeDispose, ref, watch, type Ref } from 'vue'
 
 import type { EntryType } from '../domain/preferences'
 import { unicodeCodePointLength } from '../domain/text'
-import { readAccountStorage, removeAccountStorage, writeAccountStorage } from '../storage/accountStorage'
+import { accountStorageSupportProblem, readAccountStorage, removeAccountStorage, writeAccountStorage } from '../storage/accountStorage'
 import { registerAccountMemoryCleanup } from './accountMemory'
 import { notifyUnsavedChangesChanged, registerUnsavedChanges } from './unsavedChanges'
 
@@ -139,6 +139,7 @@ export function useLedgerDraft(accountId: Ref<string | undefined>, type: Ref<Ent
     if (removedAccountId === accountId.value) {
       data.value = {}
       restored.value = false
+      storageError.value = undefined
       notifyUnsavedChangesChanged()
     }
   })
@@ -179,11 +180,11 @@ export function useLedgerDraft(accountId: Ref<string | undefined>, type: Ref<Ent
       try {
         const saved = await writeLedgerDraft(currentAccount, currentType, snapshot, Date.now(), draftCreatedAt)
         if (currentAccount === accountId.value && currentType === type.value) {
-          storageError.value = saved ? undefined : '草稿暂时无法保存在此设备。'
+          storageError.value = saved ? undefined : accountStorageSupportProblem() ?? '浏览器暂时无法备份草稿，可重试备份。'
         }
       } catch {
         if (currentAccount === accountId.value && currentType === type.value) {
-          storageError.value = '草稿暂时无法保存在此设备。'
+          storageError.value = accountStorageSupportProblem() ?? '浏览器暂时无法备份草稿，可重试备份。'
         }
       }
     })
@@ -200,6 +201,7 @@ export function useLedgerDraft(accountId: Ref<string | undefined>, type: Ref<Ent
       && currentAccount === accountId.value && currentType === type.value) {
       data.value = {}
       restored.value = false
+      storageError.value = undefined
       notifyUnsavedChangesChanged()
     }
   }
@@ -217,5 +219,6 @@ export function useLedgerDraft(accountId: Ref<string | undefined>, type: Ref<Ent
     stopUnsaved()
   })
 
-  return { data, dirty, restored, storageError, restore, replace, clear }
+  function retryBackup(): Promise<void> { return replace({ ...data.value }) }
+  return { data, dirty, restored, storageError, restore, replace, clear, retryBackup }
 }

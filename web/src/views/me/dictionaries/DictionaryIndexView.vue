@@ -3,13 +3,15 @@ import { ArrowLeft } from 'lucide-vue-next'
 import { useRouter } from 'vue-router'
 import DictionaryIndexPanel from '../../../components/DictionaryIndexPanel.vue'
 import PageHeading from '../../../components/PageHeading.vue'
+import PageWorkspace from '../../../components/PageWorkspace.vue'
 const router = useRouter()
 </script>
 
 <template>
-  <article
+  <PageWorkspace
     class="settings-page dictionary-index-page"
     data-page-key="personal-dictionaries"
+    content-label="个人字典"
   >
     <PageHeading title="个人字典">
       <button
@@ -27,5 +29,5 @@ const router = useRouter()
     <section class="settings-section">
       <DictionaryIndexPanel @select="router.push({ name: 'personal-dictionary-detail', params: { type: $event } })" />
     </section>
-  </article>
+  </PageWorkspace>
 </template>

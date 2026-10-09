@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 const { hooks, chart } = vi.hoisted(() => ({
   hooks: { mounted: [] as Array<() => void>, activated: [] as Array<() => void>,
     deactivated: [] as Array<() => void>, unmounted: [] as Array<() => void> },
-  chart: { on: vi.fn(), setOption: vi.fn(), dispatchAction: vi.fn(), resize: vi.fn(), dispose: vi.fn() },
+  chart: { on: vi.fn(), setOption: vi.fn(), resize: vi.fn(), dispose: vi.fn() },
 }))
 vi.mock('echarts/core', () => ({ use: vi.fn(), init: () => chart }))
 vi.mock('echarts/renderers', () => ({ SVGRenderer: {} }))
@@ -26,10 +26,9 @@ function setup() {
   vi.stubGlobal('MutationObserver', Observer)
   vi.stubGlobal('document', document)
   vi.stubGlobal('window', window)
-  const state = useReportChart(() => ({ series: [] }))
+  const state = useReportChart(() => ({ series: [], tooltip: { show: true } }))
   state.host.value = host as unknown as HTMLDivElement
   hooks.mounted.forEach((callback) => callback())
-  chart.dispatchAction.mockClear()
   return { host, document, window }
 }
 afterEach(() => {
@@ -39,35 +38,23 @@ afterEach(() => {
   vi.clearAllMocks()
 })
 
-describe('report tooltip lifecycle', () => {
-  it('clears both tooltip and axis pointer when the pointer leaves or the content scrolls', () => {
-    const { host, window } = setup()
-    host.dispatchEvent(new Event('pointerleave'))
-    expect(chart.dispatchAction).toHaveBeenCalledWith({ type: 'hideTip' })
-    expect(chart.dispatchAction).toHaveBeenCalledWith({ type: 'updateAxisPointer', currTrigger: 'leave' })
-    chart.dispatchAction.mockClear()
-    window.dispatchEvent(new Event('scroll'))
-    expect(chart.dispatchAction).toHaveBeenCalledWith({ type: 'hideTip' })
+describe('report chart lifecycle', () => {
+  it('keeps readings fixed and provides no click-to-drill handler in the chart', () => {
+    setup()
+    expect(chart.setOption).toHaveBeenCalledWith({ series: [] }, true)
+    expect(chart.on).not.toHaveBeenCalled()
   })
-  it('dismisses stale touch, outside focus and background tooltips', () => {
-    const { host, document, window } = setup()
-    host.dispatchEvent(Object.assign(new Event('pointerup'), { pointerType: 'mouse' }))
-    expect(chart.dispatchAction).not.toHaveBeenCalled()
-    host.dispatchEvent(Object.assign(new Event('pointerup'), { pointerType: 'touch' }))
-    document.dispatchEvent(new Event('focusin'))
-    window.dispatchEvent(new Event('blur'))
-    expect(chart.dispatchAction.mock.calls.filter(([action]) => action.type === 'hideTip')).toHaveLength(3)
-  })
-  it('pauses interaction listeners for cached pages and reconnects once on return', async () => {
-    const { host } = setup()
+  it('does not redraw a cached hidden page and redraws on return', async () => {
+    setup()
     hooks.deactivated.forEach((callback) => callback())
-    chart.dispatchAction.mockClear()
-    host.dispatchEvent(new Event('pointerleave'))
-    expect(chart.dispatchAction).not.toHaveBeenCalled()
+    chart.setOption.mockClear()
+    hooks.activated.forEach((callback) => callback())
+    hooks.deactivated.forEach((callback) => callback())
+    await nextTick()
+    expect(chart.setOption).not.toHaveBeenCalled()
     hooks.activated.forEach((callback) => callback())
     await nextTick()
-    chart.dispatchAction.mockClear()
-    host.dispatchEvent(new Event('pointerleave'))
-    expect(chart.dispatchAction.mock.calls.filter(([action]) => action.type === 'hideTip')).toHaveLength(1)
+    expect(chart.setOption).toHaveBeenCalledTimes(1)
+    expect(chart.resize).toHaveBeenCalledTimes(1)
   })
 })

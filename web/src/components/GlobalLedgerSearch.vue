@@ -12,7 +12,7 @@ const props = withDefaults(defineProps<{
   delay?: number
 }>(), {
   label: '搜索账目',
-  placeholder: '搜索名称、分类、付款方或备注',
+  placeholder: '搜索账目',
   delay: 300,
   maxLength: 200,
 })

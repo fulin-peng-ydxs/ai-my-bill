@@ -8,6 +8,7 @@ import AppStateBlock from '../components/AppStateBlock.vue'
 import AppToast from '../components/AppToast.vue'
 import DataExportAction from '../components/DataExportAction.vue'
 import PageHeading from '../components/PageHeading.vue'
+import PageWorkspace from '../components/PageWorkspace.vue'
 import DictionaryManager from '../components/DictionaryManager.vue'
 import { useRefreshOnReturn } from '../composables/useRefreshOnReturn'
 import { useDictionaryPanel } from '../composables/useDictionaryPanel'
@@ -197,9 +198,10 @@ useRefreshOnReturn(() => { if (!fundingLoading.value) return loadFundingChannels
 </script>
 
 <template>
-  <article
+  <PageWorkspace
     class="settings-page"
     data-page-key="profile-settings"
+    content-label="我的设置"
   >
     <PageHeading
       title="我的"
@@ -313,171 +315,173 @@ useRefreshOnReturn(() => { if (!fundingLoading.value) return loadFundingChannels
       </button>
     </section>
 
-    <DictionaryManager
-      v-model:open="dictionariesOpen"
-      origin="profile"
-    />
-    <PasswordChangeSheet
-      v-model:open="passwordOpen"
-      @saved="showExportNotice('密码已更新，其他设备需重新登录。', 'success')"
-    />
-
-    <AppDrawer
-      id="profile-setting"
-      v-model:open="drawerOpen"
-      :title="drawerTitle"
-      :description="drawerDescription"
-    >
-      <div
-        v-if="activeSetting !== 'install'"
-        class="drawer-setting-content"
-      >
-        <AppStateBlock
-          v-if="preferencesStore.status === 'loading'"
-          kind="loading"
-          title="正在读取偏好"
-        />
-        <AppStateBlock
-          v-else-if="fundingLoading && activeSetting === 'funding'"
-          kind="loading"
-          title="正在读取资金渠道"
-        />
-        <AppStateBlock
-          v-else-if="fundingError && activeSetting === 'funding'"
-          kind="error"
-          title="资金渠道加载失败"
-          :message="fundingError"
-          action-label="重试"
-          @action="loadFundingChannels"
-        />
-        <DictionaryCombobox
-          v-else-if="activeSetting === 'funding'"
-          input-id="default-funding-channel"
-          :clear-on-input="false"
-          type="funding-channel"
-          label="默认资金渠道"
-          optional
-          :items="fundingOptions"
-          :model-value="preferencesStore.values.defaultFundingChannelId ?? ''"
-          :disabled="preferencesStore.isSaving"
-          @select="selectDefaultFunding"
-          @clear="updatePreference({ defaultFundingChannelId: null })"
-        />
-        <FormField
-          v-else-if="activeSetting === 'ledgerRange'"
-          field-id="ledger-default-range"
-          label="默认时间范围"
-        >
-          <template #default="{ describedBy }">
-            <select
-              id="ledger-default-range"
-              :value="preferencesStore.values.ledgerDefaultRange"
-              :aria-describedby="describedBy"
-              :disabled="preferencesStore.isSaving"
-              @change="updatePreference({ ledgerDefaultRange: ($event.target as HTMLSelectElement).value as LedgerDefaultRange })"
-            >
-              <option
-                v-for="option in ledgerRangeOptions"
-                :key="option.value"
-                :value="option.value"
-              >
-                {{ option.label }}
-              </option>
-            </select>
-          </template>
-        </FormField>
-        <FormField
-          v-else-if="activeSetting === 'reportRange'"
-          field-id="report-default-range"
-          label="默认时间范围"
-        >
-          <template #default="{ describedBy }">
-            <select
-              id="report-default-range"
-              :value="preferencesStore.values.reportDefaultRange"
-              :aria-describedby="describedBy"
-              :disabled="preferencesStore.isSaving"
-              @change="updatePreference({ reportDefaultRange: ($event.target as HTMLSelectElement).value as ReportDefaultRange })"
-            >
-              <option
-                v-for="option in reportRangeOptions"
-                :key="option.value"
-                :value="option.value"
-              >
-                {{ option.label }}
-              </option>
-            </select>
-          </template>
-        </FormField>
-        <ThemeModeControl
-          v-else-if="activeSetting === 'appearance'"
-          :disabled="preferencesStore.isSaving"
-        />
-        <AppStateBlock
-          v-if="activeField && preferencesStore.fieldStates[activeField] === 'saving'"
-          kind="loading"
-          title="正在保存偏好"
-          message="当前选择已经生效。"
-        />
-        <AppStateBlock
-          v-else-if="activeField && preferencesStore.fieldStates[activeField] === 'error'"
-          kind="error"
-          title="偏好尚未同步"
-          :message="preferencesStore.errorMessage ?? '当前选择已保留，可以重试。'"
-          action-label="重试"
-          @action="retryActive"
-        />
-      </div>
-      <PwaInstallPrompt v-else-if="activeSetting === 'install'" />
-    </AppDrawer>
-
-    <AppDialog
-      id="delete-account-confirm"
-      v-model:open="deletionOpen"
-      title="永久注销账号？"
-      description="在线账号、账目、字典、导出文件和全部会话会立即删除且无法恢复；仅保留不含账目内容的匿名安全审计 180 天。备份副本随既定周期自然过期，恢复备份时必须重放注销清理。建议先完成数据导出。"
-      confirm-label="永久注销"
-      danger
-      :busy="deletionBusy"
-      :confirm-disabled="deletionConfirmation !== sessionStore.session?.username"
-      @confirm="confirmDeletion"
-    >
-      <FormField
-        field-id="deletion-confirmation"
-        :label="`输入用户名 ${sessionStore.session?.username ?? ''} 以确认`"
-        :error="deletionError"
-      >
-        <template #default="{ describedBy }">
-          <input
-            id="deletion-confirmation"
-            v-model="deletionConfirmation"
-            autocomplete="off"
-            maxlength="64"
-            :aria-describedby="describedBy"
-          >
-        </template>
-      </FormField>
-    </AppDialog>
-    <AppDialog
-      id="reset-preferences-confirm"
-      v-model:open="resetOpen"
-      title="恢复默认偏好？"
-      description="资金渠道、明细范围、报表范围、最近记账类型和主题都会恢复默认。"
-      confirm-label="确认恢复"
-      :busy="preferencesStore.isSaving"
-      @confirm="confirmReset"
-    >
-      <AppStateBlock
-        v-if="preferencesStore.errorMessage"
-        kind="error"
-        title="恢复未完成"
-        :message="preferencesStore.errorMessage"
+    <template #overlays>
+      <DictionaryManager
+        v-model:open="dictionariesOpen"
+        origin="profile"
       />
-    </AppDialog>
-    <AppToast
-      v-model:open="toastOpen"
-      :message="toastMessage"
-      :kind="toastKind"
-    />
-  </article>
+      <PasswordChangeSheet
+        v-model:open="passwordOpen"
+        @saved="showExportNotice('密码已更新，其他设备需重新登录。', 'success')"
+      />
+
+      <AppDrawer
+        id="profile-setting"
+        v-model:open="drawerOpen"
+        :title="drawerTitle"
+        :description="drawerDescription"
+      >
+        <div
+          v-if="activeSetting !== 'install'"
+          class="drawer-setting-content"
+        >
+          <AppStateBlock
+            v-if="preferencesStore.status === 'loading'"
+            kind="loading"
+            title="正在读取偏好"
+          />
+          <AppStateBlock
+            v-else-if="fundingLoading && activeSetting === 'funding'"
+            kind="loading"
+            title="正在读取资金渠道"
+          />
+          <AppStateBlock
+            v-else-if="fundingError && activeSetting === 'funding'"
+            kind="error"
+            title="资金渠道加载失败"
+            :message="fundingError"
+            action-label="重试"
+            @action="loadFundingChannels"
+          />
+          <DictionaryCombobox
+            v-else-if="activeSetting === 'funding'"
+            input-id="default-funding-channel"
+            :clear-on-input="false"
+            type="funding-channel"
+            label="默认资金渠道"
+            optional
+            :items="fundingOptions"
+            :model-value="preferencesStore.values.defaultFundingChannelId ?? ''"
+            :disabled="preferencesStore.isSaving"
+            @select="selectDefaultFunding"
+            @clear="updatePreference({ defaultFundingChannelId: null })"
+          />
+          <FormField
+            v-else-if="activeSetting === 'ledgerRange'"
+            field-id="ledger-default-range"
+            label="默认时间范围"
+          >
+            <template #default="{ describedBy }">
+              <select
+                id="ledger-default-range"
+                :value="preferencesStore.values.ledgerDefaultRange"
+                :aria-describedby="describedBy"
+                :disabled="preferencesStore.isSaving"
+                @change="updatePreference({ ledgerDefaultRange: ($event.target as HTMLSelectElement).value as LedgerDefaultRange })"
+              >
+                <option
+                  v-for="option in ledgerRangeOptions"
+                  :key="option.value"
+                  :value="option.value"
+                >
+                  {{ option.label }}
+                </option>
+              </select>
+            </template>
+          </FormField>
+          <FormField
+            v-else-if="activeSetting === 'reportRange'"
+            field-id="report-default-range"
+            label="默认时间范围"
+          >
+            <template #default="{ describedBy }">
+              <select
+                id="report-default-range"
+                :value="preferencesStore.values.reportDefaultRange"
+                :aria-describedby="describedBy"
+                :disabled="preferencesStore.isSaving"
+                @change="updatePreference({ reportDefaultRange: ($event.target as HTMLSelectElement).value as ReportDefaultRange })"
+              >
+                <option
+                  v-for="option in reportRangeOptions"
+                  :key="option.value"
+                  :value="option.value"
+                >
+                  {{ option.label }}
+                </option>
+              </select>
+            </template>
+          </FormField>
+          <ThemeModeControl
+            v-else-if="activeSetting === 'appearance'"
+            :disabled="preferencesStore.isSaving"
+          />
+          <AppStateBlock
+            v-if="activeField && preferencesStore.fieldStates[activeField] === 'saving'"
+            kind="loading"
+            title="正在保存偏好"
+            message="当前选择已经生效。"
+          />
+          <AppStateBlock
+            v-else-if="activeField && preferencesStore.fieldStates[activeField] === 'error'"
+            kind="error"
+            title="偏好尚未同步"
+            :message="preferencesStore.errorMessage ?? '当前选择已保留，可以重试。'"
+            action-label="重试"
+            @action="retryActive"
+          />
+        </div>
+        <PwaInstallPrompt v-else-if="activeSetting === 'install'" />
+      </AppDrawer>
+
+      <AppDialog
+        id="delete-account-confirm"
+        v-model:open="deletionOpen"
+        title="永久注销账号？"
+        description="在线账号、账目、字典、导出文件和全部会话会立即删除且无法恢复；仅保留不含账目内容的匿名安全审计 180 天。备份副本随既定周期自然过期，恢复备份时必须重放注销清理。建议先完成数据导出。"
+        confirm-label="永久注销"
+        danger
+        :busy="deletionBusy"
+        :confirm-disabled="deletionConfirmation !== sessionStore.session?.username"
+        @confirm="confirmDeletion"
+      >
+        <FormField
+          field-id="deletion-confirmation"
+          :label="`输入用户名 ${sessionStore.session?.username ?? ''} 以确认`"
+          :error="deletionError"
+        >
+          <template #default="{ describedBy }">
+            <input
+              id="deletion-confirmation"
+              v-model="deletionConfirmation"
+              autocomplete="off"
+              maxlength="64"
+              :aria-describedby="describedBy"
+            >
+          </template>
+        </FormField>
+      </AppDialog>
+      <AppDialog
+        id="reset-preferences-confirm"
+        v-model:open="resetOpen"
+        title="恢复默认偏好？"
+        description="资金渠道、明细范围、报表范围、最近记账类型和主题都会恢复默认。"
+        confirm-label="确认恢复"
+        :busy="preferencesStore.isSaving"
+        @confirm="confirmReset"
+      >
+        <AppStateBlock
+          v-if="preferencesStore.errorMessage"
+          kind="error"
+          title="恢复未完成"
+          :message="preferencesStore.errorMessage"
+        />
+      </AppDialog>
+      <AppToast
+        v-model:open="toastOpen"
+        :message="toastMessage"
+        :kind="toastKind"
+      />
+    </template>
+  </PageWorkspace>
 </template>

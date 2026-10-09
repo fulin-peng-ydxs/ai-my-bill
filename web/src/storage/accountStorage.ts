@@ -4,11 +4,30 @@ const KNOWN_SCOPES = ['draft:EXPENSE', 'draft:INCOME', 'preferences'] as const
 
 export type AccountStorageScope = (typeof KNOWN_SCOPES)[number]
 
+/** 保持账号隔离的安全边界；测试 HTTP 地址不能退化为含账号明文的共享存储键。 */
+export function accountStorageSupportProblem(): string | undefined {
+  if (!globalThis.crypto?.subtle) {
+    return globalThis.isSecureContext === false
+      ? '当前地址不支持草稿自动备份，请使用 HTTPS 地址。'
+      : '当前浏览器暂不支持草稿自动备份。'
+  }
+  try {
+    if (typeof localStorage === 'undefined') return '当前浏览器暂不支持草稿自动备份。'
+  } catch {
+    return '浏览器未允许使用本地存储。'
+  }
+  return undefined
+}
+
 async function namespace(accountId: string): Promise<string | undefined> {
   if (!ACCOUNT_ID_PATTERN.test(accountId) || !globalThis.crypto?.subtle) return undefined
   const source = new TextEncoder().encode(`my-bill/account/v1/${accountId.toLowerCase()}`)
-  const digest = await globalThis.crypto.subtle.digest('SHA-256', source)
-  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('')
+  try {
+    const digest = await globalThis.crypto.subtle.digest('SHA-256', source)
+    return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('')
+  } catch {
+    return undefined
+  }
 }
 
 async function storageKey(accountId: string, scope: AccountStorageScope): Promise<string | undefined> {
@@ -19,8 +38,9 @@ async function storageKey(accountId: string, scope: AccountStorageScope): Promis
 /** 只按服务端当前账号推导不可逆键，不扫描 localStorage，也不把账号标识写入值。 */
 export async function readAccountStorage(accountId: string, scope: AccountStorageScope): Promise<string | undefined> {
   const key = await storageKey(accountId, scope)
-  if (!key || typeof localStorage === 'undefined') return undefined
+  if (!key) return undefined
   try {
+    if (typeof localStorage === 'undefined') return undefined
     return localStorage.getItem(key) ?? undefined
   } catch {
     return undefined
@@ -33,8 +53,9 @@ export async function writeAccountStorage(
   value: string,
 ): Promise<boolean> {
   const key = await storageKey(accountId, scope)
-  if (!key || typeof localStorage === 'undefined') return false
+  if (!key) return false
   try {
+    if (typeof localStorage === 'undefined') return false
     localStorage.setItem(key, value)
     return true
   } catch {
@@ -44,8 +65,9 @@ export async function writeAccountStorage(
 
 export async function removeAccountStorage(accountId: string, scope: AccountStorageScope): Promise<void> {
   const key = await storageKey(accountId, scope)
-  if (!key || typeof localStorage === 'undefined') return
+  if (!key) return
   try {
+    if (typeof localStorage === 'undefined') return
     localStorage.removeItem(key)
   } catch {
     // 存储不可用时无需阻断账号退出或注销。

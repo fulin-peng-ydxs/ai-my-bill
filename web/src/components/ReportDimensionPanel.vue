@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { BarChart } from 'echarts/charts'
-import { GridComponent, TooltipComponent } from 'echarts/components'
+import { GridComponent } from 'echarts/components'
 import { use } from 'echarts/core'
 import { computed, watch } from 'vue'
 
@@ -9,7 +9,7 @@ import { useReportChart } from '../composables/useReportChart'
 import { formatCny } from '../domain/money'
 import AppStateBlock from './AppStateBlock.vue'
 
-use([BarChart, GridComponent, TooltipComponent])
+use([BarChart, GridComponent])
 type Point = ExpenseReport['points'][number] | IncomeReport['points'][number]
 type QualityRule = NonNullable<ExpenseReport['qualityRule']>
 const props = defineProps<{
@@ -38,18 +38,16 @@ const { host, token, refresh } = useReportChart(() => ({
   animationDuration: globalThis.matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 180,
   color: [token(props.tone === 'income' ? '--color-income-accent' : '--color-expense-accent')],
   textStyle: { color: token('--color-text') },
-  grid: { left: 8, right: 20, top: 8, bottom: 8, containLabel: true },
-  xAxis: { type: 'value', axisLabel: { color: token('--color-muted'),
+  grid: { left: 8, right: 112, top: 8, bottom: 8, containLabel: true },
+  xAxis: { type: 'value', splitNumber: 3, axisLabel: { color: token('--color-muted'), hideOverlap: true,
     formatter: (value: number) => isCount.value ? String(value) : `¥${value}` },
   splitLine: { lineStyle: { color: token('--color-border'), type: 'dashed' } } },
   yAxis: { type: 'category', data: chartPoints.value.map((point) => point.label),
-    axisLabel: { color: token('--color-muted'), width: 120, overflow: 'truncate' }, axisTick: { show: false },
+    axisLabel: { color: token('--color-muted'), width: 92, overflow: 'truncate' }, axisTick: { show: false },
     axisLine: { lineStyle: { color: token('--color-border') } } },
-  tooltip: { trigger: 'axis', backgroundColor: token('--color-surface'), borderColor: token('--color-border'),
-    textStyle: { color: token('--color-text') },
-    valueFormatter: (value: unknown) => isCount.value ? `${value} 条` : formatCny(String(value)) },
-  series: [{ type: 'bar', data: chartPoints.value.map((point) => Number(point.amount)), barMaxWidth: 24 }],
-}), (index) => emit('select', chartPoints.value[index]))
+  series: [{ type: 'bar', silent: true, label: { show: true, position: 'right', fontSize: 12, color: token('--color-text'),
+    width: 104, overflow: 'truncate', formatter: (item: { dataIndex: number }) => displayValue(chartPoints.value[item.dataIndex]) }, data: chartPoints.value.map((point) => Number(point.amount)), barMaxWidth: 24 }],
+}))
 
 watch(() => props.report, refresh, { deep: true })
 </script>

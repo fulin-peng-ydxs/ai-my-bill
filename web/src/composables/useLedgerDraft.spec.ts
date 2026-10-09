@@ -113,4 +113,23 @@ describe('ledger draft storage', () => {
     expect(draft?.data.value).toEqual({})
     scope.stop()
   })
+  it('retains current input after a failed backup and retries the latest data without submitting a bill', async () => {
+    const storage = memoryStorage()
+    let rejected = true
+    vi.stubGlobal('localStorage', { ...storage, setItem: (key: string, value: string) => {
+      if (rejected) throw new Error('quota')
+      storage.setItem(key, value)
+    } })
+    const scope = effectScope()
+    const draft = scope.run(() => useLedgerDraft(ref(ACCOUNT), ref('EXPENSE' as const)))!
+    await draft.restore()
+    await draft.replace({ productName: '咖啡', paidAmount: '16.00' })
+    expect(draft.storageError.value).toBeDefined()
+    expect(draft.data.value.paidAmount).toBe('16.00')
+    rejected = false
+    await draft.retryBackup()
+    expect(draft.storageError.value).toBeUndefined()
+    expect(await readLedgerDraft(ACCOUNT, 'EXPENSE')).toEqual({ productName: '咖啡', paidAmount: '16.00' })
+    scope.stop()
+  })
 })

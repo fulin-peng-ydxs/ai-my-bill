@@ -3,6 +3,7 @@ import { computed } from 'vue'
 
 import { useDialogController } from '../composables/useDialogController'
 import { useKeyboardViewport } from '../composables/useKeyboardViewport'
+import ScrollRegion from './ScrollRegion.vue'
 
 const props = withDefaults(defineProps<{
   id: string
@@ -59,9 +60,12 @@ const { dialog, handleCancel, handleClose } = useDialogController(isOpen, (value
           </p>
         </div>
       </header>
-      <div class="overlay-body">
+      <ScrollRegion
+        v-if="$slots.default"
+        class="overlay-body"
+      >
         <slot />
-      </div>
+      </ScrollRegion>
       <footer class="overlay-actions">
         <button
           v-if="showCancel"

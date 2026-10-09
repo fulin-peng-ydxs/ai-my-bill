@@ -21,12 +21,19 @@ function place(): void {
   const viewport = globalThis.window.visualViewport
   const leftEdge = viewport?.offsetLeft ?? 0
   const viewportTop = viewport?.offsetTop ?? 0
-  const body = props.anchor.closest('.overlay-body, [data-page-scroll]')?.getBoundingClientRect()
+  const scrollBody = props.anchor.closest<globalThis.HTMLElement>('.overlay-body, [data-page-scroll]')
+  const body = scrollBody?.getBoundingClientRect()
   const topEdge = Math.max(viewportTop, body?.top ?? viewportTop)
   const width = viewport?.width ?? globalThis.window.innerWidth
   const height = viewport?.height ?? globalThis.window.innerHeight
   const bottomEdge = Math.min(viewportTop + height, body?.bottom ?? viewportTop + height)
   if (rect.bottom <= topEdge || rect.top >= bottomEdge) {
+    // 软键盘缩小抽屉时，正在搜索的候选仍保留输入焦点，并把所属字段带回正文可见区。
+    if (scrollBody && panel.value?.contains(globalThis.document.activeElement)) {
+      const before = scrollBody.scrollTop
+      scrollBody.scrollTop += rect.top - topEdge - 8
+      if (scrollBody.scrollTop !== before) { schedulePlace(); return }
+    }
     emit('close', false)
     return
   }

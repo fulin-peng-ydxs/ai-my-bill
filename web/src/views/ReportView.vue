@@ -254,19 +254,19 @@ useRefreshOnReturn(() => load())
     <template #header>
       <PageHeading title="收支报表" />
 
-      <GlobalLedgerSearch
-        id="report-search"
-        v-model="searchText"
-        label="搜索报表账目"
-        placeholder="搜索名称、分类、付款方或备注"
-        @search="updateSearch"
-      />
-      <SegmentedControl
-        label="账目范围"
-        :model-value="filters.scope"
-        :options="reportScopeOptions"
-        @update:model-value="updateScope"
-      />
+      <div class="list-search-controls">
+        <GlobalLedgerSearch
+          id="report-search"
+          v-model="searchText"
+          @search="updateSearch"
+        />
+        <SegmentedControl
+          label="账目范围"
+          :model-value="filters.scope"
+          :options="reportScopeOptions"
+          @update:model-value="updateScope"
+        />
+      </div>
       <AppliedFilterBar
         :summaries="filterSummaries"
         :clearable="hasFilters"

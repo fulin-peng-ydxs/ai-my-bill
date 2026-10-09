@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { LineChart } from 'echarts/charts'
-import { GridComponent, LegendComponent, TooltipComponent } from 'echarts/components'
+import { GridComponent, LegendComponent } from 'echarts/components'
 import { use } from 'echarts/core'
 import { computed, ref, watch } from 'vue'
 
@@ -8,7 +8,7 @@ import type { ReportTimeMetric, TimeReport } from '../api/reports'
 import { useReportChart } from '../composables/useReportChart'
 import { formatCny } from '../domain/money'
 
-use([LineChart, GridComponent, LegendComponent, TooltipComponent])
+use([LineChart, GridComponent, LegendComponent])
 type Bucket = TimeReport['buckets'][number]
 type AmountKey = 'totalIncome' | 'grossExpense' | 'adjustmentAmount' | 'netExpense' | 'balance'
   | 'cumulativeIncome' | 'cumulativeGrossExpense' | 'cumulativeAdjustmentAmount' | 'cumulativeNetExpense' | 'cumulativeBalance'
@@ -22,6 +22,7 @@ const DEFINITIONS: Record<ReportTimeMetric, { label: string, field: AmountKey, c
 const props = defineProps<{ report: TimeReport, metric: ReportTimeMetric }>()
 const emit = defineEmits<{ select: [bucket: Bucket] }>()
 const selected = ref(0)
+const selectedBucket = computed(() => props.report.buckets[selected.value])
 const definition = computed(() => DEFINITIONS[props.metric])
 const comparison = computed(() => props.report.comparisons.find((item) => item.metric === props.metric))
 function metricCount(bucket: Bucket): number {
@@ -36,22 +37,20 @@ const { host, token, refresh } = useReportChart(() => ({
   color: [token(definition.value.color), token(definition.value.color)],
   textStyle: { color: token('--color-text') },
   grid: { left: 8, right: 12, top: 42, bottom: 32, containLabel: true },
-  legend: { top: 0, textStyle: { color: token('--color-muted') } },
+  legend: { top: 0, selectedMode: false, textStyle: { color: token('--color-muted') } },
   xAxis: { type: 'category', data: props.report.buckets.map((item) => item.label), axisLabel: { color: token('--color-muted') },
     axisLine: { lineStyle: { color: token('--color-border') } } },
   yAxis: { type: 'value', axisLabel: { color: token('--color-muted'), formatter: (value: number) => `¥${value}` },
     splitLine: { lineStyle: { color: token('--color-border'), type: 'dashed' } } },
-  tooltip: { trigger: 'axis', backgroundColor: token('--color-surface'), borderColor: token('--color-border'),
-    textStyle: { color: token('--color-text') }, valueFormatter: (value: unknown) => formatCny(String(value)) },
   series: [
-    { name: '当期', type: 'line', showSymbol: props.report.buckets.length < 32, smooth: false,
+    { name: '当期', type: 'line', silent: true, showSymbol: props.report.buckets.length < 32, smooth: false,
       lineStyle: { color: token(definition.value.color), width: 3 }, itemStyle: { color: token(definition.value.color) },
       data: props.report.buckets.map((item) => Number(item[definition.value.field])) },
-    { name: '累计', type: 'line', showSymbol: false,
+    { name: '累计', type: 'line', silent: true, showSymbol: false,
       lineStyle: { color: token(definition.value.color), type: 'dashed', width: 2, opacity: 0.65 },
       data: props.report.buckets.map((item) => Number(item[definition.value.cumulative])) },
   ],
-}), (index) => emit('select', props.report.buckets[index]))
+}))
 
 watch(() => [props.report, props.metric], () => { selected.value = 0; refresh() }, { deep: true })
 function comparisonText(value: NonNullable<typeof comparison.value>['periodOverPeriod'] | undefined): string {
@@ -84,16 +83,31 @@ function comparisonText(value: NonNullable<typeof comparison.value>['periodOverP
       <article><small>同比</small><strong>{{ comparisonText(comparison?.yearOverYear) }}</strong></article>
     </div>
     <div
+      v-if="selectedBucket"
+      id="time-point-reading"
+      class="chart-readout"
+      role="group"
+      aria-label="时间点固定读数"
+    >
+      <strong>{{ selectedBucket.label }} · {{ metricCount(selectedBucket) }} 条</strong>
+      <span>当期 <b>{{ formatCny(selectedBucket[definition.field]) }}</b></span>
+      <span>累计 <b>{{ formatCny(selectedBucket[definition.cumulative]) }}</b></span>
+    </div>
+    <div
       ref="host"
       class="chart-canvas"
       aria-hidden="true"
     />
-    <div class="time-drill">
-      <label for="time-point">时间点明细</label>
+    <div
+      v-if="selectedBucket"
+      class="time-drill"
+    >
+      <label for="time-point">选择时间点</label>
       <select
         id="time-point"
         v-model.number="selected"
         class="select-control"
+        aria-describedby="time-point-reading"
       >
         <option
           v-for="(bucket, index) in report.buckets"

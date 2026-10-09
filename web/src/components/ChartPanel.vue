@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { BarChart } from 'echarts/charts'
-import { GridComponent, TooltipComponent } from 'echarts/components'
+import { GridComponent } from 'echarts/components'
 import { use } from 'echarts/core'
 import { watch } from 'vue'
 
@@ -8,7 +8,7 @@ import type { components } from '../api/generated/schema'
 import { formatCny } from '../domain/money'
 import { useReportChart } from '../composables/useReportChart'
 
-use([BarChart, GridComponent, TooltipComponent])
+use([BarChart, GridComponent])
 
 const props = defineProps<{
   title: string
@@ -29,21 +29,17 @@ const { host, token, refresh } = useReportChart(() => {
   return {
     animationDuration: globalThis.matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 180,
     textStyle: { color: text },
-    grid: { left: 8, right: 8, top: 8, bottom: 28, containLabel: true },
+    grid: { left: 8, right: 8, top: 32, bottom: 28, containLabel: true },
     xAxis: { type: 'category', data: props.points.map((point) => point.label), axisTick: { show: false },
       axisLabel: { color: muted }, axisLine: { lineStyle: { color: border } } },
     yAxis: { type: 'value', axisLabel: { color: muted, formatter: (value: number) => `¥${value}` },
       axisLine: { lineStyle: { color: border } }, splitLine: { lineStyle: { color: border, type: 'dashed' } } },
-    tooltip: { trigger: 'axis', backgroundColor: token('--color-surface'), borderColor: border,
-      textStyle: { color: text }, valueFormatter: (value: unknown) => formatCny(String(value)) },
     series: [{
-      type: 'bar', data: props.points.map((point) => ({ value: Number(point.amount), itemStyle: { color: color(point.value) } })),
+      type: 'bar', silent: true, label: { show: true, position: 'top', color: text, fontSize: 12, width: 100, overflow: 'truncate',
+        formatter: (item: { dataIndex: number }) => formatCny(props.points[item.dataIndex].amount) }, data: props.points.map((point) => ({ value: Number(point.amount), itemStyle: { color: color(point.value) } })),
       barMaxWidth: 64,
     }],
   }
-}, (index) => {
-  const point = props.points[index]
-  if (point) emit('select', point)
 })
 
 watch(() => props.points, refresh, { deep: true })
@@ -60,7 +56,7 @@ watch(() => props.points, refresh, { deep: true })
           {{ title }}
         </h2>
       </div>
-      <span>点击指标查看明细</span>
+      <span>点击汇总卡片查看明细</span>
     </header>
     <div
       ref="host"

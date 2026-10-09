@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { clearAccountStorage, readAccountStorage, writeAccountStorage } from './accountStorage'
+import { accountStorageSupportProblem, clearAccountStorage, readAccountStorage, writeAccountStorage } from './accountStorage'
 
 const ACCOUNT_A = '10000000-0000-4000-8000-000000000001'
 const ACCOUNT_B = '10000000-0000-4000-8000-000000000002'
@@ -50,5 +50,27 @@ describe('account storage', () => {
     vi.stubGlobal('localStorage', storage)
     expect(await writeAccountStorage('alice', 'preferences', '{}')).toBe(false)
     expect(storage.setItem).not.toHaveBeenCalled()
+  })
+  it('explains an unsupported HTTP test address without weakening account isolation', async () => {
+    const storage = memoryStorage()
+    vi.stubGlobal('localStorage', storage)
+    vi.stubGlobal('crypto', {})
+    vi.stubGlobal('isSecureContext', false)
+    expect(accountStorageSupportProblem()).toContain('HTTPS')
+    expect(await writeAccountStorage(ACCOUNT_A, 'draft:EXPENSE', 'draft')).toBe(false)
+    expect(storage.setItem).not.toHaveBeenCalled()
+  })
+  it('does not break restoration when the browser rejects hashing or local storage', async () => {
+    vi.stubGlobal('crypto', { subtle: { digest: vi.fn().mockRejectedValue(new Error('unavailable')) } })
+    expect(await readAccountStorage(ACCOUNT_A, 'draft:EXPENSE')).toBeUndefined()
+    expect(await writeAccountStorage(ACCOUNT_A, 'draft:EXPENSE', 'draft')).toBe(false)
+  })
+  it('handles a browser that denies access to the local storage property itself', async () => {
+    vi.stubGlobal('localStorage', undefined)
+    Object.defineProperty(globalThis, 'localStorage', { configurable: true, get() { throw new Error('denied') } })
+    expect(accountStorageSupportProblem()).toContain('未允许')
+    expect(await readAccountStorage(ACCOUNT_A, 'draft:EXPENSE')).toBeUndefined()
+    expect(await writeAccountStorage(ACCOUNT_A, 'draft:EXPENSE', 'draft')).toBe(false)
+    await expect(clearAccountStorage(ACCOUNT_A)).resolves.toBeUndefined()
   })
 })

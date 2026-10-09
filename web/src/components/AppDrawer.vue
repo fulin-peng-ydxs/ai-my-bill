@@ -5,6 +5,7 @@ import { reserveDrawerCandidateSpace } from '../composables/drawerCandidateSpace
 
 import { useDialogController } from '../composables/useDialogController'
 import { useKeyboardViewport } from '../composables/useKeyboardViewport'
+import ScrollRegion from './ScrollRegion.vue'
 
 const props = defineProps<{
   id: string
@@ -62,9 +63,9 @@ const { dialog, handleCancel, handleClose } = useDialogController(isOpen, (value
           />
         </button>
       </header>
-      <div class="overlay-body">
+      <ScrollRegion class="overlay-body">
         <slot />
-      </div>
+      </ScrollRegion>
       <footer
         v-if="$slots.footer"
         class="overlay-actions"

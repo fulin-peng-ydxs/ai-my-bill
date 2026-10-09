@@ -1,13 +1,17 @@
 <script setup lang="ts">
+import ScrollRegion from './ScrollRegion.vue'
 defineProps<{ contentLabel: string }>()
 </script>
 
 <template>
   <article class="page-workspace">
-    <div class="page-workspace-header">
+    <div
+      v-if="$slots.header"
+      class="page-workspace-header"
+    >
       <slot name="header" />
     </div>
-    <div
+    <ScrollRegion
       class="page-scroll-region"
       data-page-scroll
       role="region"
@@ -15,7 +19,7 @@ defineProps<{ contentLabel: string }>()
       tabindex="0"
     >
       <slot />
-    </div>
+    </ScrollRegion>
     <slot name="overlays" />
   </article>
 </template>

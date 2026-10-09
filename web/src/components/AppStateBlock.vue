@@ -6,6 +6,7 @@ const props = withDefaults(defineProps<{
   title: string
   message?: string
   actionLabel?: string
+  actionDisabled?: boolean
 }>(), {
   kind: 'info',
   message: undefined,
@@ -39,6 +40,7 @@ defineEmits<{
       v-if="actionLabel"
       type="button"
       class="text-action"
+      :disabled="actionDisabled"
       @click="$emit('action')"
     >
       {{ actionLabel }}

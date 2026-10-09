@@ -10,6 +10,7 @@ import {
   createIncome, getIncome, listRecentIncomeNames, undoCreatedIncome, updateIncome, type IncomeResponse,
 } from '../api/incomes'
 import { useLedgerDraft } from '../composables/useLedgerDraft'
+import DraftBackupNotice from './DraftBackupNotice.vue'
 import { registerUnsavedChanges } from '../composables/unsavedChanges'
 import { createIdempotencyAttemptTracker } from '../domain/idempotency'
 import { toShanghaiLocalDateTime } from '../domain/businessTime'
@@ -224,11 +225,10 @@ useRefreshOnReturn(() => loadOptions())
       action-label="重试"
       @action="loadOptions"
     />
-    <AppStateBlock
-      v-if="!editMode && draft.storageError.value"
-      kind="error"
-      title="草稿未保存到此设备"
+    <DraftBackupNotice
+      v-if="!editMode"
       :message="draft.storageError.value"
+      :retry="draft.retryBackup"
     />
     <DailyTemplateFallbackNotice
       v-if="!editMode"
