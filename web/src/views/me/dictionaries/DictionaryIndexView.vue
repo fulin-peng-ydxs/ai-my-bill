@@ -13,19 +13,21 @@ const router = useRouter()
     data-page-key="personal-dictionaries"
     content-label="个人字典"
   >
-    <PageHeading title="个人字典">
-      <button
-        type="button"
-        class="icon-button"
-        aria-label="返回我的"
-        @click="router.push('/me')"
-      >
-        <ArrowLeft
-          :size="20"
-          aria-hidden="true"
-        />
-      </button>
-    </PageHeading>
+    <template #header>
+      <PageHeading title="个人字典">
+        <button
+          type="button"
+          class="icon-button"
+          aria-label="返回我的"
+          @click="router.push('/me')"
+        >
+          <ArrowLeft
+            :size="20"
+            aria-hidden="true"
+          />
+        </button>
+      </PageHeading>
+    </template>
     <section class="settings-section">
       <DictionaryIndexPanel @select="router.push({ name: 'personal-dictionary-detail', params: { type: $event } })" />
     </section>

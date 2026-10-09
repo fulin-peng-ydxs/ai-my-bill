@@ -203,10 +203,12 @@ useRefreshOnReturn(() => { if (!fundingLoading.value) return loadFundingChannels
     data-page-key="profile-settings"
     content-label="我的设置"
   >
-    <PageHeading
-      title="我的"
-      :subtitle="sessionStore.session?.username"
-    />
+    <template #header>
+      <PageHeading
+        title="我的"
+        :subtitle="sessionStore.session?.username"
+      />
+    </template>
 
     <section
       class="settings-section"

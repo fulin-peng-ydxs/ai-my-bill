@@ -20,6 +20,7 @@ sources:
 
 - 业务与页面范围：[初始需求闭环](agent-works/initial-development/requirement-closure.md)及用户后续确认；仅在用户明确要求时编写后续需求文档。
 - 当前设计契约：本文件；颜色取值只在 §2 定义，文字与间距只在 §3 定义，圆角只在 §6 定义，组件只在 §4 定义。front matter 及提示示例只提供入口，不重复维护数值。
+- 实现机制：[前端与 PWA 架构](agent-works/architecture/frontend-pwa.md)说明路由、状态、资源生命周期、草稿存储及 PWA 构建与更新；界面规则在本文件维护，架构文档通过引用承接。
 - 初始原型：`agent-works/initial-development/prototypes/`，仅供历史需求与结构查阅，后续页面变更不回写初始原型，不能覆盖用户当前确认或本文件。
 - 代码事实源：主题 token 为 `web/src/styles/tokens.css`，页面登记为 `web/src/app/pageRegistry.ts`，路由为 `web/src/router/index.ts`，登记契约测试为 `web/src/app/pageRegistry.spec.ts`。前端技术基线为 Vue 3 + Vite + TypeScript + Pinia + Vue Router。
 - 本文件维护稳定规则、组件关系和页面索引；临时开发步骤、一次性迁移说明和历史流水不进入本文。
@@ -185,7 +186,7 @@ Key Characteristics：
 | `EntryTypeSwitch` | 支出/收入互斥切换 | 恢复最近类型；两类字段、校验和草稿隔离，切换不得清空未提交内容 |
 | `PageHeading` | 普通用户统一页头 | 按 §3.2 使用单一页面标题；日常模板与常用选项共用 compact-action 的字级与命中区，或以图标承载导出；不叠加品牌栏、眉题和实现说明 |
 | `SectionTitle` | 分区标题及任务标识 | FormSection 与 FormDisclosure 共用；可选语义图标，支持 h2/strong，底板只包图标，不包装整个标题 |
-| `PageWorkspace` | 页头、筛选与正文边界 | 普通用户页面统一复用；有 header 插槽时页头与筛选固定，没有时整页内容自然滚动；正文提供可访问名称与键盘滚动入口，弹层不进入滚动内容 |
+| `PageWorkspace` | 页头、筛选与正文边界 | 普通用户页面统一复用；标题、返回操作及筛选必须放入 header 插槽，固定在正文滚动区外，包括我的和字典索引；正文提供可访问名称与键盘滚动入口，弹层放入 overlays 插槽，不进入滚动内容 |
 | `ScrollRegion` | 正文、抽屉及弹窗的滚动呈现 | 手机隐藏原生滚动条，显示不截获手势的位置提示；停止滚动 300ms 后用 120ms 淡出；停用或卸载清理计时器，桌面保留原生滚动条 |
 | `DraftBackupNotice` | 收支草稿自动保存失败 | 只提示“草稿暂未保存”及离开前保存账目的动作，不向用户展示安全上下文、浏览器存储等实现术语；可恢复失败提供“重试”，不自动提交账目 |
 | `CachedPageView` | 账号内路由页面保留 | 缓存以账号与角色隔离并有上限；每页独立路由上下文、滚动恢复和活动状态，退出/换账号重建 |
@@ -233,7 +234,7 @@ Key Characteristics：
 | 页面/能力 | 共享消费与稳定边界 |
 |---|---|
 | 登录与主题 | FormField、AppDialog、SegmentedControl；安装引导消费单一PWA状态源 |
-| 我的与字典 | SettingsDisclosureList、AppDrawer；个人/默认字典共享DictionaryToolbar、DictionaryItemList、四态与浮层；默认项只影响后续新增用户 |
+| 我的与字典 | 普通用户页共用 PageWorkspace 固定页头与 ScrollRegion 正文；SettingsDisclosureList、AppDrawer；个人/默认字典共享DictionaryToolbar、DictionaryItemList、四态与浮层；默认项只影响后续新增用户 |
 | 管理用户 | FormField、AppStateBlock、AppDialog、AppDrawer、useLatestRequest、AppDataTable、AppToast；桌面表格与窄屏摘要共享状态和动作 |
 | 收支表单 | FormField、FormSection、FormDisclosure、FundingChannelPicker、账号隔离草稿、失败重试幂等与可撤销AppToast；收入/支出草稿互不覆盖 |
 | 支出及收入差异 | 支出使用商品/地点组件；收入提供最近名称、付款方快捷新增及收入专属连续录入规则；支出编辑展示累计调整下限及paidAmount原位错误 |
@@ -342,7 +343,7 @@ Key Characteristics：
 - 技术机制、异步保存实现和键盘快捷键不作为手机常驻长说明；触摸与鼠标提示按输入设备显示。
 
 - 普通用户登录后默认进入“记一笔”。
-- 底部导航固定四项，底部包含安全区；认证外壳限于动态视口，页头和筛选不参与正文滚动，滚动条只出现在正文边界内；设置等无筛选页面由页面内容整体滚动。滚动记忆、明细返回和报表下钻统一读写活动页正文，不读写窗口位置。
+- 底部导航固定四项，底部包含安全区；认证外壳限于动态视口，页头和筛选不参与正文滚动，滚动条只出现在正文边界内；我的、字典索引等无筛选页面同样固定标题，只滚动正文。滚动记忆、明细返回和报表下钻统一读写活动页正文，不读写窗口位置。
 - 同账号内切换已访问的登记页面，保留填写、展开、筛选与滚动状态，不直接卸载；支出/收入切换也保留各自表单。隐藏页的候选必须关闭，原生 dialog 退出顶层，导出轮询和图表观察器暂停；返回刷新可变数据，同条件网络/服务异常保留已有结果并提示过期；替换条件失败显示区域错误，401/403 清除旧结果并显示认证/权限状态。登录不缓存，退出/换账号清除页面缓存；密码输入离页清空。
 - 底部导航固定于视口，外壳按其含安全区的实际占用高度避让。页面存在固定保存栏时，在所有仍显示底部导航的断点均位于导航上方，不遮挡最后一个表单字段；导航实际高度和保存栏偏移必须共用包含底部安全区的高度计算，不能混用 max 与相加而形成缝隙。新增保存栏固定于视口，不因表单末尾或外层留白离开导航；操作栏本身透明且无边框，按钮保持既有外观并与表单内容对齐，透明留白不拦截正文点击；正文按实际栏高预留一次空间，不叠加表单末尾间距或外壳底部留白，滚到末端时卡片底边与按钮之间只保留操作栏自身的上内边距。抽屉内保存栏只贴抽屉底部。键盘期间回归自然流，取消固定定位和额外占位。
 - 编辑控件聚焦且 visualViewport 实际收缩时隐藏手机底部导航，保存栏转为表单自然流、可滚动到达，避免导航和粘性保存栏挤占候选区域。键盘收起动画结束后恢复；页面缩放不误判为键盘。
@@ -510,8 +511,8 @@ Key Characteristics：
 | `ledger-entry` | 记一笔 | `quick-entry` | 选择日常模板或手动快速保存商品支出、金额收入 | `EntryTypeSwitch` / `DailyEntryPicker` / `ProductCombobox` / `DictionaryCombobox` / `FundingChannelPicker` / `FormSection` / `FormDisclosure` |
 | `reports` | 收支报表 | `dashboard` | 分析收支、调整、时间趋势、收支多维与质量线索并下钻 | `GlobalLedgerSearch` / `MoneySummary` / `ChartPanel` / `TimeTrendPanel` / `ReportDimensionPanel` / `DictionaryFilterPicker` / `FilterSheet` |
 | `bill-details` | 收支明细 | `list` | 查询和纠正支出、收入及调整 | `GlobalLedgerSearch` / `LedgerListItem` / `LedgerContextActions` / `IncrementalLedgerList` / `DictionaryFilterPicker` / `FilterSheet` / `AppDrawer` |
-| `profile-settings` | 我的 | `settings` | 从单一“管理个人字典”入口进入八类维护，并管理偏好、安装帮助和个人数据 | `SettingsDisclosureList` / `ThemeModeControl` / `PwaInstallPrompt` / `AppDrawer` / `AppDialog` |
-| `personal-dictionaries` | 个人字典 | `settings` | 查看八类真实启用数与总数并进入对应维护页 | `SettingsDisclosureList` / `AppStateBlock` |
+| `profile-settings` | 我的 | `settings` | 从单一“管理个人字典”入口进入八类维护，并管理偏好、安装帮助和个人数据 | `PageWorkspace` / `PageHeading` / `SettingsDisclosureList` / `ThemeModeControl` / `PwaInstallPrompt` / `AppDrawer` / `AppDialog` |
+| `personal-dictionaries` | 个人字典 | `settings` | 查看八类真实启用数与总数并进入对应维护页 | `PageWorkspace` / `PageHeading` / `DictionaryIndexPanel` / `AppStateBlock` |
 | `personal-dictionary-detail` | 字典维护 | `settings` | 按类型新增、改名、排序、停用和恢复；分类最多两级 | `GlobalLedgerSearch` / `SegmentedControl` / `AppDrawer` / `AppDialog` / `AppToast` / `AppPagination` |
 | `admin-console` | 系统管理 | `admin` | 管理用户、默认字典、运行概况和操作日志 | `AppDataTable` / `AppDrawer` / `AppDialog` / `AppPagination` |
 | `admin-default-dictionaries` | 默认字典管理 | `admin` | 维护五类新用户默认项并明确不回写既有用户 | `DictionaryToolbar` / `DictionaryItemList` / `AppDrawer` / `AppDialog` / `AppToast` / `AppPagination` |
@@ -541,4 +542,4 @@ Key Characteristics：
 - 正式名称为“我的账单”；安装图标使用Action Blue背景和白色票据符号，SVG为源，提供192/512 PNG、maskable512及Apple180。
 - 安装能力使用Manifest、Service Worker、浏览器安装事件和分平台手动引导；检测、拒绝、不支持、已安装状态由共享状态源管理，网页使用不依赖安装。
 - 不以图标齐全代替启动、独立窗口或平台状态栏验收。发布到新环境时验证目标设备证书信任、安装、离线与更新；当前环境事实维护于[部署案例](agent-works/deployment/cases/README.md)，[历史验收](agent-works/initial-development/test-report.md)不续写后续任务。验证结果默认在回复中说明，过程文档写入条件见 AGENTS。
-- 没有原生IPA/APK和离线记账能力；当前SW自动接管并清理旧静态缓存，没有新版提示按钮，不设计与实际能力不符的入口。
+- 当前不提供原生 IPA/APK、离线记账或新版提示按钮；展示入口必须与实际能力一致，缓存与更新机制见[前端与 PWA 架构](agent-works/architecture/frontend-pwa.md#安装资产与更新机制)。

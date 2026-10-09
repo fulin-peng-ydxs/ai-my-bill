@@ -7,7 +7,7 @@
 | 文档 | 回答的问题 | 主要代码边界 |
 |---|---|---|
 | [总体架构与契约](architecture-decisions.md) | 运行单元、依赖方向与不可破坏的契约 | web、server、contracts |
-| [前端与 PWA](frontend-pwa.md) | 页面如何登记、状态如何复用、哪些内容能缓存 | web/src |
+| [前端与 PWA](frontend-pwa.md) | 路由与状态如何复用、资源如何清理、草稿如何存储、PWA 如何构建与更新 | web/src |
 | [后端与业务模块](backend-domains.md) | 字典、账目、报表、管理之间如何协作 | server 的领域包 |
 | [认证与租户隔离](auth-tenant.md) | 身份、CSRF、角色、RLS 如何形成闭环 | auth、SecurityConfig、V007 |
 | [数据库与迁移](database-migrations.md) | 表归属、数据库角色、版本升级与回退 | db、mapper、persistence |
@@ -15,4 +15,4 @@
 | [环境与配置加载](environment-configuration.md) | 变量由谁加载、优先级、密钥边界与生效方式 | scripts、application*.yml、Compose |
 | [部署架构](../deployment/architecture.md) | 服务如何交付、部署模式与资源边界 | deploy、Dockerfile |
 
-修改接口时同步 OpenAPI 与生成类型；修改模块机制时更新对应架构；部署实例信息只更新案例。页面布局与视觉规则仍由根目录 DESIGN.md 定义，本目录不复制设计规范。
+修改接口时同步 OpenAPI 与生成类型；修改模块机制时更新对应架构；部署实例信息只更新案例。视觉、布局、交互、响应式与组件使用规则统一由 [DESIGN](../../DESIGN.md) 定义，本目录说明实现机制，不复制设计规范。

@@ -2,7 +2,9 @@
 
 ## 范围与组成
 
-面向前端开发，覆盖 web/src、Vite 构建和浏览器状态；不定义业务计算口径或服务器权限。当前机制以源码为准；已有环境执行与用户实机确认见[历史验收](../initial-development/test-report.md)，后续验证不向归档追加记录。
+本文面向前端开发，解释 `web/src` 的路由、状态、资源生命周期、浏览器存储以及 PWA 构建与更新机制，当前实现以源码为准。
+
+界面布局、间距、对齐、滚动与图表交互、组件使用规则统一由 [DESIGN](../../DESIGN.md) 定义；本文只说明支撑这些行为的实现机制，不维护第二份设计规范。服务器认证与权限见[认证与租户隔离](auth-tenant.md)，业务计算见[后端与业务模块](backend-domains.md)，复测方法见 [README 页面复测](../../README.md#页面复测方式与选择)。
 
 ```mermaid
 flowchart LR
@@ -17,7 +19,7 @@ flowchart LR
 
 ## 页面、状态与复用
 
-`web/src/app/pageRegistry.ts` 声明 pageKey/path/role/navigation/archetype/prototype/states；`router/index.ts` 从登记生成路由并映射真实页面，ReportView 按需加载。PlaceholderView 仅为未映射页面兜底，当前页面不能再描述为六个占位页。
+`web/src/app/pageRegistry.ts` 声明 pageKey/path/role/navigation/archetype/prototype/states；`router/index.ts` 从登记生成路由并映射真实页面，ReportView 按需加载。PlaceholderView 仅为未映射页面兜底。
 
 | 入口 | 处理链路 | 共享边界 |
 |---|---|---|
@@ -27,33 +29,33 @@ flowchart LR
 | /me 与个人字典 | 偏好、主题、安装、字典、修改密码与注销 | preferences/theme、accountStorage、PWA 安装模块 |
 | /admin 及子页面 | 用户、默认字典、运行概况、审计 | 管理 API；不查询个人账目 |
 
-加载、空、错误和就绪状态登记为 pageStates；权限态由角色守卫和 AppShell 承接。普通用户访问管理 URL 时保留地址并呈现权限反馈，管理员访问个人页面回管理入口。内部页面导航保留未保存内容；刷新、退出与账号变更的保护仍由 unsavedChanges 处理。样式 token、组件选择、响应式和页面维护矩阵以 [DESIGN](../../DESIGN.md) 为准，不在页面私有复制共享状态或样式。
+加载、空、错误和就绪状态登记为 pageStates；权限态由角色守卫和 AppShell 承接。普通用户访问管理 URL 时保留地址并呈现权限反馈，管理员访问个人页面回管理入口。内部页面导航保留未保存内容；刷新、退出与账号变更的保护由 unsavedChanges 处理。
 
 `App` 在认证外壳中用有界 KeepAlive 保存登记页面，缓存根键包含 accountId/role；登录、退出或身份改变会销毁旧实例，权限不匹配的页面不挂载。`pageCacheKey` 按页面和合法字典类型区分实例，query 更新同一页；上限由登记页面数与字典类型数推导。`CachedPageView` 提供该实例的局部路由上下文，避免隐藏页响应其他页面的 query/params，并在离页前记录滚动、重新布局后恢复；缓存页关闭浏览器的旧 DOM 滚动锚定，避免再次偏移。`usePageActivity` 阻止旧异步响应改变当前页面的滚动，`useRefreshOnReturn` 在重新激活时更新候选或列表；明细只刷新已经加载的分页深度。同条件网络/服务异常保留原结果并提示过期；替换条件失败显示区域错误，`useLatestRequest` 在 401/403 时清除受保护的旧结果。
 
+管理导航由 AppShell 与 AppDrawer 消费同一组登记路由；断点与布局遵循 DESIGN 的响应式契约。用户、操作日志、个人及默认字典使用 AppPagination；查询条件改变回到首页，翻页替换当前结果。
 
-管理导航由 AppShell 维护同一组路由，834px 起显示侧栏，窄屏通过 AppDrawer 展开；用户与操作日志主表占据外壳剩余空间，由表体内部滚动，表头、筛选和分页保持可达；低于 600px 的窗口复用摘要卡片，由页面正文单独滚动。用户、操作日志、个人及默认字典使用 AppPagination；查询条件改变回到首页，翻页替换当前结果。
 页面停用与销毁是不同生命周期：共享候选在停用时关闭并解绑浮层监听；原生 dialog 退出顶层且不抢回焦点，逻辑编辑状态可在返回时恢复；图表断开尺寸/主题观察器、返回重连；导出暂停计时与当前查询，返回再检查服务端任务，停用期间不触发下载。密码弹层停用会清空临时凭据。最终卸载继续执行原有取消/资源释放，服务端导出任务不会因切页被取消。
 
-普通用户页头共用 `PageHeading`，两类记账表单共用 `FormSection`、`FormDisclosure` 与保存栏；折叠摘要来自表单当前值，字段错误触发补充区展开。视觉分组、密度与响应式字段组合以 DESIGN 为准。
+`PageWorkspace` 以 header、正文和 overlays 插槽组织页面，正文交给 `ScrollRegion`；`pageScroll` 提供活动正文的滚动读取与恢复入口，缓存页、明细位置记忆与报表下钻共用它。`ScrollRegion` 根据被动 scroll 事件更新位置提示，并在停用/卸载时清理计时器。固定区域、边界缓冲和提示显隐时序见 DESIGN 的组件与布局规则。
 
-`SectionTitle` 由 FormSection/FormDisclosure 共用，页面传入与任务含义对应的 lucide 图标；组件保留 h2/strong 与标题文本，图标作为辅助识别隐藏于无障碍树。收支新增、编辑与支出调整共用此结构，不按标题字符串猜测图标，也不在页面复制标题底板样式。
+`EntrySaveBar` 通过 ResizeObserver 将实际栏高写入占位变量；停用/卸载时断开，重新激活时重连。`AppShell` 消费 `useKeyboardViewport`，将键盘状态与可见高度写入外壳 class 和 CSS 变量，保存栏样式据此调整定位与占位，避免各页面分别计算。
 
-底部导航固定于视口，外壳预留其占用高度；高度由链接命中高度、上下留白和边框推导，底部安全区以相加方式同时用于导航 padding 和保存栏偏移，避免两种计算产生接缝。`EntrySaveBar` 的新增模式固定于视口，操作行透明且无额外边框，透明留白不截获点击；按钮留白按页面宽度与字段内边距计算；ResizeObserver 按实际栏高维护正文占位，表单和外壳不再叠加末尾留白，页面停用/卸载断开，返回重连。编辑/调整抽屉保持 sticky，外层 display:contents 不新增限制粘性的容器；手机键盘期间转为自然流并取消导航及保存栏额外占位。各触摸目标默认通过 touch-action:manipulation 关闭双击缩放并保留主动捏合，账目左滑继续消费 pan-y；根文档通过 overscroll-behavior-y:none 约束纵向边界弹性拖动，普通用户外壳限于动态视口并锁定窗口滚动，`PageWorkspace` 划分页头/筛选、唯一正文滚动区和弹层；记账、明细、报表、我的与字典页面统一复用；我的和字典索引不提供固定页头插槽，保留标题随正文自然滚动。`pageScroll` 统一读取活动正文并恢复位置，缓存页、明细记忆与报表下钻消费同一入口。键盘期间外壳消费实际可见高度，导航和保存栏让出空间。`ScrollRegion` 复用正文、抽屉与弹窗的滚动表面，统一以 overscroll-behavior-y:contain 保留系统惯性和局部边界缓冲，外框裁切保证缓冲不覆盖固定页头或底栏，手势不传递到根页面；手机的位置提示不截获手势，滚动停止 300ms 后淡出，桌面保留原生滚动条；页面停用/卸载清理计时器。
+`useReportChart` 统一初始化 ECharts SVG 实例，提供主题 token 读取和刷新入口；ResizeObserver 处理容器变化，MutationObserver 处理根节点主题变化，停用时断开观察器，卸载时销毁实例。查询参数和下钻条件由 reportQuery 承接；图表读数与查看明细的交互规则见 DESIGN。
 
-报表的 `useReportChart` 统一关闭 tooltip，图表不注册点击下钻，三个图表系列均以静态呈现为主。概览与排行柱旁固定显示数值，时间趋势由时间点选择器更新图上方的当期/累计固定读数；完整金额和下钻继续由指标卡、排行及明确按钮承载，避免页面滚动误触。手机搜索与范围切换复用明细的同行布局；指标卡与排行保留左侧名称、右侧金额及辅助入口。
+`FormField` 的普通与复合帮助内容共用帮助 ID，和错误一起通过 aria-describedby 关联控件；支出金额差额和计算金额属于同一帮助区域。两类记账表单的折叠摘要来自当前输入值，字段错误触发对应补充区展开；筛选日期与业务时间复用 `DateTimeControl` 的原生输入边界处理。组件清单、控件对齐与说明排版见 DESIGN。
 
-`FormField` 的普通与复合帮助内容共用帮助 ID，和错误一起通过 aria-describedby 关联控件；说明及错误沿控件文字起点对齐，紧凑金额行消费对应的控件内边距，手机设置行跟随值列。支出金额差额和计算金额属于同一帮助区域。所有输入值和辅助说明左对齐，数值使用等宽数字；列表金额列与报表指标值右对齐；原生日期由外层共用控件内边距，内层显式高度承接垂直居中。
+商品和字典共用 `ComboboxField`；手机面板内的搜索栏在用户手势内同步显示与聚焦，以承接原生键盘。`useActiveCombobox` 交接唯一活动字段，作用域销毁时释放引用。`AnchoredDropdown` 通过 `domain/dropdownLayout` 计算有界上下方空间，并在外部操作、浏览态锚点离开可见区和页面隐藏时关闭；搜索焦点仍在浮层内时，软键盘导致锚点不可见会先调整所属正文滚动位置，保留搜索。搜索词与已选业务值分开，关闭取消查询、恢复原值；明确选中才传递稳定 ID，明确清除才清空。
 
-商品和字典共用 `ComboboxField`：手机锚点保持按钮，面板内搜索栏在用户手势内同步显示与聚焦；PC直接输入。`useActiveCombobox` 交接唯一活动字段，作用域销毁时释放引用。`AnchoredDropdown` 通过 `domain/dropdownLayout` 计算有界上下方空间，并在外部操作、浏览态锚点离开可见区和页面隐藏时关闭；搜索焦点仍在浮层内时，软键盘导致锚点不可见会先调整所属正文滚动位置，保留搜索。搜索词与已选业务值分开，关闭取消查询、恢复原值；明确选中才传递稳定 ID，明确清除才清空。
+`useKeyboardViewport` 在应用外壳、候选组件和抽屉之间共享可见视口监听，最后一个消费者卸载时清理；只有编辑聚焦且视口实际收缩才判定键盘，缩放期间保留此前状态。抽屉消费实际可见高度和底部偏移；活动手机搜索在已出现的键盘收起时退出，外部关闭不恢复旧字段焦点。
 
-`useKeyboardViewport` 在应用外壳、候选组件和抽屉之间共享可见视口监听，最后一个消费者卸载时清理；只有编辑聚焦且视口实际收缩才判定键盘，缩放期间保留此前状态。导航和保存栏消费键盘状态调整空间；抽屉消费实际可见高度和底部偏移，避让完整键盘及镜像输入工具栏，正文在稳定头尾之间收缩并滚动；活动手机搜索在已出现的键盘收起时退出，外部关闭不恢复旧字段焦点。明细与报表的清除入口通过 `hasFilterChanges` 对照各自默认条件决定是否显示。`AppliedFilterBar` 用字段名和当前值承接单条件编辑，取消保留已应用条件；报表类型与常驻搜索不在摘要重复。`DictionaryFilterPicker` 复用候选容器、主动搜索和请求代次，按需加载包含停用项的服务端分页列表，选中 ID 独立回显；筛选日期与业务时间复用 `DateTimeControl` 的原生输入边界处理。
+明细与报表通过 `hasFilterChanges` 对照各自默认条件判断筛选是否改变。`AppliedFilterBar` 承接单条件编辑，取消保留已应用条件。`DictionaryFilterPicker` 复用候选容器、主动搜索和请求代次，按需加载包含停用项的服务端分页列表，选中 ID 独立回显。
 
 记一笔页头及“我的”使用 `panel=dictionaries` 打开共享 `DictionaryManager`/`DictionaryIndexPanel`。详情只接受 entry/profile 来源并返回原索引；已从索引进入时退回对应历史项，直接打开时替换为受控入口，避免返回循环。关闭抽屉留在原入口，记账表单无需丢弃草稿。独立索引路由仍可访问。底部导航保留本账号报表/明细的最近 URL 条件，换账号清空；记账页内收支表单各保存一个实例。修改密码由 `PasswordChangeSheet` 调用既有 `session.changePassword`，接受服务端轮换会话；临时输入只存在组件内存，成功或关闭即清空，不进入持久化存储。
 
 ## 一次页面操作经过哪些层
 
-以保存支出为例，LedgerEntryPreferenceView组织页面，ExpenseEntryForm收集输入，分类、单位、资金渠道、购买渠道与地点通过共享 `DictionaryCombobox` 搜索或在锚定浮层内新增个人字典项；收入的付款方、收入分类及默认资金渠道沿用同一交互，浮层通过 `AnchoredDropdown` 在页面/抽屉/弹窗内定位，不推动后续字段，再将服务端返回的稳定 ID 写入表单；二级分类始终绑定当前一级分类。domain/ledgerEntryForm与money等工具处理表单规则和精确金额，api/expenses调用api/http，后者实际请求同源 `/api/v1`。业务返回后页面更新保存反馈；字段错误保留到对应输入项，不能在API封装层把失败改成成功。
+以保存支出为例，`LedgerEntryPreferenceView` 组织页面，`ExpenseEntryForm` 收集输入，分类、单位、资金渠道、购买渠道与地点通过共享 `DictionaryCombobox` 搜索或新增个人字典项，再将服务端返回的稳定 ID 写入表单；收入的付款方、收入分类及默认资金渠道沿用同一数据链路，二级分类始终绑定当前一级分类。`domain/ledgerEntryForm` 与 money 等工具处理表单规则和精确金额，`api/expenses` 调用 `api/http`，后者实际请求同源 `/api/v1`。业务返回后页面更新保存反馈；字段错误保留到对应输入项，不能在 API 封装层把失败改成成功。
 
 | 层 | 应放入的内容 | 不应放入的内容 |
 |---|---|---|
@@ -66,11 +68,11 @@ flowchart LR
 
 调试时先检查Network实际请求和响应，再回到发起操作的页面、domain规则与api封装。共享客户端默认15秒超时，请求完成、取消或超时后清理自身计时器/监听；缓存页离开不等于请求销毁，活动资源按前述停用规则处理。超时只说明没有及时拿到响应，不证明服务器没有保存，写入重试应保留正确的幂等键。
 
-页面登记中的loading/empty/error不是同一视觉状态：loading等待首次结果，empty是成功返回但无数据，error是请求失败；静默刷新失败时应按现有共享模式保留旧数据并反馈，不能把失败渲染为空列表。角色不匹配另由权限态承接，不伪装为无数据。
-
 ## 会话与偏好流程
 
-守卫等待唯一 session store 初始化 → 认证失败去登录 → 临时密码去首次改密 → 角色外壳渲染。`api/http.ts` 统一 Cookie、XSRF、no-store 和错误解析；浏览器不自行构造租户身份。登出清理当前内存会话/偏好；未过期草稿按不可逆账号命名空间和收支类型保留供同账号恢复，换账号不能读取其他账号草稿。账号注销成功后清理其本地数据；不能把作用域退化为全局共享键。命名空间依赖 Web Crypto 的 SHA-256；缺少安全上下文、哈希能力或本地存储权限时保留页面内输入并通过共享 `DraftBackupNotice` 简短提示草稿未保存及离开前保存账目，不将技术原因拼接到用户提示中，正式提交不依赖本地备份，可恢复失败允许重试备份。
+守卫等待唯一 session store 初始化 → 认证失败去登录 → 临时密码去首次改密 → 角色外壳渲染。`api/http.ts` 统一 Cookie、XSRF、no-store 和错误解析；浏览器不自行构造租户身份。
+
+登出清理当前内存会话/偏好；`useLedgerDraft` 经 `accountStorage` 按不可逆账号命名空间和收支类型保存草稿，恢复时检查有效期，换账号不能读取其他账号草稿。账号注销成功后清理其本地数据；不能把作用域退化为全局共享键。命名空间依赖 Web Crypto 的 SHA-256；缺少安全上下文、哈希能力或本地存储权限时保留页面内输入，备份失败交给共享 `DraftBackupNotice` 承接，可恢复失败允许重试备份。正式提交不依赖本地备份；提示文案由 DESIGN 定义。
 
 主题首屏只恢复合法 `system/light/dark` 值，随后由 theme store 接管；登录后的服务端偏好为权威，本地仅回退。新增偏好要同步 Preference API 与 store，不能用额外 localStorage 取代跨设备保存。
 
@@ -78,22 +80,16 @@ flowchart LR
 
 `sw.ts`、`pwa/cachePolicy.ts` 只缓存同源带内容哈希资源和无个人信息离线页；API、下载、个性化导航走网络，不提供离线记账。`MY_BILL_BUILD_ID` 生成静态缓存版本，发布须按提交设置。前端 API 固定同源 `/api/v1`，Vite 开发代理到本机后端；生产由 Caddy 分流。环境装配见 [配置架构](environment-configuration.md)。
 
-前端 build 产物为 web/dist，包含 sw.js；生产不能用 Vite dev/preview 承担部署入口。接口类型源自 OpenAPI，不手改 generated/schema.ts。新增页面影响登记、路由、设计契约、权限、导航与测试；新增 API 影响后端契约与 Cookie/CSRF 统一客户端。
+前端 build 产物为 `web/dist`，包含 `sw.js`；生产入口见[部署架构](../deployment/architecture.md)。接口类型由 OpenAPI 生成至 `api/generated/schema.ts`。页面登记连接路由、权限、导航与登记测试；设计契约与页面维护矩阵见 DESIGN，接口维护约束见 [AGENTS](../../AGENTS.md#工程与业务硬约束)。
 
 ## 安装资产与更新机制
 
-正式名称为“我的账单”，manifest 的 display 为 standalone，start_url 为 `/entry`；普通用户和管理员仍由认证角色路由决定落点。图标使用源SVG生成的192/512 PNG、maskable512和Apple180，Apple入口由 `web/index.html` 声明，不提供IPA/APK包。安装检测覆盖iOS/iPadOS桌面UA的触摸识别，安装不可用时保留完整网页使用能力。
+manifest 的 display 为 standalone，start_url 为 `/entry`；普通用户和管理员仍由认证角色路由决定落点。安装图标由源 SVG 生成，Apple 入口由 `web/index.html` 声明；名称与图标规格见 DESIGN。`pwa/install.ts` 共享安装事件与平台检测状态，覆盖 iOS/iPadOS 桌面 UA 的触摸识别；安装或 Service Worker 注册不可用时继续以网页模式运行。
 
-生产构建注册模块型 `/sw.js`。install预取无数据离线页并skipWaiting；activate删除旧版本 `my-bill-static-*` 缓存并clients.claim。当前没有“发现新版”提示按钮；页面导航始终走网络，加载新页面取得新资源，断网只显示离线页。旧页面可能仍持有旧哈希资源，交付需兼顾资源保留与API兼容，不能把SW接管当作所有打开页面已刷新。
+`pwa/register.ts` 仅在生产构建注册模块型 `/sw.js`。install 预取无数据离线页并 skipWaiting；activate 删除旧版本 `my-bill-static-*` 缓存并 clients.claim。浏览器文档导航走网络，加载新文档取得新资源，网络请求失败时回退到离线页；Vue Router 页内切换不重新加载文档。旧页面可能仍持有旧哈希资源，交付需兼顾资源保留与 API 兼容，不能把 SW 接管当作所有打开页面已刷新；交付流程见[部署方案](../deployment/README.md)。
 
 ## 验证与限制
 
-`npm --prefix web run check` 覆盖 typecheck、lint、Vitest、OpenAPI 漂移和构建；位于 stores/router/domain/pwa 的测试用于行为边界。命令也由根 `npm run check` 调用。上述工程检查不能证明目标设备上的安装、系统信任与独立窗口行为；模拟器或真机直接操作的工具实测按下方规则记录。
+`npm --prefix web run check` 覆盖 typecheck、lint、Vitest、OpenAPI 漂移和构建；位于 stores/router/domain/pwa 的测试用于行为边界。命令也由根 `npm run check` 调用。工程检查不能证明目标设备上的安装、系统信任与独立窗口行为。
 
-页面复测的方式、数据环境、执行路径和证据边界统一维护于 [README 页面复测](../../README.md#页面复测方式与选择)，模拟器默认复测、真机触发及发布验收条件见 [AGENTS](../../AGENTS.md#页面改动的复测选择)。本节的历史环境证据不能替代本次源码版本按风险所需的页面及安装版验收。
-
-| 类型 | 证据状态 | 限制及验证方式 |
-|---|---|---|
-| PWA 发布 | 按版本与环境验收 | 既有内网 iOS 用户确认见[历史验收](../initial-development/test-report.md)，不能代表当前候选或新环境；Android 真机未验证 |
-| 离线 | 已确认代码边界 | 只提供静态离线提示；不能从缓存显示个人账目或声称离线提交成功 |
-| 发布资源 | 已确认 | 旧页面可能持有旧资源地址，更新时保留上一版哈希资源并验证 SW 更新 |
+页面复测的方式、数据环境、执行路径和证据边界统一维护于 [README 页面复测](../../README.md#页面复测方式与选择)，模拟器默认复测、真机触发及发布验收条件见 [AGENTS](../../AGENTS.md#页面改动的复测选择)。具体环境证据见[部署案例](../deployment/cases/README.md)，历史环境验收不能替代当前候选版本的验证。
