@@ -63,6 +63,20 @@ describe('shared frontend foundations', () => {
     expect(html).toContain('role="alert"')
   })
 
+  it('describes composite field help as part of the same input', async () => {
+    const app = createSSRApp({
+      render: () => h(FormField, { fieldId: 'paid', label: '实付金额' }, {
+        default: ({ describedBy }: { describedBy?: string }) => h('input', {
+          id: 'paid', 'aria-describedby': describedBy,
+        }),
+        help: () => ['低于计算金额 ¥28.00', h('span', '计算金额 ¥204.00')],
+      }),
+    })
+    const html = await renderToString(app)
+    expect(html).toContain('aria-describedby="paid-help"')
+    expect(html).toMatch(/id="paid-help"[^>]*>.*低于计算金额.*计算金额 ¥204\.00/)
+  })
+
   it('renders segmented choice, search and filter contracts with accessible names', async () => {
     const segmented = await render(SegmentedControl, {
       label: '账目类型', modelValue: 'expense', options: [

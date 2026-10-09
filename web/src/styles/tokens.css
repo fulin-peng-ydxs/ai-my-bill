@@ -81,7 +81,8 @@
   --color-overlay: rgb(0 0 0 / 72%);
 }
 
-* { box-sizing: border-box; }
+/* 每个触摸目标都关闭双击误放大，仍允许滚动和主动捏合缩放。 */
+* { box-sizing: border-box; touch-action: manipulation; }
 
 html,
 body,
@@ -89,6 +90,9 @@ body,
   min-height: 100%;
   margin: 0;
 }
+
+/* 根页面不在滚动边界继续弹性拖动。 */
+html, body { overscroll-behavior-y: none; }
 
 body {
   min-width: 320px;
@@ -298,6 +302,8 @@ textarea:disabled {
   min-height: 100dvh;
 }
 
+.app-shell:not(.admin-shell) { padding-bottom: var(--bottom-navigation-occupied-height); }
+
 .shell-header,
 .bottom-navigation {
   background: color-mix(in srgb, var(--color-background) 80%, transparent);
@@ -338,9 +344,11 @@ textarea:disabled {
 }
 
 .bottom-navigation {
-  position: sticky;
+  position: fixed;
   z-index: 10;
   bottom: 0;
+  left: 0;
+  right: 0;
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   padding: var(--space-xs) max(var(--space-sm), env(safe-area-inset-right)) calc(var(--space-xs) + var(--bottom-navigation-safe-inset)) max(var(--space-sm), env(safe-area-inset-left));
@@ -550,6 +558,13 @@ textarea:disabled {
 }
 
 .field-error { color: var(--color-danger) !important; }
+
+/* 说明和错误沿用对应控件的文字起点，包含控件的 1px 边框。 */
+:is(.form-field, .entry-combobox) > small {
+  padding-inline: calc(var(--control-padding-inline) + 1px);
+  overflow-wrap: anywhere;
+}
+.field-help-detail { display: block; margin-top: var(--space-xs); }
 
 .form-section {
   display: grid;
@@ -1745,6 +1760,8 @@ body:has(dialog[open]) {
   display: block;
   min-height: var(--entry-savebar-height, calc(var(--control-height) + var(--entry-savebar-padding) * 2 + 1px));
 }
+.entry-form:has(> .entry-savebar-slot-pinned) { row-gap: 0; }
+.shell-content:has(.entry-savebar-slot-pinned) { padding-bottom: 0; }
 /* 主页面操作栏不受表单末尾约束；透明留白不拦截正文点击，按钮仍对齐字段。 */
 .entry-savebar-pinned {
   position: fixed;
@@ -2141,13 +2158,13 @@ body:has(dialog[open]) {
 .entry-amount-fields { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) minmax(96px, .9fr); gap: var(--space-md); align-items: start; }
 .entry-amount-fields > * { min-width: 0; }
 .entry-amount-fields > .entry-combobox, .entry-short-fields > .entry-combobox { line-height: 20px; }
-.entry-amount-fields input, .entry-amount-fields .combobox-trigger { padding-inline: var(--space-sm); }
+.entry-amount-fields { --control-padding-inline: var(--space-sm); }
+.entry-amount-fields input, .entry-amount-fields .combobox-trigger { padding-inline: var(--control-padding-inline); }
 .entry-total-field input { font-size: 26px; line-height: 32px; font-variant-numeric: tabular-nums; font-weight: 600; }
 .entry-total-field.money-expense input { color: var(--color-expense-text); }
 .entry-total-field.money-income input { color: var(--color-income-text); }
 .task-entry-form :is(.form-field, .entry-combobox) > label { font-weight: 400; }
 .task-entry-form .entry-total-field > label { font-weight: 600; }
-.entry-calculation { margin: 0; color: var(--color-muted); font-size: 12px; line-height: 18px; }
 .form-disclosure { display: block; }
 .form-disclosure > summary { display: flex; align-items: center; justify-content: space-between; gap: var(--space-md); min-height: 44px; cursor: pointer; list-style: none; }
 .form-disclosure > summary::-webkit-details-marker { display: none; }
@@ -2187,7 +2204,7 @@ body:has(dialog[open]) {
   .task-entry-form .form-section > .section-heading { padding-bottom: var(--space-xs); }
   .task-entry-form .entry-short-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .entry-setting-field { grid-template-columns: minmax(0, .75fr) minmax(0, 2fr); align-items: center; column-gap: var(--space-md); }
-  .entry-setting-field > small { grid-column: 1 / -1; }
+  .entry-setting-field > small { grid-column: 2; }
   .entry-setting-field > label { font-weight: 400; }
   .entry-total-field input { font-size: 26px; line-height: 32px; }
   .form-field, .entry-combobox { gap: var(--space-xs); }
@@ -2211,6 +2228,7 @@ body:has(dialog[open]) {
   .app-drawer .overlay-header, .app-drawer .overlay-body, .app-drawer .overlay-actions { padding-inline: max(var(--space-md), env(safe-area-inset-left)) max(var(--space-md), env(safe-area-inset-right)); }
   .app-drawer .overlay-actions { padding-bottom: max(var(--space-md), env(safe-area-inset-bottom)); }
   .keyboard-open .bottom-navigation { display: none; }
+  .app-shell.keyboard-open:not(.admin-shell) { padding-bottom: 0; }
   /* 输入时主动作回归自然流，避免保存栏悬在键盘上挤压候选。 */
   .keyboard-open .entry-savebar { position: static; }
   .keyboard-open .entry-savebar-slot-pinned { min-height: 0; }

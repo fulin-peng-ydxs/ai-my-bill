@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, useSlots } from 'vue'
 
 const props = defineProps<{
   fieldId: string
@@ -8,7 +8,8 @@ const props = defineProps<{
   error?: string
 }>()
 
-const helpId = computed(() => props.help ? `${props.fieldId}-help` : undefined)
+const slots = useSlots()
+const helpId = computed(() => props.help || slots.help ? `${props.fieldId}-help` : undefined)
 const errorId = computed(() => props.error ? `${props.fieldId}-error` : undefined)
 const describedBy = computed(() => [helpId.value, errorId.value].filter(Boolean).join(' ') || undefined)
 </script>
@@ -18,9 +19,9 @@ const describedBy = computed(() => [helpId.value, errorId.value].filter(Boolean)
     <label :for="fieldId">{{ label }}</label>
     <slot :described-by="describedBy" />
     <small
-      v-if="help"
+      v-if="helpId"
       :id="helpId"
-    >{{ help }}</small>
+    ><slot name="help">{{ help }}</slot></small>
     <small
       v-if="error"
       :id="errorId"

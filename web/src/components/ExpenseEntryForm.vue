@@ -523,7 +523,6 @@ useRefreshOnReturn(() => loadOptions())
             field-id="expense-paid-amount"
             class="entry-total-field money-expense"
             label="实付金额（¥）"
-            :help="differenceText"
             :error="errors.paidAmount || errors.calculatedAmount"
           >
             <template #default="{ describedBy }">
@@ -536,10 +535,11 @@ useRefreshOnReturn(() => loadOptions())
                 @input="paidChanged"
               >
             </template>
+            <template #help>
+              {{ differenceText }}
+              <span class="field-help-detail">计算金额 {{ formatCny(calculatedAmount) }}</span>
+            </template>
           </FormField>
-          <p class="entry-calculation">
-            计算金额 {{ formatCny(calculatedAmount) }}
-          </p>
         </FormSection>
 
         <FormSection
