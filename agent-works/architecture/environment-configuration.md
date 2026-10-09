@@ -85,6 +85,19 @@ flowchart TD
 
 `npm run dev` 由同一父进程管理数据库、后端和前端；`npm run dev:db -- start|status|stop`、`npm run dev:backend`、`npm run dev:frontend` 用于分终端调试。数据库入口与总启动脚本复用 `scripts/lib/dev-database.sh` 中的配置校验、集群归属核对和角色准备逻辑；独立后端/前端不会替开发者隐式管理数据库。分开启动时，各终端的 MY_BILL_DB_* 与 MY_BILL_SERVER_PORT 必须保持一致。
 
+### iOS 复测配置
+
+`scripts/check-ios.sh` 解析项目 Node，调用共用的 `check-ios.mjs`。`npm run check:ios:simulator` 传入 `--simulator`，读取 `.local/simulator-test/config.json`；`npm run check:ios` 保持真机模式，读取 `.local/real-device-test/config.json`。二者均从 `.local/real-device-test/accounts.md` 读取测试密码，不从环境变量接收密码。操作、权限与证据边界见 [README 页面复测](../../README.md#页面复测方式与选择)。
+
+| 配置 | 加载与优先级 | 作用范围 |
+|---|---|---|
+| MY_BILL_IOS_BASE_URL | 环境变量 → 所选模式 config.json 的 baseUrl → 模拟器默认 `http://127.0.0.1:5174`；真机无默认地址，空值拒绝 | 本次检查的页面入口，接受本机、私有/共享 IPv4 或 `.local` 主机的 HTTP 地址及明确端口；真机固定 5174，不接受 HTTPS、凭据或路径。地址限制不证明数据源是测试库 |
+| MY_BILL_IOS_ACCOUNT | 环境变量 → `pengfulin`，仅支持 `pengfulin` 或 `admin` | 选择账号文件中的测试账号，不进入 Vite、Spring 或 Compose |
+| config.json 的 deviceUDID | 模拟器必填，真机可选；会话创建时选择并核对设备，不支持环境变量覆盖 | 必须是设备 UUID；模拟器校验为可用 iPhone 并等待启动就绪，不切换到其他设备冒充通过 |
+| DEVELOPER_DIR | 已设置时沿用；仅模拟器模式、全局选择 Command Line Tools 且 `/Applications/Xcode.app` 存在时，为本次进程选择其 `Contents/Developer` | `xcrun simctl` 的完整 Xcode 路径，不修改全局 xcode-select；许可和 runtime 安装由用户先完成 |
+
+驱动监听本机端口：模拟器 14444、真机 4444；检查复用可用驱动，仅回收自己创建的进程及本次会话。配置在命令启动时读取，修改不影响正在运行的会话，也不改变前后端服务的端口或数据库连接。
+
 ## 生产 Compose 配置
 
 除标记为宿主配置者，其余通过 Compose environment 进入指定容器；变更后执行 config --quiet 再重建受影响服务，单纯 restart 不重新装配容器环境。

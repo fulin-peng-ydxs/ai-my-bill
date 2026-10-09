@@ -1,39 +1,52 @@
-import { spawn } from 'node:child_process'
+import { spawn, execFile } from 'node:child_process'
 import { readFile, mkdir, writeFile, chmod } from 'node:fs/promises'
 import { resolve } from 'node:path'
+import { promisify } from 'node:util'
 
-// Only the real iPhone Safari session can satisfy this check; credentials stay out of Git and logs.
+// 两个终端复用检查逻辑；模拟器 DOM 事件只证明结构与状态，原生操作须另验。
+const useSimulator = process.argv.includes('--simulator')
+if (process.argv.slice(2).some((arg) => arg !== '--simulator')) throw new Error('仅支持 --simulator 参数')
+const targetLabel = useSimulator ? '模拟器' : '真机'
 const root = resolve(import.meta.dirname, '..')
-const localDir = resolve(root, '.local/real-device-test')
+const accountsDir = resolve(root, '.local/real-device-test')
+const localDir = useSimulator ? resolve(root, '.local/simulator-test') : accountsDir
 const config = await readFile(resolve(localDir, 'config.json'), 'utf8')
   .then(JSON.parse)
   .catch((error) => {
     if (error.code === 'ENOENT') return {}
     throw error
   })
-const baseUrl = process.env.MY_BILL_IOS_BASE_URL ?? config.baseUrl
+const baseUrl = process.env.MY_BILL_IOS_BASE_URL ?? config.baseUrl ?? (useSimulator ? 'http://127.0.0.1:5174' : undefined)
 const account = process.env.MY_BILL_IOS_ACCOUNT ?? 'pengfulin'
-const driverUrl = 'http://127.0.0.1:4444'
+const driverPort = useSimulator ? '14444' : '4444'
+const driverUrl = `http://127.0.0.1:${driverPort}`
+const runFile = promisify(execFile)
 let driver
 let sessionId
+let originalType
 
-const localHost = baseUrl && new URL(baseUrl).hostname
+let parsedUrl
+try { parsedUrl = new URL(baseUrl) } catch { throw new Error('iOS 检查需要有效的本地 HTTP 地址及端口') }
+const localHost = parsedUrl.hostname
 const privateIp = localHost && /^(?:127\.\d+\.\d+\.\d+|10\.\d+\.\d+\.\d+|192\.168\.\d+\.\d+|172\.(?:1[6-9]|2\d|3[01])\.\d+\.\d+|100\.(?:6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.\d+\.\d+)$/.test(localHost)
-if (!baseUrl || !/^http:\/\/[^/]+:5174$/.test(baseUrl) || !(privateIp || localHost === 'localhost' || localHost?.endsWith('.local'))) {
-  throw new Error('请在 .local/real-device-test/config.json 设置本地开发地址，例如 http://<手机可访问的本机地址>:5174')
+const localAddress = privateIp || localHost === 'localhost' || localHost?.endsWith('.local')
+const allowedUrl = useSimulator ? /^http:\/\/[^/]+:\d+$/ : /^http:\/\/[^/]+:5174$/
+if (!baseUrl || !allowedUrl.test(baseUrl) || !localAddress || parsedUrl.username || parsedUrl.password) {
+  throw new Error(`请在 ${useSimulator ? '.local/simulator-test' : '.local/real-device-test'}/config.json 设置本地 HTTP 地址及端口，或使用 MY_BILL_IOS_BASE_URL；真机入口固定为 5174`)
 }
+if (useSimulator && !config.deviceUDID) throw new Error('请在 .local/simulator-test/config.json 设置 iPhone 模拟器的 deviceUDID')
 if (!['admin', 'pengfulin'].includes(account)) {
   throw new Error('MY_BILL_IOS_ACCOUNT 仅支持 admin 或 pengfulin')
 }
 
-async function request(method, path, body) {
+async function request(method, path, body, timeoutMs = useSimulator ? 120000 : 30000) {
   try {
     const sensitive = path.endsWith('/value') || Boolean(body?.args?.length)
     const response = await fetch(`${driverUrl}${path}`, {
       method,
       headers: { 'content-type': 'application/json' },
       body: body === undefined ? undefined : JSON.stringify(body),
-      signal: AbortSignal.timeout(30000),
+      signal: AbortSignal.timeout(timeoutMs),
     })
     const result = await response.json()
     if (result.value?.error) throw new Error(sensitive ? 'WebDriver 表单输入失败' : `${result.value.error}: ${result.value.message || '无详细信息'}`)
@@ -46,14 +59,14 @@ async function request(method, path, body) {
 
 async function ensureDriver() {
   try {
-    await request('GET', '/status')
+    await request('GET', '/status', undefined, 1000)
     return
   } catch {
-    driver = spawn('/usr/bin/safaridriver', ['-p', '4444'], { stdio: 'ignore' })
+    driver = spawn('/usr/bin/safaridriver', ['-p', driverPort], { stdio: 'ignore' })
   }
   for (let attempt = 0; attempt < 30; attempt += 1) {
     try {
-      await request('GET', '/status')
+      await request('GET', '/status', undefined, 1000)
       // The listener becomes ready before Safari finishes discovering a newly attached iPhone.
       await new Promise((done) => setTimeout(done, 1500))
       return
@@ -62,6 +75,18 @@ async function ensureDriver() {
     }
   }
   throw new Error('safaridriver 未能启动')
+}
+
+async function ensureSimulator() {
+  const { stdout } = await runFile('/usr/bin/xcrun', ['simctl', 'list', 'devices', 'available', '--json'], { timeout: 30000 })
+  const device = Object.values(JSON.parse(stdout).devices).flat().find((item) => item.udid === config.deviceUDID)
+  if (!device || !device.isAvailable || !device.deviceTypeIdentifier?.includes('iPhone')) {
+    throw new Error('配置的 iPhone 模拟器不可用，请检查 Xcode、iOS runtime 与 deviceUDID')
+  }
+  if (device.state !== 'Booted') {
+    await runFile('/usr/bin/xcrun', ['simctl', 'boot', device.udid], { timeout: 30000 })
+  }
+  await runFile('/usr/bin/xcrun', ['simctl', 'bootstatus', device.udid, '-b'], { timeout: 120000 })
 }
 
 function elementId(element) {
@@ -84,6 +109,43 @@ async function waitFor(test, description) {
 
 async function evaluate(script, args = []) {
   return request('POST', `/session/${sessionId}/execute/sync`, { script, args })
+}
+
+async function click(selector, outside = false) {
+  if (useSimulator) {
+    await evaluate(`
+      const node = document.querySelector(arguments[0])
+      if (arguments[1]) node.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerType: 'touch' }))
+      node.click()
+    `, [selector, outside])
+  } else {
+    await request('POST', `/session/${sessionId}/element/${await find(selector)}/click`)
+  }
+}
+
+async function navigate(url) {
+  if (!useSimulator) {
+    await request('POST', `/session/${sessionId}/url`, { url })
+    return
+  }
+  // none 导航策略避免加载超时；文档标记防止旧页面的同名控件提前满足等待。
+  const marker = crypto.randomUUID()
+  await evaluate('window.__myBillIosNavigation = arguments[0]', [marker])
+  await request('POST', `/session/${sessionId}/url`, { url })
+  await waitFor(() => evaluate('return window.__myBillIosNavigation !== arguments[0] && location.href === arguments[1] && document.readyState !== "loading"', [marker, url]), '新页面文档就绪')
+}
+
+async function restoreEntryType() {
+  if (!originalType) return
+  if (await evaluate('return location.pathname !== "/entry"')) await navigate(`${baseUrl}/entry`)
+  const selector = `.entry-type-panel > .entry-type-switch button:nth-of-type(${originalType === 'EXPENSE' ? 1 : 2})`
+  await waitFor(() => evaluate('return !!document.querySelector(arguments[0]) && !document.querySelector(arguments[0]).disabled', [selector]), '恢复记账类型前就绪')
+  if (await evaluate('return document.querySelector(arguments[0]).getAttribute("aria-pressed") !== "true"', [selector])) {
+    await click(selector)
+  }
+  // 等待偏好写入结束，不能只凭视图切换就销毁会话。
+  await waitFor(() => evaluate('return document.querySelector(arguments[0])?.getAttribute("aria-pressed") === "true" && !document.querySelector(arguments[0]).disabled && !document.body.innerText.includes("正在保存最近类型") && !document.body.innerText.includes("最近类型尚未同步")', [selector]), '恢复原记账类型')
+  originalType = undefined
 }
 
 async function screenshot(name) {
@@ -116,18 +178,21 @@ async function checkDate(selector, label) {
 }
 
 async function main() {
-  const accounts = await readFile(resolve(localDir, 'accounts.md'), 'utf8')
+  const accounts = await readFile(resolve(accountsDir, 'accounts.md'), 'utf8')
   const row = accounts.split('\n').find((line) => line.startsWith(`| ${account} |`))
   const password = row?.split('|')[2]?.trim()
   if (!password) throw new Error(`本地账号文档缺少 ${account}`)
 
+  if (useSimulator) await ensureSimulator()
   await ensureDriver()
   let session
   for (let attempt = 0; attempt < 3; attempt += 1) {
     try {
       session = await request('POST', '/session', {
         capabilities: { alwaysMatch: {
-          browserName: 'safari', platformName: 'ios', 'safari:useSimulator': false,
+          browserName: 'safari', platformName: 'ios', 'safari:useSimulator': useSimulator,
+          ...(config.deviceUDID ? { 'safari:deviceUDID': config.deviceUDID } : {}),
+          ...(useSimulator ? { pageLoadStrategy: 'none' } : {}),
         } },
       })
       break
@@ -138,24 +203,25 @@ async function main() {
   }
   sessionId = session.sessionId
   const capabilities = session.capabilities
-  if (capabilities.platformName?.toLowerCase() !== 'ios' || capabilities['safari:useSimulator'] !== false ||
+  if (capabilities.platformName?.toLowerCase() !== 'ios' || capabilities['safari:useSimulator'] !== useSimulator ||
       (config.deviceUDID && capabilities['safari:deviceUDID'] !== config.deviceUDID)) {
-    throw new Error('WebDriver 未连接实体 iPhone')
+    throw new Error(`WebDriver 未连接指定的${targetLabel}`)
   }
-  console.log(`真机：${capabilities['safari:deviceName']} / iOS ${capabilities['safari:platformVersion']}`)
+  console.log(`${targetLabel}：${capabilities['safari:deviceName']} / iOS ${capabilities['safari:platformVersion']}；useSimulator=${useSimulator}`)
+  console.log(`页面：${baseUrl}；${useSimulator ? 'DOM 结构与状态检查，不证明原生触摸或完整键盘' : 'WebDriver 检查，不证明完整键盘'}`)
 
-  await request('POST', `/session/${sessionId}/url`, { url: `${baseUrl}/login` })
+  await navigate(`${baseUrl}/login`)
   await waitFor(async () => evaluate('return !!document.querySelector("#username")'), '登录表单')
-  await request('POST', `/session/${sessionId}/element/${await find('#username')}/click`)
+  await click('#username')
   await request('POST', `/session/${sessionId}/element/${await find('#username')}/value`, { text: account })
-  await request('POST', `/session/${sessionId}/element/${await find('#password')}/click`)
+  await click('#password')
   await request('POST', `/session/${sessionId}/element/${await find('#password')}/value`, { text: password })
   let entered = await evaluate(`return {
     username: document.querySelector('#username')?.value,
     passwordLength: document.querySelector('#password')?.value.length
   }`)
   // Some iOS WebDriver versions acknowledge sendKeys without updating Vue's inputs.
-  if (entered.username !== account || entered.passwordLength !== password.length) {
+  if (useSimulator || entered.username !== account || entered.passwordLength !== password.length) {
     await evaluate(`
       const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set
       for (const [selector, value] of [['#username', arguments[0]], ['#password', arguments[1]]]) {
@@ -172,25 +238,25 @@ async function main() {
   if (entered.username !== account || entered.passwordLength !== password.length) {
     throw new Error(`WebDriver 输入未完成：用户名=${entered.username === account ? '已填' : '未填'}，密码长度=${entered.passwordLength ?? 0}`)
   }
-  await request('POST', `/session/${sessionId}/element/${await find('[data-testid="login-submit"]')}/click`)
+  await click('[data-testid="login-submit"]')
   await waitFor(async () => evaluate('return !location.pathname.includes("login")'), '登录完成')
 
   if (account === 'pengfulin') {
-    await request('POST', `/session/${sessionId}/url`, { url: `${baseUrl}/entry` })
+    await navigate(`${baseUrl}/entry`)
     await waitFor(async () => evaluate('return !!document.querySelector("#expense-occurred-at, #income-occurred-at") && !document.querySelector(".entry-type-panel > .entry-type-switch button:last-child")?.disabled'), '记账表单')
-    const originalType = await evaluate('return document.querySelector(".entry-type-panel > .entry-type-switch button:last-child").getAttribute("aria-pressed") === "true" ? "INCOME" : "EXPENSE"')
+    originalType = await evaluate('return document.querySelector(".entry-type-panel > .entry-type-switch button:last-child").getAttribute("aria-pressed") === "true" ? "INCOME" : "EXPENSE"')
     if (originalType === 'INCOME') {
-      await request('POST', `/session/${sessionId}/element/${await find('.entry-type-panel > .entry-type-switch button:nth-of-type(1)')}/click`)
+      await click('.entry-type-panel > .entry-type-switch button:nth-of-type(1)')
     }
     await waitFor(async () => evaluate('return !!document.querySelector("#expense-occurred-at")'), '记一笔页面')
     await waitFor(async () => evaluate('return !document.body.innerText.includes("正在加载填报选项") && !document.body.innerText.includes("正在保存最近类型")'), '支出选项加载')
     await checkDate('#expense-occurred-at', '支出填报')
     await evaluate('document.querySelector("#expense-occurred-at").scrollIntoView({ block: "center" })')
     const expenseDateImage = await screenshot('expense-date.png')
-    // 原生点击前将目标放入可见区中部，避开 Safari 工具栏和自动滚动中的命中偏差。
+    // 将目标放入可见区中部；真机 WebDriver 点击需避开 Safari 工具栏。
     await evaluate('document.querySelector("#expense-primary-category").scrollIntoView({ block: "center" })')
 
-    await request('POST', `/session/${sessionId}/element/${await find('#expense-primary-category')}/click`)
+    await click('#expense-primary-category')
     await waitFor(async () => evaluate('return document.querySelector("#expense-primary-category")?.getAttribute("aria-expanded") === "true"'), '分类下拉')
     const dropdown = await evaluate(`
       const anchor = document.querySelector('#expense-primary-category').getBoundingClientRect()
@@ -215,10 +281,10 @@ async function main() {
     if (browse.tag !== 'BUTTON' || browse.height > 241 || browse.scale !== 1) {
       throw new Error(`手机分类选择入口或密度不符合约定：${JSON.stringify(browse)}`)
     }
-    await request('POST', `/session/${sessionId}/element/${await find('#expense-primary-category')}/click`)
+    await click('#expense-primary-category')
     await waitFor(async () => evaluate('return !document.querySelector("#expense-primary-category-options")'), '重复点击收起')
-    await request('POST', `/session/${sessionId}/element/${await find('#expense-primary-category')}/click`)
-    await request('POST', `/session/${sessionId}/element/${await find('#expense-primary-category-options .dropdown-search')}/click`)
+    await click('#expense-primary-category')
+    await click('#expense-primary-category-options .dropdown-search')
     await waitFor(async () => evaluate(`return document.querySelector('#expense-primary-category')?.tagName === 'BUTTON'
       && document.activeElement?.id === 'expense-primary-category-search'`), '主动搜索聚焦')
     // 记录真实可见视口，WebDriver 没有唤起键盘时不能用焦点通过冒充键盘验收。
@@ -238,32 +304,29 @@ async function main() {
     }
     console.log(`主动搜索：16px、无自动缩放；${searchViewport.keyboardOpen ? '实际键盘视口已收缩（须核对完整键盘画面）' : 'Safari WebDriver 抑制软件键盘，完整键盘状态未验证'}`)
     console.log(`搜索截图：${await screenshot('entry-dropdown-search.png')}`)
-    await request('POST', `/session/${sessionId}/element/${await find('#expense-primary-category-options .dropdown-search-header button')}/click`)
+    await click('#expense-primary-category-options .dropdown-search-header button')
     await waitFor(async () => evaluate(`return !document.querySelector('#expense-primary-category-options')
       && document.activeElement?.id !== 'expense-primary-category-search'`), '取消搜索关闭候选')
     console.log('取消搜索：候选关闭，搜索输入失焦')
-    await request('POST', `/session/${sessionId}/element/${await find('#expense-primary-category')}/click`)
-    await request('POST', `/session/${sessionId}/element/${await find('#expense-primary-category-options .dropdown-search')}/click`)
+    await click('#expense-primary-category')
+    await click('#expense-primary-category-options .dropdown-search')
     // 点非编辑页头关闭，不修改当前草稿或触发业务提交。
-    await request('POST', `/session/${sessionId}/element/${await find('.page-heading h1')}/click`)
+    await click('.page-heading h1', true)
     await waitFor(async () => evaluate(`return !document.querySelector('#expense-primary-category-options')
       && document.querySelector('#expense-primary-category')?.tagName === 'BUTTON'`), '外部点击收起搜索')
 
-    await request('POST', `/session/${sessionId}/url`, { url: `${baseUrl}/entry?ios-check=income` })
-    await waitFor(async () => evaluate('return !!document.querySelector(".entry-type-panel > .entry-type-switch button:last-child")'), '记账类型切换')
-    await request('POST', `/session/${sessionId}/element/${await find('.entry-type-panel > .entry-type-switch button:last-child')}/click`)
+    await navigate(`${baseUrl}/entry?ios-check=income`)
+    await waitFor(async () => evaluate('return !!document.querySelector(".entry-type-panel > .entry-type-switch button:last-child") && !document.querySelector(".entry-type-panel > .entry-type-switch button:last-child").disabled'), '记账类型切换')
+    await click('.entry-type-panel > .entry-type-switch button:last-child')
     await waitFor(async () => evaluate('return !!document.querySelector("#income-occurred-at")'), '收入填报页面')
     await checkDate('#income-occurred-at', '收入填报')
-    await waitFor(async () => evaluate('return !document.body.innerText.includes("正在保存最近类型")'), '记账类型同步')
+    await waitFor(async () => evaluate('return !document.body.innerText.includes("正在保存最近类型") && !document.body.innerText.includes("最近类型尚未同步")'), '记账类型同步')
     await evaluate('document.querySelector("#income-occurred-at").scrollIntoView({ block: "center" })')
     const incomeDateImage = await screenshot('income-date.png')
-    if (originalType === 'EXPENSE') {
-      await request('POST', `/session/${sessionId}/element/${await find('.entry-type-panel > .entry-type-switch button:nth-of-type(1)')}/click`)
-      await waitFor(async () => evaluate('return !!document.querySelector("#expense-occurred-at")'), '恢复原记账类型')
-    }
+    await restoreEntryType()
     console.log(`截图：${expenseDateImage}；${dropdownImage}；${incomeDateImage}`)
   } else {
-    await waitFor(async () => evaluate('return !document.body.innerText.includes("正在加载用户")'), '管理员数据加载')
+    await waitFor(async () => evaluate('return location.pathname === "/admin" && document.querySelector("h1")?.textContent.includes("用户管理") && !document.body.innerText.includes("正在加载用户")'), '管理员数据加载')
     const page = await evaluate('return { path: location.pathname, width: document.documentElement.scrollWidth, viewport: innerWidth }')
     if (page.width > page.viewport + 1) throw new Error(`管理员页面横向溢出：${JSON.stringify(page)}`)
     console.log(`管理员：${page.path}，视口 ${page.viewport}px，文档 ${page.width}px`)
@@ -276,7 +339,7 @@ try {
   await chmod(localDir, 0o700)
   await main()
 } catch (error) {
-  console.error(`真机检查失败：${error.message}`)
+  console.error(`${targetLabel}检查失败：${error.message}`)
   if (sessionId) {
     try {
       const path = await evaluate('return location.pathname')
@@ -287,6 +350,10 @@ try {
   process.exitCode = 1
 } finally {
   if (sessionId) {
+    try { await restoreEntryType() } catch {
+      console.error('无法恢复原记账类型，请在测试账号页面检查；本轮检查未完成')
+      process.exitCode = 1
+    }
     try {
       await request('DELETE', `/session/${sessionId}`)
       await new Promise((done) => setTimeout(done, 1000))
