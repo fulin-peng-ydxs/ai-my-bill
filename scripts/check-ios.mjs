@@ -138,7 +138,7 @@ async function navigate(url) {
 async function restoreEntryType() {
   if (!originalType) return
   if (await evaluate('return location.pathname !== "/entry"')) await navigate(`${baseUrl}/entry`)
-  const selector = `.entry-type-panel > .entry-type-switch button:nth-of-type(${originalType === 'EXPENSE' ? 1 : 2})`
+  const selector = `.entry-preference-page .page-workspace-header > .entry-type-switch button:nth-of-type(${originalType === 'EXPENSE' ? 1 : 2})`
   await waitFor(() => evaluate('return !!document.querySelector(arguments[0]) && !document.querySelector(arguments[0]).disabled', [selector]), '恢复记账类型前就绪')
   if (await evaluate('return document.querySelector(arguments[0]).getAttribute("aria-pressed") !== "true"', [selector])) {
     await click(selector)
@@ -243,10 +243,10 @@ async function main() {
 
   if (account === 'pengfulin') {
     await navigate(`${baseUrl}/entry`)
-    await waitFor(async () => evaluate('return !!document.querySelector("#expense-occurred-at, #income-occurred-at") && !document.querySelector(".entry-type-panel > .entry-type-switch button:last-child")?.disabled'), '记账表单')
-    originalType = await evaluate('return document.querySelector(".entry-type-panel > .entry-type-switch button:last-child").getAttribute("aria-pressed") === "true" ? "INCOME" : "EXPENSE"')
+    await waitFor(async () => evaluate('return !!document.querySelector("#expense-occurred-at, #income-occurred-at") && !document.querySelector(".entry-preference-page .page-workspace-header > .entry-type-switch button:last-child")?.disabled'), '记账表单')
+    originalType = await evaluate('return document.querySelector(".entry-preference-page .page-workspace-header > .entry-type-switch button:last-child").getAttribute("aria-pressed") === "true" ? "INCOME" : "EXPENSE"')
     if (originalType === 'INCOME') {
-      await click('.entry-type-panel > .entry-type-switch button:nth-of-type(1)')
+      await click('.entry-preference-page .page-workspace-header > .entry-type-switch button:nth-of-type(1)')
     }
     await waitFor(async () => evaluate('return !!document.querySelector("#expense-occurred-at")'), '记一笔页面')
     await waitFor(async () => evaluate('return !document.body.innerText.includes("正在加载填报选项") && !document.body.innerText.includes("正在保存最近类型")'), '支出选项加载')
@@ -315,9 +315,9 @@ async function main() {
     await waitFor(async () => evaluate(`return !document.querySelector('#expense-primary-category-options')
       && document.querySelector('#expense-primary-category')?.tagName === 'BUTTON'`), '外部点击收起搜索')
 
-    await navigate(`${baseUrl}/entry?ios-check=income`)
-    await waitFor(async () => evaluate('return !!document.querySelector(".entry-type-panel > .entry-type-switch button:last-child") && !document.querySelector(".entry-type-panel > .entry-type-switch button:last-child").disabled'), '记账类型切换')
-    await click('.entry-type-panel > .entry-type-switch button:last-child')
+    // 用户在同一记账页切换类型；保留实例以覆盖共享页头与收支表单缓存。
+    await waitFor(async () => evaluate('return !!document.querySelector(".entry-preference-page .page-workspace-header > .entry-type-switch button:last-child") && !document.querySelector(".entry-preference-page .page-workspace-header > .entry-type-switch button:last-child").disabled'), '记账类型切换')
+    await click('.entry-preference-page .page-workspace-header > .entry-type-switch button:last-child')
     await waitFor(async () => evaluate('return !!document.querySelector("#income-occurred-at")'), '收入填报页面')
     await checkDate('#income-occurred-at', '收入填报')
     await waitFor(async () => evaluate('return !document.body.innerText.includes("正在保存最近类型") && !document.body.innerText.includes("最近类型尚未同步")'), '记账类型同步')

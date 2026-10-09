@@ -302,7 +302,24 @@ textarea:disabled {
   min-height: 100dvh;
 }
 
-.app-shell:not(.admin-shell) { padding-bottom: var(--bottom-navigation-occupied-height); }
+.app-shell:not(.admin-shell) {
+  height: var(--app-viewport-height, 100dvh);
+  min-height: 0;
+  overflow: hidden;
+  grid-template-rows: minmax(0, 1fr);
+  padding-bottom: var(--bottom-navigation-occupied-height);
+}
+html:has(.app-shell:not(.admin-shell)), body:has(.app-shell:not(.admin-shell)) { overflow: hidden; }
+.app-shell:not(.admin-shell) .shell-content { display: flex; flex-direction: column; overflow: hidden; }
+.app-shell:not(.admin-shell) .cached-page { flex: 1; min-height: 0; }
+.app-shell:not(.admin-shell) .cached-page:not(.page-workspace) { overflow-y: auto; overscroll-behavior-y: none; align-content: start; }
+
+.page-workspace { display: flex; flex-direction: column; min-height: 0; gap: var(--space-md); }
+.page-workspace-header { flex: 0 0 auto; display: grid; gap: var(--space-sm); min-width: 0; }
+.page-scroll-region { flex: 1; min-height: 0; min-width: 0; overflow-y: auto; overscroll-behavior-y: none; display: grid; align-content: start; gap: var(--space-md); }
+.page-scroll-region:focus-visible { outline: 2px solid var(--color-focus); outline-offset: -2px; }
+body:has(dialog[open]) .app-shell .cached-page:not(.page-workspace),
+body:has(dialog[open]) .page-scroll-region { overflow: hidden; }
 
 .shell-header,
 .bottom-navigation {
@@ -523,7 +540,7 @@ textarea:disabled {
   width: 100%;
   min-width: 0;
   min-height: var(--control-height);
-  padding-inline: var(--space-lg);
+  padding-inline: var(--control-padding-inline);
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-control);
@@ -531,22 +548,28 @@ textarea:disabled {
 
 /* WebKit 301648：原生日期输入自身不能带 padding，由外层承载尺寸和留白。 */
 .date-time-control input:is([type="datetime-local"], [type="date"]) {
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
   flex: 1 1 auto;
   width: 100%;
   min-width: 0;
   min-height: 0;
-  height: auto;
+  height: calc(var(--control-height) - 2px);
   max-width: 100%;
   padding: 0;
   color: var(--color-text);
-  text-align: center;
+  text-align: left;
+  line-height: 22px;
   background: transparent;
   border: 0;
   border-radius: 0;
 }
 .date-time-control:focus-within { outline: 2px solid var(--color-focus); outline-offset: 2px; }
 .date-time-control input:is([type="datetime-local"], [type="date"]):focus-visible { outline: 0; }
+.date-time-control input::-webkit-date-and-time-value { text-align: left; }
+.date-time-control input::-webkit-datetime-edit { padding: 0; }
+.form-field input[inputmode="decimal"] { text-align: right; font-variant-numeric: tabular-nums; }
+.form-field:has(> input[inputmode="decimal"]) > small { text-align: right; }
 
 .form-field small,
 .form-intro,
@@ -996,7 +1019,9 @@ body:has(dialog[open]) {
 
 .chart-actions button {
   display: grid;
-  gap: var(--space-xs);
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr);
+  align-items: center;
+  gap: 0 var(--space-sm);
   min-width: 0;
   padding: var(--space-md);
   color: var(--color-text);
@@ -1009,8 +1034,9 @@ body:has(dialog[open]) {
 
 .chart-actions button:enabled:hover { border-color: var(--color-primary); }
 .chart-actions button:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 2px; }
-.chart-actions strong { overflow-wrap: anywhere; font-family: var(--font-data); }
-.chart-actions small { color: var(--color-muted); }
+.chart-actions button > span { grid-row: 1 / span 2; overflow-wrap: anywhere; }
+.chart-actions strong { text-align: right; overflow-wrap: anywhere; font-family: var(--font-data); font-variant-numeric: tabular-nums; }
+.chart-actions small { grid-column: 2; text-align: right; color: var(--color-muted); font-size: 12px; line-height: 18px; }
 
 .comparison-grid {
   display: grid;
@@ -1083,8 +1109,8 @@ body:has(dialog[open]) {
   .time-drill { grid-template-columns: 1fr; }
   .quality-rule { grid-template-columns: 1fr; }
   .quality-rule strong { grid-row: auto; }
-  .dimension-ranking > button { grid-template-columns: minmax(0, 1fr); }
-  .dimension-rank-value { justify-items: start; text-align: left; }
+  .dimension-ranking > button { gap: var(--space-sm); min-height: 56px; padding-block: var(--space-sm); }
+  .dimension-rank-value { max-width: 200px; }
 }
 
 .ledger-page-heading {
@@ -1123,7 +1149,7 @@ body:has(dialog[open]) {
   border-left: 3px solid var(--color-primary);
 }
 
-.drill-context > div { display: grid; min-width: 0; gap: var(--space-xs); }
+.drill-context > div { display: flex; align-items: center; flex-wrap: wrap; min-width: 0; gap: var(--space-xs) var(--space-sm); }
 .drill-context span { color: var(--color-muted); font-size: 12px; }
 .drill-context strong { overflow-wrap: anywhere; }
 .drill-context .text-action { flex: 0 0 auto; white-space: nowrap; }
@@ -2279,3 +2305,31 @@ body:has(dialog[open]) {
 
 /* 已缓存页面由显式滚动恢复定位，避免旧 DOM 的浏览器锚点再次偏移。 */
 .cached-page { overflow-anchor: none; }
+.cached-page.page-workspace { display: flex; flex-direction: column; }
+
+/* 筛选与导航不参加正文滚动；明细搜索和状态共享一行以保留列表高度。 */
+.list-search-controls { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: var(--space-sm); min-width: 0; }
+.ledger-page .ledger-controls { padding: 0; border: 0; }
+.ledger-page .ledger-controls > div { flex: none; max-width: none; }
+.ledger-gesture-hint { margin: 0; color: var(--color-muted); font-size: 12px; line-height: 18px; }
+.page-workspace .drill-context { padding-block: var(--space-sm); }
+.page-workspace .applied-filter-bar { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: 0 var(--space-sm); }
+.page-workspace .filter-context { display: contents; }
+.page-workspace .filter-context-label { position: absolute; width: 1px; height: 1px; clip-path: inset(50%); overflow: hidden; }
+.page-workspace .filter-summary { grid-column: 1; grid-row: 1; gap: 0 var(--space-xs); }
+.page-workspace .filter-chip { max-width: 100%; }
+.page-workspace .filter-actions { grid-column: 2; grid-row: 1; }
+.page-workspace .report-dimension { padding: 0; gap: var(--space-sm); }
+.page-workspace .report-dimension > div { min-width: 0; flex: 1; }
+.page-workspace .report-dimension { flex-direction: row; }
+.page-workspace .report-dimension label { min-height: 18px; }
+@media (max-width: 735px) {
+  .page-workspace { gap: var(--space-sm); }
+  .ledger-page .ledger-controls .segmented-control { min-width: 128px; }
+  .ledger-page .global-search { padding-inline: var(--space-sm); gap: var(--space-xs); }
+  .page-workspace .money-summary-item { padding: var(--space-sm) var(--space-md); gap: 0; }
+  .page-workspace .chart-panel { gap: var(--space-sm); padding: var(--space-md); }
+  .page-workspace .chart-panel > header { align-items: center; flex-wrap: wrap; gap: 0 var(--space-sm); }
+  .page-workspace .chart-actions button { padding: var(--space-sm) var(--space-md); min-height: 56px; }
+  .page-workspace .report-dimension .select-control { padding-inline: var(--space-sm); }
+}

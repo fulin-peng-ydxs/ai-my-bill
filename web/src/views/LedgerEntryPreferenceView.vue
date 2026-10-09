@@ -5,6 +5,7 @@ import DictionaryManager from '../components/DictionaryManager.vue'
 import { useDictionaryPanel } from '../composables/useDictionaryPanel'
 import type { DailyTemplateSelection } from '../api/dailyTemplates'
 import AppStateBlock from '../components/AppStateBlock.vue'
+import PageWorkspace from '../components/PageWorkspace.vue'
 import PageHeading from '../components/PageHeading.vue'
 import DailyEntryPicker from '../components/DailyEntryPicker.vue'
 import EntryTypeSwitch from '../components/EntryTypeSwitch.vue'
@@ -48,33 +49,36 @@ function clearTemplate(type: EntryType): void {
 </script>
 
 <template>
-  <article
+  <PageWorkspace
+    content-label="记账表单"
     class="entry-preference-page"
     data-page-key="ledger-entry"
   >
-    <PageHeading title="记一笔">
-      <button
-        type="button"
-        class="compact-action"
-        aria-label="管理常用选项"
-        @click="dictionariesOpen = true"
-      >
-        常用选项
-      </button>
-      <DailyEntryPicker
-        :entry-type="preferences.values.recentEntryType"
-        @select="applyTemplate"
+    <template #header>
+      <PageHeading title="记一笔">
+        <button
+          type="button"
+          class="compact-action"
+          aria-label="管理常用选项"
+          @click="dictionariesOpen = true"
+        >
+          常用选项
+        </button>
+        <DailyEntryPicker
+          :entry-type="preferences.values.recentEntryType"
+          @select="applyTemplate"
+        />
+      </PageHeading>
+      <EntryTypeSwitch
+        :model-value="preferences.values.recentEntryType"
+        :disabled="preferences.status === 'idle' || preferences.status === 'loading' || preferences.isSaving"
+        @update:model-value="selectType"
       />
-    </PageHeading>
+    </template>
     <section
       class="entry-type-panel"
       aria-label="本次记录"
     >
-      <EntryTypeSwitch
-        :model-value="preferences.values.recentEntryType"
-        :disabled="preferences.status === 'loading' || preferences.isSaving"
-        @update:model-value="selectType"
-      />
       <AppStateBlock
         v-if="saveState === 'saving'"
         kind="loading"
@@ -108,9 +112,11 @@ function clearTemplate(type: EntryType): void {
         />
       </KeepAlive>
     </section>
-    <DictionaryManager
-      v-model:open="dictionariesOpen"
-      origin="entry"
-    />
-  </article>
+    <template #overlays>
+      <DictionaryManager
+        v-model:open="dictionariesOpen"
+        origin="entry"
+      />
+    </template>
+  </PageWorkspace>
 </template>

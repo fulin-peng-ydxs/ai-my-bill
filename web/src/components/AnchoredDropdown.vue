@@ -21,7 +21,7 @@ function place(): void {
   const viewport = globalThis.window.visualViewport
   const leftEdge = viewport?.offsetLeft ?? 0
   const viewportTop = viewport?.offsetTop ?? 0
-  const body = props.anchor.closest('.overlay-body')?.getBoundingClientRect()
+  const body = props.anchor.closest('.overlay-body, [data-page-scroll]')?.getBoundingClientRect()
   const topEdge = Math.max(viewportTop, body?.top ?? viewportTop)
   const width = viewport?.width ?? globalThis.window.innerWidth
   const height = viewport?.height ?? globalThis.window.innerHeight
@@ -31,8 +31,8 @@ function place(): void {
     return
   }
   const savebar = props.anchor.closest('form')?.querySelector('.entry-savebar')
-  const sticky = savebar && globalThis.getComputedStyle(savebar).position === 'sticky'
-  const actions = sticky ? savebar : props.anchor.closest('dialog')?.querySelector('.overlay-actions')
+  const pinned = savebar && ['sticky', 'fixed'].includes(globalThis.getComputedStyle(savebar).position)
+  const actions = pinned ? savebar : props.anchor.closest('dialog')?.querySelector('.overlay-actions')
   const layout = dropdownLayout(rect, { left: leftEdge, top: topEdge, right: leftEdge + width,
     bottom: bottomEdge, width }, panel.value?.scrollHeight ?? 320,
   globalThis.window.matchMedia('(max-width: 735px)').matches, actions?.getBoundingClientRect())

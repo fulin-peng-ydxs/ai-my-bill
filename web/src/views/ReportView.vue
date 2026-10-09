@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { pageScrollTop, scrollPageTo } from '../composables/pageScroll'
 import { usePageActivity } from '../composables/usePageActivity'
 import { useRefreshOnReturn } from '../composables/useRefreshOnReturn'
 import { computed, nextTick, ref, watch } from 'vue'
@@ -8,6 +9,7 @@ import type { LedgerDateRange, LedgerFilters } from '../api/ledgerEntries'
 import type { ExpenseReport,
   IncomeReport, ReportFilters, ReportScope, ReportSummary, ReportTimeGrain,
   ReportTimeMetric, TimeReport } from '../api/reports'
+import PageWorkspace from '../components/PageWorkspace.vue'
 import PageHeading from '../components/PageHeading.vue'
 import { hasFilterChanges } from '../domain/filterChanges'
 import AppliedFilterBar, { type AppliedFilterSummary } from '../components/AppliedFilterBar.vue'
@@ -117,7 +119,7 @@ const summaryItems = computed<MoneySummaryItem[]>(() => {
 async function load(): Promise<void> {
   await request.load(filters.value, presentation.value)
   const scroll = Number.parseInt(typeof route.query.scroll === 'string' ? route.query.scroll : '', 10)
-  if (Number.isSafeInteger(scroll) && scroll >= 0) await nextTick(() => { if (pageActive.value) globalThis.scrollTo({ top: scroll }) })
+  if (Number.isSafeInteger(scroll) && scroll >= 0) await nextTick(() => { if (pageActive.value) scrollPageTo(scroll) })
 }
 
 watch([() => route.fullPath, () => preferences.status], () => {
@@ -163,7 +165,7 @@ function drill(point: ReportSummary['dataPoints'][number]): void {
   delete (ledgerFilters as Partial<ReportFilters>).scope
   const context: LedgerDrillContext = {
     scope: shownFilters.value.scope, dimension: 'OVERVIEW', value: point.value, label: point.label,
-    reportQuery: { ...reportRouteQuery(shownFilters.value), dimension: 'OVERVIEW' }, reportScroll: Math.round(globalThis.scrollY),
+    reportQuery: { ...reportRouteQuery(shownFilters.value), dimension: 'OVERVIEW' }, reportScroll: Math.round(pageScrollTop()),
   }
   void router.push({ path: '/ledger', query: ledgerRouteQuery(ledgerFilters, context) })
 }
@@ -180,7 +182,7 @@ function drillTime(bucket: TimeReport['buckets'][number]): void {
   const context: LedgerDrillContext = { scope: shownFilters.value.scope, dimension: 'TIME',
     value: `${bucket.startDate}/${bucket.endDate}`, label: bucket.label,
     reportQuery: reportPresentationQuery(shownFilters.value, shownPresentation.value),
-    reportScroll: Math.round(globalThis.scrollY) }
+    reportScroll: Math.round(pageScrollTop()) }
   void router.push({ path: '/ledger', query: ledgerRouteQuery(ledgerFilters, context) })
 }
 
@@ -220,7 +222,7 @@ function drillExpense(point: ExpenseReport['points'][number]): void {
   }
   const context: LedgerDrillContext = {
     scope: 'EXPENSE', dimension, value: point.value, label: point.label,
-    reportQuery: reportPresentationQuery(shownFilters.value, shownPresentation.value), reportScroll: Math.round(globalThis.scrollY),
+    reportQuery: reportPresentationQuery(shownFilters.value, shownPresentation.value), reportScroll: Math.round(pageScrollTop()),
   }
   void router.push({ path: '/ledger', query: ledgerRouteQuery(ledgerFilters, context) })
 }
@@ -236,7 +238,7 @@ function drillIncome(point: IncomeReport['points'][number]): void {
   else if (dimension === 'NAME' || dimension === 'FREQUENCY') ledgerFilters.incomeName = point.value
   const context: LedgerDrillContext = {
     scope: 'INCOME', dimension, value: point.value, label: point.label,
-    reportQuery: reportPresentationQuery(shownFilters.value, shownPresentation.value), reportScroll: Math.round(globalThis.scrollY),
+    reportQuery: reportPresentationQuery(shownFilters.value, shownPresentation.value), reportScroll: Math.round(pageScrollTop()),
   }
   void router.push({ path: '/ledger', query: ledgerRouteQuery(ledgerFilters, context) })
 }
@@ -244,34 +246,125 @@ useRefreshOnReturn(() => load())
 </script>
 
 <template>
-  <article
+  <PageWorkspace
+    content-label="报表结果"
     class="report-page"
     data-page-key="reports"
   >
-    <PageHeading title="收支报表" />
+    <template #header>
+      <PageHeading title="收支报表" />
 
-    <GlobalLedgerSearch
-      id="report-search"
-      v-model="searchText"
-      label="搜索报表账目"
-      placeholder="搜索名称、分类、付款方或备注"
-      @search="updateSearch"
-    />
-    <SegmentedControl
-      label="账目范围"
-      :model-value="filters.scope"
-      :options="reportScopeOptions"
-      @update:model-value="updateScope"
-    />
-    <AppliedFilterBar
-      :summaries="filterSummaries"
-      :clearable="hasFilters"
-      label="报表已应用筛选"
-      @open="openFilters()"
-      @edit="openFilters"
-      @clear="clearFilters"
-    />
+      <GlobalLedgerSearch
+        id="report-search"
+        v-model="searchText"
+        label="搜索报表账目"
+        placeholder="搜索名称、分类、付款方或备注"
+        @search="updateSearch"
+      />
+      <SegmentedControl
+        label="账目范围"
+        :model-value="filters.scope"
+        :options="reportScopeOptions"
+        @update:model-value="updateScope"
+      />
+      <AppliedFilterBar
+        :summaries="filterSummaries"
+        :clearable="hasFilters"
+        label="报表已应用筛选"
+        @open="openFilters()"
+        @edit="openFilters"
+        @clear="clearFilters"
+      />
 
+      <section class="report-dimension">
+        <div>
+          <label for="report-dimension">
+            分析维度
+            <span
+              class="report-refresh-status"
+              role="status"
+              aria-live="polite"
+            >{{ request.refreshing.value ? '更新中…' : '' }}</span>
+          </label>
+          <select
+            id="report-dimension"
+            class="select-control"
+            :value="presentation.dimension"
+            @change="updatePresentation({ dimension: ($event.target as HTMLSelectElement).value as ReportDimension })"
+          >
+            <option
+              v-for="item in dimensionOptions"
+              :key="item.value"
+              :value="item.value"
+            >
+              {{ item.label }}
+            </option>
+          </select>
+        </div>
+        <div v-if="presentation.dimension === 'TIME'">
+          <label for="report-grain">时间粒度</label>
+          <select
+            id="report-grain"
+            class="select-control"
+            :value="presentation.grain"
+            @change="updatePresentation({ grain: ($event.target as HTMLSelectElement).value as ReportTimeGrain })"
+          >
+            <option value="DAY">
+              日
+            </option><option value="WEEK">
+              周
+            </option><option value="MONTH">
+              月
+            </option>
+            <option value="QUARTER">
+              季
+            </option><option value="YEAR">
+              年
+            </option>
+          </select>
+        </div>
+        <div v-if="presentation.dimension === 'TIME'">
+          <label for="report-metric">趋势指标</label>
+          <select
+            id="report-metric"
+            class="select-control"
+            :value="presentation.metric"
+            @change="updatePresentation({ metric: ($event.target as HTMLSelectElement).value as ReportTimeMetric })"
+          >
+            <option
+              v-if="filters.scope !== 'EXPENSE'"
+              value="TOTAL_INCOME"
+            >
+              总收入
+            </option>
+            <option
+              v-if="filters.scope !== 'INCOME'"
+              value="GROSS_EXPENSE"
+            >
+              原始支出
+            </option>
+            <option
+              v-if="filters.scope !== 'INCOME'"
+              value="ADJUSTMENT"
+            >
+              退款/报销冲减
+            </option>
+            <option
+              v-if="filters.scope !== 'INCOME'"
+              value="NET_EXPENSE"
+            >
+              净支出
+            </option>
+            <option
+              v-if="filters.scope === 'ALL'"
+              value="BALANCE"
+            >
+              结余
+            </option>
+          </select>
+        </div>
+      </section>
+    </template>
     <AppStateBlock
       v-if="request.status.value === 'loading' && !request.data.value"
       kind="loading"
@@ -291,94 +384,6 @@ useRefreshOnReturn(() => load())
       :items="summaryItems"
       label="已展示条件金额摘要"
     />
-    <section class="report-dimension">
-      <div>
-        <label for="report-dimension">
-          分析维度
-          <span
-            class="report-refresh-status"
-            role="status"
-            aria-live="polite"
-          >{{ request.refreshing.value ? '更新中…' : '' }}</span>
-        </label>
-        <select
-          id="report-dimension"
-          class="select-control"
-          :value="presentation.dimension"
-          @change="updatePresentation({ dimension: ($event.target as HTMLSelectElement).value as ReportDimension })"
-        >
-          <option
-            v-for="item in dimensionOptions"
-            :key="item.value"
-            :value="item.value"
-          >
-            {{ item.label }}
-          </option>
-        </select>
-      </div>
-      <div v-if="presentation.dimension === 'TIME'">
-        <label for="report-grain">时间粒度</label>
-        <select
-          id="report-grain"
-          class="select-control"
-          :value="presentation.grain"
-          @change="updatePresentation({ grain: ($event.target as HTMLSelectElement).value as ReportTimeGrain })"
-        >
-          <option value="DAY">
-            日
-          </option><option value="WEEK">
-            周
-          </option><option value="MONTH">
-            月
-          </option>
-          <option value="QUARTER">
-            季
-          </option><option value="YEAR">
-            年
-          </option>
-        </select>
-      </div>
-      <div v-if="presentation.dimension === 'TIME'">
-        <label for="report-metric">趋势指标</label>
-        <select
-          id="report-metric"
-          class="select-control"
-          :value="presentation.metric"
-          @change="updatePresentation({ metric: ($event.target as HTMLSelectElement).value as ReportTimeMetric })"
-        >
-          <option
-            v-if="filters.scope !== 'EXPENSE'"
-            value="TOTAL_INCOME"
-          >
-            总收入
-          </option>
-          <option
-            v-if="filters.scope !== 'INCOME'"
-            value="GROSS_EXPENSE"
-          >
-            原始支出
-          </option>
-          <option
-            v-if="filters.scope !== 'INCOME'"
-            value="ADJUSTMENT"
-          >
-            退款/报销冲减
-          </option>
-          <option
-            v-if="filters.scope !== 'INCOME'"
-            value="NET_EXPENSE"
-          >
-            净支出
-          </option>
-          <option
-            v-if="filters.scope === 'ALL'"
-            value="BALANCE"
-          >
-            结余
-          </option>
-        </select>
-      </div>
-    </section>
     <fieldset
       v-if="request.data.value"
       class="report-result"
@@ -424,141 +429,143 @@ useRefreshOnReturn(() => load())
       />
     </fieldset>
 
-    <FilterSheet
-      id="report-filter"
-      v-model:open="filterOpen"
-      :title="filterTitle"
-      :apply-label="focusedFilter ? '确定' : '应用筛选'"
-      @apply="applyFilters"
-    >
-      <FormField
-        v-if="showFilter('range')"
-        field-id="report-range"
-        label="日期范围"
-        :error="rangeError"
+    <template #overlays>
+      <FilterSheet
+        id="report-filter"
+        v-model:open="filterOpen"
+        :title="filterTitle"
+        :apply-label="focusedFilter ? '确定' : '应用筛选'"
+        @apply="applyFilters"
       >
-        <template #default="{ describedBy }">
-          <select
-            id="report-range"
-            :value="draft.range"
-            :aria-describedby="describedBy"
-            @change="setDraftRange(($event.target as HTMLSelectElement).value as LedgerDateRange)"
-          >
-            <option
-              v-for="option in ledgerRangeOptions"
-              :key="option.value"
-              :value="option.value"
+        <FormField
+          v-if="showFilter('range')"
+          field-id="report-range"
+          label="日期范围"
+          :error="rangeError"
+        >
+          <template #default="{ describedBy }">
+            <select
+              id="report-range"
+              :value="draft.range"
+              :aria-describedby="describedBy"
+              @change="setDraftRange(($event.target as HTMLSelectElement).value as LedgerDateRange)"
             >
-              {{ option.label }}
-            </option>
-          </select>
-        </template>
-      </FormField>
-      <div
-        v-if="showFilter('range') && draft.range === 'CUSTOM'"
-        class="form-grid-two"
-      >
-        <FormField
-          field-id="report-start-date"
-          label="开始日期"
-        >
-          <DateTimeControl
-            id="report-start-date"
-            v-model="draft.startDate"
-            :aria-describedby="rangeError ? 'report-range-error' : undefined"
-            :aria-invalid="Boolean(rangeError)"
-            type="date"
-          />
+              <option
+                v-for="option in ledgerRangeOptions"
+                :key="option.value"
+                :value="option.value"
+              >
+                {{ option.label }}
+              </option>
+            </select>
+          </template>
         </FormField>
-        <FormField
-          field-id="report-end-date"
-          label="结束日期"
+        <div
+          v-if="showFilter('range') && draft.range === 'CUSTOM'"
+          class="form-grid-two"
         >
-          <DateTimeControl
-            id="report-end-date"
-            v-model="draft.endDate"
-            :aria-describedby="rangeError ? 'report-range-error' : undefined"
-            :aria-invalid="Boolean(rangeError)"
-            type="date"
-          />
-        </FormField>
-      </div>
-      <DictionaryFilterPicker
-        v-if="showFilter('fundingChannelId')"
-        id="report-funding"
-        v-model="draft.fundingChannelId"
-        type="funding-channel"
-        label="资金渠道"
-      />
-      <template v-if="filterOpen && draft.scope === 'EXPENSE'">
-        <DictionaryFilterPicker
-          v-if="showFilter('primaryCategoryId')"
-          id="report-primary-category"
-          :model-value="draft.primaryCategoryId"
-          type="expense-category"
-          label="一级分类"
-          roots-only
-          @update:model-value="updatePrimaryCategory"
-        />
-        <DictionaryFilterPicker
-          v-if="showFilter('secondaryCategoryId')"
-          id="report-secondary-category"
-          v-model="draft.secondaryCategoryId"
-          type="expense-category"
-          label="二级分类"
-          :parent-id="draft.primaryCategoryId"
-          :disabled="!draft.primaryCategoryId"
-        />
-        <DictionaryFilterPicker
-          v-if="showFilter('productId')"
-          id="report-product"
-          v-model="draft.productId"
-          type="product"
-          label="商品"
-        />
-        <DictionaryFilterPicker
-          v-if="showFilter('purchaseChannelId')"
-          id="report-purchase"
-          v-model="draft.purchaseChannelId"
-          type="purchase-channel"
-          label="购买渠道"
-        />
-        <DictionaryFilterPicker
-          v-if="showFilter('locationLabelId')"
-          id="report-location"
-          v-model="draft.locationLabelId"
-          type="location"
-          label="地点"
-        />
-      </template>
-      <template v-if="filterOpen && draft.scope === 'INCOME'">
-        <DictionaryFilterPicker
-          v-if="showFilter('incomeCategoryId')"
-          id="report-income-category"
-          v-model="draft.incomeCategoryId"
-          type="income-category"
-          label="收入分类"
-        />
-        <DictionaryFilterPicker
-          v-if="showFilter('payerId')"
-          id="report-payer"
-          v-model="draft.payerId"
-          type="payer"
-          label="付款方"
-        />
-        <FormField
-          v-if="showFilter('incomeName')"
-          field-id="report-income-name"
-          label="收入名称"
-        >
-          <input
-            id="report-income-name"
-            v-model="draft.incomeName"
-            maxlength="100"
-            placeholder="精确匹配收入名称"
+          <FormField
+            field-id="report-start-date"
+            label="开始日期"
           >
-        </FormField>
-      </template>
-    </FilterSheet>
-  </article>
+            <DateTimeControl
+              id="report-start-date"
+              v-model="draft.startDate"
+              :aria-describedby="rangeError ? 'report-range-error' : undefined"
+              :aria-invalid="Boolean(rangeError)"
+              type="date"
+            />
+          </FormField>
+          <FormField
+            field-id="report-end-date"
+            label="结束日期"
+          >
+            <DateTimeControl
+              id="report-end-date"
+              v-model="draft.endDate"
+              :aria-describedby="rangeError ? 'report-range-error' : undefined"
+              :aria-invalid="Boolean(rangeError)"
+              type="date"
+            />
+          </FormField>
+        </div>
+        <DictionaryFilterPicker
+          v-if="showFilter('fundingChannelId')"
+          id="report-funding"
+          v-model="draft.fundingChannelId"
+          type="funding-channel"
+          label="资金渠道"
+        />
+        <template v-if="filterOpen && draft.scope === 'EXPENSE'">
+          <DictionaryFilterPicker
+            v-if="showFilter('primaryCategoryId')"
+            id="report-primary-category"
+            :model-value="draft.primaryCategoryId"
+            type="expense-category"
+            label="一级分类"
+            roots-only
+            @update:model-value="updatePrimaryCategory"
+          />
+          <DictionaryFilterPicker
+            v-if="showFilter('secondaryCategoryId')"
+            id="report-secondary-category"
+            v-model="draft.secondaryCategoryId"
+            type="expense-category"
+            label="二级分类"
+            :parent-id="draft.primaryCategoryId"
+            :disabled="!draft.primaryCategoryId"
+          />
+          <DictionaryFilterPicker
+            v-if="showFilter('productId')"
+            id="report-product"
+            v-model="draft.productId"
+            type="product"
+            label="商品"
+          />
+          <DictionaryFilterPicker
+            v-if="showFilter('purchaseChannelId')"
+            id="report-purchase"
+            v-model="draft.purchaseChannelId"
+            type="purchase-channel"
+            label="购买渠道"
+          />
+          <DictionaryFilterPicker
+            v-if="showFilter('locationLabelId')"
+            id="report-location"
+            v-model="draft.locationLabelId"
+            type="location"
+            label="地点"
+          />
+        </template>
+        <template v-if="filterOpen && draft.scope === 'INCOME'">
+          <DictionaryFilterPicker
+            v-if="showFilter('incomeCategoryId')"
+            id="report-income-category"
+            v-model="draft.incomeCategoryId"
+            type="income-category"
+            label="收入分类"
+          />
+          <DictionaryFilterPicker
+            v-if="showFilter('payerId')"
+            id="report-payer"
+            v-model="draft.payerId"
+            type="payer"
+            label="付款方"
+          />
+          <FormField
+            v-if="showFilter('incomeName')"
+            field-id="report-income-name"
+            label="收入名称"
+          >
+            <input
+              id="report-income-name"
+              v-model="draft.incomeName"
+              maxlength="100"
+              placeholder="精确匹配收入名称"
+            >
+          </FormField>
+        </template>
+      </FilterSheet>
+    </template>
+  </PageWorkspace>
 </template>

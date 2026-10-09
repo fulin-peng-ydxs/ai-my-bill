@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { pageScrollTop, scrollPageTo } from '../composables/pageScroll'
 import { nextTick, onActivated, onBeforeUnmount, onDeactivated, provide, ref, shallowReactive, watch, type VNode } from 'vue'
 import { onBeforeRouteLeave, routeLocationKey, useRouter, type RouteLocationNormalizedLoaded } from 'vue-router'
 
@@ -15,7 +16,7 @@ let scroll = 0
 let frame: number | undefined
 const active = ref(true)
 provide(pageActivityKey, active)
-onBeforeRouteLeave(() => { scroll = globalThis.scrollY })
+onBeforeRouteLeave(() => { scroll = pageScrollTop() })
 onActivated(async () => {
   active.value = true
   await nextTick()
@@ -23,7 +24,7 @@ onActivated(async () => {
   // 等缓存 DOM 重新进入布局后恢复，避免被旧页面的滚动高度截断。
   frame = globalThis.requestAnimationFrame(() => {
     frame = undefined
-    if (active.value && pageCacheKey(router.currentRoute.value) === pageCacheKey(localRoute)) globalThis.scrollTo({ top: scroll })
+    if (active.value && pageCacheKey(router.currentRoute.value) === pageCacheKey(localRoute)) scrollPageTo(scroll)
   })
 })
 function suspend(): void {

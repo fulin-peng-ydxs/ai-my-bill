@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { pageScrollTop, scrollPageTo } from '../composables/pageScroll'
 import { usePageActivity } from '../composables/usePageActivity'
 import { useRefreshOnReturn } from '../composables/useRefreshOnReturn'
 import { ArrowLeft } from 'lucide-vue-next'
@@ -13,6 +14,7 @@ import type { LedgerDateRange, LedgerFilters, LedgerItem } from '../api/ledgerEn
 import { changeLedgerLifecycle, type LedgerLifecycleResponse } from '../api/ledgerLifecycle'
 import DictionaryFilterPicker from '../components/DictionaryFilterPicker.vue'
 import { useDictionaryFilterLabels } from '../composables/useDictionaryFilterLabels'
+import PageWorkspace from '../components/PageWorkspace.vue'
 import PageHeading from '../components/PageHeading.vue'
 import { hasFilterChanges } from '../domain/filterChanges'
 import AppliedFilterBar, { type AppliedFilterSummary } from '../components/AppliedFilterBar.vue'
@@ -120,7 +122,7 @@ watch([() => route.fullPath, () => preferences.status], async () => {
   draft.value = { ...filters.value }
   await list.replace(filters.value)
   const saved = readLedgerScroll(currentScrollKey.value)
-  await nextTick(() => { if (pageActive.value) globalThis.scrollTo({ top: saved ?? 0 }) })
+  await nextTick(() => { if (pageActive.value) scrollPageTo(saved ?? 0) })
 }, { immediate: true })
 
 function navigate(next: LedgerFilters): void {
@@ -348,74 +350,77 @@ function returnToReports(context: LedgerDrillContext): void {
   void router.push({ path: '/reports', query: context.reportQuery })
 }
 
-onBeforeRouteLeave(() => { rememberLedgerScroll(currentScrollKey.value, globalThis.scrollY) })
+onBeforeRouteLeave(() => { rememberLedgerScroll(currentScrollKey.value, pageScrollTop()) })
 onBeforeUnmount(() => { editRequest.cancel(); adjustmentRequest.cancel() })
 useRefreshOnReturn(() => list.refresh())
 </script>
 
 <template>
-  <article
+  <PageWorkspace
+    content-label="收支明细列表"
     class="ledger-page"
     data-page-key="bill-details"
   >
-    <PageHeading
-      title="收支明细"
-      :subtitle="filters.lifecycle === 'TRASHED' ? '删除后 30 天内可恢复' : undefined"
-    >
-      <DataExportAction
-        :request="exportRequest"
-        @notify="showExportNotice"
-      />
-    </PageHeading>
-
-    <section
-      v-if="drill"
-      class="drill-context"
-      aria-label="报表下钻上下文"
-    >
-      <div><span>报表下钻</span><strong>{{ drill.dimension }} · {{ drill.label ?? drill.value }}</strong></div>
-      <button
-        type="button"
-        class="text-action"
-        @click="returnToReports(drill)"
+    <template #header>
+      <PageHeading
+        title="收支明细"
+        :subtitle="filters.lifecycle === 'TRASHED' ? '删除后 30 天内可恢复' : undefined"
       >
-        <ArrowLeft
-          :size="17"
-          aria-hidden="true"
-        />返回报表
-      </button>
-    </section>
-
-    <GlobalLedgerSearch
-      id="ledger-search"
-      v-model="searchText"
-      @search="updateSearch"
-    />
-    <AppliedFilterBar
-      :summaries="filterSummaries"
-      :clearable="hasFilters"
-      @open="openFilters()"
-      @edit="openFilters"
-      @clear="clearFilters"
-    />
-
-    <section
-      class="ledger-controls"
-      aria-label="明细视图控制"
-    >
-      <div>
-        <SegmentedControl
-          label="账目状态"
-          :model-value="filters.lifecycle"
-          :options="ledgerLifecycleOptions"
-          @update:model-value="updateLifecycle"
+        <DataExportAction
+          :request="exportRequest"
+          @notify="showExportNotice"
         />
-      </div>
-      <p class="ledger-gesture-hint">
-        <span class="touch-hint">轻点查看 · 左滑或长按管理</span><span class="pointer-hint">点击查看 · 右键管理</span>
-      </p>
-    </section>
+      </PageHeading>
 
+      <section
+        v-if="drill"
+        class="drill-context"
+        aria-label="报表下钻上下文"
+      >
+        <div><span>报表下钻</span><strong>{{ drill.label ?? drill.value }}</strong></div>
+        <button
+          type="button"
+          class="text-action"
+          @click="returnToReports(drill)"
+        >
+          <ArrowLeft
+            :size="17"
+            aria-hidden="true"
+          />返回报表
+        </button>
+      </section>
+
+      <div class="list-search-controls">
+        <GlobalLedgerSearch
+          id="ledger-search"
+          v-model="searchText"
+          @search="updateSearch"
+        />
+        <section
+          class="ledger-controls"
+          aria-label="明细视图控制"
+        >
+          <div>
+            <SegmentedControl
+              label="账目状态"
+              :model-value="filters.lifecycle"
+              :options="ledgerLifecycleOptions"
+              @update:model-value="updateLifecycle"
+            />
+          </div>
+        </section>
+      </div>
+      <AppliedFilterBar
+        :summaries="filterSummaries"
+        :clearable="hasFilters"
+        @open="openFilters()"
+        @edit="openFilters"
+        @clear="clearFilters"
+      />
+    </template>
+    <p class="ledger-gesture-hint">
+      <span class="touch-hint">轻点查看 · 左滑或长按管理</span><span class="pointer-hint">点击查看 · 右键管理</span>
+    </p>
     <AppStateBlock
       v-if="list.error.value && (list.status.value === 'ready' || list.status.value === 'empty')"
       kind="error"
@@ -459,255 +464,257 @@ useRefreshOnReturn(() => list.refresh())
       />
     </template>
 
-    <FilterSheet
-      id="ledger-filter"
-      v-model:open="filterOpen"
-      :title="filterTitle"
-      :apply-label="focusedFilter ? '确定' : '应用筛选'"
-      @apply="applyFilters"
-    >
-      <div :class="focusedFilter ? undefined : 'form-grid-two entry-short-fields'">
-        <FormField
-          v-if="showFilter('range')"
-          field-id="ledger-range"
-          label="日期范围"
-          :error="rangeError"
-        >
-          <select
-            id="ledger-range"
-            :value="draft.range"
-            @change="setDraftRange(($event.target as HTMLSelectElement).value as LedgerDateRange)"
-          >
-            <option
-              v-for="option in ledgerRangeOptions"
-              :key="option.value"
-              :value="option.value"
-            >
-              {{ option.label }}
-            </option>
-          </select>
-        </FormField>
-        <FormField
-          v-if="showFilter('type')"
-          field-id="ledger-filter-type"
-          label="账目类型"
-        >
-          <select
-            id="ledger-filter-type"
-            v-model="draft.type"
-          >
-            <option
-              v-for="option in ledgerTypeOptions"
-              :key="option.value"
-              :value="option.value"
-            >
-              {{ option.label }}
-            </option>
-          </select>
-        </FormField>
-      </div>
-      <div
-        v-if="showFilter('range') && draft.range === 'CUSTOM'"
-        class="custom-date-range"
+    <template #overlays>
+      <FilterSheet
+        id="ledger-filter"
+        v-model:open="filterOpen"
+        :title="filterTitle"
+        :apply-label="focusedFilter ? '确定' : '应用筛选'"
+        @apply="applyFilters"
       >
-        <FormField
-          field-id="ledger-start-date"
-          label="开始日期"
+        <div :class="focusedFilter ? undefined : 'form-grid-two entry-short-fields'">
+          <FormField
+            v-if="showFilter('range')"
+            field-id="ledger-range"
+            label="日期范围"
+            :error="rangeError"
+          >
+            <select
+              id="ledger-range"
+              :value="draft.range"
+              @change="setDraftRange(($event.target as HTMLSelectElement).value as LedgerDateRange)"
+            >
+              <option
+                v-for="option in ledgerRangeOptions"
+                :key="option.value"
+                :value="option.value"
+              >
+                {{ option.label }}
+              </option>
+            </select>
+          </FormField>
+          <FormField
+            v-if="showFilter('type')"
+            field-id="ledger-filter-type"
+            label="账目类型"
+          >
+            <select
+              id="ledger-filter-type"
+              v-model="draft.type"
+            >
+              <option
+                v-for="option in ledgerTypeOptions"
+                :key="option.value"
+                :value="option.value"
+              >
+                {{ option.label }}
+              </option>
+            </select>
+          </FormField>
+        </div>
+        <div
+          v-if="showFilter('range') && draft.range === 'CUSTOM'"
+          class="custom-date-range"
         >
-          <DateTimeControl
-            id="ledger-start-date"
-            v-model="draft.startDate"
-            :aria-describedby="rangeError ? 'ledger-range-error' : undefined"
-            :aria-invalid="Boolean(rangeError)"
-            type="date"
-          />
-        </FormField>
-        <FormField
-          field-id="ledger-end-date"
-          label="结束日期"
-        >
-          <DateTimeControl
-            id="ledger-end-date"
-            v-model="draft.endDate"
-            :aria-describedby="rangeError ? 'ledger-range-error' : undefined"
-            :aria-invalid="Boolean(rangeError)"
-            type="date"
-          />
-        </FormField>
-      </div>
-      <DictionaryFilterPicker
-        v-if="showFilter('fundingChannelId')"
-        id="ledger-funding"
-        v-model="draft.fundingChannelId"
-        type="funding-channel"
-        label="资金渠道"
-      />
-    </FilterSheet>
+          <FormField
+            field-id="ledger-start-date"
+            label="开始日期"
+          >
+            <DateTimeControl
+              id="ledger-start-date"
+              v-model="draft.startDate"
+              :aria-describedby="rangeError ? 'ledger-range-error' : undefined"
+              :aria-invalid="Boolean(rangeError)"
+              type="date"
+            />
+          </FormField>
+          <FormField
+            field-id="ledger-end-date"
+            label="结束日期"
+          >
+            <DateTimeControl
+              id="ledger-end-date"
+              v-model="draft.endDate"
+              :aria-describedby="rangeError ? 'ledger-range-error' : undefined"
+              :aria-invalid="Boolean(rangeError)"
+              type="date"
+            />
+          </FormField>
+        </div>
+        <DictionaryFilterPicker
+          v-if="showFilter('fundingChannelId')"
+          id="ledger-funding"
+          v-model="draft.fundingChannelId"
+          type="funding-channel"
+          label="资金渠道"
+        />
+      </FilterSheet>
 
-    <LedgerContextActions
-      id="ledger-context-actions"
-      v-model:open="contextOpen"
-      :title="contextItem ? `管理“${contextItem.title}”` : '账目操作'"
-      :actions="contextActions"
-      :description="contextItem?.lifecycleStatus === 'TRASHED' ? '恢复会重新计入统计；永久删除不可恢复。' : '选择要对这条有效账目执行的操作。'"
-      @select="contextAction"
-    />
-    <AppDrawer
-      id="trash-ledger-detail"
-      v-model:open="trashDetailOpen"
-      :title="trashDetailTarget ? `查看“${trashDetailTarget.title}”` : '查看回收站账目'"
-      description="这里只展示删除前的账目信息；恢复或永久删除请打开更多操作。"
-    >
-      <template #footer>
-        <button
-          type="button"
-          class="compact-action"
-          @click="manageDetail('trash')"
-        >
-          更多操作
-        </button>
-      </template>
-      <dl
-        v-if="trashDetailTarget"
-        class="adjustment-metadata"
+      <LedgerContextActions
+        id="ledger-context-actions"
+        v-model:open="contextOpen"
+        :title="contextItem ? `管理“${contextItem.title}”` : '账目操作'"
+        :actions="contextActions"
+        :description="contextItem?.lifecycleStatus === 'TRASHED' ? '恢复会重新计入统计；永久删除不可恢复。' : '选择要对这条有效账目执行的操作。'"
+        @select="contextAction"
+      />
+      <AppDrawer
+        id="trash-ledger-detail"
+        v-model:open="trashDetailOpen"
+        :title="trashDetailTarget ? `查看“${trashDetailTarget.title}”` : '查看回收站账目'"
+        description="这里只展示删除前的账目信息；恢复或永久删除请打开更多操作。"
       >
-        <div><dt>账目类型</dt><dd>{{ trashDetailTarget.entryType === 'EXPENSE' ? '支出' : trashDetailTarget.entryType === 'INCOME' ? '收入' : trashDetailTarget.adjustmentType === 'REFUND' ? '退款' : '报销' }}</dd></div>
-        <div><dt>业务时间</dt><dd>{{ formatShanghaiDateTime(trashDetailTarget.occurredAt) }}</dd></div>
-        <div><dt>金额</dt><dd>¥{{ trashDetailTarget.amount }}</dd></div>
-        <div><dt>分类</dt><dd>{{ trashDetailTarget.categoryName }}</dd></div>
-        <div><dt>对象</dt><dd>{{ trashDetailTarget.counterpartyName }}</dd></div>
-        <div><dt>资金渠道</dt><dd>{{ trashDetailTarget.fundingChannelName }}</dd></div>
-        <div><dt>恢复期限</dt><dd>{{ trashDetailTarget.remainingDays === 0 ? '今天到期' : `剩余 ${trashDetailTarget.remainingDays} 天` }}</dd></div>
-        <div v-if="trashDetailTarget.linkedAdjustmentCount">
-          <dt>关联调整</dt><dd>恢复后重生效；永久删除将联动清理 {{ trashDetailTarget.linkedAdjustmentCount }} 条</dd>
-        </div>
-        <div v-if="trashDetailTarget.note">
-          <dt>备注</dt><dd>{{ trashDetailTarget.note }}</dd>
-        </div>
-      </dl>
-    </AppDrawer>
-    <AppDrawer
-      id="ledger-edit"
-      :open="editOpen"
-      :title="editTarget?.entryType === 'EXPENSE' ? '编辑支出' : '编辑收入'"
-      description="修改只作用于当前账目；账目类型不可转换。"
-      @update:open="requestEditOpen"
-    >
-      <template #footer>
-        <button
-          type="button"
-          class="compact-action"
-          @click="manageDetail('edit')"
+        <template #footer>
+          <button
+            type="button"
+            class="compact-action"
+            @click="manageDetail('trash')"
+          >
+            更多操作
+          </button>
+        </template>
+        <dl
+          v-if="trashDetailTarget"
+          class="adjustment-metadata"
         >
-          更多操作
-        </button>
-      </template>
-      <AppStateBlock
-        v-if="editRequest.status.value === 'loading'"
-        kind="loading"
-        title="正在加载账目详情"
+          <div><dt>账目类型</dt><dd>{{ trashDetailTarget.entryType === 'EXPENSE' ? '支出' : trashDetailTarget.entryType === 'INCOME' ? '收入' : trashDetailTarget.adjustmentType === 'REFUND' ? '退款' : '报销' }}</dd></div>
+          <div><dt>业务时间</dt><dd>{{ formatShanghaiDateTime(trashDetailTarget.occurredAt) }}</dd></div>
+          <div><dt>金额</dt><dd>¥{{ trashDetailTarget.amount }}</dd></div>
+          <div><dt>分类</dt><dd>{{ trashDetailTarget.categoryName }}</dd></div>
+          <div><dt>对象</dt><dd>{{ trashDetailTarget.counterpartyName }}</dd></div>
+          <div><dt>资金渠道</dt><dd>{{ trashDetailTarget.fundingChannelName }}</dd></div>
+          <div><dt>恢复期限</dt><dd>{{ trashDetailTarget.remainingDays === 0 ? '今天到期' : `剩余 ${trashDetailTarget.remainingDays} 天` }}</dd></div>
+          <div v-if="trashDetailTarget.linkedAdjustmentCount">
+            <dt>关联调整</dt><dd>恢复后重生效；永久删除将联动清理 {{ trashDetailTarget.linkedAdjustmentCount }} 条</dd>
+          </div>
+          <div v-if="trashDetailTarget.note">
+            <dt>备注</dt><dd>{{ trashDetailTarget.note }}</dd>
+          </div>
+        </dl>
+      </AppDrawer>
+      <AppDrawer
+        id="ledger-edit"
+        :open="editOpen"
+        :title="editTarget?.entryType === 'EXPENSE' ? '编辑支出' : '编辑收入'"
+        description="修改只作用于当前账目；账目类型不可转换。"
+        @update:open="requestEditOpen"
+      >
+        <template #footer>
+          <button
+            type="button"
+            class="compact-action"
+            @click="manageDetail('edit')"
+          >
+            更多操作
+          </button>
+        </template>
+        <AppStateBlock
+          v-if="editRequest.status.value === 'loading'"
+          kind="loading"
+          title="正在加载账目详情"
+        />
+        <AppStateBlock
+          v-else-if="editRequest.status.value === 'error'"
+          kind="error"
+          title="账目详情加载失败"
+          :message="editRequest.error.value?.message"
+          action-label="重试"
+          @action="loadEdit"
+        />
+        <ExpenseEntryForm
+          v-else-if="editRequest.data.value && 'productName' in editRequest.data.value"
+          :key="`${editRequest.data.value.id}:${editRequest.data.value.version}`"
+          :account-id="session.session?.accountId"
+          :edit-entry="editRequest.data.value"
+          @saved="editSaved"
+        />
+        <IncomeEntryForm
+          v-else-if="editRequest.data.value"
+          :key="`${editRequest.data.value.id}:${editRequest.data.value.version}`"
+          :account-id="session.session?.accountId"
+          :edit-entry="editRequest.data.value"
+          @saved="editSaved"
+        />
+      </AppDrawer>
+      <AppDrawer
+        id="expense-adjustment-create"
+        :open="adjustmentOpen"
+        title="记录退款/报销"
+        description="调整会冲减所选原支出的净额，不计入收入。"
+        @update:open="requestAdjustmentOpen"
+      >
+        <ExpenseAdjustmentForm
+          v-if="adjustmentSource"
+          :key="adjustmentSource.id"
+          :source="adjustmentSource"
+          @saved="adjustmentSaved"
+        />
+      </AppDrawer>
+      <AppDrawer
+        id="expense-adjustment-detail"
+        :open="adjustmentDetailOpen"
+        title="调整详情"
+        description="已撤销记录仍保留，用于还原调整轨迹。"
+        @update:open="adjustmentDetailOpen = $event"
+      >
+        <template #footer>
+          <button
+            type="button"
+            class="compact-action"
+            :disabled="revoking"
+            @click="manageDetail('adjustment')"
+          >
+            更多操作
+          </button>
+        </template>
+        <AppStateBlock
+          v-if="adjustmentRequest.status.value === 'loading'"
+          kind="loading"
+          title="正在加载调整详情"
+        />
+        <AppStateBlock
+          v-else-if="adjustmentRequest.status.value === 'error'"
+          kind="error"
+          title="调整详情加载失败"
+          :message="adjustmentRequest.error.value?.message"
+          action-label="重试"
+          @action="adjustmentTarget && openAdjustmentDetail(adjustmentTarget)"
+        />
+        <ExpenseAdjustmentDetail
+          v-else-if="adjustmentRequest.data.value"
+          :adjustment="adjustmentRequest.data.value"
+          :busy="revoking"
+          @revoke="revokeConfirmOpen = true"
+        />
+      </AppDrawer>
+      <AppDialog
+        id="purge-ledger"
+        v-model:open="purgeConfirmOpen"
+        title="确认永久删除？"
+        :description="purgeTarget?.linkedAdjustmentCount ? `原账目及关联的 ${purgeTarget.linkedAdjustmentCount} 条调整会在同一操作中永久删除，且无法恢复。` : '该记录将被永久删除，且无法恢复。'"
+        confirm-label="永久删除"
+        :busy="Boolean(lifecycleBusyId)"
+        danger
+        @confirm="confirmPurge"
       />
-      <AppStateBlock
-        v-else-if="editRequest.status.value === 'error'"
-        kind="error"
-        title="账目详情加载失败"
-        :message="editRequest.error.value?.message"
-        action-label="重试"
-        @action="loadEdit"
-      />
-      <ExpenseEntryForm
-        v-else-if="editRequest.data.value && 'productName' in editRequest.data.value"
-        :key="`${editRequest.data.value.id}:${editRequest.data.value.version}`"
-        :account-id="session.session?.accountId"
-        :edit-entry="editRequest.data.value"
-        @saved="editSaved"
-      />
-      <IncomeEntryForm
-        v-else-if="editRequest.data.value"
-        :key="`${editRequest.data.value.id}:${editRequest.data.value.version}`"
-        :account-id="session.session?.accountId"
-        :edit-entry="editRequest.data.value"
-        @saved="editSaved"
-      />
-    </AppDrawer>
-    <AppDrawer
-      id="expense-adjustment-create"
-      :open="adjustmentOpen"
-      title="记录退款/报销"
-      description="调整会冲减所选原支出的净额，不计入收入。"
-      @update:open="requestAdjustmentOpen"
-    >
-      <ExpenseAdjustmentForm
-        v-if="adjustmentSource"
-        :key="adjustmentSource.id"
-        :source="adjustmentSource"
-        @saved="adjustmentSaved"
-      />
-    </AppDrawer>
-    <AppDrawer
-      id="expense-adjustment-detail"
-      :open="adjustmentDetailOpen"
-      title="调整详情"
-      description="已撤销记录仍保留，用于还原调整轨迹。"
-      @update:open="adjustmentDetailOpen = $event"
-    >
-      <template #footer>
-        <button
-          type="button"
-          class="compact-action"
-          :disabled="revoking"
-          @click="manageDetail('adjustment')"
-        >
-          更多操作
-        </button>
-      </template>
-      <AppStateBlock
-        v-if="adjustmentRequest.status.value === 'loading'"
-        kind="loading"
-        title="正在加载调整详情"
-      />
-      <AppStateBlock
-        v-else-if="adjustmentRequest.status.value === 'error'"
-        kind="error"
-        title="调整详情加载失败"
-        :message="adjustmentRequest.error.value?.message"
-        action-label="重试"
-        @action="adjustmentTarget && openAdjustmentDetail(adjustmentTarget)"
-      />
-      <ExpenseAdjustmentDetail
-        v-else-if="adjustmentRequest.data.value"
-        :adjustment="adjustmentRequest.data.value"
+      <AppDialog
+        id="revoke-adjustment"
+        v-model:open="revokeConfirmOpen"
+        title="确认撤销这笔调整？"
+        description="撤销后该金额不再冲减原支出，但调整记录会保留。"
+        confirm-label="确认撤销"
         :busy="revoking"
-        @revoke="revokeConfirmOpen = true"
+        danger
+        @confirm="confirmRevoke"
       />
-    </AppDrawer>
-    <AppDialog
-      id="purge-ledger"
-      v-model:open="purgeConfirmOpen"
-      title="确认永久删除？"
-      :description="purgeTarget?.linkedAdjustmentCount ? `原账目及关联的 ${purgeTarget.linkedAdjustmentCount} 条调整会在同一操作中永久删除，且无法恢复。` : '该记录将被永久删除，且无法恢复。'"
-      confirm-label="永久删除"
-      :busy="Boolean(lifecycleBusyId)"
-      danger
-      @confirm="confirmPurge"
-    />
-    <AppDialog
-      id="revoke-adjustment"
-      v-model:open="revokeConfirmOpen"
-      title="确认撤销这笔调整？"
-      description="撤销后该金额不再冲减原支出，但调整记录会保留。"
-      confirm-label="确认撤销"
-      :busy="revoking"
-      danger
-      @confirm="confirmRevoke"
-    />
-    <AppToast
-      v-model:open="toastOpen"
-      :message="toastMessage"
-      :kind="toastKind"
-      :action-label="pendingUndo && toastKind === 'success' ? '撤销' : undefined"
-      :action-disabled="Boolean(lifecycleBusyId)"
-      @action="undoTrash"
-    />
-  </article>
+      <AppToast
+        v-model:open="toastOpen"
+        :message="toastMessage"
+        :kind="toastKind"
+        :action-label="pendingUndo && toastKind === 'success' ? '撤销' : undefined"
+        :action-disabled="Boolean(lifecycleBusyId)"
+        @action="undoTrash"
+      />
+    </template>
+  </PageWorkspace>
 </template>

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import PageWorkspace from '../../../components/PageWorkspace.vue'
 import { useRefreshOnReturn } from '../../../composables/useRefreshOnReturn'
 import { ArrowDown, ArrowLeft, ArrowUp, Plus } from 'lucide-vue-next'
 import { computed, onMounted, ref, watch } from 'vue'
@@ -327,49 +328,51 @@ useRefreshOnReturn(() => load('refresh'))
 </script>
 
 <template>
-  <article
+  <PageWorkspace
     v-if="definition"
+    content-label="字典列表"
     class="dictionary-detail-page"
     data-page-key="personal-dictionary-detail"
   >
-    <header class="dictionary-page-heading">
-      <button
-        type="button"
-        class="icon-button"
-        aria-label="返回个人字典"
-        @click="returnToIndex"
-      >
-        <ArrowLeft
-          :size="20"
-          aria-hidden="true"
-        />
-      </button>
-      <div>
-        <h1>{{ definition.label }}</h1>
-        <p>{{ definition.description }}</p>
-      </div>
-      <button
-        type="button"
-        class="primary-button dictionary-add-button"
-        @click="openCreate"
-      >
-        <Plus
-          :size="18"
-          aria-hidden="true"
-        /> 新增
-      </button>
-    </header>
+    <template #header>
+      <header class="dictionary-page-heading">
+        <button
+          type="button"
+          class="icon-button"
+          aria-label="返回个人字典"
+          @click="returnToIndex"
+        >
+          <ArrowLeft
+            :size="20"
+            aria-hidden="true"
+          />
+        </button>
+        <div>
+          <h1>{{ definition.label }}</h1>
+          <p>{{ definition.description }}</p>
+        </div>
+        <button
+          type="button"
+          class="primary-button dictionary-add-button"
+          @click="openCreate"
+        >
+          <Plus
+            :size="18"
+            aria-hidden="true"
+          /> 新增
+        </button>
+      </header>
 
-    <DictionaryToolbar
-      v-model:query="queryDraft"
-      v-model:status="statusFilter"
-      :label="definition.label"
-      :total="data?.total ?? 0"
-      :refreshing="refreshing"
-      @search="search"
-      @refresh="load('refresh')"
-    />
-
+      <DictionaryToolbar
+        v-model:query="queryDraft"
+        v-model:status="statusFilter"
+        :label="definition.label"
+        :total="data?.total ?? 0"
+        :refreshing="refreshing"
+        @search="search"
+        @refresh="load('refresh')"
+      />
+    </template>
     <AppStateBlock
       v-if="staleWarning"
       kind="error"
@@ -417,225 +420,227 @@ useRefreshOnReturn(() => load('refresh'))
       @update:page="pageIndex = $event; load()"
     />
 
-    <AppDrawer
-      id="dictionary-actions"
-      v-model:open="actionsOpen"
-      :title="selected?.name ?? `${definition.label}操作`"
-      :description="selected?.referenced ? '此项已被引用；改名或停用不会改写历史名称快照。' : '管理操作只影响当前账号。'"
-    >
-      <div
-        v-if="selected"
-        class="context-action-list"
+    <template #overlays>
+      <AppDrawer
+        id="dictionary-actions"
+        v-model:open="actionsOpen"
+        :title="selected?.name ?? `${definition.label}操作`"
+        :description="selected?.referenced ? '此项已被引用；改名或停用不会改写历史名称快照。' : '管理操作只影响当前账号。'"
       >
-        <button
-          type="button"
-          :disabled="busy"
-          @click="openRename"
+        <div
+          v-if="selected"
+          class="context-action-list"
         >
-          修改名称
-        </button>
-        <button
-          type="button"
-          :disabled="busy"
-          @click="mutateSelected('UP')"
-        >
-          <ArrowUp
-            :size="18"
-            aria-hidden="true"
-          />上移
-        </button>
-        <button
-          type="button"
-          :disabled="busy"
-          @click="mutateSelected('DOWN')"
-        >
-          <ArrowDown
-            :size="18"
-            aria-hidden="true"
-          />下移
-        </button>
-        <button
-          type="button"
-          :disabled="busy"
-          @click="mutateSelected('status')"
-        >
-          {{ selected.status === 'ACTIVE' ? '停用（保留历史引用）' : '恢复为候选项' }}
-        </button>
-        <button
-          v-if="definition.type === 'product'"
-          type="button"
-          class="danger-text"
-          :disabled="busy"
-          @click="openMerge"
-        >
-          合并到其他商品
-        </button>
-      </div>
-    </AppDrawer>
+          <button
+            type="button"
+            :disabled="busy"
+            @click="openRename"
+          >
+            修改名称
+          </button>
+          <button
+            type="button"
+            :disabled="busy"
+            @click="mutateSelected('UP')"
+          >
+            <ArrowUp
+              :size="18"
+              aria-hidden="true"
+            />上移
+          </button>
+          <button
+            type="button"
+            :disabled="busy"
+            @click="mutateSelected('DOWN')"
+          >
+            <ArrowDown
+              :size="18"
+              aria-hidden="true"
+            />下移
+          </button>
+          <button
+            type="button"
+            :disabled="busy"
+            @click="mutateSelected('status')"
+          >
+            {{ selected.status === 'ACTIVE' ? '停用（保留历史引用）' : '恢复为候选项' }}
+          </button>
+          <button
+            v-if="definition.type === 'product'"
+            type="button"
+            class="danger-text"
+            :disabled="busy"
+            @click="openMerge"
+          >
+            合并到其他商品
+          </button>
+        </div>
+      </AppDrawer>
 
-    <AppDrawer
-      id="product-merge"
-      v-model:open="mergeOpen"
-      title="合并商品"
-      :description="`选择保留商品后，${selected?.name ?? '当前商品'}将不再作为候选；历史账目名称仍保留。`"
-    >
-      <div class="product-merge-flow">
-        <GlobalLedgerSearch
-          id="product-merge-search"
-          v-model="mergeQuery"
-          label="搜索保留商品"
-          placeholder="输入商品名称缩小范围"
-          @search="loadMergeCandidates"
-        />
-        <AppStateBlock
-          v-if="mergeCandidateStatus === 'loading'"
-          kind="loading"
-          title="正在读取可合并商品"
-        />
-        <AppStateBlock
-          v-else-if="mergeCandidateStatus === 'error'"
-          kind="error"
-          title="可合并商品暂不可用"
-          :message="mergeError"
-          action-label="重试"
-          @action="loadMergeCandidates(mergeQuery)"
-        />
-        <AppStateBlock
-          v-else-if="mergeCandidateStatus === 'ready' && mergeCandidates.length === 0"
-          kind="empty"
-          title="没有可保留的启用商品"
-          message="调整搜索词，或先新增另一个商品。"
-        />
-        <FormField
-          v-else-if="mergeCandidateStatus === 'ready'"
-          field-id="merge-target"
-          label="保留商品"
-          help="合并后，账目和日常模板都归入这个商品。"
-          :error="mergeError"
-        >
-          <template #default="{ describedBy }">
-            <select
-              id="merge-target"
-              v-model="mergeTargetId"
-              :aria-describedby="describedBy"
-              @change="mergePreview = undefined; mergeError = ''"
-            >
-              <option value="">
-                请选择
-              </option>
-              <option
-                v-for="candidate in mergeCandidates"
-                :key="candidate.id"
-                :value="candidate.id"
+      <AppDrawer
+        id="product-merge"
+        v-model:open="mergeOpen"
+        title="合并商品"
+        :description="`选择保留商品后，${selected?.name ?? '当前商品'}将不再作为候选；历史账目名称仍保留。`"
+      >
+        <div class="product-merge-flow">
+          <GlobalLedgerSearch
+            id="product-merge-search"
+            v-model="mergeQuery"
+            label="搜索保留商品"
+            placeholder="输入商品名称缩小范围"
+            @search="loadMergeCandidates"
+          />
+          <AppStateBlock
+            v-if="mergeCandidateStatus === 'loading'"
+            kind="loading"
+            title="正在读取可合并商品"
+          />
+          <AppStateBlock
+            v-else-if="mergeCandidateStatus === 'error'"
+            kind="error"
+            title="可合并商品暂不可用"
+            :message="mergeError"
+            action-label="重试"
+            @action="loadMergeCandidates(mergeQuery)"
+          />
+          <AppStateBlock
+            v-else-if="mergeCandidateStatus === 'ready' && mergeCandidates.length === 0"
+            kind="empty"
+            title="没有可保留的启用商品"
+            message="调整搜索词，或先新增另一个商品。"
+          />
+          <FormField
+            v-else-if="mergeCandidateStatus === 'ready'"
+            field-id="merge-target"
+            label="保留商品"
+            help="合并后，账目和日常模板都归入这个商品。"
+            :error="mergeError"
+          >
+            <template #default="{ describedBy }">
+              <select
+                id="merge-target"
+                v-model="mergeTargetId"
+                :aria-describedby="describedBy"
+                @change="mergePreview = undefined; mergeError = ''"
               >
-                {{ candidate.name }}
-              </option>
-            </select>
-          </template>
-        </FormField>
-        <button
-          v-if="mergeCandidateStatus === 'ready' && mergeCandidates.length > 0"
-          type="button"
-          class="secondary-button"
-          :disabled="mergeBusy || !mergeTargetId"
-          @click="loadMergePreview"
-        >
-          {{ mergeBusy ? '正在计算影响…' : '预览合并影响' }}
-        </button>
-        <dl
-          v-if="mergePreview"
-          class="merge-impact"
-        >
-          <dt>合并方向</dt><dd>{{ mergePreview.source.name }} → {{ mergePreview.target.name }}</dd>
-          <dt>账目引用</dt><dd>{{ mergePreview.affectedLedgerEntries }} 条</dd>
-          <dt>日常模板</dt><dd>{{ mergePreview.affectedTemplates }} 项</dd>
-          <dt>模板冲突</dt><dd>{{ mergePreview.templateConflict ? '保留最近使用内容并收敛为一项' : '无冲突' }}</dd>
-        </dl>
-        <button
-          v-if="mergePreview"
-          type="button"
-          class="danger-button"
-          :disabled="mergeBusy"
-          @click="mergeConfirmOpen = true"
-        >
-          继续合并
-        </button>
-      </div>
-    </AppDrawer>
+                <option value="">
+                  请选择
+                </option>
+                <option
+                  v-for="candidate in mergeCandidates"
+                  :key="candidate.id"
+                  :value="candidate.id"
+                >
+                  {{ candidate.name }}
+                </option>
+              </select>
+            </template>
+          </FormField>
+          <button
+            v-if="mergeCandidateStatus === 'ready' && mergeCandidates.length > 0"
+            type="button"
+            class="secondary-button"
+            :disabled="mergeBusy || !mergeTargetId"
+            @click="loadMergePreview"
+          >
+            {{ mergeBusy ? '正在计算影响…' : '预览合并影响' }}
+          </button>
+          <dl
+            v-if="mergePreview"
+            class="merge-impact"
+          >
+            <dt>合并方向</dt><dd>{{ mergePreview.source.name }} → {{ mergePreview.target.name }}</dd>
+            <dt>账目引用</dt><dd>{{ mergePreview.affectedLedgerEntries }} 条</dd>
+            <dt>日常模板</dt><dd>{{ mergePreview.affectedTemplates }} 项</dd>
+            <dt>模板冲突</dt><dd>{{ mergePreview.templateConflict ? '保留最近使用内容并收敛为一项' : '无冲突' }}</dd>
+          </dl>
+          <button
+            v-if="mergePreview"
+            type="button"
+            class="danger-button"
+            :disabled="mergeBusy"
+            @click="mergeConfirmOpen = true"
+          >
+            继续合并
+          </button>
+        </div>
+      </AppDrawer>
 
-    <AppDialog
-      id="confirm-product-merge"
-      v-model:open="mergeConfirmOpen"
-      title="确认合并商品？"
-      :description="mergePreview ? `${mergePreview.source.name}会合并到${mergePreview.target.name}。此操作不能在页面中撤销。` : ''"
-      confirm-label="确认合并"
-      danger
-      :busy="mergeBusy"
-      @confirm="confirmMerge"
-    />
+      <AppDialog
+        id="confirm-product-merge"
+        v-model:open="mergeConfirmOpen"
+        title="确认合并商品？"
+        :description="mergePreview ? `${mergePreview.source.name}会合并到${mergePreview.target.name}。此操作不能在页面中撤销。` : ''"
+        confirm-label="确认合并"
+        danger
+        :busy="mergeBusy"
+        @confirm="confirmMerge"
+      />
 
-    <AppDialog
-      id="dictionary-editor"
-      v-model:open="editorOpen"
-      :title="editorTitle"
-      :description="editorDescription"
-      :confirm-label="editorMode === 'create' ? '新增' : '保存名称'"
-      :busy="busy"
-      :confirm-disabled="!canSubmitEditor()"
-      @confirm="submitEditor"
-    >
-      <div class="dictionary-editor-form">
-        <AppStateBlock
-          v-if="definition.hierarchical && editorMode === 'create' && parentOptionsStatus === 'loading'"
-          kind="loading"
-          title="正在加载一级分类"
-        />
-        <AppStateBlock
-          v-else-if="definition.hierarchical && editorMode === 'create' && parentOptionsStatus === 'error'"
-          kind="error"
-          title="一级分类暂不可用"
-          :message="parentOptionsError"
-          action-label="重试"
-          @action="loadParentOptions"
-        />
-        <FormField
-          field-id="dictionary-name"
-          label="名称"
-          :help="`最多 ${maxNameLength} 个字符；等价名称不会重复创建。`"
-          :error="editorError"
-        >
-          <template #default="{ describedBy }">
-            <input
-              id="dictionary-name"
-              v-model="editorName"
-              :maxlength="maxNameLength"
-              autocomplete="off"
-              :aria-describedby="describedBy"
-              @keydown.enter.prevent="submitEditor"
-            >
-          </template>
-        </FormField>
-        <DictionaryCombobox
-          v-if="definition.hierarchical && editorMode === 'create' && parentOptionsStatus === 'ready'"
-          input-id="dictionary-parent"
-          :clear-on-input="false"
-          type="expense-category"
-          label="父分类"
-          optional
-          :items="activeRoots"
-          :model-value="editorParentId"
-          :load-items="searchParentRoots"
-          :create-item="createParentRoot"
-          @select="editorParentId = $event.id"
-          @clear="editorParentId = ''"
-        />
-      </div>
-    </AppDialog>
+      <AppDialog
+        id="dictionary-editor"
+        v-model:open="editorOpen"
+        :title="editorTitle"
+        :description="editorDescription"
+        :confirm-label="editorMode === 'create' ? '新增' : '保存名称'"
+        :busy="busy"
+        :confirm-disabled="!canSubmitEditor()"
+        @confirm="submitEditor"
+      >
+        <div class="dictionary-editor-form">
+          <AppStateBlock
+            v-if="definition.hierarchical && editorMode === 'create' && parentOptionsStatus === 'loading'"
+            kind="loading"
+            title="正在加载一级分类"
+          />
+          <AppStateBlock
+            v-else-if="definition.hierarchical && editorMode === 'create' && parentOptionsStatus === 'error'"
+            kind="error"
+            title="一级分类暂不可用"
+            :message="parentOptionsError"
+            action-label="重试"
+            @action="loadParentOptions"
+          />
+          <FormField
+            field-id="dictionary-name"
+            label="名称"
+            :help="`最多 ${maxNameLength} 个字符；等价名称不会重复创建。`"
+            :error="editorError"
+          >
+            <template #default="{ describedBy }">
+              <input
+                id="dictionary-name"
+                v-model="editorName"
+                :maxlength="maxNameLength"
+                autocomplete="off"
+                :aria-describedby="describedBy"
+                @keydown.enter.prevent="submitEditor"
+              >
+            </template>
+          </FormField>
+          <DictionaryCombobox
+            v-if="definition.hierarchical && editorMode === 'create' && parentOptionsStatus === 'ready'"
+            input-id="dictionary-parent"
+            :clear-on-input="false"
+            type="expense-category"
+            label="父分类"
+            optional
+            :items="activeRoots"
+            :model-value="editorParentId"
+            :load-items="searchParentRoots"
+            :create-item="createParentRoot"
+            @select="editorParentId = $event.id"
+            @clear="editorParentId = ''"
+          />
+        </div>
+      </AppDialog>
 
-    <AppToast
-      v-model:open="toastOpen"
-      :message="toastMessage"
-      :kind="toastKind"
-    />
-  </article>
+      <AppToast
+        v-model:open="toastOpen"
+        :message="toastMessage"
+        :kind="toastKind"
+      />
+    </template>
+  </PageWorkspace>
 </template>
