@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, inject, nextTick, onActivated, onBeforeUnmount, onDeactivated, ref, watch } from 'vue'
+import { inject, nextTick, onActivated, onBeforeUnmount, onDeactivated, ref, watch } from 'vue'
 import { dropdownLayout } from '../domain/dropdownLayout'
 import { reserveDrawerCandidateSpace } from '../composables/drawerCandidateSpace'
 
@@ -8,23 +8,26 @@ const reserveSpace = inject(reserveDrawerCandidateSpace, undefined)
 const props = defineProps<{ open: boolean, anchor?: globalThis.HTMLElement | null, id: string }>()
 const emit = defineEmits<{ close: [restoreFocus?: boolean], interact: [] }>()
 const panel = ref<globalThis.HTMLElement>()
-const target = computed(() => props.anchor?.closest('dialog') ?? 'body')
-const inline = computed(() => Boolean(props.anchor && !props.anchor.closest('dialog')))
 const position = ref<Record<string, string>>({})
 let panelObserver: globalThis.ResizeObserver | undefined
 let frame: number | undefined
 let field: globalThis.Element | null = null
+let revealOnFrame = false
+let revealing = false
 
-function place(): void {
-  if (!props.anchor || !props.open) return
+async function place(reveal = false): Promise<void> {
+  if (!props.anchor || !props.open || revealing) return
   const rect = props.anchor.getBoundingClientRect()
   const viewport = globalThis.window.visualViewport
-  const leftEdge = viewport?.offsetLeft ?? 0
+  const viewportLeft = viewport?.offsetLeft ?? 0
   const viewportTop = viewport?.offsetTop ?? 0
   const scrollBody = props.anchor.closest<globalThis.HTMLElement>('.overlay-body, [data-page-scroll]')
   const body = scrollBody?.getBoundingClientRect()
   const topEdge = Math.max(viewportTop, body?.top ?? viewportTop)
-  const width = viewport?.width ?? globalThis.window.innerWidth
+  const viewportWidth = viewport?.width ?? globalThis.window.innerWidth
+  const leftEdge = Math.max(viewportLeft, body?.left ?? viewportLeft)
+  const rightEdge = Math.min(viewportLeft + viewportWidth, body?.right ?? viewportLeft + viewportWidth)
+  const width = Math.max(0, rightEdge - leftEdge)
   const height = viewport?.height ?? globalThis.window.innerHeight
   const bottomEdge = Math.min(viewportTop + height, body?.bottom ?? viewportTop + height)
   if (rect.bottom <= topEdge || rect.top >= bottomEdge) {
@@ -40,22 +43,40 @@ function place(): void {
   const savebar = props.anchor.closest('form')?.querySelector('.entry-savebar')
   const pinned = savebar && ['sticky', 'fixed'].includes(globalThis.getComputedStyle(savebar).position)
   const actions = pinned ? savebar : props.anchor.closest('dialog')?.querySelector('.overlay-actions')
-  const layout = dropdownLayout(rect, { left: leftEdge, top: topEdge, right: leftEdge + width,
+  const layout = dropdownLayout(rect, { left: leftEdge, top: topEdge, right: rightEdge,
     bottom: bottomEdge, width }, panel.value?.scrollHeight ?? 320,
   globalThis.window.matchMedia('(max-width: 735px)').matches, actions?.getBoundingClientRect())
-  const parent = props.anchor.closest('dialog') ?? props.anchor.closest('.entry-combobox')
+  const parent = props.anchor.closest('.entry-combobox')
   const parentRect = parent?.getBoundingClientRect()
+  const minimumHeight = layout.revealHeight
+  const needsReveal = reveal && scrollBody && layout.maxHeight < minimumHeight
   position.value = {
     left: `${layout.left - (parentRect?.left ?? 0) + (parent?.scrollLeft ?? 0)}px`,
-    width: `${layout.width}px`, maxHeight: `${layout.maxHeight}px`,
+    width: `${layout.width}px`, maxHeight: `${needsReveal ? minimumHeight : layout.maxHeight}px`,
     top: `${layout.top - (parentRect?.top ?? 0) + (parent?.scrollTop ?? 0)}px`,
-    visibility: layout.maxHeight > 0 ? 'visible' : 'hidden',
+    visibility: layout.maxHeight > 0 || needsReveal ? 'visible' : 'hidden',
+  }
+  if (needsReveal) {
+    // 候选保留在正文内，其实际溢出提供滚动范围；只在展开/键盘变化时让出空间。
+    revealing = true
+    await nextTick()
+    if (active && props.open && scrollBody.isConnected) {
+      scrollBody.scrollTop += Math.max(0, rect.bottom + minimumHeight + 12 - bottomEdge)
+    }
+    revealing = false
+    if (active && props.open) await place()
   }
 }
 function schedulePlace(): void {
   if (frame !== undefined) return
-  frame = globalThis.window.requestAnimationFrame(() => { frame = undefined; place() })
+  frame = globalThis.window.requestAnimationFrame(() => {
+    frame = undefined
+    const reveal = revealOnFrame
+    revealOnFrame = false
+    void place(reveal)
+  })
 }
+function scheduleReveal(): void { revealOnFrame = true; schedulePlace() }
 function outside(event: globalThis.PointerEvent): void {
   const node = event.target as globalThis.Node
   // iPhone 镜像切换光标时会向 HTML 发送 (-1,-1) 的哨兵事件，不代表页面外部点按。
@@ -92,9 +113,9 @@ function preserveInputFocus(event: globalThis.MouseEvent | globalThis.PointerEve
   if ((event.target as globalThis.Element).closest('button')) event.preventDefault()
 }
 function listen(): void {
-  globalThis.window.addEventListener('resize', schedulePlace)
+  globalThis.window.addEventListener('resize', scheduleReveal)
   globalThis.window.addEventListener('scroll', schedulePlace, true)
-  globalThis.window.visualViewport?.addEventListener('resize', schedulePlace)
+  globalThis.window.visualViewport?.addEventListener('resize', scheduleReveal)
   globalThis.window.visualViewport?.addEventListener('scroll', schedulePlace)
   globalThis.document.addEventListener('pointerdown', outside, true)
   globalThis.document.addEventListener('keydown', keydown, true)
@@ -109,11 +130,12 @@ function listen(): void {
 function unlisten(): void {
   if (frame !== undefined) globalThis.window.cancelAnimationFrame(frame)
   frame = undefined
+  revealOnFrame = false
   panelObserver?.disconnect()
   panelObserver = undefined
-  globalThis.window.removeEventListener('resize', schedulePlace)
+  globalThis.window.removeEventListener('resize', scheduleReveal)
   globalThis.window.removeEventListener('scroll', schedulePlace, true)
-  globalThis.window.visualViewport?.removeEventListener('resize', schedulePlace)
+  globalThis.window.visualViewport?.removeEventListener('resize', scheduleReveal)
   globalThis.window.visualViewport?.removeEventListener('scroll', schedulePlace)
   globalThis.document.removeEventListener('pointerdown', outside, true)
   globalThis.document.removeEventListener('keydown', keydown, true)
@@ -122,7 +144,7 @@ function unlisten(): void {
   globalThis.window.removeEventListener('pagehide', pageHide)
 }
 watch(() => props.open, async (open) => {
-  if (open) { reserveSpace?.(); await nextTick(); if (!active || !props.open) return; place(); listen() }
+  if (open) { reserveSpace?.(); await nextTick(); if (!active || !props.open) return; await place(true); if (active && props.open) { unlisten(); listen() } }
   else unlisten()
 }, { immediate: true })
 watch(() => props.anchor, (anchor) => {
@@ -135,20 +157,15 @@ onBeforeUnmount(unlisten)
 </script>
 
 <template>
-  <Teleport
-    :to="target"
-    :disabled="inline"
+  <div
+    v-if="open"
+    :id="id"
+    ref="panel"
+    class="anchored-dropdown"
+    :style="position"
+    @pointerdown="emit('interact')"
+    @mousedown="preserveInputFocus"
   >
-    <div
-      v-if="open"
-      :id="id"
-      ref="panel"
-      class="anchored-dropdown"
-      :style="position"
-      @pointerdown="emit('interact')"
-      @mousedown="preserveInputFocus"
-    >
-      <slot />
-    </div>
-  </Teleport>
+    <slot />
+  </div>
 </template>

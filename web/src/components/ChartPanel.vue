@@ -3,6 +3,7 @@ import { BarChart } from 'echarts/charts'
 import { GridComponent } from 'echarts/components'
 import { use } from 'echarts/core'
 import { computed, watch } from 'vue'
+import { ChevronRight } from 'lucide-vue-next'
 
 import type { components } from '../api/generated/schema'
 import { formatCny } from '../domain/money'
@@ -61,7 +62,7 @@ watch(() => props.points, refresh, { deep: true })
           {{ title }}
         </h2>
       </div>
-      <span>点击汇总卡片查看明细</span>
+      <span>点击指标行查看明细</span>
     </header>
     <div
       ref="host"
@@ -76,11 +77,17 @@ watch(() => props.points, refresh, { deep: true })
         v-for="{ point, tone, sign } in cards"
         :key="point.value"
         type="button"
+        :aria-label="`查看${point.label}明细，${point.itemCount}条`"
         @click="emit('select', point)"
       >
         <span>{{ point.label }}</span>
         <strong :class="`money-${tone}`">{{ sign }}{{ formatCny(point.amount) }}</strong>
-        <small>{{ point.itemCount }} 条 · 查看明细</small>
+        <small>{{ point.itemCount }} 条明细</small>
+        <ChevronRight
+          class="chart-action-indicator"
+          :size="18"
+          aria-hidden="true"
+        />
       </button>
     </div>
   </section>

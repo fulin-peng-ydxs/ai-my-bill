@@ -1,43 +1,31 @@
 <script setup lang="ts">
-import { nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref } from 'vue'
+import { computed, inject, onActivated, onDeactivated, ref } from 'vue'
+import { pageActionTarget } from '../composables/pageActionTarget'
+import { useKeyboardViewport } from '../composables/useKeyboardViewport'
 
-const props = withDefaults(defineProps<{ submitting: boolean, primaryLabel: string, continueVisible?: boolean, viewportPinned?: boolean }>(), {
+const props = withDefaults(defineProps<{ submitting: boolean, primaryLabel: string, continueVisible?: boolean, viewportPinned?: boolean, formId?: string }>(), {
   continueVisible: true,
   viewportPinned: false,
+  formId: undefined,
 })
 defineEmits<{ continue: [] }>()
-const bar = ref<globalThis.HTMLDivElement>()
-const height = ref(0)
-let active = true
-let observer: globalThis.ResizeObserver | undefined
-function disconnect(): void { observer?.disconnect(); observer = undefined }
-async function connect(): Promise<void> {
-  if (!props.viewportPinned) return
-  await nextTick()
-  if (!active || !bar.value) return
-  disconnect()
-  // 固定操作栏离开文档流，按实际高度预留空间，兼容按钮换行与字号变化。
-  const measure = () => { if (bar.value) height.value = bar.value.getBoundingClientRect().height }
-  observer = new globalThis.ResizeObserver(measure)
-  observer.observe(bar.value)
-  measure()
-}
-onMounted(connect)
-onActivated(() => { active = true; void connect() })
-onDeactivated(() => { active = false; disconnect() })
-onBeforeUnmount(() => { active = false; disconnect() })
+const target = inject(pageActionTarget, undefined)
+const active = ref(true)
+onActivated(() => { active.value = true })
+onDeactivated(() => { active.value = false })
+const { keyboardOpen } = useKeyboardViewport()
+const docked = computed(() => Boolean(active.value && props.viewportPinned && target?.value && !keyboardOpen.value))
+const teleportTarget = computed(() => target?.value ?? 'body')
 </script>
 
 <template>
-  <div
-    class="entry-savebar-slot"
-    :class="{ 'entry-savebar-slot-pinned': viewportPinned }"
-    :style="height ? { '--entry-savebar-height': `${height}px` } : undefined"
+  <Teleport
+    :to="teleportTarget"
+    :disabled="!docked"
   >
     <div
-      ref="bar"
       class="entry-savebar"
-      :class="{ 'entry-savebar-single': !continueVisible, 'entry-savebar-pinned': viewportPinned }"
+      :class="{ 'entry-savebar-single': !continueVisible, 'entry-savebar-docked': docked }"
     >
       <button
         v-if="continueVisible"
@@ -50,11 +38,12 @@ onBeforeUnmount(() => { active = false; disconnect() })
       </button>
       <button
         type="submit"
+        :form="formId"
         class="primary-button"
         :disabled="submitting"
       >
         {{ submitting ? '保存中…' : primaryLabel }}
       </button>
     </div>
-  </div>
+  </Teleport>
 </template>

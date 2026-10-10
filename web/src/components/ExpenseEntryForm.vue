@@ -1,7 +1,7 @@
 <script setup lang="ts">
+import { Clock3, NotebookPen } from 'lucide-vue-next'
 import { useRefreshOnReturn } from '../composables/useRefreshOnReturn'
-import { computed, onScopeDispose, reactive, ref, watch } from 'vue'
-import { NotebookPen, ReceiptText, ShoppingBag, WalletCards } from 'lucide-vue-next'
+import { computed, onScopeDispose, reactive, ref, useId, watch } from 'vue'
 
 import { ApiClientError } from '../api/http'
 import type { DailyTemplateSelection } from '../api/dailyTemplates'
@@ -32,11 +32,14 @@ import DictionaryPicker from './DictionaryPicker.vue'
 import DictionaryCombobox, { type DictionaryChoice } from './DictionaryCombobox.vue'
 import EntrySaveBar from './EntrySaveBar.vue'
 import FormField from './FormField.vue'
-import FormSection from './FormSection.vue'
+import EntryReceipt from './EntryReceipt.vue'
+import AmountField from './AmountField.vue'
 import FundingChannelPicker from './FundingChannelPicker.vue'
 import LocationLabelPicker from './LocationLabelPicker.vue'
 import FormDisclosure from './FormDisclosure.vue'
 import ProductCombobox from './ProductCombobox.vue'
+
+const formId = useId()
 
 const props = defineProps<{
   accountId?: string
@@ -113,7 +116,11 @@ const supplementSummary = computed(() => [
   optionItems.purchase.find((item) => item.id === form.purchaseChannelId)?.name,
   optionItems.locations.find((item) => item.id === form.locationLabelId)?.name,
   form.note.trim(),
-].filter(Boolean).join(' · ') || '购买渠道、地点、备注（选填）')
+].filter(Boolean).join(' · ') || '渠道、地点、备注')
+const categorySummary = computed(() => [
+  optionItems.categories.find((item) => item.id === form.primaryCategoryId)?.name,
+  optionItems.categories.find((item) => item.id === form.secondaryCategoryId)?.name,
+].filter(Boolean).join(' / ') || (form.primaryCategoryId ? '已选分类' : '请选择分类'))
 const editDirty = computed(() => editMode.value && editBaseline.value !== JSON.stringify(form))
 
 function applyEditEntry(value: ExpenseResponse): void {
@@ -430,14 +437,12 @@ useRefreshOnReturn(() => loadOptions())
     </section>
 
     <form
+      :id="formId"
       class="entry-form task-entry-form"
       @submit.prevent="submit(false)"
     >
-      <div class="entry-form-surface">
-        <FormSection
-          title="买了什么"
-          :icon="ShoppingBag"
-        >
+      <EntryReceipt>
+        <template #subject>
           <ProductCombobox
             ref="productCombobox"
             :model-value="form.productId"
@@ -447,42 +452,48 @@ useRefreshOnReturn(() => loadOptions())
             @select="selectProduct"
             @clear="clearProduct"
           />
-          <div class="form-grid-two entry-short-fields">
-            <DictionaryCombobox
-              input-id="expense-primary-category"
-              type="expense-category"
-              label="一级分类"
-              :items="rootCategories"
-              :model-value="form.primaryCategoryId"
-              :disabled="submitting || optionsLoading"
-              :error="errors.primaryCategoryId"
-              @select="selectCategory($event, 'primary')"
-              @clear="updatePrimaryCategory('')"
-            />
-            <DictionaryCombobox
-              input-id="expense-secondary-category"
-              type="expense-category"
-              label="二级分类"
-              optional
-              :items="secondaryCategories"
-              :model-value="form.secondaryCategoryId"
-              :parent-id="form.primaryCategoryId"
-              :disabled="submitting || optionsLoading || !form.primaryCategoryId"
-              :error="errors.secondaryCategoryId"
-              @select="selectCategory($event, 'secondary')"
-              @clear="form.secondaryCategoryId = ''; clearError('secondaryCategoryId'); persist()"
-            />
-          </div>
-        </FormSection>
-
-        <FormSection
-          title="花了多少"
-          :icon="ReceiptText"
-        >
+          <FormDisclosure
+            class="entry-category-picker"
+            title="分类"
+            :summary="categorySummary"
+            :invalid="Boolean(errors.primaryCategoryId || errors.secondaryCategoryId)"
+            compact
+          >
+            <div class="form-grid-two entry-short-fields">
+              <DictionaryCombobox
+                input-id="expense-primary-category"
+                type="expense-category"
+                label="一级分类"
+                :items="rootCategories"
+                :model-value="form.primaryCategoryId"
+                :disabled="submitting || optionsLoading"
+                :error="errors.primaryCategoryId"
+                @select="selectCategory($event, 'primary')"
+                @resolved="ensureOption('categories', $event.id, $event.name, $event.parentId)"
+                @clear="updatePrimaryCategory('')"
+              />
+              <DictionaryCombobox
+                input-id="expense-secondary-category"
+                type="expense-category"
+                label="二级分类"
+                optional
+                :items="secondaryCategories"
+                :model-value="form.secondaryCategoryId"
+                :parent-id="form.primaryCategoryId"
+                :disabled="submitting || optionsLoading || !form.primaryCategoryId"
+                :error="errors.secondaryCategoryId"
+                @select="selectCategory($event, 'secondary')"
+                @resolved="ensureOption('categories', $event.id, $event.name, $event.parentId)"
+                @clear="form.secondaryCategoryId = ''; clearError('secondaryCategoryId'); persist()"
+              />
+            </div>
+          </FormDisclosure>
+        </template>
+        <template #calculation>
           <div class="entry-amount-fields">
             <FormField
               field-id="expense-unit-price"
-              label="单位价格"
+              label="单价"
               :error="errors.unitPrice"
             >
               <template #default="{ describedBy }">
@@ -490,6 +501,7 @@ useRefreshOnReturn(() => loadOptions())
                   id="expense-unit-price"
                   v-model="form.unitPrice"
                   inputmode="decimal"
+                  placeholder="0"
                   :aria-describedby="describedBy"
                   :disabled="submitting"
                   @input="amountChanged"
@@ -524,33 +536,24 @@ useRefreshOnReturn(() => loadOptions())
               @clear="form.unitId = ''; clearError('unitId'); persist()"
             />
           </div>
-          <FormField
+        </template>
+        <template #amount>
+          <AmountField
+            v-model="form.paidAmount"
             field-id="expense-paid-amount"
-            class="entry-total-field money-expense"
-            label="实付金额（¥）"
+            label="实付金额"
+            tone="expense"
+            :disabled="submitting"
             :error="errors.paidAmount || errors.calculatedAmount"
+            @update:model-value="paidChanged"
           >
-            <template #default="{ describedBy }">
-              <input
-                id="expense-paid-amount"
-                v-model="form.paidAmount"
-                inputmode="decimal"
-                :aria-describedby="describedBy"
-                :disabled="submitting"
-                @input="paidChanged"
-              >
-            </template>
             <template #help>
-              {{ differenceText }}
-              <span class="field-help-detail">计算金额 {{ formatCny(calculatedAmount) }}</span>
+              <span>计算金额 {{ formatCny(calculatedAmount) }}</span>
+              <span class="field-help-detail">· {{ differenceText }}</span>
             </template>
-          </FormField>
-        </FormSection>
-
-        <FormSection
-          title="如何付款"
-          :icon="WalletCards"
-        >
+          </AmountField>
+        </template>
+        <template #context>
           <FundingChannelPicker
             class="entry-setting-field"
             :items="optionItems.funding"
@@ -566,23 +569,26 @@ useRefreshOnReturn(() => loadOptions())
             field-id="expense-occurred-at"
             class="entry-setting-field"
             label="消费时间"
+            :label-icon="Clock3"
             :error="errors.occurredAt"
           >
             <template #default="{ describedBy }">
               <DateTimeControl
                 id="expense-occurred-at"
                 v-model="form.occurredAt"
+                indicator
                 :aria-describedby="describedBy"
                 :disabled="submitting"
                 @change="clearError('occurredAt'); persist()"
               />
             </template>
           </FormField>
-        </FormSection>
+        </template>
 
         <FormDisclosure
-          :icon="NotebookPen"
+          compact
           title="补充信息"
+          :icon="NotebookPen"
           :summary="supplementSummary"
           :invalid="Boolean(errors.purchaseChannelId || errors.locationLabelId || errors.note)"
         >
@@ -623,7 +629,7 @@ useRefreshOnReturn(() => loadOptions())
             </template>
           </FormField>
         </FormDisclosure>
-      </div>
+      </EntryReceipt>
 
       <SavedEntrySummary
         v-if="saved && !editMode"
@@ -654,6 +660,7 @@ useRefreshOnReturn(() => loadOptions())
       </SavedEntrySummary>
 
       <EntrySaveBar
+        :form-id="formId"
         :submitting="submitting"
         :viewport-pinned="!editMode"
         :continue-visible="!editMode"

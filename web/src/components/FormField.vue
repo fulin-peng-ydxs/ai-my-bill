@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { computed, useSlots } from 'vue'
+import { computed, useSlots, type Component } from 'vue'
 
 const props = defineProps<{
   fieldId: string
   label: string
+  labelIcon?: Component
   help?: string
   error?: string
 }>()
@@ -16,7 +17,14 @@ const describedBy = computed(() => [helpId.value, errorId.value].filter(Boolean)
 
 <template>
   <div class="form-field">
-    <label :for="fieldId">{{ label }}</label>
+    <label :for="fieldId"><component
+      :is="labelIcon"
+      v-if="labelIcon"
+      class="field-label-symbol"
+      :size="17"
+      :stroke-width="1.7"
+      aria-hidden="true"
+    />{{ label }}</label>
     <slot :described-by="describedBy" />
     <small
       v-if="helpId"

@@ -275,12 +275,6 @@ useRefreshOnReturn(() => load())
           v-model="searchText"
           @search="updateSearch"
         />
-        <SegmentedControl
-          label="账目范围"
-          :model-value="filters.scope"
-          :options="reportScopeOptions"
-          @update:model-value="updateScope"
-        />
       </div>
       <AppliedFilterBar
         :summaries="filterSummaries"
@@ -289,7 +283,16 @@ useRefreshOnReturn(() => load())
         @open="openFilters()"
         @edit="openFilters"
         @clear="clearFilters"
-      />
+      >
+        <template #controls>
+          <SegmentedControl
+            label="账目范围"
+            :model-value="filters.scope"
+            :options="reportScopeOptions"
+            @update:model-value="updateScope"
+          />
+        </template>
+      </AppliedFilterBar>
 
       <section class="report-dimension">
         <div>

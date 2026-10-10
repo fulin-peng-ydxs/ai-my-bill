@@ -1,8 +1,8 @@
 <script setup lang="ts">
+import { Clock3, NotebookPen, UserRound } from 'lucide-vue-next'
 import { formatCny, formatDecimalDisplay } from '../domain/money'
 import { useRefreshOnReturn } from '../composables/useRefreshOnReturn'
-import { computed, onScopeDispose, reactive, ref, watch } from 'vue'
-import { Banknote, HandCoins, NotebookPen, WalletCards } from 'lucide-vue-next'
+import { computed, onScopeDispose, reactive, ref, useId, watch } from 'vue'
 
 import type { DailyTemplateSelection } from '../api/dailyTemplates'
 import { listDictionaryCandidates, type DictionaryItem } from '../api/dictionaries'
@@ -28,9 +28,13 @@ import DictionaryPicker from './DictionaryPicker.vue'
 import DictionaryCombobox, { type DictionaryChoice } from './DictionaryCombobox.vue'
 import EntrySaveBar from './EntrySaveBar.vue'
 import FormField from './FormField.vue'
-import FormSection from './FormSection.vue'
+import EntryReceipt from './EntryReceipt.vue'
+import AmountField from './AmountField.vue'
+import NameSuggestionCombobox from './NameSuggestionCombobox.vue'
 import FundingChannelPicker from './FundingChannelPicker.vue'
 import FormDisclosure from './FormDisclosure.vue'
+
+const formId = useId()
 
 const props = defineProps<{ accountId?: string, defaultFundingChannelId?: string | null,
   templateSelection?: DailyTemplateSelection, templateRevision?: number, editEntry?: IncomeResponse }>()
@@ -64,6 +68,8 @@ const appliedTemplateRevision = ref(props.templateRevision ?? 0)
 const templateUnavailableFields = ref<DailyTemplateSelection['unavailableFields']>(
   props.templateSelection?.entryType === 'INCOME' ? props.templateSelection.unavailableFields : [],
 )
+const categorySummary = computed(() => categories.value.find((item) => item.id === form.incomeCategoryId)?.name
+  || (form.incomeCategoryId ? '已选分类' : '请选择分类'))
 const editDirty = computed(() => editMode.value && editBaseline.value !== JSON.stringify(form))
 
 function applyEditEntry(value: IncomeResponse): void {
@@ -267,40 +273,61 @@ useRefreshOnReturn(() => loadOptions())
       </div>
     </section>
     <form
+      :id="formId"
       class="entry-form task-entry-form"
       @submit.prevent="submit(false)"
     >
-      <div class="entry-form-surface">
-        <FormSection
-          title="收到什么"
-          :icon="HandCoins"
-        >
-          <FormField
-            field-id="income-name"
+      <EntryReceipt>
+        <template #subject>
+          <NameSuggestionCombobox
+            v-model="form.incomeName"
+            input-id="income-name"
             label="收入名称"
+            :suggestions="recentNames"
+            :load-suggestions="(query, signal) => listRecentIncomeNames(query, signal).then((response) => response.items)"
             :error="errors.incomeName"
+            :disabled="submitting"
+            @update:model-value="clear('incomeName')"
+          />
+          <FormDisclosure
+            class="entry-category-picker"
+            title="分类"
+            :summary="categorySummary"
+            :invalid="Boolean(errors.incomeCategoryId)"
+            compact
           >
-            <template #default="{ describedBy }">
-              <input
-                id="income-name"
-                v-model="form.incomeName"
-                list="recent-income-names"
-                :aria-describedby="describedBy"
-                :disabled="submitting"
-                @input="clear('incomeName')"
-              ><datalist id="recent-income-names">
-                <option
-                  v-for="name in recentNames"
-                  :key="name"
-                  :value="name"
-                />
-              </datalist>
-            </template>
-          </FormField>
+            <DictionaryPicker
+              type="income-category"
+              input-id="income-category"
+              label="收入分类"
+              :items="categories"
+              :model-value="form.incomeCategoryId"
+              :disabled="submitting"
+              :error="errors.incomeCategoryId"
+              @selected="selectIncomeCategory"
+              @resolved="selectIncomeCategory"
+              @update:model-value="form.incomeCategoryId = $event; clear('incomeCategoryId')"
+            />
+          </FormDisclosure>
+        </template>
+        <template #amount>
+          <AmountField
+            v-model="form.amount"
+            field-id="income-amount"
+            label="收入金额"
+            tone="income"
+            :disabled="submitting"
+            :error="errors.amount"
+            @update:model-value="clear('amount')"
+          />
+        </template>
+        <template #context>
           <DictionaryCombobox
+            class="entry-setting-field"
             input-id="income-payer-name"
             type="payer"
             label="付款方"
+            :label-icon="UserRound"
             :items="payers"
             :model-value="form.payerId"
             :disabled="submitting"
@@ -308,44 +335,6 @@ useRefreshOnReturn(() => loadOptions())
             @select="selectPayer"
             @clear="form.payerId = ''; form.payerName = ''; clear('payerId')"
           />
-          <DictionaryPicker
-            type="income-category"
-            input-id="income-category"
-            label="收入分类"
-            :items="categories"
-            :model-value="form.incomeCategoryId"
-            :disabled="submitting"
-            :error="errors.incomeCategoryId"
-            @selected="selectIncomeCategory"
-            @update:model-value="form.incomeCategoryId = $event; clear('incomeCategoryId')"
-          />
-        </FormSection>
-        <FormSection
-          title="收到多少"
-          :icon="Banknote"
-        >
-          <FormField
-            field-id="income-amount"
-            class="entry-total-field money-income"
-            label="收入金额（¥）"
-            :error="errors.amount"
-          >
-            <template #default="{ describedBy }">
-              <input
-                id="income-amount"
-                v-model="form.amount"
-                inputmode="decimal"
-                :aria-describedby="describedBy"
-                :disabled="submitting"
-                @input="clear('amount')"
-              >
-            </template>
-          </FormField>
-        </FormSection>
-        <FormSection
-          title="如何收款"
-          :icon="WalletCards"
-        >
           <FundingChannelPicker
             class="entry-setting-field"
             label="收款方式"
@@ -362,22 +351,25 @@ useRefreshOnReturn(() => loadOptions())
             field-id="income-occurred-at"
             class="entry-setting-field"
             label="收入时间"
+            :label-icon="Clock3"
             :error="errors.occurredAt"
           >
             <template #default="{ describedBy }">
               <DateTimeControl
                 id="income-occurred-at"
                 v-model="form.occurredAt"
+                indicator
                 :aria-describedby="describedBy"
                 :disabled="submitting"
                 @change="clear('occurredAt')"
               />
             </template>
           </FormField>
-        </FormSection>
+        </template>
         <FormDisclosure
-          :icon="NotebookPen"
+          compact
           title="补充信息"
+          :icon="NotebookPen"
           :summary="form.note.trim() || '备注（选填）'"
           :invalid="Boolean(errors.note)"
         >
@@ -398,7 +390,7 @@ useRefreshOnReturn(() => loadOptions())
             </template>
           </FormField>
         </FormDisclosure>
-      </div>
+      </EntryReceipt>
 
       <SavedEntrySummary
         v-if="saved && !editMode"
@@ -410,6 +402,7 @@ useRefreshOnReturn(() => loadOptions())
       />
 
       <EntrySaveBar
+        :form-id="formId"
         :submitting="submitting"
         :viewport-pinned="!editMode"
         :continue-visible="!editMode"

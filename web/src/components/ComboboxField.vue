@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch, type Component } from 'vue'
 import { ChevronDown, Search } from 'lucide-vue-next'
 import AnchoredDropdown from './AnchoredDropdown.vue'
 import { useActiveCombobox } from '../composables/useActiveCombobox'
@@ -12,9 +12,14 @@ const props = defineProps<{
   searchLabel?: string,
   maxLength?: number,
   candidateCount?: number,
+  selectionPlaceholder?: string,
+  labelIcon?: Component,
+  clearable?: boolean,
+  clearDisabled?: boolean,
 }>()
 const emit = defineEmits<{
   open: [searching: boolean], close: [], input: [value: string], submit: [],
+  clear: [],
 }>()
 const mobile = ref(false)
 const searching = ref(false)
@@ -116,7 +121,14 @@ watch(() => props.disabled, (disabled) => { if (disabled) close(false) })
 </script>
 
 <template>
-  <label :for="id">{{ label }}</label>
+  <label :for="id"><component
+    :is="labelIcon"
+    v-if="labelIcon"
+    class="field-label-symbol"
+    :size="17"
+    :stroke-width="1.7"
+    aria-hidden="true"
+  />{{ label }}</label>
   <button
     v-if="mobile"
     :id="id"
@@ -132,7 +144,7 @@ watch(() => props.disabled, (disabled) => { if (disabled) close(false) })
     @click="toggle"
     @keydown.down.prevent="focusOptions"
   >
-    <span :class="{ 'combobox-placeholder': !(displayValue ?? value) }">{{ (displayValue ?? value) || '请选择' }}</span>
+    <span :class="{ 'combobox-placeholder': !(displayValue ?? value) }">{{ (displayValue ?? value) || selectionPlaceholder || '请选择' }}</span>
     <ChevronDown
       :size="16"
       aria-hidden="true"
@@ -167,45 +179,60 @@ watch(() => props.disabled, (disabled) => { if (disabled) close(false) })
     @close="close"
     @interact="cancelBlur"
   >
-    <button
-      v-if="mobile && !searching"
-      type="button"
-      class="dropdown-action dropdown-search"
-      @click="startSearch"
-    >
-      <Search
-        :size="16"
-        aria-hidden="true"
-      /> {{ searchLabel ?? '搜索或新增' }}
-    </button>
     <div
-      v-if="mobile"
-      v-show="searching"
-      ref="searchHeader"
-      class="dropdown-search-header"
+      v-if="mobile || clearable"
+      class="dropdown-toolbar"
     >
-      <input
-        :id="`${id}-search`"
-        ref="searchInput"
-        :value="value"
-        :aria-label="`搜索${label}`"
-        :aria-controls="`${id}-options`"
-        :disabled="disabled"
-        :placeholder="placeholder"
-        :maxlength="maxLength"
-        autocomplete="off"
-        enterkeyhint="search"
-        @input="emit('input', ($event.target as HTMLInputElement).value)"
-        @blur="searchBlurred"
-        @keydown.enter.prevent="emit('submit')"
-        @keydown.down.prevent="focusOptions"
-      >
       <button
+        v-if="mobile && !searching"
         type="button"
-        class="text-action"
-        @click="close(true)"
+        class="dropdown-action dropdown-search"
+        @click="startSearch"
       >
-        取消
+        <Search
+          :size="16"
+          aria-hidden="true"
+        /> {{ searchLabel ?? '搜索或新增' }}
+      </button>
+      <div
+        v-if="mobile"
+        v-show="searching"
+        ref="searchHeader"
+        class="dropdown-search-header"
+      >
+        <input
+          :id="`${id}-search`"
+          ref="searchInput"
+          :value="value"
+          :aria-label="`搜索${label}`"
+          :aria-controls="`${id}-options`"
+          :disabled="disabled"
+          :placeholder="placeholder"
+          :maxlength="maxLength"
+          autocomplete="off"
+          enterkeyhint="search"
+          @input="emit('input', ($event.target as HTMLInputElement).value)"
+          @blur="searchBlurred"
+          @keydown.enter.prevent="emit('submit')"
+          @keydown.down.prevent="focusOptions"
+        >
+        <button
+          type="button"
+          class="text-action"
+          @click="close(true)"
+        >
+          取消
+        </button>
+      </div>
+      <button
+        v-if="clearable"
+        type="button"
+        class="text-action dropdown-clear"
+        :disabled="disabled || clearDisabled"
+        aria-label="清除选择"
+        @click="emit('clear')"
+      >
+        清除
       </button>
     </div>
     <slot />

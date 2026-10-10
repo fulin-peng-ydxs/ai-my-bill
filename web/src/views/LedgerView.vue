@@ -398,19 +398,6 @@ useRefreshOnReturn(() => list.refresh())
           v-model="searchText"
           @search="updateSearch"
         />
-        <section
-          class="ledger-controls"
-          aria-label="明细视图控制"
-        >
-          <div>
-            <SegmentedControl
-              label="账目状态"
-              :model-value="filters.lifecycle"
-              :options="ledgerLifecycleOptions"
-              @update:model-value="updateLifecycle"
-            />
-          </div>
-        </section>
       </div>
       <AppliedFilterBar
         :summaries="filterSummaries"
@@ -418,7 +405,16 @@ useRefreshOnReturn(() => list.refresh())
         @open="openFilters()"
         @edit="openFilters"
         @clear="clearFilters"
-      />
+      >
+        <template #controls>
+          <SegmentedControl
+            label="账目状态"
+            :model-value="filters.lifecycle"
+            :options="ledgerLifecycleOptions"
+            @update:model-value="updateLifecycle"
+          />
+        </template>
+      </AppliedFilterBar>
     </template>
     <p class="ledger-gesture-hint">
       <span><span class="touch-hint">轻点查看 · 长按管理</span><span class="pointer-hint">点击查看 · 右键管理</span></span>

@@ -13,6 +13,10 @@ import DataExportAction from './DataExportAction.vue'
 import AppliedFilterBar from './AppliedFilterBar.vue'
 import FilterSheet from './FilterSheet.vue'
 import FormField from './FormField.vue'
+import AmountField from './AmountField.vue'
+import DateTimeControl from './DateTimeControl.vue'
+import DraftBackupNotice from './DraftBackupNotice.vue'
+import FormDisclosure from './FormDisclosure.vue'
 import GlobalLedgerSearch from './GlobalLedgerSearch.vue'
 import IncrementalLedgerList from './IncrementalLedgerList.vue'
 import MoneySummary from './MoneySummary.vue'
@@ -78,6 +82,56 @@ describe('shared frontend foundations', () => {
     const html = await renderToString(app)
     expect(html).toContain('aria-describedby="paid-help"')
     expect(html).toMatch(/id="paid-help"[^>]*>.*低于计算金额.*计算金额 ¥204\.00/)
+  })
+
+  it('keeps receipt amounts exact and connects disabled inputs to field-level recovery', async () => {
+    const html = await render(AmountField, {
+      fieldId: 'receipt-amount', label: '实付金额（¥）', modelValue: '123.4500',
+      tone: 'expense', disabled: true, error: '实付不能低于累计调整', help: '已调整 ¥100',
+    })
+    expect(html).toContain('value="123.4500"')
+    expect(html).toMatch(/<input[^>]*aria-describedby="receipt-amount-help receipt-amount-error"/)
+    expect(html).toMatch(/<input[^>]*aria-invalid="true"[^>]*disabled/)
+    expect(html).toContain('实付不能低于累计调整')
+    const income = await render(AmountField, {
+      fieldId: 'receipt-income', label: '收入金额（¥）', modelValue: '0.01', tone: 'income',
+    })
+    expect(income).toContain('value="0.01"')
+    expect(income).toContain('money-income')
+    expect(income).not.toContain('aria-invalid="true"')
+  })
+
+  it('reveals invalid classification fields instead of hiding required corrections in the receipt', async () => {
+    const html = await renderToString(createSSRApp({ render: () => h(FormDisclosure, {
+      title: '分类', summary: '请选择分类', invalid: true, compact: true,
+    }, { default: () => h('input', { 'aria-label': '一级分类' }) }) }))
+    expect(html).toMatch(/<details[^>]*open/)
+    expect(html).toContain('aria-label="一级分类"')
+    expect(html).toContain('请选择分类')
+  })
+
+  it('formats compact business time without changing native value, label or constraints', async () => {
+    const html = await render(DateTimeControl, {
+      modelValue: '2026-10-10T09:05', id: 'business-time', required: true,
+      'aria-label': '时间', min: '2026-01-01T00:00', indicator: true,
+    })
+    expect(html).toContain('2026/10/10 09:05')
+    expect(html).toMatch(/<input[^>]*value="2026-10-10T09:05"/)
+    expect(html).toContain('aria-label="时间"')
+    expect(html).toContain('min="2026-01-01T00:00"')
+    expect(html).toMatch(/<input[^>]*required/)
+    const date = await render(DateTimeControl, { modelValue: '2026-10-10', type: 'date' })
+    expect(date).toContain('2026/10/10')
+    expect(date).toContain('type="date"')
+  })
+
+  it('keeps draft failures as a short accessible warning entry instead of an inline blocking alert', async () => {
+    const html = await render(DraftBackupNotice, { message: '备份失败', retry: async () => {} })
+    expect(html).toContain('aria-label="草稿未备份，查看说明"')
+    expect(html).toContain('draft-backup-notice')
+    expect(html).not.toContain('role="alert"')
+    const empty = await render(DraftBackupNotice, { retry: async () => {} })
+    expect(empty).not.toContain('draft-backup-notice')
   })
 
   it('renders segmented choice, search and filter contracts with accessible names', async () => {

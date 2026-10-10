@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { WalletCards } from 'lucide-vue-next'
 import DictionaryCombobox, { type DictionaryChoice } from './DictionaryCombobox.vue'
 
 defineProps<{
@@ -22,6 +23,7 @@ function select(item: DictionaryChoice): void {
     :input-id="label === '收款方式' ? 'income-funding-channel' : 'expense-funding-channel'"
     type="funding-channel"
     :label="label ?? '支付方式'"
+    :label-icon="WalletCards"
     :items="items"
     :model-value="modelValue"
     :disabled="disabled || loading"

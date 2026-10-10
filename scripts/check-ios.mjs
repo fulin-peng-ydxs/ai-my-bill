@@ -254,6 +254,10 @@ async function main() {
     await evaluate('document.querySelector("#expense-occurred-at").scrollIntoView({ block: "center" })')
     const expenseDateImage = await screenshot('expense-date.png')
     // 将目标放入可见区中部；真机 WebDriver 点击需避开 Safari 工具栏。
+    const categoryDetails = '.entry-category-picker'
+    if (await evaluate('return !document.querySelector(arguments[0]).open', [categoryDetails])) {
+      await click(`${categoryDetails} > summary`)
+    }
     await evaluate('document.querySelector("#expense-primary-category").scrollIntoView({ block: "center" })')
 
     await click('#expense-primary-category')

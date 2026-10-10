@@ -14,7 +14,7 @@ const props = defineProps<{
   disabled?: boolean
   error?: string
 }>()
-const emit = defineEmits<{ 'update:modelValue': [value: string], selected: [item: DictionaryChoice] }>()
+const emit = defineEmits<{ 'update:modelValue': [value: string], selected: [item: DictionaryChoice], resolved: [item: DictionaryChoice] }>()
 function select(item: DictionaryChoice): void {
   emit('selected', item)
   emit('update:modelValue', item.id)
@@ -32,6 +32,7 @@ function select(item: DictionaryChoice): void {
     :disabled="props.disabled"
     :error="props.error"
     @select="select"
+    @resolved="emit('resolved', $event)"
     @clear="emit('update:modelValue', '')"
   />
 </template>

@@ -9,6 +9,7 @@ import AppToast from '../components/AppToast.vue'
 import DataExportAction from '../components/DataExportAction.vue'
 import PageHeading from '../components/PageHeading.vue'
 import PageWorkspace from '../components/PageWorkspace.vue'
+import SettingsGroup from '../components/SettingsGroup.vue'
 import DictionaryManager from '../components/DictionaryManager.vue'
 import { useRefreshOnReturn } from '../composables/useRefreshOnReturn'
 import { useDictionaryPanel } from '../composables/useDictionaryPanel'
@@ -210,20 +211,7 @@ useRefreshOnReturn(() => { if (!fundingLoading.value) return loadFundingChannels
       />
     </template>
 
-    <section
-      class="settings-section"
-      aria-labelledby="preferences-title"
-    >
-      <div class="section-heading">
-        <div>
-          <h2
-            id="preferences-title"
-            class="section-title"
-          >
-            偏好设置
-          </h2>
-        </div>
-      </div>
+    <SettingsGroup title="偏好设置">
       <SettingsDisclosureList
         label="偏好设置"
         :items="settingItems"
@@ -237,33 +225,22 @@ useRefreshOnReturn(() => { if (!fundingLoading.value) return loadFundingChannels
         action-label="重试"
         @action="retryPreferences"
       />
-      <p class="preference-caption">
-        最近记账：{{ preferencesStore.values.recentEntryType === 'EXPENSE' ? '支出' : '收入' }}
-      </p>
-      <button
-        type="button"
-        class="text-action reset-preferences-action"
-        :disabled="preferencesStore.isSaving"
-        @click="resetOpen = true"
-      >
-        恢复默认偏好
-      </button>
-    </section>
-
-    <section
-      class="settings-section"
-      aria-labelledby="data-security-title"
-    >
-      <div class="section-heading">
-        <div>
-          <h2
-            id="data-security-title"
-            class="section-title"
-          >
-            数据与安全
-          </h2>
-        </div>
+      <div class="preference-footer">
+        <p class="preference-caption">
+          最近记账：{{ preferencesStore.values.recentEntryType === 'EXPENSE' ? '支出' : '收入' }}
+        </p>
+        <button
+          type="button"
+          class="text-action reset-preferences-action"
+          :disabled="preferencesStore.isSaving"
+          @click="resetOpen = true"
+        >
+          恢复默认偏好
+        </button>
       </div>
+    </SettingsGroup>
+
+    <SettingsGroup title="数据与安全">
       <SettingsDisclosureList
         label="数据与安全"
         :items="[{ key: 'dictionaries', label: '选项管理', value: '8 类' }, { key: 'password', label: '修改密码', value: '' }]"
@@ -275,22 +252,12 @@ useRefreshOnReturn(() => { if (!fundingLoading.value) return loadFundingChannels
           @notify="showExportNotice"
         />
       </SettingsDisclosureList>
-    </section>
+    </SettingsGroup>
 
-    <section
-      class="settings-section account-section"
-      aria-labelledby="account-title"
+    <SettingsGroup
+      title="账号操作"
+      class="account-group"
     >
-      <div class="section-heading">
-        <div>
-          <h2
-            id="account-title"
-            class="section-title"
-          >
-            账号操作
-          </h2>
-        </div>
-      </div>
       <AppStateBlock
         v-if="logoutError"
         kind="error"
@@ -299,23 +266,16 @@ useRefreshOnReturn(() => { if (!fundingLoading.value) return loadFundingChannels
         action-label="重试"
         @action="logout"
       />
-      <button
-        class="text-action logout-action"
-        type="button"
-        :disabled="loggingOut"
-        @click="logout"
-      >
-        {{ loggingOut ? '正在退出…' : '退出登录' }}
-      </button>
-      <button
-        class="text-action danger-text delete-account-action"
-        type="button"
-        :disabled="deletionBusy"
-        @click="openDeletion"
-      >
-        注销账号
-      </button>
-    </section>
+      <SettingsDisclosureList
+        label="账号操作"
+        centered
+        :items="[
+          { key: 'logout', label: loggingOut ? '正在退出…' : '退出登录', value: '', disabled: loggingOut, disclosure: false, tone: 'action' },
+          { key: 'delete', label: '注销账号', value: '', disabled: deletionBusy, tone: 'danger', disclosure: false },
+        ]"
+        @select="$event === 'logout' ? logout() : openDeletion()"
+      />
+    </SettingsGroup>
 
     <template #overlays>
       <DictionaryManager

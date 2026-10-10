@@ -15,16 +15,23 @@ describe('visible dropdown bounds', () => {
     expect(dropdownLayout(anchor, viewport, 6000, true).maxHeight).toBe(240)
     expect(dropdownLayout(anchor, viewport, 6000, false).maxHeight).toBe(320)
   })
-  it('opens above the field when the keyboard leaves too little space below', () => {
+  it('always stays below the field when the keyboard leaves little space', () => {
     const result = dropdownLayout({ ...anchor, top: 330, bottom: 374 }, { ...viewport, bottom: 450 }, 1000, true)
-    expect(result.top).toBe(86)
-    expect(result.top + result.maxHeight).toBeLessThan(330)
+    expect(result.top).toBe(378)
+    expect(result.maxHeight).toBe(64)
+    expect(result.top + result.maxHeight).toBeLessThan(450)
   })
   it('stays inside a scrolled visible viewport during keyboard panning', () => {
     const result = dropdownLayout({ ...anchor, top: 440, bottom: 484 },
       { ...viewport, top: 300, bottom: 650 }, 1000, true)
     expect(result.top).toBeGreaterThanOrEqual(300)
     expect(result.top + result.maxHeight).toBeLessThanOrEqual(650)
+  })
+  it('reserves only real candidate space and never more than the visible body can hold', () => {
+    expect(dropdownLayout(anchor, viewport, 44, true).revealHeight).toBe(44)
+    expect(dropdownLayout(anchor, viewport, 1000, true).revealHeight).toBe(132)
+    const smallBody = { ...viewport, top: 300, bottom: 450 }
+    expect(dropdownLayout({ ...anchor, top: 330, bottom: 374 }, smallBody, 1000, true).revealHeight).toBe(94)
   })
   it('ignores a save bar above the field and respects one covering the lower viewport', () => {
     const offscreenBar = { ...anchor, top: -80, bottom: -30 }

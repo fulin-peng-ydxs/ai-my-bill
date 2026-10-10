@@ -21,6 +21,33 @@ defineEmits<{
     class="applied-filter-bar"
     :aria-label="label ?? '已应用筛选'"
   >
+    <div class="filter-toolbar">
+      <slot name="controls" />
+      <div class="filter-actions">
+        <button
+          v-if="clearable"
+          type="button"
+          class="compact-action"
+          aria-label="清除全部筛选"
+          @click="$emit('clear')"
+        >
+          <X
+            :size="16"
+            aria-hidden="true"
+          />
+        </button>
+        <button
+          type="button"
+          class="compact-action"
+          @click="$emit('open')"
+        >
+          <SlidersHorizontal
+            :size="16"
+            aria-hidden="true"
+          />筛选
+        </button>
+      </div>
+    </div>
     <div class="filter-context">
       <span class="filter-context-label">筛选条件</span>
       <div class="filter-summary">
@@ -44,30 +71,6 @@ defineEmits<{
           </span>
         </button>
       </div>
-    </div>
-    <div class="filter-actions">
-      <button
-        v-if="clearable"
-        type="button"
-        class="compact-action"
-        aria-label="清除全部筛选"
-        @click="$emit('clear')"
-      >
-        <X
-          :size="16"
-          aria-hidden="true"
-        />
-      </button>
-      <button
-        type="button"
-        class="compact-action"
-        @click="$emit('open')"
-      >
-        <SlidersHorizontal
-          :size="16"
-          aria-hidden="true"
-        />筛选
-      </button>
     </div>
   </section>
 </template>

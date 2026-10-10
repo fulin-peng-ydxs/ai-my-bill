@@ -26,7 +26,7 @@ watch(() => route.fullPath, () => { navigationOpen.value = false })
 const sessionStore = useSessionStore()
 const preferencesStore = usePreferencesStore()
 const isAdmin = computed(() => sessionStore.session?.role === 'ADMIN')
-const { keyboardOpen, visibleHeight } = useKeyboardViewport()
+const { keyboardOpen, visibleHeight, topInset } = useKeyboardViewport()
 const { loggingOut, logoutError, logout } = useLogout()
 const hasUnsavedPreferences = computed(() => Object.values(preferencesStore.fieldStates).includes('error'))
 const unregisterPreferenceGuard = registerUnsavedChanges(
@@ -48,7 +48,7 @@ watch(() => sessionStore.session?.accountId, (accountId, previousAccountId) => {
   <div
     class="app-shell"
     :class="{ 'admin-shell': isAdmin, 'keyboard-open': keyboardOpen }"
-    :style="keyboardOpen && !isAdmin && visibleHeight ? { '--app-viewport-height': `${visibleHeight}px` } : undefined"
+    :style="keyboardOpen && !isAdmin && visibleHeight ? { '--app-viewport-height': `${visibleHeight}px`, '--app-viewport-top': `${topInset}px` } : undefined"
   >
     <aside
       v-if="isAdmin"

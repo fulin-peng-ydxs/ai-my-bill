@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, ref, watch, type Component } from 'vue'
 
 import ComboboxField from './ComboboxField.vue'
 
@@ -14,6 +14,7 @@ export interface DictionaryChoice { id: string, name: string, parentId?: string 
 const props = defineProps<{
   type: DictionaryType
   label: string
+  labelIcon?: Component
   items: DictionaryChoice[]
   modelValue?: string
   parentId?: string
@@ -25,7 +26,7 @@ const props = defineProps<{
   loadItems?: (query: string, signal: globalThis.AbortSignal) => Promise<DictionaryChoice[]>
   createItem?: (name: string) => Promise<DictionaryChoice>
 }>()
-const emit = defineEmits<{ select: [item: DictionaryChoice], clear: [] }>()
+const emit = defineEmits<{ select: [item: DictionaryChoice], resolved: [item: DictionaryChoice], clear: [] }>()
 
 const query = ref('')
 const browsing = ref(false)
@@ -38,6 +39,8 @@ const searchedQuery = ref<string>()
 const resolvedItem = ref<DictionaryChoice>()
 const selectedItem = computed(() => props.items.find((item) => item.id === props.modelValue)
   ?? (resolvedItem.value?.id === props.modelValue ? resolvedItem.value : undefined))
+// 摘要消费同一份按 ID 回显的名称；通知元信息不代表用户重新选择或修改草稿。
+watch(selectedItem, (item) => { if (item) emit('resolved', item) }, { immediate: true })
 const request = useLatestRequest<DictionaryChoice[]>()
 const searchTerm = computed(() => browsing.value ? '' : query.value)
 const normalizedQuery = computed(() => normalizeDictionaryName(searchTerm.value))
@@ -172,7 +175,10 @@ async function create(): Promise<void> {
   <div class="entry-combobox dictionary-combobox">
     <ComboboxField
       :id="inputId"
+      :clearable="Boolean(modelValue)"
+      :clear-disabled="disabled || creating"
       :label="`${label}${optional ? '（选填）' : ''}`"
+      :label-icon="labelIcon"
       :value="query"
       :display-value="selectedItem?.name ?? ''"
       :disabled="disabled"
@@ -180,6 +186,7 @@ async function create(): Promise<void> {
       :candidate-count="request.status.value === 'loading' || request.error.value ? undefined : candidates.length"
       :open="open"
       :invalid="Boolean(error || createError)"
+      @clear="emit('clear'); resolvedItem = undefined; query = ''; open = false"
       @open="focus"
       @input="change"
       @submit="debounced.submit(searchTerm)"
@@ -235,15 +242,7 @@ async function create(): Promise<void> {
       >
         {{ creating ? '正在新增…' : `新增${label}“${query.trim()}”` }}
       </button>
-      <button
-        v-if="modelValue"
-        type="button"
-        class="dropdown-action"
-        :disabled="disabled || creating"
-        @click="emit('clear'); resolvedItem = undefined; query = ''; open = false"
-      >
-        清除选择
-      </button>
+
       <small
         v-if="nameTooLong || createError"
         class="dropdown-status field-error"

@@ -6,12 +6,16 @@ defineProps<{
   title: string
   description?: string
   icon?: Component
+  quiet?: boolean
 }>()
 </script>
 
 <template>
   <section class="form-section">
-    <header class="section-heading">
+    <header
+      class="section-heading"
+      :class="{ 'sr-only': quiet }"
+    >
       <SectionTitle
         :title="title"
         :icon="icon"

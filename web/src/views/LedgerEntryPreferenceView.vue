@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { SlidersHorizontal } from 'lucide-vue-next'
 import { computed, nextTick, reactive, watch } from 'vue'
 
 import DictionaryManager from '../components/DictionaryManager.vue'
@@ -56,18 +57,23 @@ function clearTemplate(type: EntryType): void {
   >
     <template #header>
       <PageHeading title="记一笔">
-        <button
-          type="button"
-          class="compact-action"
-          aria-label="打开选项管理"
-          @click="dictionariesOpen = true"
-        >
-          选项管理
-        </button>
         <DailyEntryPicker
           :entry-type="preferences.values.recentEntryType"
           @select="applyTemplate"
         />
+        <button
+          type="button"
+          class="compact-action"
+          aria-label="打开选项管理"
+          title="选项管理"
+          @click="dictionariesOpen = true"
+        >
+          <SlidersHorizontal
+            :size="20"
+            :stroke-width="1.7"
+            aria-hidden="true"
+          />
+        </button>
       </PageHeading>
       <EntryTypeSwitch
         :model-value="preferences.values.recentEntryType"

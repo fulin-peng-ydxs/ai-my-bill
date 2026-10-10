@@ -121,14 +121,18 @@ watch(() => props.modelName, (value) => {
   <div class="entry-combobox product-combobox">
     <ComboboxField
       id="expense-product-search"
+      :clearable="Boolean(modelValue)"
+      :clear-disabled="disabled || creating"
       label="商品名称"
       :value="query"
       :display-value="modelName"
       :disabled="disabled"
       placeholder="搜索或输入新商品"
+      selection-placeholder="选择或新增商品"
       :candidate-count="request.status.value === 'loading' || request.error.value ? undefined : candidates.length"
       :open="listOpen"
       :invalid="Boolean(error || createError)"
+      @clear="reset(); emit('clear')"
       @open="focus"
       @input="changeQuery"
       @submit="debounced.submit(searchTerm)"
@@ -175,15 +179,7 @@ watch(() => props.modelName, (value) => {
       >
         暂无匹配商品
       </div>
-      <button
-        v-if="modelValue"
-        type="button"
-        class="dropdown-action"
-        :disabled="disabled || creating"
-        @click="reset(); emit('clear')"
-      >
-        清除选择
-      </button>
+
       <button
         v-if="canCreate"
         type="button"

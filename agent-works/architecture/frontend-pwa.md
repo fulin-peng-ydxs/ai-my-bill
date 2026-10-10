@@ -39,19 +39,19 @@ flowchart LR
 
 `PageWorkspace` 以 header、正文和 overlays 插槽组织页面，正文交给 `ScrollRegion`；`pageScroll` 提供活动正文的滚动读取与恢复入口，缓存页、明细位置记忆与报表下钻共用它。报表仅在对应路由加载时应用下钻返回的 `scroll` 参数，普通缓存页刷新保留最新位置，异步恢复还须核对活动页与原路由，避免旧请求覆盖新页面位置。`ScrollRegion` 根据被动 scroll 事件更新位置提示，并在停用/卸载时清理计时器。固定区域、边界缓冲和提示显隐时序见 DESIGN 的组件与布局规则。
 
-`EntrySaveBar` 通过 ResizeObserver 将实际栏高写入占位变量；停用/卸载时断开，重新激活时重连。`AppShell` 消费 `useKeyboardViewport`，将键盘状态与可见高度写入外壳 class 和 CSS 变量，保存栏样式据此调整定位与占位，避免各页面分别计算。
+`PageWorkspace` 提供共享动作及标题状态目标，非阻塞草稿警告由活动表单传送到 PageHeading 的标题行，停用时移除；新增表单的 `EntrySaveBar` 通过 Teleport 进入正文外的动作区，参与外壳布局而不覆盖字段或创建占位；外置主按钮通过唯一 form ID 保持原提交链路，表单停用时移出共享目标，避免缓存实例重复显示。编辑抽屉保留原 sticky 行。`AppShell` 消费 `useKeyboardViewport`，将键盘状态、可见高度和顶部平移写入外壳 class 与 CSS 变量。键盘判定比较可见视口与布局视口高度，兼容 iOS 聚焦下方字段时 `innerHeight` 缩小；外壳跟随真实可见区域，PageWorkspace 仅在所属正文内显露聚焦控件，保存动作回到表单自然流。收起键盘后恢复动作区，结束 iOS 遗留输入焦点，纠正外层平移及正文越界滚动，保留有效位置。
 
-收支表单用 `SavedEntrySummary` 承接刚保存记录与撤销，置于保存栏占位之前，支出明细通过插槽保留。`AppToast` 统一消费 `useToastAutoDismiss` 管理成功提示的计时、交互暂停与清理，错误不自动关闭；缓存页和收支类型停用时清除旧提示，异步回调不能在隐藏页面重放反馈。保存记录 ID 用于区分连续相同文案的通知，提示关闭不清除已保存记录或撤销标识。位置与展示时长由 DESIGN 定义。
+收支表单用 `SavedEntrySummary` 承接刚保存记录与撤销，置于正文滚动区域内、表单表面之后，支出明细通过插槽保留。`AppToast` 统一消费 `useToastAutoDismiss` 管理成功提示的计时、交互暂停与清理，错误不自动关闭；缓存页和收支类型停用时清除旧提示，异步回调不能在隐藏页面重放反馈。保存记录 ID 用于区分连续相同文案的通知，提示关闭不清除已保存记录或撤销标识。位置与展示时长由 DESIGN 定义。
 
 `useReportChart` 统一初始化 ECharts SVG 实例，提供主题 token 读取和刷新入口；ResizeObserver 处理容器变化，MutationObserver 处理根节点主题变化，停用时断开观察器，卸载时销毁实例。查询参数和下钻条件由 reportQuery 承接；图表读数与查看明细的交互规则见 DESIGN。
 
-`FormField` 的普通与复合帮助内容共用帮助 ID，和错误一起通过 aria-describedby 关联控件；支出金额差额和计算金额属于同一帮助区域。两类记账表单的折叠摘要来自当前输入值，字段错误触发对应补充区展开；筛选日期与业务时间复用 `DateTimeControl` 的原生输入边界处理。组件清单、控件对齐与说明排版见 DESIGN。
+`EntryReceipt` 统一收支新增和明细编辑的结构，`AmountField` 只承接字符串值与输入事件，金额计算、覆盖保护和提交仍由原表单及 domain 承担。`FormField` 的普通与复合帮助内容共用帮助 ID，和错误一起通过 aria-describedby 关联控件；支出金额差额和计算金额属于同一帮助区域。两类记账表单的分类及补充摘要来自当前值，字段错误触发对应区域展开；分类名称消费 `DictionaryCombobox` 的已选项解析通知，复用候选外 ID 的既有回显查询，不另建字典请求或选择状态。`SettingsGroup` 和 `SettingsDisclosureList` 统一设置分组与整行披露，普通及危险账号动作仍交给原处理器；筛选日期与业务时间复用 `DateTimeControl` 的原生输入边界处理。组件清单、控件对齐与说明排版见 DESIGN。
 
-商品和字典共用 `ComboboxField`；手机面板内的搜索栏在用户手势内同步显示与聚焦，以承接原生键盘。`useActiveCombobox` 交接唯一活动字段，作用域销毁时释放引用。`AnchoredDropdown` 通过 `domain/dropdownLayout` 计算有界上下方空间，并在外部操作、浏览态锚点离开可见区和页面隐藏时关闭；搜索焦点仍在浮层内时，软键盘导致锚点不可见会先调整所属正文滚动位置，保留搜索。搜索词与已选业务值分开，关闭取消查询、恢复原值；明确选中才传递稳定 ID，明确清除才清空。
+商品、收入名称和字典共用 `ComboboxField`；`NameSuggestionCombobox` 消费最近收入名称查询，不创建唯一字典，浏览与搜索状态同候选容器共享，确认使用才更新名称，取消保留原值；手机面板内的搜索栏在用户手势内同步显示与聚焦，以承接原生键盘。`useActiveCombobox` 交接唯一活动字段，作用域销毁时释放引用。`AnchoredDropdown` 通过 `domain/dropdownLayout` 计算字段下方的有界空间，面板留在所属正文内，以实际内容提供滚动范围；展开或键盘变化时滚动正文让出候选空间，不翻转到字段上方，并在外部操作、浏览态锚点离开可见区和页面隐藏时关闭；搜索焦点仍在浮层内时，软键盘导致锚点不可见会先调整所属正文滚动位置，保留搜索。已选值的清除入口由 ComboboxField 统一放在面板顶部工具行。搜索词与已选业务值分开，关闭取消查询、恢复原值；明确选中才传递稳定 ID，明确清除才清空。
 
-`useKeyboardViewport` 在应用外壳、候选组件和抽屉之间共享可见视口监听，最后一个消费者卸载时清理；只有编辑聚焦且视口实际收缩才判定键盘，缩放期间保留此前状态。抽屉消费实际可见高度和底部偏移；活动手机搜索在已出现的键盘收起时退出，外部关闭不恢复旧字段焦点。
+`useKeyboardViewport` 在应用外壳、候选组件和抽屉之间共享可见视口监听，最后一个消费者卸载时清理；只有编辑聚焦且视口实际收缩才判定键盘，缩放期间保留此前状态。收起后在原生平移动画结束时补一次有界滚动校正，重新输入或卸载时取消；补充区域展开、折叠时也校正所属正文的滚动边界。抽屉消费实际可见高度和底部偏移；活动手机搜索在已出现的键盘收起时退出，外部关闭不恢复旧字段焦点。
 
-明细与报表通过 `hasFilterChanges` 对照各自默认条件判断筛选是否改变。`AppliedFilterBar` 承接单条件编辑，取消保留已应用条件。`DictionaryFilterPicker` 复用候选容器、主动搜索和请求代次，按需加载包含停用项的服务端分页列表，选中 ID 独立回显。
+明细与报表通过 `hasFilterChanges` 对照各自默认条件判断筛选是否改变。常驻搜索独占一行；`AppliedFilterBar` 的 controls 插槽承接范围/生命周期 tab，与筛选按钮同行，条件摘要在下方承接单条件编辑，取消保留已应用条件。`DictionaryFilterPicker` 复用候选容器、主动搜索和请求代次，按需加载包含停用项的服务端分页列表，选中 ID 独立回显。
 
 记一笔页头及“我的”使用 `panel=dictionaries` 打开共享 `DictionaryManager`/`DictionaryIndexPanel`。详情只接受 entry/profile 来源并返回原索引；已从索引进入时退回对应历史项，直接打开时替换为受控入口，避免返回循环。关闭抽屉留在原入口，记账表单无需丢弃草稿。独立索引路由仍可访问。入口统一显示“选项管理”；个人和默认列表复用 DictionaryToolbar、DictionaryItemList、DictionaryListFooter，管理页大小来自 DICTIONARY_PAGE_SIZE。长列表保持内容高度，个人列表由 PageWorkspace 正文滚动，默认列表随管理页正文滚动，多页末尾仅提供 AppPagination，单页结束提示居中，翻页和搜索通过现有分页接口替换结果；选项、日常模板与明细内容共用 content-list，末尾提示共用 list-end-note；历史筛选候选同样复用 AppPagination。填报候选仍是有界首批，ComboboxField 展示批次数量并引导搜索，不把批次当作全部数据。底部导航保留本账号报表/明细的最近 URL 条件，换账号清空；记账页内收支表单各保存一个实例。修改密码由 `PasswordChangeSheet` 调用既有 `session.changePassword`，接受服务端轮换会话；临时输入只存在组件内存，成功或关闭即清空，不进入持久化存储。
 
@@ -76,7 +76,7 @@ flowchart LR
 
 守卫等待唯一 session store 初始化 → 认证失败去登录 → 临时密码去首次改密 → 角色外壳渲染。`api/http.ts` 统一 Cookie、XSRF、no-store 和错误解析；浏览器不自行构造租户身份。
 
-登出清理当前内存会话/偏好；`useLedgerDraft` 经 `accountStorage` 按不可逆账号命名空间和收支类型保存草稿，恢复时检查有效期，换账号不能读取其他账号草稿。账号注销成功后清理其本地数据；不能把作用域退化为全局共享键。命名空间依赖 Web Crypto 的 SHA-256；缺少安全上下文、哈希能力或本地存储权限时保留页面内输入，备份失败交给共享 `DraftBackupNotice` 承接，可恢复失败允许重试备份。正式提交不依赖本地备份；提示文案由 DESIGN 定义。
+登出清理当前内存会话/偏好；`useLedgerDraft` 经 `accountStorage` 按不可逆账号命名空间和收支类型保存草稿，恢复时检查有效期，换账号不能读取其他账号草稿。账号注销成功后清理其本地数据；不能把作用域退化为全局共享键。命名空间依赖 Web Crypto 的 SHA-256；缺少安全上下文、哈希能力或本地存储权限时保留页面内输入，备份失败交给共享 `DraftBackupNotice` 承接，标题旁仅展示橙色警告入口，详细说明与可恢复失败的重试动作通过共享 AppDialog 承接。正式提交不依赖本地备份；提示文案由 DESIGN 定义。
 
 主题首屏只恢复合法 `system/light/dark` 值，随后由 theme store 接管；登录后的服务端偏好为权威，本地仅回退。新增偏好要同步 Preference API 与 store，不能用额外 localStorage 取代跨设备保存。
 
