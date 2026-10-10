@@ -33,7 +33,7 @@ flowchart TD
 
 `BILL_OFFSITE_BACKUP_DIRECTORY` 与 `BILL_OFFSITE_KEY_DIRECTORY` 也只存在于构建/运维端目标描述，分别定义加密归档和一次性解密材料的本地落点。二者必须是不同的安全绝对路径，不能取根目录或用户主目录；旧目标缺失时由 `ops` 使用仓库 `.local` 下的目标专属默认目录。路径本身不进入Compose，私钥正文也不进入目标文件。
 
-`web/vite.config.ts` 直接读取 process.env，不调用 loadEnv 加载根目录模板。前端没有自定义 VITE_* 密钥/连接配置；API 固定同源 /api/v1。MY_BILL_BUILD_ID 只决定构建缓存名，不能运行时通过服务器 env 改已构建资源。
+`web/vite.config.ts` 直接读取 process.env，不调用 loadEnv 加载根目录模板。`server.host` 与 `preview.host` 共用 `MY_BILL_WEB_HOST`，未设置或空值时回退 `0.0.0.0`；显式 Vite `--host` 优先于环境变量和配置默认值。总启动、前端启动器及直接运行 web 包均消费这一配置，不在各入口重复注入 host。前端没有自定义 VITE_* 密钥/连接配置；API 固定同源 /api/v1。MY_BILL_BUILD_ID 只决定构建缓存名，不能运行时通过服务器 env 改已构建资源。
 
 ## 用两个例子理解配置实际如何生效
 
@@ -68,6 +68,7 @@ flowchart TD
 |---|---|---|
 | JAVA_HOME | 自动查找完整 Java 21 JDK，缺失失败 | scripts/toolchain.sh，启动/检查时 |
 | MY_BILL_SERVER_PORT | 8080 | application.yml 与 Vite API proxy；两侧必须一致 |
+| MY_BILL_WEB_HOST | 0.0.0.0；缺失/空值均回退；可设 127.0.0.1 限制本机 | web/vite.config.ts 的 dev/preview；显式 --host 优先，环境变量变更需重启；不自动读取根 .env |
 | MY_BILL_WEB_PORT | 5174 | web/package.json dev；Vite 端口占用可能顺延，核对实际输出 |
 | MY_BILL_DB_HOST | 127.0.0.1；dev 只允许本机 | dev.sh 与 application.yml |
 | MY_BILL_DB_PORT | 54329，1–65535 | 同上；复用前校验 data_directory 属于本仓库 |
@@ -83,7 +84,7 @@ flowchart TD
 
 工具链 Node 精确匹配 .nvmrc 的 24.11.1，npm 声明 11.6.2；不是随意用当前 shell Node。工具脚本会查已安装版本，不自动下载。Python 用于验证/备份辅助，未作为独立业务服务。
 
-`npm run dev` 由同一父进程管理数据库、后端和前端；`npm run dev:db -- start|status|stop`、`npm run dev:backend`、`npm run dev:frontend` 用于分终端调试。数据库入口与总启动脚本复用 `scripts/lib/dev-database.sh` 中的配置校验、集群归属核对和角色准备逻辑；独立后端/前端不会替开发者隐式管理数据库。分开启动时，各终端的 MY_BILL_DB_* 与 MY_BILL_SERVER_PORT 必须保持一致。
+`npm run dev` 由同一父进程管理数据库、后端和前端；`npm run dev:db -- start|status|stop`、`npm run dev:backend`、`npm run dev:frontend` 用于分终端调试。数据库入口与总启动脚本复用 `scripts/lib/dev-database.sh` 中的配置校验、集群归属核对和角色准备逻辑；独立后端/前端不会替开发者隐式管理数据库。分开启动时，各终端的 MY_BILL_DB_* 与 MY_BILL_SERVER_PORT 必须保持一致。`dev:frontend` 保留 npm 参数分隔符，将用户追加的 Vite 参数原样传入 web 包；直接运行 web 包的 dev/preview 也使用同一 host 配置，但不经过日志启动器。preview 默认端口 4173，可用 `--port` 覆盖，不消费仅用于 dev 的 MY_BILL_WEB_PORT。
 
 ### iOS 复测配置
 

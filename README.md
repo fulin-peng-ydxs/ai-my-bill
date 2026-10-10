@@ -36,7 +36,7 @@
 
 通过 **5174 的页面** 使用账单功能。浏览器请求 `/api/v1` 时，Vite 转给 8080 的 Java 后端，后端再访问 54329 的数据库；浏览器不直接连接数据库。8080 的健康接口用于检查后端，不是前端页面地址。
 
-开发前端默认监听 `0.0.0.0`，方便同一局域网的手机访问；只允许本机访问时，使用 `MY_BILL_WEB_HOST=127.0.0.1 npm run dev`。手机和电脑需连接同一网络，电脑防火墙需允许 5174 端口。此 HTTP 开发入口不能用于手机 PWA 安装；安装使用内网 HTTPS 地址。
+前端开发与本地预览的监听地址统一由 `web/vite.config.ts` 设置，默认 `0.0.0.0`（所有 IPv4 地址），方便同一局域网的手机访问。总启动、单独启动和直接运行 web 包均使用该默认值，不需要额外补 `--host`。只允许本机访问时，使用 `MY_BILL_WEB_HOST=127.0.0.1 npm run dev`；各独立前端入口同样支持该变量，显式 `--host` 参数优先于环境变量。手机和电脑需连接同一网络，电脑防火墙需允许实际前端端口。此 HTTP 开发入口不能用于手机 PWA 安装；安装使用内网 HTTPS 地址。
 
 记账草稿用于在当前浏览器恢复尚未提交的输入，不等于离线提交账目，默认保留 7 天。手机通过局域网 HTTP 测试地址访问时，浏览器可能不支持账号隔离所需的本地备份能力；本地存储被限制或写入失败时，标题旁显示橙色“草稿未备份”入口，点击查看说明。此时输入仍在当前页面，可直接保存账目，但刷新或关闭后可能无法恢复。请使用正式 HTTPS 入口；可恢复的临时故障可在说明弹窗中点击“重试备份”。
 
@@ -123,7 +123,7 @@ npm run dev
 1. 校验工具链、数据库主机/端口/库名；开发数据库只允许本机。
 2. 没有 `.local/postgres` 时初始化本项目集群；数据库端口没有服务时启动它。端口已有 PG 时，检查它的数据目录确实属于本项目才复用。
 3. 创建开发库和独立的迁移/应用角色；Flyway 迁移角色负责建表，应用角色负责业务读写。
-4. 执行 `./mvnw -q -pl server spring-boot:run` 启动后端，执行 `npm --prefix web run dev -- --host "${MY_BILL_WEB_HOST:-0.0.0.0}"` 启动前端。**这两条已由总脚本执行，不要再重复启动同端口进程。**
+4. 通过后端启动器执行 `./mvnw -q -pl server spring-boot:run`，通过前端启动器执行 `npm --prefix web run dev`；两者保存本地日志，前端监听默认值来自 Vite 配置。**这些步骤已由总脚本执行，不要再重复启动同端口进程。**
 5. 后端通过 Flyway 校验/升级开发库，成功后接受 API 请求。任一前后端进程退出，总脚本关闭它启动的其他进程。
 
 在另一个终端检查：
@@ -193,7 +193,16 @@ npm run dev
 npm run dev:frontend
 ```
 
-该命令只起 Vite，不建库、不起 Java。若 Java 用非默认端口，调用前传相同 MY_BILL_SERVER_PORT。与总启动命令二选一，避免重复占端口；Ctrl+C 只停止该前端。
+该命令只起 Vite，不建库、不起 Java，默认监听 `0.0.0.0:5174` 并保存本地日志。若 Java 用非默认端口，调用前传相同 MY_BILL_SERVER_PORT。与总启动命令二选一，避免重复占端口；Ctrl+C 只停止该前端。
+
+需要限制监听范围时，任选一种覆盖方式：
+
+```bash
+MY_BILL_WEB_HOST=127.0.0.1 npm run dev:frontend
+npm run dev:frontend -- --host 127.0.0.1
+```
+
+直接执行 `bash scripts/run-frontend.sh dev` 或 `npm --prefix web run dev` 也默认监听所有 IPv4 地址；直接运行 web 包不会经过本地日志启动器，且需自行满足 Node 工具链要求。本地预览已有构建时，执行 `bash scripts/run-frontend.sh preview`，监听规则相同，默认端口为 4173；指定端口使用 `bash scripts/run-frontend.sh preview -- --port 15174`。`MY_BILL_WEB_PORT` 仅控制 dev 端口。Vite 的 Local / Network 输出是实际访问地址，端口占用可能顺延；`0.0.0.0` 是绑定地址，手机使用本机局域网 IP 访问。修改 host 环境变量后重启对应前端进程，根 `.env` 不会自动提供此配置。
 
 ### 分开启动数据库、后端和前端
 
@@ -390,10 +399,10 @@ MY_BILL_IOS_ACCOUNT=admin npm run check:ios:simulator
 
 ```bash
 MY_BILL_BUILD_ID="simulator-$(date +%s)" bash scripts/run-frontend.sh build -- --outDir ../.local/simulator-test/web-dist
-bash scripts/run-frontend.sh preview -- --outDir ../.local/simulator-test/web-dist --host 127.0.0.1 --port 15174 --strictPort
+bash scripts/run-frontend.sh preview -- --outDir ../.local/simulator-test/web-dist --port 15174 --strictPort
 ```
 
-预览同源 `/api/v1` 代理到本地后端；模拟器 Safari 打开 `http://127.0.0.1:15174`，通过分享菜单“添加到主屏幕”，从图标启动并确认独立窗口及本次构建。记录对应源码（含未提交变更）和唯一构建标识，通过 Web Inspector 中实际 SW/缓存版本核对；旧页面可能持有旧资源，不能只凭图标或 SW 已接管判定版本。自动结构检查这个地址时使用 `MY_BILL_IOS_BASE_URL=http://127.0.0.1:15174 npm run check:ios:simulator`。localhost 生产预览可用于模拟器 PWA，但不证明真实手机的 HTTPS、证书信任或网络可达。停止预览使用所在终端的 Ctrl+C，仅关闭本次服务；不清空已有 PG、不删除用户安装或草稿。
+预览使用前述统一监听规则，默认监听所有 IPv4 地址；需要仅限本机时显式传 `MY_BILL_WEB_HOST=127.0.0.1`。同源 `/api/v1` 代理到本地后端；模拟器 Safari 打开 `http://127.0.0.1:15174`，通过分享菜单“添加到主屏幕”，从图标启动并确认独立窗口及本次构建。记录对应源码（含未提交变更）和唯一构建标识，通过 Web Inspector 中实际 SW/缓存版本核对；旧页面可能持有旧资源，不能只凭图标或 SW 已接管判定版本。自动结构检查这个地址时使用 `MY_BILL_IOS_BASE_URL=http://127.0.0.1:15174 npm run check:ios:simulator`。localhost 生产预览可用于模拟器 PWA，但不证明真实手机的 HTTPS、证书信任或网络可达。停止预览使用所在终端的 Ctrl+C，仅关闭本次服务；不清空已有 PG、不删除用户安装或草稿。
 
 #### 真机连接与自动化
 
