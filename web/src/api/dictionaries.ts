@@ -82,10 +82,10 @@ export function changeDictionaryItemStatus(
   })
 }
 
-export function moveDictionaryItem(type: DictionaryType, id: string, direction: 'UP' | 'DOWN'): Promise<DictionaryItem> {
+export function moveDictionaryItem(type: DictionaryType, id: string, direction: 'UP' | 'DOWN', targetId?: string): Promise<DictionaryItem> {
   return mutate(`/dictionaries/${encodeURIComponent(type)}/${encodeURIComponent(id)}/move`, type, {
     method: 'POST',
-    body: JSON.stringify({ direction }),
+    body: JSON.stringify({ direction, ...(targetId ? { targetId } : {}) }),
   })
 }
 

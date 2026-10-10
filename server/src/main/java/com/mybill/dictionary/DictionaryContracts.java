@@ -12,7 +12,7 @@ final class DictionaryContracts {
     record CreateRequest(@NotBlank String name, UUID parentId) { }
     record RenameRequest(@NotBlank String name) { }
     record StatusRequest(@NotNull DictionaryStatus status) { }
-    record MoveRequest(@NotNull MoveDirection direction) { }
+    record MoveRequest(@NotNull MoveDirection direction, UUID targetId) { }
     enum MoveDirection { UP, DOWN }
 
     record DictionaryItem(UUID id, String type, String name, DictionaryStatus status, int sortOrder,

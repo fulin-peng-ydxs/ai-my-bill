@@ -1814,6 +1814,16 @@ body:has(dialog[open]) {
 .app-drawer .entry-savebar { bottom: 0; }
 .app-drawer :is(.task-entry-form, .entry-form-surface) { --entry-surface-inset: 0px; }
 .entry-savebar-single { grid-template-columns: minmax(0, 1fr); }
+.drawer-form-actions { flex: 0 0 auto; min-width: 0; }
+.drawer-form-actions:empty { display: none; }
+.drawer-form-actions .entry-savebar { position: static; margin: 0; }
+.app-drawer .entry-savebar .secondary-button { white-space: nowrap; }
+
+/* 点击和 dialog 的自动焦点不描蓝框；下一次键盘操作立即恢复可见焦点。 */
+:is(button, a, [role="button"], summary):focus:not(:focus-visible),
+:root[data-input-modality="pointer"] :is(button, a, [role="button"], summary):focus {
+  outline: none;
+}
 
 .edit-conflict {
   display: grid;
@@ -1920,7 +1930,7 @@ body:has(dialog[open]) {
   border-left: 3px solid var(--color-success);
 }
 
-.dictionary-item-list li[data-status="INACTIVE"] { border-left-color: var(--color-muted); }
+.dictionary-item-list li.dictionary-item-inactive { border-left-color: var(--color-muted); }
 .dictionary-item-list li:last-child { border-bottom: 0; }
 
 .dictionary-item-copy {
@@ -2449,3 +2459,13 @@ body:has(dialog[open]) {
   .date-time-control:focus-within .date-time-value { visibility: hidden; }
   .date-time-control:focus-within input:is([type="datetime-local"], [type="date"]) { opacity: 1; left: var(--control-padding-inline); width: calc(100% - var(--control-padding-inline) * 2); }
 }
+
+/* 排序手柄独占拖动手势，行内正文仍可自然滚动。 */
+.reorder-list { padding: 0; margin: 0; list-style: none; }
+.dictionary-item-list.reorder-list li { position: relative; grid-template-columns: 44px minmax(0, 1fr) auto 44px; }
+.reorder-handle { touch-action: none; cursor: grab; color: var(--color-muted); }
+.reorder-dragging { --reorder-offset: 0px; z-index: 2; background: var(--color-surface); transform: translateY(var(--reorder-offset)); opacity: .85; pointer-events: none; }
+.reorder-dragging .reorder-handle { cursor: grabbing; }
+.reorder-before::before, .reorder-after::after { content: ''; position: absolute; left: 0; right: 0; height: 2px; background: var(--color-primary); pointer-events: none; }
+.reorder-before::before { top: 0; }
+.reorder-after::after { bottom: 0; }

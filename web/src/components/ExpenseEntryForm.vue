@@ -662,11 +662,21 @@ useRefreshOnReturn(() => loadOptions())
       <EntrySaveBar
         :form-id="formId"
         :submitting="submitting"
-        :viewport-pinned="!editMode"
+        viewport-pinned
         :continue-visible="!editMode"
         :primary-label="editMode ? '保存修改' : '保存支出'"
         @continue="submit(true)"
-      />
+      >
+        <template
+          v-if="$slots.actions"
+          #secondary
+        >
+          <slot
+            name="actions"
+            :submitting="submitting"
+          />
+        </template>
+      </EntrySaveBar>
     </form>
 
     <AppToast

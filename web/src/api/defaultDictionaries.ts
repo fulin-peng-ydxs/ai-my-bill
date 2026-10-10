@@ -49,8 +49,9 @@ export function moveDefaultDictionaryItem(
   type: DefaultDictionaryType,
   id: string,
   direction: 'UP' | 'DOWN',
+  targetId?: string,
 ): Promise<DefaultDictionaryItem> {
   return apiRequest(`/admin/default-dictionaries/${encodeURIComponent(type)}/${encodeURIComponent(id)}/move`, {
-    method: 'POST', body: JSON.stringify({ direction }),
+    method: 'POST', body: JSON.stringify({ direction, ...(targetId ? { targetId } : {}) }),
   })
 }

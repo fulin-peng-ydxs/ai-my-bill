@@ -602,15 +602,6 @@ useRefreshOnReturn(() => list.refresh())
         description="修改只作用于当前账目；账目类型不可转换。"
         @update:open="requestEditOpen"
       >
-        <template #footer>
-          <button
-            type="button"
-            class="compact-action"
-            @click="manageDetail('edit')"
-          >
-            更多操作
-          </button>
-        </template>
         <AppStateBlock
           v-if="editRequest.status.value === 'loading'"
           kind="loading"
@@ -630,14 +621,36 @@ useRefreshOnReturn(() => list.refresh())
           :account-id="session.session?.accountId"
           :edit-entry="editRequest.data.value"
           @saved="editSaved"
-        />
+        >
+          <template #actions="{ submitting }">
+            <button
+              type="button"
+              class="secondary-button"
+              :disabled="submitting"
+              @click="manageDetail('edit')"
+            >
+              更多操作
+            </button>
+          </template>
+        </ExpenseEntryForm>
         <IncomeEntryForm
           v-else-if="editRequest.data.value"
           :key="`${editRequest.data.value.id}:${editRequest.data.value.version}`"
           :account-id="session.session?.accountId"
           :edit-entry="editRequest.data.value"
           @saved="editSaved"
-        />
+        >
+          <template #actions="{ submitting }">
+            <button
+              type="button"
+              class="secondary-button"
+              :disabled="submitting"
+              @click="manageDetail('edit')"
+            >
+              更多操作
+            </button>
+          </template>
+        </IncomeEntryForm>
       </AppDrawer>
       <AppDrawer
         id="expense-adjustment-create"

@@ -1,5 +1,7 @@
 package com.mybill.admin.dictionary;
 
+import com.mybill.shared.SiblingOrder;
+
 import com.mybill.admin.audit.AdminAuditService;
 import com.mybill.admin.audit.AuditEvent;
 import com.mybill.admin.audit.AuditPolicy;
@@ -102,17 +104,16 @@ class DefaultDictionaryService {
 
     @Transactional
     DefaultDictionaryItem move(CurrentPrincipal administrator, DefaultDictionaryType type, UUID id,
-                               MoveDirection direction) {
+                               MoveDirection direction, UUID targetId) {
         repository.lockCatalog();
         DefaultDictionaryRepository.DefaultRow target = repository.find(type, id, false)
                 .orElseThrow(DefaultDictionaryService::itemNotFound);
         List<UUID> ordered = new ArrayList<>(repository.lockSiblingIds(type, target.parentId()));
-        int current = ordered.indexOf(id);
-        int destination = direction == MoveDirection.UP ? current - 1 : current + 1;
-        if (current < 0 || destination < 0 || destination >= ordered.size()) return response(type, target);
-        UUID displaced = ordered.get(destination);
-        ordered.set(destination, id);
-        ordered.set(current, displaced);
+        if (!ordered.contains(id)) throw itemNotFound();
+        if (targetId != null && !ordered.contains(targetId)) {
+            throw fieldError("targetId", "只能移动到当前字典的同级选项旁。");
+        }
+        if (!SiblingOrder.move(ordered, id, targetId, direction == MoveDirection.UP)) return response(type, target);
         writeSortOrders(type, ordered, clock.instant());
         DefaultDictionaryItem item = response(type, requireItem(type, id));
         auditService.append(administrator, MOVE_POLICY, new AuditEvent(id.toString(), AuditResult.SUCCEEDED,

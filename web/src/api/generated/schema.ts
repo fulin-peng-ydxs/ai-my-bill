@@ -955,7 +955,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** 在同级范围内上移或下移个人字典项 */
+        /** 在同级范围内调整个人字典项顺序 */
         post: operations["moveDictionaryItem"];
         delete?: never;
         options?: never;
@@ -1685,8 +1685,16 @@ export interface components {
             status: components["schemas"]["DictionaryStatus"];
         };
         DictionaryMoveRequest: {
-            /** @enum {string} */
+            /**
+             * @description 未指定 targetId 时单步移动；指定时 UP 插入目标之前，DOWN 插入目标之后。
+             * @enum {string}
+             */
             direction: "UP" | "DOWN";
+            /**
+             * Format: uuid
+             * @description 拖动排序的同级锚点；必须属于当前字典及同一父级，个人项还必须属于当前租户。
+             */
+            targetId?: string;
         };
         ProductIdentity: {
             /** Format: uuid */

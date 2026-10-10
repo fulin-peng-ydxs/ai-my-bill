@@ -86,6 +86,6 @@ public class PersonalDictionaryController {
     @PostMapping("/{type}/{itemId}/move")
     DictionaryItem move(@AuthenticationPrincipal CurrentPrincipal principal, @PathVariable String type,
                         @PathVariable UUID itemId, @Valid @RequestBody MoveRequest request) {
-        return service.move(principal, DictionaryType.fromSlug(type), itemId, request.direction());
+        return service.move(principal, DictionaryType.fromSlug(type), itemId, request.direction(), request.targetId());
     }
 }

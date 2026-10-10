@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onScopeDispose, reactive, ref } from 'vue'
+import { computed, onScopeDispose, reactive, ref, useId } from 'vue'
 import { ReceiptText, SlidersHorizontal } from 'lucide-vue-next'
 
 import { createExpenseAdjustment, type ExpenseAdjustmentResponse, type ExpenseAdjustmentType } from '../api/expenseAdjustments'
@@ -19,6 +19,7 @@ import SegmentedControl from './SegmentedControl.vue'
 
 const props = defineProps<{ source: LedgerItem }>()
 const emit = defineEmits<{ saved: [value: ExpenseAdjustmentResponse] }>()
+const formId = useId()
 const form = reactive({ adjustmentType: 'REFUND' as ExpenseAdjustmentType, amount: '', occurredAt: toShanghaiLocalDateTime(), note: '' })
 const errors = reactive<Partial<Record<keyof typeof form, string>>>({})
 const submitting = ref(false)
@@ -71,6 +72,7 @@ async function submit(): Promise<void> {
 
 <template>
   <form
+    :id="formId"
     class="adjustment-form"
     novalidate
     @submit.prevent="submit"
@@ -153,6 +155,8 @@ async function submit(): Promise<void> {
       </p>
     </FormSection>
     <EntrySaveBar
+      :form-id="formId"
+      viewport-pinned
       :submitting="submitting"
       primary-label="保存调整"
       :continue-visible="false"

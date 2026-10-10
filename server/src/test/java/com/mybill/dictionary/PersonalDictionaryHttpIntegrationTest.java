@@ -237,6 +237,41 @@ class PersonalDictionaryHttpIntegrationTest {
         mockMvc.perform(get("/api/v1/dictionaries/unit").cookie(user).param("rootsOnly", "true")).andExpect(status().isBadRequest());
     }
 
+    @Test @Order(7)
+    void anchoredMovesPersistAndRejectOtherParentsTenantsAndRoles() throws Exception {
+        Cookie user = login("t8-user", PASSWORD);
+        UUID a = create(user, "unit", "拖动测试A", null);
+        UUID b = create(user, "unit", "拖动测试B", null);
+        UUID c = create(user, "unit", "拖动测试C", null);
+        for (int attempt = 0; attempt < 2; attempt++) {
+            mockMvc.perform(post("/api/v1/dictionaries/unit/{id}/move", a).with(csrf()).cookie(user)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(json(Map.of("direction", "DOWN", "targetId", c))))
+                    .andExpect(status().isOk());
+        }
+        mockMvc.perform(get("/api/v1/dictionaries/unit").queryParam("query", "拖动测试").cookie(user))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.items[0].id").value(b.toString()))
+                .andExpect(jsonPath("$.items[1].id").value(c.toString()))
+                .andExpect(jsonPath("$.items[2].id").value(a.toString()));
+        UUID root = create(user, "expense-category", "拖动父级", null);
+        UUID child = create(user, "expense-category", "拖动子级", root);
+        mockMvc.perform(post("/api/v1/dictionaries/expense-category/{id}/move", child).with(csrf()).cookie(user)
+                        .contentType(MediaType.APPLICATION_JSON).content(json(Map.of("direction", "UP", "targetId", root))))
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.fieldErrors.targetId").isArray());
+        UUID foreign = UUID.randomUUID();
+        tenantDatabase.execute(OTHER_TENANT, () -> jdbc.sql("""
+                INSERT INTO unit(id,tenant_id,display_name,normalized_name,sort_order)
+                VALUES(:id,current_setting('app.tenant_id')::uuid,'外部单位','外部单位',0)
+                """).param("id", foreign).update());
+        mockMvc.perform(post("/api/v1/dictionaries/unit/{id}/move", a).with(csrf()).cookie(user)
+                        .contentType(MediaType.APPLICATION_JSON).content(json(Map.of("direction", "UP", "targetId", foreign))))
+                .andExpect(status().isBadRequest());
+        mockMvc.perform(post("/api/v1/dictionaries/unit/{id}/move", a).with(csrf())
+                        .cookie(login("t8-admin", "T8-Admin-Formal-Password-2026"))
+                        .contentType(MediaType.APPLICATION_JSON).content(json(Map.of("direction", "UP", "targetId", b))))
+                .andExpect(status().isForbidden());
+    }
+
     private UUID create(Cookie user, String type, String name, UUID parentId) throws Exception {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("name", name);

@@ -11,7 +11,7 @@ final class DefaultDictionaryContracts {
 
     record CreateRequest(@NotBlank String name, UUID parentId) { }
     record StatusRequest(@NotNull DefaultDictionaryStatus status) { }
-    record MoveRequest(@NotNull MoveDirection direction) { }
+    record MoveRequest(@NotNull MoveDirection direction, UUID targetId) { }
     enum MoveDirection { UP, DOWN }
 
     record DefaultDictionaryItem(UUID id, String type, String name, DefaultDictionaryStatus status, int sortOrder,

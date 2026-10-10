@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { X } from 'lucide-vue-next'
 import { computed, provide, ref, watch } from 'vue'
+import { pageActionTarget } from '../composables/pageActionTarget'
 import { reserveDrawerCandidateSpace } from '../composables/drawerCandidateSpace'
 
 import { useDialogController } from '../composables/useDialogController'
@@ -19,6 +20,9 @@ const emit = defineEmits<{
 }>()
 const isOpen = computed(() => props.open)
 const candidateSpace = ref(false)
+const actions = ref<globalThis.HTMLElement>()
+// 抽屉动作拥有独立目标，不能传送到背后页面的保存区。
+provide(pageActionTarget, actions)
 provide(reserveDrawerCandidateSpace, () => { candidateSpace.value = true })
 watch(isOpen, (open) => { if (open) candidateSpace.value = false })
 const { visibleHeight, bottomInset } = useKeyboardViewport()
@@ -66,6 +70,10 @@ const { dialog, handleCancel, handleClose } = useDialogController(isOpen, (value
       <ScrollRegion class="overlay-body">
         <slot />
       </ScrollRegion>
+      <div
+        ref="actions"
+        class="drawer-form-actions"
+      />
       <footer
         v-if="$slots.footer"
         class="overlay-actions"

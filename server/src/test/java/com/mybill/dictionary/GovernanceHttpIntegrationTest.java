@@ -249,6 +249,35 @@ class GovernanceHttpIntegrationTest {
         changeDefaultStatus(admin, child, "ACTIVE", 200);
     }
 
+    @Test @Order(7)
+    void defaultAnchoredMovesAreAtomicAndAdminOnly() throws Exception {
+        Cookie admin = login("t9-admin", ADMIN_PASSWORD);
+        String a = createDefault(admin, "unit", "拖动默认A", null);
+        String b = createDefault(admin, "unit", "拖动默认B", null);
+        String c = createDefault(admin, "unit", "拖动默认C", null);
+        for (int attempt = 0; attempt < 2; attempt++) {
+            mockMvc.perform(post("/api/v1/admin/default-dictionaries/unit/{id}/move", a).with(csrf()).cookie(admin)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(json(Map.of("direction", "DOWN", "targetId", c))))
+                    .andExpect(status().isOk());
+        }
+        mockMvc.perform(get("/api/v1/admin/default-dictionaries/unit").queryParam("query", "拖动默认").cookie(admin))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.items[0].id").value(b))
+                .andExpect(jsonPath("$.items[1].id").value(c))
+                .andExpect(jsonPath("$.items[2].id").value(a));
+        String root = createDefault(admin, "expense-category", "拖动默认父级", null);
+        String child = createDefault(admin, "expense-category", "拖动默认子级", root);
+        mockMvc.perform(post("/api/v1/admin/default-dictionaries/expense-category/{id}/move", child).with(csrf()).cookie(admin)
+                        .contentType(MediaType.APPLICATION_JSON).content(json(Map.of("direction", "UP", "targetId", root))))
+                .andExpect(status().isBadRequest());
+        mockMvc.perform(post("/api/v1/admin/default-dictionaries/unit/{id}/move", a).with(csrf())
+                        .cookie(login("t9-user", USER_PASSWORD)).contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of("direction", "UP", "targetId", b))))
+                .andExpect(status().isForbidden());
+        assertThat(jdbc.sql("SELECT count(*) FROM admin_audit_log WHERE object_id=:id AND action='MOVE_DEFAULT_DICTIONARY'")
+                .param("id", a).query(Long.class).single()).isEqualTo(1);
+    }
+
     private void insertExpense(String id, UUID productId, String snapshot, String amount) {
         jdbc.sql("""
                         INSERT INTO ledger_entry(

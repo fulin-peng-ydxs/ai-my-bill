@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { useRefreshOnReturn } from '../../composables/useRefreshOnReturn'
-import { ArrowDown, ArrowUp, Plus } from 'lucide-vue-next'
+import { Plus } from 'lucide-vue-next'
 import { computed, onMounted, ref, watch } from 'vue'
 
 import {
@@ -24,6 +24,7 @@ import DictionaryItemList, { type DictionaryListItem } from '../../components/Di
 import DictionaryToolbar from '../../components/DictionaryToolbar.vue'
 import FormField from '../../components/FormField.vue'
 import { useLatestRequest } from '../../composables/useLatestRequest'
+import type { ReorderMove } from '../../components/ReorderList.vue'
 import { DICTIONARY_PAGE_SIZE } from '../../domain/dictionaries'
 import { defaultDictionaryDefinition, defaultDictionaryDefinitions } from '../../domain/defaultDictionaries'
 
@@ -35,6 +36,7 @@ const statusFilter = ref<DefaultDictionaryStatus | ''>('')
 const pageIndex = ref(0)
 const selected = ref<DefaultDictionaryItem>()
 const actionsOpen = ref(false)
+const statusConfirmOpen = ref(false)
 const createOpen = ref(false)
 const createName = ref('')
 const createParentId = ref('')
@@ -50,6 +52,7 @@ const summaries = ref<Awaited<ReturnType<typeof listDefaultDictionarySummaries>>
 const { data, status, error, staleWarning, refreshing, execute, cancel } = useLatestRequest<Awaited<ReturnType<typeof listDefaultDictionaryItems>>>(() => {
   selected.value = undefined
   actionsOpen.value = false
+  statusConfirmOpen.value = false
   createOpen.value = false
 })
 
@@ -153,25 +156,45 @@ async function submitCreate(): Promise<void> {
   }
 }
 
-async function mutateSelected(action: 'status' | 'UP' | 'DOWN'): Promise<void> {
-  if (!selected.value) return
+async function mutateSelected(): Promise<void> {
+  if (!selected.value || busy.value) return
   busy.value = true
   try {
-    if (action === 'status') {
-      const next = selected.value.status === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE'
-      selected.value = await changeDefaultDictionaryItemStatus(selectedType.value, selected.value.id, next)
-      showToast(next === 'ACTIVE' ? '默认项已恢复' : '默认项已停用，已有用户不受影响')
-    } else {
-      selected.value = await moveDefaultDictionaryItem(selectedType.value, selected.value.id, action)
-      showToast(action === 'UP' ? '默认项已上移' : '默认项已下移')
-    }
+    const next = selected.value.status === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE'
+    selected.value = await changeDefaultDictionaryItemStatus(selectedType.value, selected.value.id, next)
+    showToast(next === 'ACTIVE' ? '默认项已恢复，将复制给新用户' : '默认项已停用，已有用户不受影响')
+    statusConfirmOpen.value = false
     actionsOpen.value = false
     await Promise.all([load('refresh'), loadSummaries()])
   } catch (cause) {
     showToast(normalizeRequestError(cause).message, 'error')
-  } finally {
-    busy.value = false
-  }
+  } finally { busy.value = false }
+}
+
+async function reorder(move: ReorderMove): Promise<void> {
+  if (busy.value) return
+  const type = selectedType.value
+  if (!type) return
+  busy.value = true
+  try {
+    await moveDefaultDictionaryItem(type, move.id, move.direction, move.targetId)
+    if (selectedType.value !== type) return
+    await load('refresh')
+    showToast('顺序已更新')
+  } catch (cause) {
+    if (selectedType.value !== type) return
+    showToast(normalizeRequestError(cause).message, 'error')
+    if (selectedType.value !== type) return
+    await load('refresh')
+  } finally { busy.value = false }
+}
+
+function requestStatusChange(): void {
+  if (!selected.value || busy.value) return
+  if (selected.value.status === 'ACTIVE') {
+    actionsOpen.value = false
+    statusConfirmOpen.value = true
+  } else void mutateSelected()
 }
 
 function clearConditionsOrCreate(): void {
@@ -294,6 +317,8 @@ useRefreshOnReturn(() => Promise.all([load('refresh'), loadSummaries()]).then(()
       v-else-if="status === 'ready'"
       :items="items"
       :label="definition.label"
+      :busy="busy || refreshing"
+      @move="reorder"
       @select="openActions"
     />
 
@@ -319,32 +344,22 @@ useRefreshOnReturn(() => Promise.all([load('refresh'), loadSummaries()]).then(()
         <button
           type="button"
           :disabled="busy"
-          @click="mutateSelected('UP')"
+          @click="requestStatusChange"
         >
-          <ArrowUp
-            :size="18"
-            aria-hidden="true"
-          />上移
-        </button>
-        <button
-          type="button"
-          :disabled="busy"
-          @click="mutateSelected('DOWN')"
-        >
-          <ArrowDown
-            :size="18"
-            aria-hidden="true"
-          />下移
-        </button>
-        <button
-          type="button"
-          :disabled="busy"
-          @click="mutateSelected('status')"
-        >
-          {{ selected.status === 'ACTIVE' ? '停用（不影响已有用户）' : '恢复为新用户默认项' }}
+          {{ selected.status === 'ACTIVE' ? '停用' : '恢复' }}
         </button>
       </div>
     </AppDrawer>
+
+    <AppDialog
+      id="default-dictionary-status-confirm"
+      v-model:open="statusConfirmOpen"
+      :title="`停用${selected?.name ?? '此选项'}？`"
+      description="停用后不再复制给新用户；已有用户的选项和历史记录保持不变。"
+      confirm-label="停用"
+      :busy="busy"
+      @confirm="mutateSelected"
+    />
 
     <AppDialog
       id="create-default-dictionary"

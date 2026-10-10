@@ -25,8 +25,12 @@ const teleportTarget = computed(() => target?.value ?? 'body')
   >
     <div
       class="entry-savebar"
-      :class="{ 'entry-savebar-single': !continueVisible, 'entry-savebar-docked': docked }"
+      :class="{ 'entry-savebar-single': !continueVisible && !$slots.secondary, 'entry-savebar-docked': docked }"
     >
+      <slot
+        name="secondary"
+        :submitting="submitting"
+      />
       <button
         v-if="continueVisible"
         type="button"

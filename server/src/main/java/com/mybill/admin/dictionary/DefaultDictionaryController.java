@@ -65,6 +65,6 @@ public class DefaultDictionaryController {
     DefaultDictionaryItem move(@AuthenticationPrincipal CurrentPrincipal administrator,
                                @PathVariable String type, @PathVariable UUID itemId,
                                @Valid @RequestBody MoveRequest request) {
-        return service.move(administrator, DefaultDictionaryType.fromSlug(type), itemId, request.direction());
+        return service.move(administrator, DefaultDictionaryType.fromSlug(type), itemId, request.direction(), request.targetId());
     }
 }

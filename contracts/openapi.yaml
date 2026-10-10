@@ -1301,7 +1301,7 @@ paths:
   /dictionaries/{type}/{itemId}/move:
     post:
       operationId: moveDictionaryItem
-      summary: 在同级范围内上移或下移个人字典项
+      summary: 在同级范围内调整个人字典项顺序
       tags: [personal-dictionaries]
       parameters:
         - { $ref: "#/components/parameters/DictionaryType" }
@@ -2299,7 +2299,14 @@ components:
       additionalProperties: false
       required: [direction]
       properties:
-        direction: { type: string, enum: [UP, DOWN] }
+        direction:
+          type: string
+          enum: [UP, DOWN]
+          description: 未指定 targetId 时单步移动；指定时 UP 插入目标之前，DOWN 插入目标之后。
+        targetId:
+          type: string
+          format: uuid
+          description: 拖动排序的同级锚点；必须属于当前字典及同一父级，个人项还必须属于当前租户。
     ProductIdentity:
       type: object
       additionalProperties: false

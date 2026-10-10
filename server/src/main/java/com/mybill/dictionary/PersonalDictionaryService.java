@@ -1,5 +1,7 @@
 package com.mybill.dictionary;
 
+import com.mybill.shared.SiblingOrder;
+
 import com.mybill.auth.CurrentPrincipal;
 import com.mybill.auth.TenantTransactionExecutor;
 import com.mybill.shared.api.ApiException;
@@ -115,17 +117,16 @@ class PersonalDictionaryService {
         });
     }
 
-    DictionaryItem move(CurrentPrincipal principal, DictionaryType type, UUID id, MoveDirection direction) {
+    DictionaryItem move(CurrentPrincipal principal, DictionaryType type, UUID id, MoveDirection direction, UUID targetId) {
         return tenantTransactions.execute(principal, () -> {
             PersonalDictionaryRepository.DictionaryRow target = repository.find(type, id)
                     .orElseThrow(PersonalDictionaryService::itemNotFound);
             List<UUID> ordered = new ArrayList<>(repository.lockSiblingIds(type, target.parentId()));
-            int current = ordered.indexOf(id);
-            int destination = direction == MoveDirection.UP ? current - 1 : current + 1;
-            if (current < 0 || destination < 0 || destination >= ordered.size()) return response(type, target);
-            UUID displaced = ordered.get(destination);
-            ordered.set(destination, id);
-            ordered.set(current, displaced);
+            if (!ordered.contains(id)) throw itemNotFound();
+            if (targetId != null && !ordered.contains(targetId)) {
+                throw fieldError("targetId", "只能移动到当前字典的同级选项旁。");
+            }
+            if (!SiblingOrder.move(ordered, id, targetId, direction == MoveDirection.UP)) return response(type, target);
             Instant now = clock.instant();
             writeSortOrders(type, ordered, now);
             return response(type, repository.findForUpdate(type, id).orElseThrow());

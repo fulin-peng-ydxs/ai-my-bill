@@ -2,7 +2,7 @@
 import PageWorkspace from '../../../components/PageWorkspace.vue'
 import { scrollPageTo } from '../../../composables/pageScroll'
 import { useRefreshOnReturn } from '../../../composables/useRefreshOnReturn'
-import { ArrowDown, ArrowLeft, ArrowUp, Plus } from 'lucide-vue-next'
+import { ArrowLeft, Plus } from 'lucide-vue-next'
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
@@ -32,6 +32,7 @@ import FormField from '../../../components/FormField.vue'
 import GlobalLedgerSearch from '../../../components/GlobalLedgerSearch.vue'
 import { useLatestRequest } from '../../../composables/useLatestRequest'
 import { dictionaryIndexTarget } from '../../../domain/dictionaryNavigation'
+import type { ReorderMove } from '../../../components/ReorderList.vue'
 import { DICTIONARY_PAGE_SIZE, dictionaryDefinition } from '../../../domain/dictionaries'
 
 type EditorMode = 'create' | 'rename'
@@ -45,6 +46,7 @@ const statusFilter = ref<DictionaryStatus | ''>('')
 const pageIndex = ref(0)
 const selected = ref<DictionaryItem>()
 const actionsOpen = ref(false)
+const statusConfirmOpen = ref(false)
 const editorOpen = ref(false)
 const editorMode = ref<EditorMode>('create')
 const editorName = ref('')
@@ -69,6 +71,7 @@ const mergeConfirmOpen = ref(false)
 const { data, status, error, staleWarning, refreshing, execute, cancel } = useLatestRequest<Awaited<ReturnType<typeof listDictionaryItems>>>(() => {
   selected.value = undefined
   actionsOpen.value = false
+  statusConfirmOpen.value = false
   editorOpen.value = false
   mergeOpen.value = false
   mergeConfirmOpen.value = false
@@ -262,26 +265,45 @@ async function confirmMerge(): Promise<void> {
 }
 
 
-async function mutateSelected(action: 'status' | 'UP' | 'DOWN'): Promise<void> {
-  if (!definition.value || !selected.value) return
+async function mutateSelected(): Promise<void> {
+  if (!definition.value || !selected.value || busy.value) return
   busy.value = true
   try {
-    if (action === 'status') {
-      const next = selected.value.status === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE'
-      selected.value = await changeDictionaryItemStatus(definition.value.type, selected.value.id, next)
-      showToast(next === 'ACTIVE' ? '已恢复，可用于新记录' : '已停用，历史引用保持不变')
-    } else {
-      selected.value = await moveDictionaryItem(definition.value.type, selected.value.id, action)
-      showToast(action === 'UP' ? '已上移' : '已下移')
-    }
+    const next = selected.value.status === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE'
+    selected.value = await changeDictionaryItemStatus(definition.value.type, selected.value.id, next)
+    showToast(next === 'ACTIVE' ? '已恢复，可用于新记录' : '已停用，历史引用保持不变')
+    statusConfirmOpen.value = false
     actionsOpen.value = false
     await load('refresh')
   } catch (cause) {
-    const requestError = normalizeRequestError(cause)
-    showToast(requestError.message, 'error')
-  } finally {
-    busy.value = false
-  }
+    showToast(normalizeRequestError(cause).message, 'error')
+  } finally { busy.value = false }
+}
+
+async function reorder(move: ReorderMove): Promise<void> {
+  if (!definition.value || busy.value) return
+  const type = definition.value?.type
+  if (!type) return
+  busy.value = true
+  try {
+    await moveDictionaryItem(type, move.id, move.direction, move.targetId)
+    if (definition.value?.type !== type) return
+    await load('refresh')
+    showToast('顺序已更新')
+  } catch (cause) {
+    if (definition.value?.type !== type) return
+    showToast(normalizeRequestError(cause).message, 'error')
+    if (definition.value?.type !== type) return
+    await load('refresh')
+  } finally { busy.value = false }
+}
+
+function requestStatusChange(): void {
+  if (!selected.value || busy.value) return
+  if (selected.value.status === 'ACTIVE') {
+    actionsOpen.value = false
+    statusConfirmOpen.value = true
+  } else void mutateSelected()
 }
 
 function showToast(message: string, kind: 'success' | 'error' = 'success'): void {
@@ -416,7 +438,9 @@ useRefreshOnReturn(() => load('refresh'))
       v-else-if="status === 'ready'"
       :items="items"
       :label="definition.label"
+      :busy="busy || refreshing"
       history-hint
+      @move="reorder"
       @select="openActions"
     />
 
@@ -450,29 +474,9 @@ useRefreshOnReturn(() => load('refresh'))
           <button
             type="button"
             :disabled="busy"
-            @click="mutateSelected('UP')"
+            @click="requestStatusChange"
           >
-            <ArrowUp
-              :size="18"
-              aria-hidden="true"
-            />上移
-          </button>
-          <button
-            type="button"
-            :disabled="busy"
-            @click="mutateSelected('DOWN')"
-          >
-            <ArrowDown
-              :size="18"
-              aria-hidden="true"
-            />下移
-          </button>
-          <button
-            type="button"
-            :disabled="busy"
-            @click="mutateSelected('status')"
-          >
-            {{ selected.status === 'ACTIVE' ? '停用（保留历史引用）' : '恢复为候选项' }}
+            {{ selected.status === 'ACTIVE' ? '停用' : '恢复' }}
           </button>
           <button
             v-if="definition.type === 'product'"
@@ -485,6 +489,16 @@ useRefreshOnReturn(() => load('refresh'))
           </button>
         </div>
       </AppDrawer>
+
+      <AppDialog
+        id="dictionary-status-confirm"
+        v-model:open="statusConfirmOpen"
+        :title="`停用${selected?.name ?? '此选项'}？`"
+        description="停用后不再作为新记录的候选；已有账目、历史名称和引用保持不变，可随时恢复。"
+        confirm-label="停用"
+        :busy="busy"
+        @confirm="mutateSelected"
+      />
 
       <AppDrawer
         id="product-merge"
