@@ -80,6 +80,8 @@ flowchart LR
 
 主题首屏只恢复合法 `system/light/dark` 值，随后由 theme store 接管；登录后的服务端偏好为权威，本地仅回退。新增偏好要同步 Preference API 与 store，不能用额外 localStorage 取代跨设备保存。
 
+`web/build/themeAssets.ts` 在开发响应与生产构建时从 `styles/tokens.css` 生成首屏脚本的背景色、manifest 的安装底色及离线页的明暗色板。manifest 与离线页模板位于 `web/templates`，输出 URL 仍为 `/manifest.webmanifest` 与 `/offline.html`；离线页跟随系统主题，不读取个人偏好或账单缓存。修改主题颜色只维护 token 与 DESIGN，不复制静态色值。
+
 ## 缓存、构建与依赖
 
 `sw.ts`、`pwa/cachePolicy.ts` 只缓存同源带内容哈希资源和无个人信息离线页；API、下载、个性化导航走网络，不提供离线记账。`MY_BILL_BUILD_ID` 生成静态缓存版本，发布须按提交设置。前端 API 固定同源 `/api/v1`，Vite 开发代理到本机后端；生产由 Caddy 分流。环境装配见 [配置架构](environment-configuration.md)。
