@@ -166,7 +166,18 @@ exit
 
 ### 5. 更换端口或开发库
 
-根 `.env.example` 只是变量示例，`dev.sh` **不会自动加载 .env**。在启动命令前传入环境变量，例如以下组合用于独立调试：
+开发入口自动读取可选的 `.local/dev.env`。首次需要保存本地配置时，在项目根目录执行以下命令；已有文件不会被覆盖：
+
+```bash
+mkdir -p .local
+(umask 077; set -o noclobber; cat .env.example > .local/dev.env)
+```
+
+在编辑器中修改 `.local/dev.env`，然后重新启动对应服务。文件已被 Git 忽略；不存在时使用原有默认值，不会自动创建或改写它。只支持单行 `KEY=value`、注释、空值和带引号的值；键限于 `MY_BILL_*` 与 `JAVA_HOME`，不允许重复键，不执行 shell 命令或展开 `$变量`。格式错误会在启动消费者前拒绝，错误只显示行号，不显示配置值。根 `.env.example` 是模板，根 `.env` 不加载。
+
+总启动、独立数据库/后端/前端启动，以及直接运行 web 包的 dev/preview 共用加载器。优先级为显式命令参数（对应工具支持时）→ 已导出的 shell 环境变量 → `.local/dev.env` → 原有默认值；已导出的空值也优先于文件，最终回退行为由消费者决定。后端仍由 `application.yml` 配置，只用文件补充其已有的环境变量占位符；如改变后端端口，前端代理自动读取同一变量。生产发布、构建及隔离检查不读取这个文件。
+
+也可在启动命令前临时覆盖配置，例如以下组合用于独立调试：
 
 ```bash
 MY_BILL_DB_NAME=my_bill_docs_debug \
@@ -193,7 +204,7 @@ npm run dev
 npm run dev:frontend
 ```
 
-该命令只起 Vite，不建库、不起 Java，默认监听 `0.0.0.0:5174` 并保存本地日志。若 Java 用非默认端口，调用前传相同 MY_BILL_SERVER_PORT。与总启动命令二选一，避免重复占端口；Ctrl+C 只停止该前端。
+该命令只起 Vite，不建库、不起 Java，默认监听 `0.0.0.0:5174` 并保存本地日志。若 Java 用非默认端口，在 `.local/dev.env` 设置 MY_BILL_SERVER_PORT，或调用前传相同变量。与总启动命令二选一，避免重复占端口；Ctrl+C 只停止该前端。
 
 需要限制监听范围时，任选一种覆盖方式：
 
@@ -202,11 +213,11 @@ MY_BILL_WEB_HOST=127.0.0.1 npm run dev:frontend
 npm run dev:frontend -- --host 127.0.0.1
 ```
 
-直接执行 `bash scripts/run-frontend.sh dev` 或 `npm --prefix web run dev` 也默认监听所有 IPv4 地址；直接运行 web 包不会经过本地日志启动器，且需自行满足 Node 工具链要求。本地预览已有构建时，执行 `bash scripts/run-frontend.sh preview`，监听规则相同，默认端口为 4173；指定端口使用 `bash scripts/run-frontend.sh preview -- --port 15174`。`MY_BILL_WEB_PORT` 仅控制 dev 端口。Vite 的 Local / Network 输出是实际访问地址，端口占用可能顺延；`0.0.0.0` 是绑定地址，手机使用本机局域网 IP 访问。修改 host 环境变量后重启对应前端进程，根 `.env` 不会自动提供此配置。
+直接执行 `bash scripts/run-frontend.sh dev` 或 `npm --prefix web run dev` 也默认监听所有 IPv4 地址；直接运行 web 包不会经过本地日志启动器，且需自行满足 Node 工具链要求。本地预览已有构建时，执行 `bash scripts/run-frontend.sh preview`，监听规则相同，默认端口为 4173；指定端口使用 `bash scripts/run-frontend.sh preview -- --port 15174`。`MY_BILL_WEB_PORT` 仅控制 dev 端口。Vite 的 Local / Network 输出是实际访问地址，端口占用可能顺延；`0.0.0.0` 是绑定地址，手机使用本机局域网 IP 访问。修改 `.local/dev.env` 或 host 环境变量后重启对应前端进程，根 `.env` 不会自动提供此配置。
 
 ### 分开启动数据库、后端和前端
 
-需要在IDE中只重启Java，或希望前后端使用不同终端时，可以使用三个独立入口。三个终端必须传入相同的数据库名、数据库端口和后端端口；默认配置可直接执行：
+需要在IDE中只重启Java，或希望前后端使用不同终端时，可以使用三个独立入口。三个入口自动读取同一份 `.local/dev.env`；若在 shell 临时覆盖数据库名、数据库端口或后端端口，须在相关终端保持一致。IDE 直接启动 Java 和直接执行 Maven 不经过这些入口，需要显式提供相同的环境变量。默认配置可直接执行：
 
 ```bash
 # 终端1：初始化并后台启动本项目的本地数据库；重复执行安全复用同一集群。

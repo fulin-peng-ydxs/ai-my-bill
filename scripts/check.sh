@@ -6,6 +6,7 @@ source "${PROJECT_ROOT}/scripts/toolchain.sh"
 resolve_toolchain
 
 cd "${PROJECT_ROOT}"
+node --test scripts/lib/dev-environment.test.mjs
 npm run check:deployment
 npm --prefix web run check
 ./mvnw -B verify

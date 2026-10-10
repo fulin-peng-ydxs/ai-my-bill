@@ -28,6 +28,7 @@ export default defineConfig({
   },
   server: {
     host: webHost,
+    port: Number(process.env.MY_BILL_WEB_PORT || '5174'),
     proxy: apiProxy,
   },
   preview: {

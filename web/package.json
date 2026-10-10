@@ -8,8 +8,8 @@
     "npm": ">=11.6.2 <12"
   },
   "scripts": {
-    "dev": "vite --port ${MY_BILL_WEB_PORT:-5174}",
-    "preview": "vite preview",
+    "dev": "node ../scripts/lib/dev-vite.mjs",
+    "preview": "node ../scripts/lib/dev-vite.mjs preview",
     "build": "vue-tsc -b && vite build",
     "typecheck": "vue-tsc -b --pretty false",
     "lint": "eslint . --max-warnings=0",

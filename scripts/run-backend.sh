@@ -3,7 +3,8 @@ set -euo pipefail
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "${PROJECT_ROOT}/scripts/toolchain.sh"
 if [[ "${1:-}" != --logged-child ]]; then
-  resolve_node
+  source "${PROJECT_ROOT}/scripts/lib/dev-environment.sh"
+  load_dev_environment
   cd "${PROJECT_ROOT}"
   umask 077
   local_log_root="${MY_BILL_LOCAL_LOG_ROOT:-${PROJECT_ROOT}/.local/logs}"

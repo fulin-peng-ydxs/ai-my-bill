@@ -4,6 +4,8 @@ set -euo pipefail
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "${PROJECT_ROOT}/scripts/lib/dev-database.sh"
 source "${PROJECT_ROOT}/scripts/toolchain.sh"
+source "${PROJECT_ROOT}/scripts/lib/dev-environment.sh"
+load_dev_environment
 configure_dev_database
 validate_dev_database_configuration
 require_dev_database_tools

@@ -2,13 +2,15 @@
 
 ## 范围与加载模型
 
-本文说明环境变量从哪里读取、如何进入进程、何时生效，以及密钥如何分发和轮换。开发使用Shell变量与application.yml，部署使用Compose配置和secret文件；用户偏好另存业务数据库，不属于基础设施配置。
+本文说明环境变量从哪里读取、如何进入进程、何时生效，以及密钥如何分发和轮换。开发使用 Shell 变量、可选的 `.local/dev.env` 与 application.yml，部署使用 Compose 配置和 secret 文件；用户偏好另存业务数据库，不属于基础设施配置。
 
 部署“目标描述”不是生产运行配置：`.local/deploy-targets/<目标>.env` 保存SSH连接、宿主/部署profile、软件源责任、路径、入口、TLS材料来源和本机凭据输出位置，由宿主准备、首次初始化与持续发布入口共用白名单解析且不进入Git；它指向目标机 `/etc/my-bill/production.env`，不会替代或复制其中的运行变量与secret。字段契约见 `deploy/targets/README.md`，宿主阶段见[宿主环境准备](../deployment/host-preparation.md)，首次初始化机制见[初始化自动化](../deployment/environment-bootstrap.md)。
 
 ```mermaid
 flowchart TD
-  Shell[Shell 已导出的变量] --> Dev[scripts/dev.sh]
+  Local[可选 .local/dev.env] --> Loader[共享开发配置加载器]
+  Shell[Shell 已导出的变量：优先] --> Loader
+  Loader --> Dev[总启动及数据库/后端/前端独立入口]
   Dev --> Vite[Vite process.env]
   Dev --> Spring[application.yml 占位符]
   Env[显式 --env-file] --> Compose[Compose 插值与 environment 白名单]
@@ -20,7 +22,8 @@ flowchart TD
 
 | 来源 | 谁加载 | 生效与优先级 |
 |---|---|---|
-| 根 .env.example | 无，纯模板 | 复制成 .env 不会自动使 dev.sh 或 Spring 读取；需调用前显式 export |
+| 根 .env.example | 无，纯模板 | 复制到 .local/dev.env 后由开发入口读取；根 .env 不加载 |
+| .local/dev.env | scripts/lib/dev-environment.mjs；Shell 桥接 dev-environment.sh、web 包 dev-vite.mjs | 仅启动开发服务/本地预览时补充缺失变量；已导出的 shell 变量（含空值）优先，工具显式命令参数再覆盖；修改后重启 |
 | Shell 环境 | dev.sh、工具链、Vite process.env、Spring | 启动时读取；脚本默认值仅在变量缺失/空值时回退，具体以代码为准 |
 | application.yml | Spring Boot | 非生产默认、占位符与配置结构；标准 Spring 属性覆盖仍存在，不应手工注入绕过安全配置 |
 | application-prod.yml | run-app 强制 prod | 关闭内嵌 Flyway、开启 schema 012 校验、Secure Cookie、文件 pepper；并非任意 Spring 覆盖均有代码硬拦截 |
@@ -34,6 +37,10 @@ flowchart TD
 `BILL_OFFSITE_BACKUP_DIRECTORY` 与 `BILL_OFFSITE_KEY_DIRECTORY` 也只存在于构建/运维端目标描述，分别定义加密归档和一次性解密材料的本地落点。二者必须是不同的安全绝对路径，不能取根目录或用户主目录；旧目标缺失时由 `ops` 使用仓库 `.local` 下的目标专属默认目录。路径本身不进入Compose，私钥正文也不进入目标文件。
 
 `web/vite.config.ts` 直接读取 process.env，不调用 loadEnv 加载根目录模板。`server.host` 与 `preview.host` 共用 `MY_BILL_WEB_HOST`，未设置或空值时回退 `0.0.0.0`；显式 Vite `--host` 优先于环境变量和配置默认值。总启动、前端启动器及直接运行 web 包均消费这一配置，不在各入口重复注入 host。前端没有自定义 VITE_* 密钥/连接配置；API 固定同源 /api/v1。MY_BILL_BUILD_ID 只决定构建缓存名，不能运行时通过服务器 env 改已构建资源。
+
+开发文件的解析只有一份实现：`scripts/lib/dev-environment.mjs` 使用 Node 内置 `parseEnv` 解析单行 `KEY=value`，支持注释、空值和引号，限制键为 `MY_BILL_*`/`JAVA_HOME`，拒绝重复键、未闭合引号、NUL 和超过 64 KiB 的文件。文件缺失不创建，读取失败或格式错误则在消费者启动前拒绝，错误不输出值。`dev-environment.sh` 用 NUL 分隔协议传递给 Bash，不 `source`/`eval` 用户内容；`dev-vite.mjs` 为 web 包 dev/preview 复用同一解析器。文件值不做 shell 命令执行或变量展开，也不通过 VITE_* 暴露给浏览器。现有 shell 同名变量（包括空值）不被覆盖，具体空值回退由消费者决定。
+
+此机制只在总开发启动、开发数据库管理、独立后端及前端 dev/preview 入口加载。后端仍以 application.yml 的结构和环境占位符为准；生产 Compose、发布构建和隔离检查不加载开发文件。隔离 E2E 的预览直接调用 Vite CLI，并显式指定测试后端端口、前端端口和回环监听，避开开发加载器。首次复制步骤见 [README](../../README.md#5-更换端口或开发库)。
 
 ## 用两个例子理解配置实际如何生效
 
@@ -51,7 +58,7 @@ flowchart TD
 
 | 改动 | 需要的动作 | 原因 |
 |---|---|---|
-| 开发Shell变量 | 停止并重新启动对应进程 | 已启动进程不会读取另一个终端的新环境 |
+| 开发 Shell 变量或 .local/dev.env | 停止并重新启动对应进程 | 已启动进程不会读取另一个终端的新环境或更新后的文件 |
 | Compose env/挂载参数 | config校验后重新创建受影响容器 | restart复用原容器配置，不重新装配environment |
 | 数据库密码文件 | 先协调数据库角色密码，再替换文件并重建消费者 | 文件内容和数据库实际密码必须一致；现有连接池可能暂时掩盖不一致 |
 | TLS叶证书 | 校验新文件、替换、Caddy reload并从客户端核验 | 文件更新不代表进程已经加载 |
@@ -69,7 +76,7 @@ flowchart TD
 | JAVA_HOME | 自动查找完整 Java 21 JDK，缺失失败 | scripts/toolchain.sh，启动/检查时 |
 | MY_BILL_SERVER_PORT | 8080 | application.yml 与 Vite API proxy；两侧必须一致 |
 | MY_BILL_WEB_HOST | 0.0.0.0；缺失/空值均回退；可设 127.0.0.1 限制本机 | web/vite.config.ts 的 dev/preview；显式 --host 优先，环境变量变更需重启；不自动读取根 .env |
-| MY_BILL_WEB_PORT | 5174 | web/package.json dev；Vite 端口占用可能顺延，核对实际输出 |
+| MY_BILL_WEB_PORT | 5174；缺失/空值均回退 | web/vite.config.ts server.port；显式 --port 优先，Vite 端口占用可能顺延，核对实际输出 |
 | MY_BILL_DB_HOST | 127.0.0.1；dev 只允许本机 | dev.sh 与 application.yml |
 | MY_BILL_DB_PORT | 54329，1–65535 | 同上；复用前校验 data_directory 属于本仓库 |
 | MY_BILL_DB_NAME | my_bill_dev，受限标识符 | dev.sh 创建目标库；设置新名字不删除旧库 |
@@ -84,7 +91,7 @@ flowchart TD
 
 工具链 Node 精确匹配 .nvmrc 的 24.11.1，npm 声明 11.6.2；不是随意用当前 shell Node。工具脚本会查已安装版本，不自动下载。Python 用于验证/备份辅助，未作为独立业务服务。
 
-`npm run dev` 由同一父进程管理数据库、后端和前端；`npm run dev:db -- start|status|stop`、`npm run dev:backend`、`npm run dev:frontend` 用于分终端调试。数据库入口与总启动脚本复用 `scripts/lib/dev-database.sh` 中的配置校验、集群归属核对和角色准备逻辑；独立后端/前端不会替开发者隐式管理数据库。分开启动时，各终端的 MY_BILL_DB_* 与 MY_BILL_SERVER_PORT 必须保持一致。`dev:frontend` 保留 npm 参数分隔符，将用户追加的 Vite 参数原样传入 web 包；直接运行 web 包的 dev/preview 也使用同一 host 配置，但不经过日志启动器。preview 默认端口 4173，可用 `--port` 覆盖，不消费仅用于 dev 的 MY_BILL_WEB_PORT。
+`npm run dev` 由同一父进程管理数据库、后端和前端；`npm run dev:db -- start|status|stop`、`npm run dev:backend`、`npm run dev:frontend` 用于分终端调试。数据库入口与总启动脚本复用 `scripts/lib/dev-database.sh` 中的配置校验、集群归属核对和角色准备逻辑；独立后端/前端不会替开发者隐式管理数据库。分开启动时，共用 `.local/dev.env` 中的 MY_BILL_DB_* 与 MY_BILL_SERVER_PORT；若 shell 显式覆盖，相关终端仍须保持一致。IDE/Maven 直接启动不经过开发加载器，需自行提供相同环境。`dev:frontend` 保留 npm 参数分隔符，将用户追加的 Vite 参数原样传入 web 包；直接运行 web 包的 dev/preview 也使用同一 host 配置，但不经过日志启动器。preview 默认端口 4173，可用 `--port` 覆盖，不消费仅用于 dev 的 MY_BILL_WEB_PORT。
 
 ### iOS 复测配置
 
