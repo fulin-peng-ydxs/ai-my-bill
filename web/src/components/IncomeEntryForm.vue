@@ -20,6 +20,7 @@ import {
 } from '../domain/ledgerEntryForm'
 import AppStateBlock from './AppStateBlock.vue'
 import AppToast from './AppToast.vue'
+import SavedEntrySummary from './SavedEntrySummary.vue'
 import DailyTemplateFallbackNotice from './DailyTemplateFallbackNotice.vue'
 import DateTimeControl from './DateTimeControl.vue'
 import DictionaryPicker from './DictionaryPicker.vue'
@@ -153,9 +154,10 @@ function validate(): boolean {
 
 async function submit(continueEntry: boolean): Promise<void> {
   if (submitting.value || !validate()) return
-  const body = incomeRequestFromForm(form)
-  const key = attempt.keyFor(body); submitting.value = true
+  submitting.value = true
   try {
+    const body = incomeRequestFromForm(form)
+    const key = attempt.keyFor(body)
     if (props.editEntry) {
       saved.value = await updateIncome(props.editEntry.id, { version: editVersion.value, entry: body }, key)
       applyEditEntry(saved.value)
@@ -394,6 +396,15 @@ useRefreshOnReturn(() => loadOptions())
         </FormDisclosure>
       </div>
 
+      <SavedEntrySummary
+        v-if="saved && !editMode"
+        :title="`${saved.incomeName} · +¥${saved.amount}`"
+        :description="`${saved.payerName} · ${saved.incomeCategoryName} · ${saved.fundingChannelName}`"
+        tone="income"
+        :undoing="undoing"
+        @undo="undo"
+      />
+
       <EntrySaveBar
         :submitting="submitting"
         :viewport-pinned="!editMode"
@@ -402,18 +413,11 @@ useRefreshOnReturn(() => loadOptions())
         @continue="submit(true)"
       />
     </form>
-    <section
-      v-if="saved && !editMode"
-      class="saved-income"
-    >
-      <p class="eyebrow">
-        刚刚保存
-      </p><h2>{{ saved.incomeName }} · +¥{{ saved.amount }}</h2><p>{{ saved.payerName }} · {{ saved.incomeCategoryName }} · {{ saved.fundingChannelName }}</p>
-    </section>
     <AppToast
       v-model:open="toastOpen"
       :message="toastMessage"
       :kind="toastKind"
+      :notification-key="saved?.id"
       :action-label="saved && !editMode && toastKind === 'success' ? '撤销' : undefined"
       :action-disabled="undoing"
       @action="undo"

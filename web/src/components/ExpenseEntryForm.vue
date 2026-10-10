@@ -25,6 +25,7 @@ import DraftBackupNotice from './DraftBackupNotice.vue'
 import { registerUnsavedChanges } from '../composables/unsavedChanges'
 import AppStateBlock from './AppStateBlock.vue'
 import AppToast from './AppToast.vue'
+import SavedEntrySummary from './SavedEntrySummary.vue'
 import DailyTemplateFallbackNotice from './DailyTemplateFallbackNotice.vue'
 import DateTimeControl from './DateTimeControl.vue'
 import DictionaryPicker from './DictionaryPicker.vue'
@@ -284,10 +285,10 @@ function validate(): boolean {
 
 async function submit(continueEntry: boolean): Promise<void> {
   if (submitting.value || !validate()) return
-  const body = expenseRequestFromForm(form)
-  const idempotencyKey = idempotencyAttempt.keyFor(body)
   submitting.value = true
   try {
+    const body = expenseRequestFromForm(form)
+    const idempotencyKey = idempotencyAttempt.keyFor(body)
     if (props.editEntry) {
       saved.value = await updateExpense(props.editEntry.id, { version: editVersion.value, entry: body }, idempotencyKey)
       applyEditEntry(saved.value)
@@ -620,6 +621,34 @@ useRefreshOnReturn(() => loadOptions())
         </FormDisclosure>
       </div>
 
+      <SavedEntrySummary
+        v-if="saved && !editMode"
+        :title="`${saved.productName} · −¥${saved.paidAmount}`"
+        :description="`${saved.primaryCategoryName}${saved.secondaryCategoryName ? ` / ${saved.secondaryCategoryName}` : ''} · ${saved.fundingChannelName}`"
+        tone="expense"
+        :undoing="undoing"
+        @undo="undo"
+      >
+        <button
+          type="button"
+          class="text-action"
+          @click="detailOpen = !detailOpen"
+        >
+          {{ detailOpen ? '收起明细' : '查看本次明细' }}
+        </button>
+        <dl
+          v-if="detailOpen"
+          class="saved-expense-details"
+        >
+          <div><dt>数量与单价</dt><dd>{{ saved.quantity }} {{ saved.unitName }} × ¥{{ saved.unitPrice }}</dd></div>
+          <div><dt>计算金额</dt><dd>¥{{ saved.calculatedAmount }}</dd></div>
+          <div><dt>购买渠道</dt><dd>{{ saved.purchaseChannelName || '未指定' }}</dd></div>
+          <div><dt>地点</dt><dd>{{ saved.locationLabelName || '未指定' }}</dd></div>
+          <div><dt>消费时间</dt><dd>{{ formatShanghaiDateTime(saved.occurredAt) }}</dd></div>
+          <div><dt>备注</dt><dd>{{ saved.note || '无' }}</dd></div>
+        </dl>
+      </SavedEntrySummary>
+
       <EntrySaveBar
         :submitting="submitting"
         :viewport-pinned="!editMode"
@@ -629,44 +658,11 @@ useRefreshOnReturn(() => loadOptions())
       />
     </form>
 
-    <section
-      v-if="saved && !editMode"
-      class="saved-expense"
-      aria-labelledby="saved-expense-title"
-    >
-      <div>
-        <p class="eyebrow">
-          刚刚保存
-        </p>
-        <h2 id="saved-expense-title">
-          {{ saved.productName }} · −¥{{ saved.paidAmount }}
-        </h2>
-        <p>{{ saved.primaryCategoryName }}{{ saved.secondaryCategoryName ? ` / ${saved.secondaryCategoryName}` : '' }} · {{ saved.fundingChannelName }}</p>
-      </div>
-      <button
-        type="button"
-        class="text-action"
-        @click="detailOpen = !detailOpen"
-      >
-        {{ detailOpen ? '收起明细' : '查看本次明细' }}
-      </button>
-      <dl
-        v-if="detailOpen"
-        class="saved-expense-details"
-      >
-        <div><dt>数量与单价</dt><dd>{{ saved.quantity }} {{ saved.unitName }} × ¥{{ saved.unitPrice }}</dd></div>
-        <div><dt>计算金额</dt><dd>¥{{ saved.calculatedAmount }}</dd></div>
-        <div><dt>购买渠道</dt><dd>{{ saved.purchaseChannelName || '未指定' }}</dd></div>
-        <div><dt>地点</dt><dd>{{ saved.locationLabelName || '未指定' }}</dd></div>
-        <div><dt>消费时间</dt><dd>{{ formatShanghaiDateTime(saved.occurredAt) }}</dd></div>
-        <div><dt>备注</dt><dd>{{ saved.note || '无' }}</dd></div>
-      </dl>
-    </section>
-
     <AppToast
       v-model:open="toastOpen"
       :message="toastMessage"
       :kind="toastKind"
+      :notification-key="saved?.id"
       :action-label="saved && !editMode && toastKind === 'success' ? '撤销' : undefined"
       :action-disabled="undoing"
       @action="undo"

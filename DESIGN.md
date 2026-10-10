@@ -204,7 +204,8 @@ Key Characteristics：
 | `FormField` | 标签、控件、辅助说明、校验错误 | 说明及错误沿控件内部文字起点左对齐，同行设置字段跟随值列；复合说明共用同一帮助区域及 aria-describedby，错误在字段附近呈现，不只弹 toast |
 | `FormSection` / `FormDisclosure` | 任务分组与可展开的补充信息 | 常用字段常驻，选填补充默认折叠并显示已有内容摘要；错误自动展开，不为每组新增嵌套卡片；收支与编辑表单共享 |
 | `DateTimeControl` | 收支、调整的业务时间及筛选日期输入 | 默认 datetime-local，筛选使用 date；外层统一手机 44px、平板/PC 48px 控件表面和焦点边界，内部保留浏览器原生选择；原生输入不加 padding，避免 iOS WebKit 宽度溢出；不依赖平台内部日期格式和图标一致 |
-| `EntrySaveBar` | 收支填报的双保存操作 | 同行主次按钮统一胶囊圆角，次按钮保留表面底色；新增时固定于导航上方，在表单卡片外按实际栏高预留空间，卡片底边不包裹操作行；编辑/调整抽屉内保持 sticky；统一禁用态与键盘自然流 |
+| `EntrySaveBar` | 收支填报的双保存操作 | 同行主次按钮统一胶囊圆角，次按钮保留表面底色；新增时固定于导航上方，按实际栏高在全部正文（包括刚保存摘要）之后预留一次空间，卡片底边不包裹操作行；编辑/调整抽屉内保持 sticky；统一禁用态与键盘自然流 |
+| `SavedEntrySummary` | 收支填报的刚保存摘要 | 位于表单表面之后、保存栏占位之前；名称和金额自然换行，统一保留撤销入口，支出可展开本次明细；提示消失后仍可查看与撤销 |
 | `DictionaryFilterPicker` | 明细与报表的历史字典筛选 | 复用 ComboboxField 的候选浏览、主动搜索、收起与焦点交接；服务端分页与层级过滤，允许停用项；已选 ID 独立回显，默认仅显示当前值，不常驻重复搜索框与说明，禁止首批候选冒充完整选项 |
 | `FundingChannelPicker` | 资金渠道选择 | 同一数据在支出显示“支付方式”、收入显示“收款方式”；搜索或输入新名称，停用项不用于新记录 |
 | `ComboboxField` | 商品与字典共用的响应式输入与候选容器 | 手机字段保持按钮，主动搜索在候选面板内显示 16px 输入与取消入口；选择、取消、收键盘、切字段时关闭，不能抢回新字段焦点；PC 直接输入搜索 |
@@ -228,7 +229,7 @@ Key Characteristics：
 | `AppStateBlock` | loading/empty/error/permission | 四态视觉和文案单一事实源；无权是 error 变体，不是假空态 |
 | `AppDialog` | 确认和短表单 | 删除、停用和少字段编辑；不可承载复杂长流程；高度与上下偏移消费共享可见视口，弹窗在键盘上方居中、正文内部滚动；禁止继承原生百分比高度造成内容塌缩 |
 | `AppDrawer` | 管理导航、筛选、字典编辑、账单详情 | 手机从底部出现，桌面从右侧出现；正文 flex 收缩并内部滚动，头尾不参与滚动；短抽屉展开候选时为搜索和列表增高，并保留到抽屉关闭，避免收起候选时关闭按钮移位；不能裁成一条；高度与底部偏移消费共享可见视口，避让键盘及输入工具栏 |
-| `AppToast` | 短暂动作反馈和撤销 | 保存、删除成功等；失败若影响区域可用性，还必须保留页内错误态 |
+| `AppToast` | 短暂动作反馈和撤销 | 在顶部安全区内居中显示，成功提示约 5 秒后自动关闭；鼠标悬停、操作聚焦及撤销进行中暂停，后续通知重新计时，离页清理旧提示；错误保留手动关闭，失败若影响区域可用性，还必须保留页内错误态 |
 | `PwaInstallPrompt` | 登录页与“我的”的安装能力引导 | 复用同一检测状态源；只有浏览器提供安装事件时显示真实安装动作，否则显示分平台步骤或已安装状态 |
 
 共享组件消费关系按页面维护，不按开发阶段堆叠记录：
@@ -238,7 +239,7 @@ Key Characteristics：
 | 登录与主题 | FormField、AppDialog、SegmentedControl；安装引导消费单一PWA状态源 |
 | 我的与字典 | 普通用户页共用 PageWorkspace 固定页头与 ScrollRegion 正文；SettingsDisclosureList、AppDrawer；个人/默认字典共享DictionaryToolbar、DictionaryItemList、四态与浮层；默认项只影响后续新增用户 |
 | 管理用户 | FormField、AppStateBlock、AppDialog、AppDrawer、useLatestRequest、AppDataTable、AppToast；桌面表格与窄屏摘要共享状态和动作 |
-| 收支表单 | FormField、FormSection、FormDisclosure、FundingChannelPicker、账号隔离草稿、失败重试幂等与可撤销AppToast；收入/支出草稿互不覆盖 |
+| 收支表单 | FormField、FormSection、FormDisclosure、FundingChannelPicker、EntrySaveBar、SavedEntrySummary、账号隔离草稿、失败重试幂等与可撤销AppToast；收入/支出草稿互不覆盖 |
 | 支出及收入差异 | 支出使用商品/地点组件；收入提供最近名称、付款方快捷新增及收入专属连续录入规则；支出编辑展示累计调整下限及paidAmount原位错误 |
 | 日常模板 | DailyEntryPicker复用AppDrawer、EntryTypeSwitch、AppStateBlock，两类表单共用DailyTemplateFallbackNotice；只回填白名单、更新时间、清空备注并复验，请求/投递有竞态保护 |
 | 明细与回收站 | GlobalLedgerSearch、AppliedFilterBar、FilterSheet、SegmentedControl、AppStateBlock、LedgerContextActions、AppToast、LedgerListItem、IncrementalLedgerList；共享日期分组、请求代次/幂等、上下文和状态切换 |
@@ -510,7 +511,7 @@ Key Characteristics：
 | pageKey | 页面 | 原型 | 主任务 | 主要组件 |
 | --- | --- | --- | --- | --- |
 | `login` | 登录与安装 | `auth` | 完成安全登录并理解安装方式 | `ThemeModeControl` / `PwaInstallPrompt` / `AppStateBlock` |
-| `ledger-entry` | 记一笔 | `quick-entry` | 选择日常模板或手动快速保存商品支出、金额收入 | `EntryTypeSwitch` / `DailyEntryPicker` / `ProductCombobox` / `DictionaryCombobox` / `FundingChannelPicker` / `FormSection` / `FormDisclosure` |
+| `ledger-entry` | 记一笔 | `quick-entry` | 选择日常模板或手动快速保存商品支出、金额收入 | `EntryTypeSwitch` / `DailyEntryPicker` / `ProductCombobox` / `DictionaryCombobox` / `FundingChannelPicker` / `FormSection` / `FormDisclosure` / `SavedEntrySummary` / `EntrySaveBar` / `AppToast` |
 | `reports` | 收支报表 | `dashboard` | 分析收支、调整、时间趋势、收支多维与质量线索并下钻 | `GlobalLedgerSearch` / `MoneySummary` / `ChartPanel` / `TimeTrendPanel` / `ReportDimensionPanel` / `DictionaryFilterPicker` / `FilterSheet` |
 | `bill-details` | 收支明细 | `list` | 查询和纠正支出、收入及调整 | `GlobalLedgerSearch` / `LedgerListItem` / `LedgerContextActions` / `IncrementalLedgerList` / `DictionaryFilterPicker` / `FilterSheet` / `AppDrawer` |
 | `profile-settings` | 我的 | `settings` | 从单一“管理个人字典”入口进入八类维护，并管理偏好、安装帮助和个人数据 | `PageWorkspace` / `PageHeading` / `SettingsDisclosureList` / `ThemeModeControl` / `PwaInstallPrompt` / `AppDrawer` / `AppDialog` |

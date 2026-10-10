@@ -1491,13 +1491,15 @@ body:has(dialog[open]) {
 .app-toast {
   position: fixed;
   z-index: 50;
-  right: max(var(--space-lg), env(safe-area-inset-right));
-  bottom: max(var(--space-lg), env(safe-area-inset-bottom));
+  top: max(var(--space-lg), env(safe-area-inset-top));
+  right: max(var(--space-md), env(safe-area-inset-right));
+  left: max(var(--space-md), env(safe-area-inset-left));
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
   gap: var(--space-sm);
-  width: min(calc(100% - 32px), 420px);
+  max-width: 420px;
+  margin-inline: auto;
   padding: var(--space-sm) var(--space-sm) var(--space-sm) var(--space-md);
   color: var(--color-text);
   background: var(--color-surface);
@@ -1521,13 +1523,9 @@ body:has(dialog[open]) {
 .toast-enter-active,
 .toast-leave-active { transition: opacity 160ms ease, transform 160ms ease; }
 .toast-enter-from,
-.toast-leave-to { opacity: 0; transform: translateY(8px); }
+.toast-leave-to { opacity: 0; transform: translateY(-8px); }
 
 @media (max-width: 833px) {
-  .app-shell:not(.admin-shell) .app-toast {
-    bottom: calc(var(--bottom-navigation-occupied-height) + var(--space-lg));
-  }
-
   .admin-page-heading { display: grid; }
   .admin-page-heading .primary-button { width: 100%; justify-content: center; }
   .admin-heading-action { width: 100%; justify-content: center; }
@@ -1835,18 +1833,26 @@ body:has(dialog[open]) {
 .edit-conflict p { margin: 0; color: var(--color-muted); line-height: 22px; }
 .edit-conflict > div { display: flex; flex-wrap: wrap; gap: var(--space-sm); }
 
-.saved-expense {
+.saved-entry-summary {
   display: grid;
   gap: var(--space-md);
+  margin-top: var(--space-md);
   padding: var(--space-lg);
   background: var(--color-surface);
-  border: 1px solid var(--color-expense-accent);
+  border: 1px solid var(--color-border);
   border-radius: var(--radius-panel);
 }
-.saved-expense h2 { margin: var(--space-xs) 0 0; font-size: var(--font-section-size); line-height: var(--font-section-line); }
-.saved-expense p { margin: var(--space-xs) 0 0; color: var(--color-muted); }
-.saved-expense .text-action { justify-self: start; }
+.saved-entry-expense { border-color: var(--color-expense-accent); }
+.saved-entry-income { border-color: var(--color-income-accent); }
+.saved-entry-summary > header { display: flex; align-items: flex-start; gap: var(--space-sm); }
+.saved-entry-summary > header > div { flex: 1; min-width: 0; }
+.saved-entry-summary h2 { margin: var(--space-xs) 0 0; font-size: var(--font-section-size); line-height: var(--font-section-line); overflow-wrap: anywhere; }
+.saved-entry-summary p { margin: var(--space-xs) 0 0; color: var(--color-muted); overflow-wrap: anywhere; }
+.saved-entry-income h2 { color: var(--color-income-text); }
+.saved-entry-summary .text-action { justify-self: start; }
+.saved-entry-summary > header > .text-action { flex: 0 0 auto; white-space: nowrap; }
 .saved-expense-details { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: var(--space-sm) var(--space-md); margin: 0; }
+.saved-expense-details > div { display: contents; }
 .saved-expense-details dt { color: var(--color-muted); }
 .saved-expense-details dd { min-width: 0; margin: 0; overflow-wrap: anywhere; text-align: right; }
 .dictionary-index-page { width: min(100%, 720px); }
@@ -2115,8 +2121,6 @@ body:has(dialog[open]) {
 .entry-form-surface { gap: 0; }
 .form-section h2 { margin: 0; font-size: var(--font-section-size); line-height: var(--font-section-line); font-weight: 600; }
 .payer-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--space-sm); }
-.saved-income { padding: var(--space-lg); border: 1px solid var(--color-income-accent); border-radius: var(--radius-panel); background: var(--color-surface); }
-.saved-income h2 { margin: var(--space-xs) 0; color: var(--color-income-text); }
 .form-field input, .form-field textarea, .form-field select, .select-control, .entry-combobox input { font-size: 16px; }
 .form-grid-two > *, .form-field { min-width: 0; }
 .form-grid-two input, .form-grid-two select { padding-inline: var(--space-sm); }

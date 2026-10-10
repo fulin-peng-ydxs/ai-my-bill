@@ -41,6 +41,8 @@ flowchart LR
 
 `EntrySaveBar` 通过 ResizeObserver 将实际栏高写入占位变量；停用/卸载时断开，重新激活时重连。`AppShell` 消费 `useKeyboardViewport`，将键盘状态与可见高度写入外壳 class 和 CSS 变量，保存栏样式据此调整定位与占位，避免各页面分别计算。
 
+收支表单用 `SavedEntrySummary` 承接刚保存记录与撤销，置于保存栏占位之前，支出明细通过插槽保留。`AppToast` 统一消费 `useToastAutoDismiss` 管理成功提示的计时、交互暂停与清理，错误不自动关闭；缓存页和收支类型停用时清除旧提示，异步回调不能在隐藏页面重放反馈。保存记录 ID 用于区分连续相同文案的通知，提示关闭不清除已保存记录或撤销标识。位置与展示时长由 DESIGN 定义。
+
 `useReportChart` 统一初始化 ECharts SVG 实例，提供主题 token 读取和刷新入口；ResizeObserver 处理容器变化，MutationObserver 处理根节点主题变化，停用时断开观察器，卸载时销毁实例。查询参数和下钻条件由 reportQuery 承接；图表读数与查看明细的交互规则见 DESIGN。
 
 `FormField` 的普通与复合帮助内容共用帮助 ID，和错误一起通过 aria-describedby 关联控件；支出金额差额和计算金额属于同一帮助区域。两类记账表单的折叠摘要来自当前输入值，字段错误触发对应补充区展开；筛选日期与业务时间复用 `DateTimeControl` 的原生输入边界处理。组件清单、控件对齐与说明排版见 DESIGN。
@@ -56,6 +58,8 @@ flowchart LR
 ## 一次页面操作经过哪些层
 
 以保存支出为例，`LedgerEntryPreferenceView` 组织页面，`ExpenseEntryForm` 收集输入，分类、单位、资金渠道、购买渠道与地点通过共享 `DictionaryCombobox` 搜索或新增个人字典项，再将服务端返回的稳定 ID 写入表单；收入的付款方、收入分类及默认资金渠道沿用同一数据链路，二级分类始终绑定当前一级分类。`domain/ledgerEntryForm` 与 money 等工具处理表单规则和精确金额，`api/expenses` 调用 `api/http`，后者实际请求同源 `/api/v1`。业务返回后页面更新保存反馈；字段错误保留到对应输入项，不能在 API 封装层把失败改成成功。
+
+`domain/idempotency` 统一生成请求 UUID：优先使用 `crypto.randomUUID`，局域网 HTTP 等不支持该方法的环境使用 `crypto.getRandomValues` 生成 UUID v4；不使用普通伪随机数替代。失败重试复用原键，内容改变或成功后重新生成。收支表单将请求转换与键生成纳入保存错误捕获，浏览器能力缺失时显示失败提示并保留输入；正式提交不依赖草稿备份的 SHA-256 能力。
 
 | 层 | 应放入的内容 | 不应放入的内容 |
 |---|---|---|
