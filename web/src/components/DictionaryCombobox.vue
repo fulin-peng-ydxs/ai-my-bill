@@ -177,6 +177,7 @@ async function create(): Promise<void> {
       :display-value="selectedItem?.name ?? ''"
       :disabled="disabled"
       :placeholder="!items.length ? '输入名称新增' : '搜索或新增'"
+      :candidate-count="request.status.value === 'loading' || request.error.value ? undefined : candidates.length"
       :open="open"
       :invalid="Boolean(error || createError)"
       @open="focus"

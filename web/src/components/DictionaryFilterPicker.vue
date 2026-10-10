@@ -6,6 +6,7 @@ import { useDebouncedQuery } from '../composables/useDebouncedQuery'
 import { useLatestRequest } from '../composables/useLatestRequest'
 import type { DictionaryType } from '../domain/dictionaries'
 import ComboboxField from './ComboboxField.vue'
+import AppPagination from './AppPagination.vue'
 
 const props = defineProps<{
   id: string
@@ -129,29 +130,14 @@ watch(() => [props.type, props.modelValue], () => {
       >
         没有匹配选项
       </p>
-      <div
-        v-if="pageCount > 1 && !request.error.value"
-        class="dictionary-filter-pagination"
-        :aria-label="`${label}分页`"
-      >
-        <button
-          type="button"
-          class="text-action"
-          :disabled="page === 0 || request.status.value === 'loading'"
-          @click="turnPage(page - 1)"
-        >
-          上一页
-        </button>
-        <span>{{ page + 1 }} / {{ pageCount }}</span>
-        <button
-          type="button"
-          class="text-action"
-          :disabled="page + 1 >= pageCount || request.status.value === 'loading'"
-          @click="turnPage(page + 1)"
-        >
-          下一页
-        </button>
-      </div>
+      <AppPagination
+        v-if="!request.error.value"
+        :page="page"
+        :total-pages="pageCount"
+        :label="`${label}分页`"
+        :busy="request.status.value === 'loading'"
+        @update:page="turnPage"
+      />
     </ComboboxField>
     <small
       v-if="disabled"

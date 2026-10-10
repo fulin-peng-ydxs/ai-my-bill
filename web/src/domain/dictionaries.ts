@@ -1,5 +1,8 @@
 import type { components } from '../api/generated/schema'
 
+/** 管理列表按页浏览；填报候选使用各接口自己的有界限制。 */
+export const DICTIONARY_PAGE_SIZE = 20
+
 export type DictionaryType = components['schemas']['DictionaryType']
 
 export interface DictionaryDefinition {

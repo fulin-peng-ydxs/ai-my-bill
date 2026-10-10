@@ -125,7 +125,7 @@ async function remove(item: DailyTemplateSummary): Promise<void> {
       />
       <ul
         v-else
-        class="daily-template-list"
+        class="daily-template-list content-list"
       >
         <li
           v-for="item in items"
@@ -153,9 +153,9 @@ async function remove(item: DailyTemplateSummary): Promise<void> {
       </ul>
       <p
         v-if="items.length"
-        class="daily-template-note"
+        class="daily-template-note list-end-note"
       >
-        移除只影响日常模板，不会删除原账目。
+        本批 {{ items.length }} 项 · 移除不会删除原账目。
       </p>
     </div>
   </AppDrawer>

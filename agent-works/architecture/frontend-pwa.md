@@ -53,7 +53,7 @@ flowchart LR
 
 明细与报表通过 `hasFilterChanges` 对照各自默认条件判断筛选是否改变。`AppliedFilterBar` 承接单条件编辑，取消保留已应用条件。`DictionaryFilterPicker` 复用候选容器、主动搜索和请求代次，按需加载包含停用项的服务端分页列表，选中 ID 独立回显。
 
-记一笔页头及“我的”使用 `panel=dictionaries` 打开共享 `DictionaryManager`/`DictionaryIndexPanel`。详情只接受 entry/profile 来源并返回原索引；已从索引进入时退回对应历史项，直接打开时替换为受控入口，避免返回循环。关闭抽屉留在原入口，记账表单无需丢弃草稿。独立索引路由仍可访问。底部导航保留本账号报表/明细的最近 URL 条件，换账号清空；记账页内收支表单各保存一个实例。修改密码由 `PasswordChangeSheet` 调用既有 `session.changePassword`，接受服务端轮换会话；临时输入只存在组件内存，成功或关闭即清空，不进入持久化存储。
+记一笔页头及“我的”使用 `panel=dictionaries` 打开共享 `DictionaryManager`/`DictionaryIndexPanel`。详情只接受 entry/profile 来源并返回原索引；已从索引进入时退回对应历史项，直接打开时替换为受控入口，避免返回循环。关闭抽屉留在原入口，记账表单无需丢弃草稿。独立索引路由仍可访问。入口统一显示“选项管理”；个人和默认列表复用 DictionaryToolbar、DictionaryItemList、DictionaryListFooter，管理页大小来自 DICTIONARY_PAGE_SIZE。长列表保持内容高度，个人列表由 PageWorkspace 正文滚动，默认列表随管理页正文滚动，多页末尾仅提供 AppPagination，单页结束提示居中，翻页和搜索通过现有分页接口替换结果；选项、日常模板与明细内容共用 content-list，末尾提示共用 list-end-note；历史筛选候选同样复用 AppPagination。填报候选仍是有界首批，ComboboxField 展示批次数量并引导搜索，不把批次当作全部数据。底部导航保留本账号报表/明细的最近 URL 条件，换账号清空；记账页内收支表单各保存一个实例。修改密码由 `PasswordChangeSheet` 调用既有 `session.changePassword`，接受服务端轮换会话；临时输入只存在组件内存，成功或关闭即清空，不进入持久化存储。
 
 ## 一次页面操作经过哪些层
 

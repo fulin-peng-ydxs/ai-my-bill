@@ -13,7 +13,7 @@ const router = useRouter()
   <AppDrawer
     :id="`${origin}-dictionaries`"
     v-model:open="open"
-    title="常用选项"
+    title="选项管理"
   >
     <DictionaryIndexPanel
       v-if="open"

@@ -128,7 +128,7 @@ Key Characteristics：
 | 正文 | 手机 `15px / 400 / 22px`；平板/PC `17px / 400 / 25px` | 说明和阅读型正文；编辑控件与共享搜索框值保持至少 16px，避免手机聚焦自动缩放 |
 | 表格正文 | `14px / 400 / 22px` | 管理后台表格和密集列表 |
 | 标签 | `14px / 400 / 20px` | 字段名、筛选项；需要强调时使用 600 |
-| 轻工具入口 | `14px / 500 / 20px` | 页头常用选项、日常模板与筛选工具，统一消费 compact-action |
+| 轻工具入口 | `14px / 500 / 20px` | 页头选项管理、日常模板与筛选工具，统一消费 compact-action |
 | 已应用条件 | `13px / 400或500 / 20px` | 字段名 400、可编辑当前值 500；具体底板与排布见 AppliedFilterBar 契约 |
 | 辅助文字 | `12px / 400 / 18px` | 时间、来源、口径、单位 |
 | 金额输入 | `26px / 600 / 32px` | 填报主金额输入；不得套用于摘要或排行 |
@@ -164,7 +164,9 @@ Key Characteristics：
 
 ## 4. Component Stylings
 
-以下清单维护当前复用组件的职责与交互契约。个人与默认字典维护共享 `DictionaryToolbar` 和 `DictionaryItemList`，用户、操作日志及两类字典列表共享 `AppPagination`；请求代次与状态处理共享 `useLatestRequest`。个人字典成功变更通过统一字典事件通知候选组件刷新，取消不发出事件。复用的触发条件与执行要求统一见 §4.1。
+以下清单维护当前复用组件的职责与交互契约。个人与默认字典维护共享 `DictionaryToolbar`、`DictionaryItemList` 和 `DictionaryListFooter`，用户、操作日志、两类字典列表和历史筛选候选共享 `AppPagination`；请求代次与状态处理共享 `useLatestRequest`。个人字典成功变更通过统一字典事件通知候选组件刷新，取消不发出事件。复用的触发条件与执行要求统一见 §4.1。
+
+内容列表共享 `content-list` 的非滚动裁切规则，避免裁切容器在 grid/flex 中把行压缩掉；选项、日常模板与明细末尾反馈使用 `list-end-note` 居中样式，有明确分页动作时不重复说明操作。
 
 ### 4.1 组件复用与事实源
 
@@ -186,16 +188,16 @@ Key Characteristics：
 | `ThemeModeControl` | `system/light/dark` 选择 | 登录页和应用设置消费同一偏好来源；不得各自实现主题切换 |
 | `BottomNavigation` | 手机四个主入口 | 固定“记一笔/报表/明细/我的”；触摸目标不小于 44px |
 | `EntryTypeSwitch` | 支出/收入互斥切换 | 恢复最近类型；两类字段、校验和草稿隔离，切换不得清空未提交内容 |
-| `PageHeading` | 普通用户统一页头 | 按 §3.2 使用单一页面标题；日常模板与常用选项共用 compact-action 的字级与命中区，或以图标承载导出；不叠加品牌栏、眉题和实现说明 |
+| `PageHeading` | 普通用户统一页头 | 按 §3.2 使用单一页面标题；日常模板与选项管理共用 compact-action 的字级与命中区，或以图标承载导出；不叠加品牌栏、眉题和实现说明 |
 | `SectionTitle` | 分区标题及任务标识 | FormSection 与 FormDisclosure 共用；可选语义图标，支持 h2/strong，底板只包图标，不包装整个标题 |
 | `PageWorkspace` | 页头、筛选与正文边界 | 普通用户页面统一复用；标题、返回操作及筛选必须放入 header 插槽，固定在正文滚动区外，包括我的和字典索引；正文提供可访问名称与键盘滚动入口，弹层放入 overlays 插槽，不进入滚动内容 |
 | `ScrollRegion` | 正文、抽屉及弹窗的滚动呈现 | 手机隐藏原生滚动条，显示不截获手势的位置提示；停止滚动 300ms 后用 120ms 淡出；停用或卸载清理计时器，桌面保留原生滚动条 |
 | `DraftBackupNotice` | 收支草稿自动保存失败 | 只提示“草稿暂未保存”及离开前保存账目的动作，不向用户展示安全上下文、浏览器存储等实现术语；可恢复失败提供“重试”，不自动提交账目 |
 | `CachedPageView` | 账号内路由页面保留 | 缓存以账号与角色隔离并有上限；每页独立路由上下文、滚动恢复和活动状态，退出/换账号重建 |
-| `DictionaryManager` | 常用选项索引抽屉 | 记一笔页头与我的页共用；关闭回当前入口，详情携带受控来源返回原索引；未保存字段保留 |
+| `DictionaryManager` | 选项管理索引抽屉 | 记一笔页头与我的页共用；关闭回当前入口，详情携带受控来源返回原索引；未保存字段保留 |
 | `DictionaryIndexPanel` | 八类个人字典索引 | 设置抽屉与兼容索引路由共用加载、错误、数量与导航；详情返回恢复来源抽屉 |
 | `PasswordChangeSheet` | 我的页面修改密码 | 复用 AppDrawer、FormField 和会话 store；校验当前/新/确认密码，提交防重，凭据不持久化 |
-| `DailyEntryPicker` | 日常支出/收入模板选择、空态和移除 | 从有效明细沉淀；选择只回填草稿并更新业务时间，保存前继续复用普通填报校验 |
+| `DailyEntryPicker` | 日常支出/收入模板选择、空态和移除 | 从有效明细沉淀；选择只回填草稿并更新业务时间，保存前继续复用普通填报校验；长列表保持内容高度由抽屉正文滚动，本批数量与移除说明共用居中末尾提示 |
 | `LedgerContextActions` | 有效账目低频操作 | 明细列表左滑、长按、桌面右键或 `Shift+F10` 打开同一底部操作面板；短按只查看或编辑；删除、加入日常和支出调整不得散落为常驻按钮 |
 | `ExpenseAdjustmentForm` | 支出调整创建 | 锁定原支出，复用字段分组、分段选择、金额摘要和固定保存操作；实时展示累计调整、剩余额度和本次后净支出 |
 | `ExpenseAdjustmentDetail` | 调整轨迹详情 | 展示类型、状态、原支出、金额口径、时间和备注；仅生效调整提供带二次确认的撤销操作 |
@@ -208,7 +210,7 @@ Key Characteristics：
 | `SavedEntrySummary` | 收支填报的刚保存摘要 | 位于表单表面之后、保存栏占位之前；名称和金额自然换行，统一保留撤销入口，支出可展开本次明细；提示消失后仍可查看与撤销 |
 | `DictionaryFilterPicker` | 明细与报表的历史字典筛选 | 复用 ComboboxField 的候选浏览、主动搜索、收起与焦点交接；服务端分页与层级过滤，允许停用项；已选 ID 独立回显，默认仅显示当前值，不常驻重复搜索框与说明，禁止首批候选冒充完整选项 |
 | `FundingChannelPicker` | 资金渠道选择 | 同一数据在支出显示“支付方式”、收入显示“收款方式”；搜索或输入新名称，停用项不用于新记录 |
-| `ComboboxField` | 商品与字典共用的响应式输入与候选容器 | 手机字段保持按钮，主动搜索在候选面板内显示 16px 输入与取消入口；选择、取消、收键盘、切字段时关闭，不能抢回新字段焦点；PC 直接输入搜索 |
+| `ComboboxField` | 商品与字典共用的响应式输入与候选容器 | 手机字段保持按钮，主动搜索在候选面板内显示 16px 输入与取消入口；选择、取消、收键盘、切字段时关闭，不能抢回新字段焦点；PC 直接输入搜索；商品与填报字典在本批末尾显示候选数量及搜索引导，数量不冒充全部数据 |
 | `DictionaryCombobox` / `DictionaryPicker` / `AnchoredDropdown` | 字典填报的搜索、选择和下拉新增 | 分类、单位、资金渠道、购买渠道、地点、付款方、默认渠道及父分类复用相对锚点浮层；展开不推动表单，候选与新增动作分区；创建后选中稳定 ID，二级分类绑定已选一级分类；浮层随输入框滚动并按可见视口决定上下方，在抽屉与弹窗内仍可见；搜索不提前改写已选值，取消恢复原选择；只有明确选择、新增或清除才更新表单 |
 | `DictionaryCombobox` 的付款方实例 | 付款方搜索、最近使用和快捷新增 | 收入必填；新值随收入保存到个人字典，历史记录保留名称快照 |
 | `LocationLabelPicker` | 可选地点文本标签 | 第一期只消费当前租户字典，不请求定位、不展示地图占位；精准位置属于后期增强 |
@@ -219,10 +221,11 @@ Key Characteristics：
 | `FilterSheet` | 手机高级组合筛选 | 使用底部抽屉；支持今天/本周/本月/上月/今年和合法指定日期，应用后明确展示已生效条件和清除入口 |
 | `IncrementalLedgerList` | 大范围明细列表 | 默认今天；按业务日期分组，组内倒序，每批最多 20 笔并显示累计进度，避免一次渲染月/年全部数据 |
 | `SettingsDisclosureList` | 设置分类、当前值和下级入口 | 首页只展示分类和值；同域多项先进入索引抽屉，再进入具体维护视图 |
-| `DictionaryToolbar` | 字典搜索、生命周期筛选和新增入口 | 个人与默认字典共享；搜索提交和清空语义统一，类型选择仍由页面承载 |
+| `DictionaryToolbar` | 字典搜索、生命周期筛选与数量反馈 | 个人与默认字典共享；搜索提交和清空语义统一，类型选择仍由页面承载 |
 | `DictionaryItemList` | 字典项、层级、状态和管理入口 | 同时承载桌面与窄屏，分类缩进和状态文字不可只靠颜色表达 |
 | `AppDataTable` | 桌面管理表格 | 834px 起且视口高度至少 600px 时，主表占据剩余空间、表体内部滚动且表头粘附；工具栏和分页置于表体外，不用于手机核心账单流 |
-| `AppPagination` | 用户、操作日志、个人及默认字典分页 | 零基页码、总页数、可访问名称、刷新中禁用与边界控制；条件替换回到首页，翻页替换结果，单页不显示 |
+| `DictionaryListFooter` | 个人与默认选项列表的末尾反馈 | 管理列表每页最多 20 项，列表按内容高度参与所属页面正文滚动，不压缩或裁掉行；工具栏显示本页范围与总量，多页末尾仅提供分页，不叠加操作说明；单页结束提示居中；搜索保持可达 |
+| `AppPagination` | 用户、操作日志、个人及默认字典与历史筛选候选分页 | 零基页码、总页数、可访问名称、刷新中禁用与边界控制；条件替换回到首页，翻页替换结果，单页不显示；居中的紧凑统一底板，44px 点击区，页码与前后动作清晰分组，保留禁用、按下与键盘焦点反馈 |
 | `ChartPanel` | 图表、口径和加载 | 柱旁固定显示金额；汇总卡片承担带筛选上下文的明细入口，图表不响应触摸下钻 |
 | `TimeTrendPanel` | 单指标时间趋势、累计与对比 | 单图展示当期实线和累计虚线；时间点选择更新固定读数，明确按钮下钻，不可计算时原位说明原因 |
 | `ReportDimensionPanel` | 收支维度排行、质量线索与下钻 | 收支共享水平排行、空态、截断提示和可访问列表；通过 tone/文案显式区分收入与支出，质量模式只显示版本化线索 |
@@ -237,7 +240,7 @@ Key Characteristics：
 | 页面/能力 | 共享消费与稳定边界 |
 |---|---|
 | 登录与主题 | FormField、AppDialog、SegmentedControl；安装引导消费单一PWA状态源 |
-| 我的与字典 | 普通用户页共用 PageWorkspace 固定页头与 ScrollRegion 正文；SettingsDisclosureList、AppDrawer；个人/默认字典共享DictionaryToolbar、DictionaryItemList、四态与浮层；默认项只影响后续新增用户 |
+| 我的与字典 | 普通用户页共用 PageWorkspace 固定页头与 ScrollRegion 正文；SettingsDisclosureList、AppDrawer；个人/默认字典共享DictionaryToolbar、DictionaryItemList、DictionaryListFooter、四态与浮层；默认项只影响后续新增用户 |
 | 管理用户 | FormField、AppStateBlock、AppDialog、AppDrawer、useLatestRequest、AppDataTable、AppToast；桌面表格与窄屏摘要共享状态和动作 |
 | 收支表单 | FormField、FormSection、FormDisclosure、FundingChannelPicker、EntrySaveBar、SavedEntrySummary、账号隔离草稿、失败重试幂等与可撤销AppToast；收入/支出草稿互不覆盖 |
 | 支出及收入差异 | 支出使用商品/地点组件；收入提供最近名称、付款方快捷新增及收入专属连续录入规则；支出编辑展示累计调整下限及paidAmount原位错误 |
@@ -516,9 +519,9 @@ Key Characteristics：
 | `bill-details` | 收支明细 | `list` | 查询和纠正支出、收入及调整 | `GlobalLedgerSearch` / `LedgerListItem` / `LedgerContextActions` / `IncrementalLedgerList` / `DictionaryFilterPicker` / `FilterSheet` / `AppDrawer` |
 | `profile-settings` | 我的 | `settings` | 从单一“管理个人字典”入口进入八类维护，并管理偏好、安装帮助和个人数据 | `PageWorkspace` / `PageHeading` / `SettingsDisclosureList` / `ThemeModeControl` / `PwaInstallPrompt` / `AppDrawer` / `AppDialog` |
 | `personal-dictionaries` | 个人字典 | `settings` | 查看八类真实启用数与总数并进入对应维护页 | `PageWorkspace` / `PageHeading` / `DictionaryIndexPanel` / `AppStateBlock` |
-| `personal-dictionary-detail` | 字典维护 | `settings` | 按类型新增、改名、排序、停用和恢复；分类最多两级 | `GlobalLedgerSearch` / `SegmentedControl` / `AppDrawer` / `AppDialog` / `AppToast` / `AppPagination` |
+| `personal-dictionary-detail` | 字典维护 | `settings` | 按类型新增、改名、排序、停用和恢复；分类最多两级 | `GlobalLedgerSearch` / `SegmentedControl` / `AppDrawer` / `AppDialog` / `AppToast` / `DictionaryListFooter` |
 | `admin-console` | 系统管理 | `admin` | 管理用户、默认字典、运行概况和操作日志 | `AppDataTable` / `AppDrawer` / `AppDialog` / `AppPagination` |
-| `admin-default-dictionaries` | 默认字典管理 | `admin` | 维护五类新用户默认项并明确不回写既有用户 | `DictionaryToolbar` / `DictionaryItemList` / `AppDrawer` / `AppDialog` / `AppToast` / `AppPagination` |
+| `admin-default-dictionaries` | 默认字典管理 | `admin` | 维护五类新用户默认项并明确不回写既有用户 | `DictionaryToolbar` / `DictionaryItemList` / `DictionaryListFooter` / `AppDrawer` / `AppDialog` / `AppToast` |
 | `admin-overview` | 运行概况 | `admin` | 查看账号、服务、备份配置和数据库占用概况 | `AppStateBlock` / `AppToast` |
 | `admin-audit-logs` | 操作日志 | `admin` | 按管理员、动作、对象、结果和时间只读检索脱敏审计记录 | `AppDataTable` / `AppDrawer` / `AppStateBlock` / `AppPagination` |
 <!-- page-registry:end -->

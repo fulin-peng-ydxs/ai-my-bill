@@ -43,19 +43,19 @@ useRefreshOnReturn(() => load('refresh'))
   <AppStateBlock
     v-if="status === 'loading'"
     kind="loading"
-    title="正在读取个人字典"
+    title="正在读取选项"
   />
   <AppStateBlock
     v-else-if="status === 'error'"
     :kind="error?.kind === 'forbidden' ? 'permission' : 'error'"
-    title="个人字典暂不可用"
+    title="选项暂不可用"
     :message="error?.message"
     action-label="重试"
     @action="load()"
   />
   <SettingsDisclosureList
     v-else-if="status === 'ready'"
-    label="个人字典类型"
+    label="选项类型"
     :items="items"
     @select="select"
   />

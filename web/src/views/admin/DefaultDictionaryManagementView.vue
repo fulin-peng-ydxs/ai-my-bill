@@ -16,7 +16,7 @@ import {
 import { normalizeRequestError } from '../../api/errors'
 import AppDialog from '../../components/AppDialog.vue'
 import AppDrawer from '../../components/AppDrawer.vue'
-import AppPagination from '../../components/AppPagination.vue'
+import DictionaryListFooter from '../../components/DictionaryListFooter.vue'
 import AppStateBlock from '../../components/AppStateBlock.vue'
 import AppToast from '../../components/AppToast.vue'
 import DictionaryCombobox, { type DictionaryChoice } from '../../components/DictionaryCombobox.vue'
@@ -24,6 +24,7 @@ import DictionaryItemList, { type DictionaryListItem } from '../../components/Di
 import DictionaryToolbar from '../../components/DictionaryToolbar.vue'
 import FormField from '../../components/FormField.vue'
 import { useLatestRequest } from '../../composables/useLatestRequest'
+import { DICTIONARY_PAGE_SIZE } from '../../domain/dictionaries'
 import { defaultDictionaryDefinition, defaultDictionaryDefinitions } from '../../domain/defaultDictionaries'
 
 const selectedType = ref<DefaultDictionaryType>('expense-category')
@@ -53,12 +54,11 @@ const { data, status, error, staleWarning, refreshing, execute, cancel } = useLa
 })
 
 const items = computed(() => data.value?.items ?? [])
-const totalPages = computed(() => Math.max(1, Math.ceil((data.value?.total ?? 0) / 100)))
 
 async function load(intent: 'replace' | 'refresh' = 'replace'): Promise<void> {
   await execute(
     (signal) => listDefaultDictionaryItems(
-      selectedType.value, appliedQuery.value, statusFilter.value, signal, pageIndex.value, 100,
+      selectedType.value, appliedQuery.value, statusFilter.value, signal, pageIndex.value, DICTIONARY_PAGE_SIZE,
     ),
     { intent: intent === 'refresh' ? 'silent' : 'replace', isEmpty: (page) => page.items.length === 0 },
   )
@@ -253,6 +253,8 @@ useRefreshOnReturn(() => Promise.all([load('refresh'), loadSummaries()]).then(()
       v-model:status="statusFilter"
       :label="definition.label"
       :total="data?.total ?? 0"
+      :page="pageIndex"
+      :shown="status === 'ready' ? items.length : undefined"
       :refreshing="refreshing"
       @search="search"
       @refresh="load('refresh')"
@@ -295,11 +297,11 @@ useRefreshOnReturn(() => Promise.all([load('refresh'), loadSummaries()]).then(()
       @select="openActions"
     />
 
-    <AppPagination
+    <DictionaryListFooter
       v-if="status === 'ready'"
       :page="pageIndex"
-      :total-pages="totalPages"
-      label="默认字典分页"
+      :total="data?.total ?? 0"
+      :label="definition.label"
       :busy="refreshing"
       @update:page="pageIndex = $event; load()"
     />

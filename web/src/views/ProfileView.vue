@@ -266,7 +266,7 @@ useRefreshOnReturn(() => { if (!fundingLoading.value) return loadFundingChannels
       </div>
       <SettingsDisclosureList
         label="数据与安全"
-        :items="[{ key: 'dictionaries', label: '常用选项', value: '8 类' }, { key: 'password', label: '修改密码', value: '' }]"
+        :items="[{ key: 'dictionaries', label: '选项管理', value: '8 类' }, { key: 'password', label: '修改密码', value: '' }]"
         @select="$event === 'password' ? passwordOpen = true : dictionariesOpen = true"
       >
         <DataExportAction

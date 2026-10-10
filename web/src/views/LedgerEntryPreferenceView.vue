@@ -59,10 +59,10 @@ function clearTemplate(type: EntryType): void {
         <button
           type="button"
           class="compact-action"
-          aria-label="管理常用选项"
+          aria-label="打开选项管理"
           @click="dictionariesOpen = true"
         >
-          常用选项
+          选项管理
         </button>
         <DailyEntryPicker
           :entry-type="preferences.values.recentEntryType"

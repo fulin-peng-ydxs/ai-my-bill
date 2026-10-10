@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import PageWorkspace from '../../../components/PageWorkspace.vue'
+import { scrollPageTo } from '../../../composables/pageScroll'
 import { useRefreshOnReturn } from '../../../composables/useRefreshOnReturn'
 import { ArrowDown, ArrowLeft, ArrowUp, Plus } from 'lucide-vue-next'
 import { computed, onMounted, ref, watch } from 'vue'
@@ -21,7 +22,7 @@ import {
 import { normalizeRequestError } from '../../../api/errors'
 import AppDialog from '../../../components/AppDialog.vue'
 import AppDrawer from '../../../components/AppDrawer.vue'
-import AppPagination from '../../../components/AppPagination.vue'
+import DictionaryListFooter from '../../../components/DictionaryListFooter.vue'
 import AppStateBlock from '../../../components/AppStateBlock.vue'
 import AppToast from '../../../components/AppToast.vue'
 import DictionaryCombobox, { type DictionaryChoice } from '../../../components/DictionaryCombobox.vue'
@@ -31,7 +32,7 @@ import FormField from '../../../components/FormField.vue'
 import GlobalLedgerSearch from '../../../components/GlobalLedgerSearch.vue'
 import { useLatestRequest } from '../../../composables/useLatestRequest'
 import { dictionaryIndexTarget } from '../../../domain/dictionaryNavigation'
-import { dictionaryDefinition } from '../../../domain/dictionaries'
+import { DICTIONARY_PAGE_SIZE, dictionaryDefinition } from '../../../domain/dictionaries'
 
 type EditorMode = 'create' | 'rename'
 
@@ -74,7 +75,6 @@ const { data, status, error, staleWarning, refreshing, execute, cancel } = useLa
 })
 
 const items = computed(() => data.value?.items ?? [])
-const totalPages = computed(() => Math.max(1, Math.ceil((data.value?.total ?? 0) / 100)))
 const maxNameLength = computed(() => definition.value?.type === 'product' ? 200 : 100)
 const editorTitle = computed(() => editorMode.value === 'create'
   ? `新增${definition.value?.singular ?? '字典项'}`
@@ -87,10 +87,17 @@ async function load(intent: 'replace' | 'refresh' = 'replace'): Promise<void> {
   if (!definition.value) return
   await execute(
     (signal) => listDictionaryItems(
-      definition.value!.type, appliedQuery.value, statusFilter.value, signal, pageIndex.value, 100,
+      definition.value!.type, appliedQuery.value, statusFilter.value, signal, pageIndex.value, DICTIONARY_PAGE_SIZE,
     ),
     { intent, isEmpty: (page) => page.items.length === 0 },
   )
+}
+
+function turnPage(page: number): void {
+  pageIndex.value = page
+  // 在当前点按内归零，避免 iOS 在等长结果替换后仍停在新一页末尾。
+  scrollPageTo(0)
+  void load()
 }
 
 function search(value: string): void {
@@ -339,7 +346,7 @@ useRefreshOnReturn(() => load('refresh'))
         <button
           type="button"
           class="icon-button"
-          aria-label="返回个人字典"
+          aria-label="返回选项管理"
           @click="returnToIndex"
         >
           <ArrowLeft
@@ -368,6 +375,8 @@ useRefreshOnReturn(() => load('refresh'))
         v-model:status="statusFilter"
         :label="definition.label"
         :total="data?.total ?? 0"
+        :page="pageIndex"
+        :shown="status === 'ready' ? items.length : undefined"
         :refreshing="refreshing"
         @search="search"
         @refresh="load('refresh')"
@@ -411,13 +420,13 @@ useRefreshOnReturn(() => load('refresh'))
       @select="openActions"
     />
 
-    <AppPagination
+    <DictionaryListFooter
       v-if="status === 'ready'"
       :page="pageIndex"
-      :total-pages="totalPages"
-      label="字典分页"
+      :total="data?.total ?? 0"
+      :label="definition.label"
       :busy="refreshing"
-      @update:page="pageIndex = $event; load()"
+      @update:page="turnPage"
     />
 
     <template #overlays>

@@ -20,7 +20,7 @@ const emit = defineEmits<{ select: [item: DictionaryListItem] }>()
 
 <template>
   <ul
-    class="dictionary-item-list"
+    class="dictionary-item-list content-list"
     :aria-label="label"
   >
     <li

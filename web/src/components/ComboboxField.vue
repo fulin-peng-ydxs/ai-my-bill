@@ -11,6 +11,7 @@ const props = defineProps<{
   displayValue?: string,
   searchLabel?: string,
   maxLength?: number,
+  candidateCount?: number,
 }>()
 const emit = defineEmits<{
   open: [searching: boolean], close: [], input: [value: string], submit: [],
@@ -208,5 +209,11 @@ watch(() => props.disabled, (disabled) => { if (disabled) close(false) })
       </button>
     </div>
     <slot />
+    <small
+      v-if="candidateCount"
+      class="dropdown-status list-end-note"
+    >
+      本批显示 {{ candidateCount }} 项；未找到请搜索。
+    </small>
   </AnchoredDropdown>
 </template>

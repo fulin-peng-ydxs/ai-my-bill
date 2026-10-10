@@ -38,7 +38,7 @@ const groups = computed(() => {
       class="ledger-date-group"
     >
       <h2>{{ formatLedgerDate(group.date) }}</h2>
-      <div class="ledger-date-items">
+      <div class="ledger-date-items content-list">
         <LedgerListItem
           v-for="item in group.items"
           :key="item.id"
@@ -50,7 +50,7 @@ const groups = computed(() => {
         />
       </div>
     </section>
-    <div class="ledger-progress">
+    <div class="ledger-progress list-end-note">
       <span>已加载 {{ items.length }} 笔</span>
       <button
         v-if="hasMore"

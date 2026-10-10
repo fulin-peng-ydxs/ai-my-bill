@@ -23,7 +23,7 @@ function changePage(page: number): void {
   >
     <button
       type="button"
-      class="secondary-button"
+      class="pagination-button"
       :disabled="busy || page <= 0"
       @click="changePage(page - 1)"
     >
@@ -32,10 +32,13 @@ function changePage(page: number): void {
         aria-hidden="true"
       />上一页
     </button>
-    <span aria-live="polite">第 {{ page + 1 }} / {{ totalPages }} 页</span>
+    <span
+      class="pagination-position"
+      aria-live="polite"
+    >第 {{ page + 1 }} / {{ totalPages }} 页</span>
     <button
       type="button"
-      class="secondary-button"
+      class="pagination-button"
       :disabled="busy || page + 1 >= totalPages"
       @click="changePage(page + 1)"
     >

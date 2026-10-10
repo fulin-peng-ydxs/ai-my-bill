@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { RefreshCw } from 'lucide-vue-next'
+import { DICTIONARY_PAGE_SIZE } from '../domain/dictionaries'
 
 import GlobalLedgerSearch from './GlobalLedgerSearch.vue'
 import SegmentedControl from './SegmentedControl.vue'
@@ -10,6 +11,8 @@ defineProps<{
   label: string
   total: number
   refreshing: boolean
+  page?: number
+  shown?: number
 }>()
 
 const query = defineModel<string>('query', { required: true })
@@ -52,6 +55,10 @@ const statusOptions = [
         aria-hidden="true"
       />
     </button>
-    <span class="dictionary-result-count">{{ total }} 项</span>
+    <span class="dictionary-result-count">
+      <template v-if="shown && total > shown">
+        第 {{ (page ?? 0) * DICTIONARY_PAGE_SIZE + 1 }}–{{ (page ?? 0) * DICTIONARY_PAGE_SIZE + shown }} 项 /
+      </template>共 {{ total }} 项
+    </span>
   </div>
 </template>

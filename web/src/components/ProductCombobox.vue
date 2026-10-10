@@ -125,6 +125,7 @@ watch(() => props.modelName, (value) => {
       :display-value="modelName"
       :disabled="disabled"
       placeholder="搜索或输入新商品"
+      :candidate-count="request.status.value === 'loading' || request.error.value ? undefined : candidates.length"
       :open="listOpen"
       :invalid="Boolean(error || createError)"
       @open="focus"

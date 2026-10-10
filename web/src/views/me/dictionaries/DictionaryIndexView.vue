@@ -11,10 +11,10 @@ const router = useRouter()
   <PageWorkspace
     class="settings-page dictionary-index-page"
     data-page-key="personal-dictionaries"
-    content-label="个人字典"
+    content-label="选项管理"
   >
     <template #header>
-      <PageHeading title="个人字典">
+      <PageHeading title="选项管理">
         <button
           type="button"
           class="icon-button"
