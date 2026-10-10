@@ -8,7 +8,7 @@ import type { LedgerItem } from '../api/ledgerEntries'
 import { registerUnsavedChanges } from '../composables/unsavedChanges'
 import { shanghaiLocalDateTimeToIso, toShanghaiLocalDateTime } from '../domain/businessTime'
 import { createIdempotencyAttemptTracker } from '../domain/idempotency'
-import { decimalToScaledInteger, isDecimalInRange, MONEY_MAX, scaledIntegerToDecimal, subtractMoney } from '../domain/money'
+import { decimalToScaledInteger, formatCny, isDecimalInRange, MONEY_MAX, scaledIntegerToDecimal, subtractMoney } from '../domain/money'
 import { unicodeCodePointLength } from '../domain/text'
 import DateTimeControl from './DateTimeControl.vue'
 import EntrySaveBar from './EntrySaveBar.vue'
@@ -45,7 +45,7 @@ const summary = computed(() => [
 function validate(): boolean {
   Object.keys(errors).forEach((key) => delete errors[key as keyof typeof form])
   if (!isDecimalInRange(form.amount, 2, MONEY_MAX, true)) errors.amount = '请输入大于 0、最多两位小数的金额。'
-  else if (decimalToScaledInteger(form.amount, 2) > decimalToScaledInteger(remaining.value, 2)) errors.amount = `当前最多还可调整 ¥${remaining.value}。`
+  else if (decimalToScaledInteger(form.amount, 2) > decimalToScaledInteger(remaining.value, 2)) errors.amount = `当前最多还可调整 ${formatCny(remaining.value)}。`
   try { shanghaiLocalDateTimeToIso(form.occurredAt) } catch { errors.occurredAt = '请选择有效的上海时间。' }
   if (unicodeCodePointLength(form.note.trim()) > 500) errors.note = '备注最多 500 个字符。'
   return Object.keys(errors).length === 0
@@ -108,14 +108,14 @@ async function submit(): Promise<void> {
           field-id="adjustment-amount"
           label="调整金额"
           :error="errors.amount"
-          :help="`最多还可调整 ¥${remaining}`"
+          :help="`最多还可调整 ${formatCny(remaining)}`"
         >
           <input
             id="adjustment-amount"
             v-model="form.amount"
             inputmode="decimal"
             autocomplete="off"
-            placeholder="0.00"
+            placeholder="0"
             @input="delete errors.amount"
           >
         </FormField>

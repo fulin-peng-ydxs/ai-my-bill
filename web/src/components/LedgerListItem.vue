@@ -1,9 +1,10 @@
 <script setup lang="ts">
+import { formatCny } from '../domain/money'
 import { onBeforeUnmount, onDeactivated } from 'vue'
 
 import type { LedgerItem } from '../api/ledgerEntries'
-import { formatLedgerTime } from '../domain/ledgerFormatting'
-import { isLedgerContextSwipe } from '../domain/ledgerInteraction'
+import { formatLedgerCounterparty, formatLedgerTime } from '../domain/ledgerFormatting'
+import { hasLedgerPointerMoved } from '../domain/ledgerInteraction'
 
 const props = defineProps<{ item: LedgerItem, showType: boolean, busy?: boolean }>()
 const emit = defineEmits<{ context: [item: LedgerItem], open: [item: LedgerItem] }>()
@@ -20,58 +21,63 @@ type LedgerPointerEvent = {
   }
 }
 let longPress: ReturnType<typeof globalThis.setTimeout> | undefined
-let longPressTriggered = false
-let longPressReset: ReturnType<typeof globalThis.setTimeout> | undefined
+let suppressClick = false
+let clickReset: ReturnType<typeof globalThis.setTimeout> | undefined
 let pointerStart: { x: number, y: number } | undefined
 
 function cancelLongPress(): void {
   if (longPress) globalThis.clearTimeout(longPress)
   longPress = undefined
-  if (longPressTriggered && !longPressReset) {
-    // pointerup 后的合成 click 会先执行；若浏览器不派发 click，则下一任务自动解除抑制。
-    longPressReset = globalThis.setTimeout(() => {
-      longPressTriggered = false
-      longPressReset = undefined
-    })
-  }
+}
+
+function resetAfterClick(): void {
+  if (!suppressClick || clickReset) return
+  // pointerup 后的合成 click 先执行；没有 click 时也不能让下一次点击被误拦截。
+  clickReset = globalThis.setTimeout(() => {
+    suppressClick = false
+    clickReset = undefined
+  })
 }
 
 function startLongPress(event: unknown): void {
   const pointerEvent = event as LedgerPointerEvent
-  if (props.busy) return
-  if (!pointerEvent.isPrimary || pointerEvent.button !== 0) return
+  if (props.busy || !pointerEvent.isPrimary || pointerEvent.button !== 0) return
   pointerEvent.currentTarget.setPointerCapture(pointerEvent.pointerId)
   cancelLongPress()
-  if (longPressReset) globalThis.clearTimeout(longPressReset)
-  longPressReset = undefined
-  longPressTriggered = false
+  if (clickReset) globalThis.clearTimeout(clickReset)
+  clickReset = undefined
+  suppressClick = false
   pointerStart = { x: pointerEvent.clientX, y: pointerEvent.clientY }
   longPress = globalThis.setTimeout(() => {
     longPress = undefined
-    longPressTriggered = true
+    suppressClick = true
     emit('context', props.item)
   }, 550)
 }
 
+function movePointer(event: unknown): void {
+  if (!pointerStart) return
+  const pointerEvent = event as LedgerPointerEvent
+  if (!hasLedgerPointerMoved(pointerStart.x, pointerStart.y, pointerEvent.clientX, pointerEvent.clientY)) return
+  // 滑动只用于浏览：立即取消长按，并拦截某些浏览器在拖动后生成的 click。
+  suppressClick = true
+  cancelLongPress()
+}
+
 function finishPointer(event: unknown): void {
+  movePointer(event)
   const pointerEvent = event as LedgerPointerEvent
   const target = pointerEvent.currentTarget
   if (target.hasPointerCapture(pointerEvent.pointerId)) target.releasePointerCapture(pointerEvent.pointerId)
-  const start = pointerStart
   pointerStart = undefined
-  if (start && !longPressTriggered
-    && isLedgerContextSwipe(start.x, start.y, pointerEvent.clientX, pointerEvent.clientY)) {
-    if (longPress) globalThis.clearTimeout(longPress)
-    longPress = undefined
-    longPressTriggered = true
-    emit('context', props.item)
-  }
   cancelLongPress()
+  resetAfterClick()
 }
 
 function cancelPointer(): void {
   pointerStart = undefined
   cancelLongPress()
+  resetAfterClick()
 }
 
 function openContext(): void {
@@ -82,16 +88,17 @@ function openContext(): void {
 
 function openItem(): void {
   if (props.busy) return
-  if (longPressTriggered) {
-    if (longPressReset) globalThis.clearTimeout(longPressReset)
-    longPressReset = undefined
-    longPressTriggered = false
+  if (suppressClick) {
+    if (clickReset) globalThis.clearTimeout(clickReset)
+    clickReset = undefined
+    suppressClick = false
     return
   }
   emit('open', props.item)
 }
 
 function onKeydown(event: unknown): void {
+  if (props.busy) return
   const keyboardEvent = event as { shiftKey: boolean, key: string, preventDefault: () => void }
   if (keyboardEvent.shiftKey && keyboardEvent.key === 'F10') {
     keyboardEvent.preventDefault()
@@ -104,7 +111,10 @@ function onKeydown(event: unknown): void {
 
 function clearPress(): void {
   cancelLongPress()
-  if (longPressReset) globalThis.clearTimeout(longPressReset)
+  if (clickReset) globalThis.clearTimeout(clickReset)
+  clickReset = undefined
+  suppressClick = false
+  pointerStart = undefined
 }
 onDeactivated(clearPress)
 onBeforeUnmount(clearPress)
@@ -122,6 +132,7 @@ onBeforeUnmount(clearPress)
     @click="openItem"
     @keydown="onKeydown"
     @pointerdown="startLongPress"
+    @pointermove="movePointer"
     @pointerup="finishPointer"
     @pointercancel="cancelPointer"
     @pointerleave="cancelPointer"
@@ -136,7 +147,7 @@ onBeforeUnmount(clearPress)
         <strong>{{ item.title }}</strong>
       </div>
       <p class="ledger-item-meta">
-        {{ formatLedgerTime(item.occurredAt) }} · {{ item.categoryName }} · {{ item.counterpartyName }} · {{ item.fundingChannelName }}
+        {{ formatLedgerTime(item.occurredAt) }} · {{ item.categoryName }} · {{ formatLedgerCounterparty(item) }} · {{ item.fundingChannelName }}
       </p>
       <p
         v-if="item.lifecycleStatus === 'TRASHED'"
@@ -150,7 +161,7 @@ onBeforeUnmount(clearPress)
         v-if="item.entryType === 'EXPENSE' && item.effectiveAdjustmentAmount && item.effectiveAdjustmentAmount !== '0.00'"
         class="ledger-adjustment-state"
       >
-        {{ item.fullyAdjusted ? '已全额退款/报销' : `已调整 ¥${item.effectiveAdjustmentAmount} · 净支出 ¥${item.netExpenseAmount}` }}
+        {{ item.fullyAdjusted ? '已全额退款/报销' : `已调整 ${formatCny(item.effectiveAdjustmentAmount)} · 净支出 ${formatCny(item.netExpenseAmount ?? '0')}` }}
       </p>
       <p
         v-if="item.note"
@@ -162,7 +173,7 @@ onBeforeUnmount(clearPress)
     <strong
       class="ledger-item-amount"
       :class="`money-${item.entryType.toLowerCase()}`"
-    >{{ item.entryType === 'EXPENSE' ? '−' : '+' }}¥{{ item.amount }}</strong>
+    >{{ item.entryType === 'EXPENSE' ? '−' : '+' }}{{ formatCny(item.amount) }}</strong>
     <span
       v-if="busy"
       class="ledger-row-busy"

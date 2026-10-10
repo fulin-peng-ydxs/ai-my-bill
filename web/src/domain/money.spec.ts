@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { calculateExpenseTotal, decimalToScaledInteger, formatCny, multiplyDecimalHalfUp, subtractMoney } from './money'
+import { calculateExpenseTotal, decimalToScaledInteger, formatCny, formatDecimalDisplay, multiplyDecimalHalfUp, subtractMoney } from './money'
 
 describe('exact decimal money helpers', () => {
   it('never accepts binary floating point or silently truncates decimals', () => {
@@ -16,9 +16,24 @@ describe('exact decimal money helpers', () => {
   })
 
   it('formats CNY without converting through Number', () => {
-    expect(formatCny('0')).toBe('¥0.00')
+    expect(formatCny('0')).toBe('¥0')
+    expect(formatCny('18.00')).toBe('¥18')
+    expect(formatCny('-1200.00')).toBe('-¥1,200')
+    expect(formatCny('0.01')).toBe('¥0.01')
+    expect(formatCny('12.3', 4)).toBe('¥12.3')
+    expect(formatCny('12.3456', 4)).toBe('¥12.3456')
+    expect(formatCny('18.0000', 4)).toBe('¥18')
     expect(formatCny('999999999.99')).toBe('¥999,999,999.99')
     expect(formatCny('-1234567890.50')).toBe('-¥1,234,567,890.50')
+  })
+
+  it('hides only all-zero fractional parts without losing precision or rewriting partial input', () => {
+    expect(formatDecimalDisplay('9007199254740993.000')).toBe('9007199254740993')
+    expect(formatDecimalDisplay('-1.000')).toBe('-1')
+    expect(formatDecimalDisplay('0.00')).toBe('0')
+    expect(formatDecimalDisplay('1.250')).toBe('1.250')
+    expect(formatDecimalDisplay('1.')).toBe('1.')
+    expect(formatDecimalDisplay('')).toBe('')
   })
 
   it('subtracts adjustment amounts without binary floating point drift', () => {

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { formatCny } from '../domain/money'
 import { computed, ref, watch } from 'vue'
 
 import ComboboxField from './ComboboxField.vue'
@@ -164,7 +165,7 @@ watch(() => props.modelName, (value) => {
             @click="select(item)"
           >
             <strong>{{ item.name }}</strong>
-            <span>{{ item.lastUnitPrice ? `最近 ¥${item.lastUnitPrice}` : '尚无最近价格' }}</span>
+            <span>{{ item.lastUnitPrice ? `最近 ${formatCny(item.lastUnitPrice, 4)}` : '尚无最近价格' }}</span>
           </button>
         </li>
       </ul>

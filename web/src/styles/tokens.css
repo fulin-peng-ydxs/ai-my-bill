@@ -112,6 +112,18 @@ button,
 a,
 [role="button"] { -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
 
+/* 操作表面不弹原生选词/复制菜单；输入和只读正文保留浏览器编辑、复制能力。 */
+:is(button, a, summary, [role="button"], [role="option"], [role="tab"], [role="radio"], [role="checkbox"]) {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+input, textarea, [contenteditable="true"] {
+  -webkit-user-select: text;
+  user-select: text;
+  -webkit-touch-callout: default;
+}
+
 strong { font-weight: 600; }
 button { color: inherit; }
 a { color: var(--color-primary); }
@@ -328,7 +340,8 @@ html:has(.app-shell:not(.admin-shell)), body:has(.app-shell:not(.admin-shell)) {
   .scroll-position-indicator.is-visible { opacity: .6; }
 }
 .page-scroll-region { flex: 1; min-height: 0; min-width: 0; display: grid; align-content: start; gap: var(--space-md); }
-.page-scroll-region:focus-visible { outline: 2px solid var(--color-focus); outline-offset: -2px; }
+/* 正文不是一整块动作；保留键盘滚动入口，焦点反馈由内部控件承载。 */
+.page-scroll-region:focus, .data-table-scroll:focus { outline: none; }
 body:has(dialog[open]) .app-shell .cached-page:not(.page-workspace),
 body:has(dialog[open]) .page-scroll-region { overflow: hidden; }
 
@@ -995,7 +1008,6 @@ body:has(dialog[open]) {
   justify-content: space-between;
   gap: var(--space-lg);
   padding-block: var(--space-sm);
-  border-bottom: 1px solid var(--color-border);
 }
 
 .report-dimension > div { display: grid; gap: var(--space-xs); min-width: min(100%, 240px); }
@@ -1024,7 +1036,7 @@ body:has(dialog[open]) {
 .chart-readout { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-xs) var(--space-md); padding-block: var(--space-sm); border-block: 1px solid var(--color-border); font-size: 13px; }
 .chart-readout > strong { grid-column: 1 / -1; }
 .chart-readout > span { display: grid; gap: var(--space-xs); color: var(--color-muted); }
-.chart-readout b { color: var(--color-text); font-family: var(--font-data); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+:where(.chart-readout) b { color: var(--color-text); font-family: var(--font-data); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 
 .chart-actions {
   display: grid;
@@ -2153,6 +2165,8 @@ body:has(dialog[open]) {
 .form-grid-two input, .form-grid-two select { padding-inline: var(--space-sm); }
 .ledger-controls > div { min-width: 0; flex: 1 1 200px; max-width: 360px; }
 .ledger-controls .segmented-control { width: 100%; }
+.stable-inline-hint { flex: 0 0 auto; color: var(--color-muted); font-size: 12px; line-height: 18px; white-space: nowrap; }
+.stable-inline-hint.is-hidden { visibility: hidden; }
 .pointer-hint { display: none; }
 @media (hover: hover) and (pointer: fine) { .touch-hint { display: none; } .pointer-hint { display: inline; } }
 .account-section .section-heading { padding-bottom: var(--space-sm); }
@@ -2360,7 +2374,7 @@ body:has(dialog[open]) {
 .report-page .list-search-controls .segmented-control { width: auto; min-width: 156px; }
 .ledger-page .ledger-controls { padding: 0; border: 0; }
 .ledger-page .ledger-controls > div { flex: none; max-width: none; }
-.ledger-gesture-hint { margin: 0; color: var(--color-muted); font-size: 12px; line-height: 18px; }
+.ledger-gesture-hint { display: flex; justify-content: space-between; align-items: center; gap: var(--space-sm); margin: 0; color: var(--color-muted); font-size: 12px; line-height: 18px; }
 .page-workspace .drill-context { padding-block: var(--space-sm); }
 .page-workspace .applied-filter-bar { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: 0 var(--space-sm); }
 .page-workspace .filter-context { display: contents; }

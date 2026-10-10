@@ -2,7 +2,7 @@
 import { pageScrollTop, scrollPageTo } from '../composables/pageScroll'
 import { usePageActivity } from '../composables/usePageActivity'
 import { useRefreshOnReturn } from '../composables/useRefreshOnReturn'
-import { computed, nextTick, ref, watch } from 'vue'
+import { computed, nextTick, onDeactivated, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import type { LedgerDateRange, LedgerFilters } from '../api/ledgerEntries'
@@ -116,18 +116,33 @@ const summaryItems = computed<MoneySummaryItem[]>(() => {
   ]
 })
 
-async function load(): Promise<void> {
+let pendingReturnPosition: { path: string, top: number } | undefined
+onDeactivated(() => { pendingReturnPosition = undefined })
+async function load(restoreReturnPosition = false): Promise<void> {
+  // 下钻返回参数只在路由变化时使用；缓存页刷新继续保留最新的实际滚动位置。
+  if (restoreReturnPosition) {
+    const top = Number.parseInt(typeof route.query.scroll === 'string' ? route.query.scroll : '', 10)
+    pendingReturnPosition = Number.isSafeInteger(top) && top >= 0 ? { path: route.fullPath, top } : undefined
+  }
   await request.load(filters.value, presentation.value)
-  const scroll = Number.parseInt(typeof route.query.scroll === 'string' ? route.query.scroll : '', 10)
-  if (Number.isSafeInteger(scroll) && scroll >= 0) await nextTick(() => { if (pageActive.value) scrollPageTo(scroll) })
+  await nextTick(() => {
+    // 路由加载可能被激活刷新接替，待最新数据完成布局后由成功请求消费一次。
+    const position = pendingReturnPosition
+    if (!position || !pageActive.value || !request.canDrill.value || route.fullPath !== position.path) return
+    pendingReturnPosition = undefined
+    scrollPageTo(position.top)
+  })
 }
 
+let loadedPath: string | undefined
 watch([() => route.fullPath, () => preferences.status], () => {
   if (preferences.status === 'idle' || preferences.status === 'loading') return
   filters.value = { ...parsed.value }
   searchText.value = filters.value.query
   draft.value = { ...filters.value }
-  void load()
+  const restoreReturnPosition = loadedPath !== route.fullPath
+  loadedPath = route.fullPath
+  void load(restoreReturnPosition)
 }, { immediate: true })
 
 function navigate(next: ReportFilters): void {

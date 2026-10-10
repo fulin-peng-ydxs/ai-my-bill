@@ -63,12 +63,19 @@ export function calculateExpenseTotal(unitPrice: string, quantity: string): stri
   return total
 }
 
-export function formatCny(value: string): string {
+/** 整数展示省略全零小数；有小数时保留原有精度，不参与金额计算。 */
+export function formatDecimalDisplay(value: string): string {
+  return value.replace(/\.0+$/, '')
+}
+
+export function formatCny(value: string, scale = 2): string {
   const negative = value.startsWith('-')
-  const scaled = decimalToScaledInteger(negative ? value.slice(1) : value, 2)
-  const decimal = scaledIntegerToDecimal(scaled, 2)
+  const unsigned = negative ? value.slice(1) : value
+  const scaled = decimalToScaledInteger(unsigned, scale)
+  // 金额沿用分精度；单价保留传入的小数位，避免展示额外补零。
+  const decimal = formatDecimalDisplay(scale === 2 ? scaledIntegerToDecimal(scaled, scale) : unsigned)
   const [integer, fraction] = decimal.split('.')
-  return `${negative ? '-' : ''}¥${integer.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}.${fraction}`
+  return `${negative ? '-' : ''}¥${integer.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}${fraction ? `.${fraction}` : ''}`
 }
 
 /** 金额差值保持分为单位精确计算；负值说明业务上限已被越过。 */

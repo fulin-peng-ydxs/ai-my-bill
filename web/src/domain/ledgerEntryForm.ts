@@ -2,7 +2,7 @@ import type { CreateExpenseRequest, ExpenseResponse } from '../api/expenses'
 import type { CreateIncomeRequest, IncomeResponse } from '../api/incomes'
 import { isShanghaiLocalDateTime, shanghaiLocalDateTimeToIso, toShanghaiLocalDateTime } from './businessTime'
 import {
-  calculateExpenseTotal, decimalToScaledInteger, isDecimalInRange, MONEY_MAX, QUANTITY_MAX, UNIT_PRICE_MAX,
+  calculateExpenseTotal, decimalToScaledInteger, formatCny, formatDecimalDisplay, isDecimalInRange, MONEY_MAX, QUANTITY_MAX, UNIT_PRICE_MAX,
 } from './money'
 import { unicodeCodePointLength } from './text'
 
@@ -48,8 +48,8 @@ export function emptyExpenseForm(defaultFundingChannelId?: string | null): Expen
 export function expenseFormFromResponse(value: ExpenseResponse): ExpenseFormState {
   return {
     productId: value.productId, productName: value.productName, primaryCategoryId: value.primaryCategoryId,
-    secondaryCategoryId: value.secondaryCategoryId ?? '', unitId: value.unitId, unitPrice: value.unitPrice,
-    quantity: value.quantity, paidAmount: value.paidAmount, fundingChannelId: value.fundingChannelId,
+    secondaryCategoryId: value.secondaryCategoryId ?? '', unitId: value.unitId, unitPrice: formatDecimalDisplay(value.unitPrice),
+    quantity: formatDecimalDisplay(value.quantity), paidAmount: formatDecimalDisplay(value.paidAmount), fundingChannelId: value.fundingChannelId,
     purchaseChannelId: value.purchaseChannelId ?? '', locationLabelId: value.locationLabelId ?? '',
     occurredAt: toShanghaiLocalDateTime(new Date(value.occurredAt)), note: value.note ?? '',
   }
@@ -75,7 +75,7 @@ export function validateExpensePaidMinimum(paidAmount: string, effectiveAdjustme
     return undefined
   }
   if (decimalToScaledInteger(paidAmount, 2) < decimalToScaledInteger(effectiveAdjustmentAmount, 2)) {
-    return `实付金额不能低于已生效退款/报销合计 ¥${effectiveAdjustmentAmount}。`
+    return `实付金额不能低于已生效退款/报销合计 ${formatCny(effectiveAdjustmentAmount)}。`
   }
   return undefined
 }
@@ -99,7 +99,7 @@ export function emptyIncomeForm(defaultFundingChannelId?: string | null): Income
 
 export function incomeFormFromResponse(value: IncomeResponse): IncomeFormState {
   return { incomeName: value.incomeName, payerId: value.payerId, payerName: value.payerName,
-    incomeCategoryId: value.incomeCategoryId, amount: value.amount, fundingChannelId: value.fundingChannelId,
+    incomeCategoryId: value.incomeCategoryId, amount: formatDecimalDisplay(value.amount), fundingChannelId: value.fundingChannelId,
     occurredAt: toShanghaiLocalDateTime(new Date(value.occurredAt)), note: value.note ?? '' }
 }
 

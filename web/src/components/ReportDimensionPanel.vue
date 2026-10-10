@@ -6,7 +6,7 @@ import { computed, watch } from 'vue'
 
 import type { ExpenseReport, IncomeReport } from '../api/reports'
 import { useReportChart } from '../composables/useReportChart'
-import { formatCny } from '../domain/money'
+import { formatCny, formatDecimalDisplay } from '../domain/money'
 import AppStateBlock from './AppStateBlock.vue'
 
 use([BarChart, GridComponent])
@@ -105,8 +105,8 @@ watch(() => props.report, refresh, { deep: true })
         </span>
         <span class="dimension-rank-value">
           <em v-if="warning(point)">{{ warning(point) }}</em>
-          <strong>{{ displayValue(point) }}</strong>
-          <small v-if="point.sharePercent">{{ point.sharePercent }}% · {{ point.itemCount }} 条</small>
+          <strong :class="!isCount ? `money-${tone}` : undefined">{{ displayValue(point) }}</strong>
+          <small v-if="point.sharePercent">{{ formatDecimalDisplay(point.sharePercent) }}% · {{ point.itemCount }} 条</small>
           <small v-else>{{ isCount ? '查看明细' : `${point.itemCount} 条 · 查看明细` }}</small>
         </span>
       </button>

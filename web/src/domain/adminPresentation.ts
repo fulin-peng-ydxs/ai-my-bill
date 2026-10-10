@@ -1,3 +1,4 @@
+import { formatDecimalDisplay } from './money'
 import { dictionaryDefinitions } from './dictionaries'
 
 const ACTION_LABELS: Record<string, string> = {
@@ -36,7 +37,7 @@ export function formatAdminBytes(value: number): string {
     amount /= 1024
     unit += 1
   }
-  return `${amount >= 10 || unit === 0 ? amount.toFixed(0) : amount.toFixed(1)} ${units[unit]}`
+  return `${formatDecimalDisplay(amount >= 10 || unit === 0 ? amount.toFixed(0) : amount.toFixed(1))} ${units[unit]}`
 }
 
 export function adminActionLabel(value: string): string {

@@ -1,12 +1,14 @@
 import { describe, expect, it } from 'vitest'
 
-import { isLedgerContextSwipe } from './ledgerInteraction'
+import { hasLedgerPointerMoved } from './ledgerInteraction'
 
 describe('ledger item interactions', () => {
-  it('accepts intentional left swipes without treating taps or vertical scrolling as context actions', () => {
-    expect(isLedgerContextSwipe(180, 100, 120, 106)).toBe(true)
-    expect(isLedgerContextSwipe(180, 100, 145, 102)).toBe(false)
-    expect(isLedgerContextSwipe(180, 100, 120, 170)).toBe(false)
-    expect(isLedgerContextSwipe(120, 100, 180, 100)).toBe(false)
+  it('allows tap jitter but detects movement in every direction to cancel a pending long press', () => {
+    expect(hasLedgerPointerMoved(180, 100, 182, 103)).toBe(false)
+    expect(hasLedgerPointerMoved(180, 100, 120, 106)).toBe(true)
+    expect(hasLedgerPointerMoved(180, 100, 240, 100)).toBe(true)
+    expect(hasLedgerPointerMoved(180, 100, 180, 140)).toBe(true)
+    expect(hasLedgerPointerMoved(180, 100, 180, 60)).toBe(true)
+    expect(hasLedgerPointerMoved(180, 100, 172, 100)).toBe(true)
   })
 })

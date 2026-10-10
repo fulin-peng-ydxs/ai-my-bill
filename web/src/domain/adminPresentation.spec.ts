@@ -20,6 +20,7 @@ describe('admin presentation', () => {
   it('formats operational values without depending on the browser time zone', () => {
     expect(formatAdminTime('2026-09-27T06:30:00Z')).toContain('14:30')
     expect(formatAdminTime()).toBe('尚无记录')
+    expect(formatAdminBytes(1024)).toBe('1 KB')
     expect(formatAdminBytes(1536)).toBe('1.5 KB')
     expect(formatAdminBytes(-1)).toBe('不可用')
   })

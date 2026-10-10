@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { formatCny } from '../domain/money'
 import { computed, ref, watch } from 'vue'
 
 import {
@@ -121,7 +122,7 @@ async function remove(item: DailyTemplateSummary): Promise<void> {
         v-else-if="!items.length"
         kind="empty"
         title="还没有日常模板"
-        message="到明细中左滑或长按一笔有效账目，选择“加入日常”。"
+        :message="`到明细中长按一笔有效账目，选择“保存为日常${activeType === 'EXPENSE' ? '支出' : '收入'}”。`"
       />
       <ul
         v-else
@@ -138,7 +139,7 @@ async function remove(item: DailyTemplateSummary): Promise<void> {
             @click="choose(item)"
           >
             <strong>{{ item.displayName }}</strong>
-            <span>{{ item.contextName }} · {{ item.entryType === 'EXPENSE' ? '−' : '+' }}¥{{ item.amount }}</span>
+            <span>{{ item.contextName }} · {{ item.entryType === 'EXPENSE' ? '−' : '+' }}{{ formatCny(item.amount) }}</span>
           </button>
           <button
             type="button"

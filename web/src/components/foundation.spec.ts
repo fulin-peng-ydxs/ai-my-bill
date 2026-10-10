@@ -7,6 +7,8 @@ import AppPagination from './AppPagination.vue'
 import AppDataTable from './AppDataTable.vue'
 import AppStateBlock from './AppStateBlock.vue'
 import AppToast from './AppToast.vue'
+import ChartPanel from './ChartPanel.vue'
+import ReportDimensionPanel from './ReportDimensionPanel.vue'
 import DataExportAction from './DataExportAction.vue'
 import AppliedFilterBar from './AppliedFilterBar.vue'
 import FilterSheet from './FilterSheet.vue'
@@ -15,6 +17,7 @@ import GlobalLedgerSearch from './GlobalLedgerSearch.vue'
 import IncrementalLedgerList from './IncrementalLedgerList.vue'
 import MoneySummary from './MoneySummary.vue'
 import SegmentedControl from './SegmentedControl.vue'
+import TimeTrendPanel from './TimeTrendPanel.vue'
 import SettingsDisclosureList from './SettingsDisclosureList.vue'
 
 async function render(component: Parameters<typeof h>[0], props?: Record<string, unknown>): Promise<string> {
@@ -110,7 +113,7 @@ describe('shared frontend foundations', () => {
       { key: 'expense', label: '支出', amount: '20', tone: 'expense', sign: '-' },
     ] })
     expect(money).toContain('+¥1,234.50')
-    expect(money).toContain('-¥20.00')
+    expect(money).toContain('-¥20</dd>')
     expect(money).toContain('正')
     expect(money).toContain('负')
 
@@ -120,6 +123,39 @@ describe('shared frontend foundations', () => {
     expect(settings).toContain('<ul')
     expect(settings).toContain('偏好设置')
     expect(settings).toContain('跟随系统')
+  })
+
+  it('keeps income, expense and adjustment card amounts consistent with summary semantics', async () => {
+    const html = await render(ChartPanel, { title: '收支概览', points: [
+      { value: 'INCOME', label: '总收入', amount: '100.00', itemCount: 1 },
+      { value: 'EXPENSE', label: '原始支出', amount: '30.50', itemCount: 2 },
+      { value: 'ADJUSTMENT', label: '退款/报销冲减', amount: '5.00', itemCount: 1 },
+    ] })
+    expect(html).toContain('<strong class="money-income">+¥100</strong>')
+    expect(html).toContain('<strong class="money-expense">−¥30.50</strong>')
+    expect(html).toContain('<strong class="money-income">+¥5</strong>')
+    const props = { title: '排行', eyebrow: '支出分析', tone: 'expense', report: {
+      dimension: 'PRODUCT', measureLabel: '原始支出', truncated: false,
+      points: [{ group: '商品', label: '测试', value: 'test', amount: '30.00', itemCount: 1 }],
+    } }
+    expect(await render(ReportDimensionPanel, props)).toContain('<strong class="money-expense">¥30</strong>')
+    props.report.dimension = 'FREQUENCY'
+    const count = await render(ReportDimensionPanel, props)
+    expect(count).toContain('30 条</strong>')
+    expect(count).not.toContain('money-expense')
+  })
+
+  it('renders integral and fractional report comparisons without changing their direction', async () => {
+    const report = { grain: 'MONTH', startDate: '2026-10-01', endDate: '2026-10-10', buckets: [],
+      comparisons: [{ metric: 'BALANCE', currentAmount: '0.00',
+        periodOverPeriod: { startDate: '2026-09-01', endDate: '2026-09-10', amount: '10.00', changePercent: '100.00' },
+        yearOverYear: { startDate: '2025-10-01', endDate: '2025-10-10', amount: '20.00', changePercent: '-12.50' },
+      }] }
+    const html = await render(TimeTrendPanel, { metric: 'BALANCE', report })
+    expect(html).toContain('增加 100% · 对比 ¥10')
+    expect(html).toContain('减少 12.50% · 对比 ¥20')
+    report.comparisons[0].periodOverPeriod.changePercent = '-0.00'
+    expect(await render(TimeTrendPanel, { metric: 'BALANCE', report })).toContain('增加 0%')
   })
 
   it('renders a labeled dialog without inventing a second primary action', async () => {
@@ -222,7 +258,7 @@ describe('shared frontend foundations', () => {
     ] })
     expect(html).toContain('已全额退款/报销')
     expect(html).toContain('退款')
-    expect(html).toContain('+¥30.00')
+    expect(html).toContain('+¥30</strong>')
   })
 
   it('renders recycle-bin expiry and linked cleanup impact without hiding it in color', async () => {

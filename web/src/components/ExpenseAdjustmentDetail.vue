@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { formatCny } from '../domain/money'
 import type { ExpenseAdjustmentResponse } from '../api/expenseAdjustments'
 import { formatShanghaiDateTime } from '../domain/businessTime'
 import MoneySummary from './MoneySummary.vue'
@@ -26,7 +27,7 @@ defineEmits<{ revoke: [] }>()
     />
     <dl class="adjustment-metadata">
       <div><dt>调整时间</dt><dd>{{ formatShanghaiDateTime(adjustment.occurredAt) }}</dd></div>
-      <div><dt>原支出实付</dt><dd>¥{{ adjustment.originalPaidAmount }}</dd></div>
+      <div><dt>原支出实付</dt><dd>{{ formatCny(adjustment.originalPaidAmount) }}</dd></div>
       <div v-if="adjustment.note">
         <dt>备注</dt><dd>{{ adjustment.note }}</dd>
       </div>

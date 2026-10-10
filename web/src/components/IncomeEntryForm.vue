@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { formatCny, formatDecimalDisplay } from '../domain/money'
 import { useRefreshOnReturn } from '../composables/useRefreshOnReturn'
 import { computed, onScopeDispose, reactive, ref, watch } from 'vue'
 import { Banknote, HandCoins, NotebookPen, WalletCards } from 'lucide-vue-next'
@@ -83,7 +84,10 @@ function ensureEditOptions(value: IncomeResponse): void {
 
 watch(() => props.editEntry, (value) => { if (value) applyEditEntry(value) }, { immediate: true })
 
-watch(() => draft.restored.value, (ready) => { if (ready && !editMode.value) Object.assign(form, empty(), draft.data.value) })
+watch(() => draft.restored.value, (ready) => {
+  if (!ready || editMode.value) return
+  Object.assign(form, empty(), draft.data.value, { amount: formatDecimalDisplay(draft.data.value.amount ?? '') })
+})
 watch([() => draft.restored.value, () => props.templateRevision], ([ready, revision]) => {
   const selection = props.templateSelection
   if (editMode.value || !ready || !revision || revision === appliedTemplateRevision.value || selection?.entryType !== 'INCOME') return
@@ -93,7 +97,7 @@ watch([() => draft.restored.value, () => props.templateRevision], ([ready, revis
   Object.assign(form, empty(), {
     incomeName: selection.incomeName ?? selection.displayName,
     payerId: selection.payerId ?? '', payerName: selection.payerName ?? '',
-    incomeCategoryId: selection.incomeCategoryId ?? '', amount: selection.incomeAmount ?? '',
+    incomeCategoryId: selection.incomeCategoryId ?? '', amount: formatDecimalDisplay(selection.incomeAmount ?? ''),
     fundingChannelId: selection.fundingChannelId ?? '', occurredAt: toShanghaiLocalDateTime(), note: '',
   })
   Object.keys(errors).forEach((key) => delete errors[key as IncomeField])
@@ -398,7 +402,7 @@ useRefreshOnReturn(() => loadOptions())
 
       <SavedEntrySummary
         v-if="saved && !editMode"
-        :title="`${saved.incomeName} · +¥${saved.amount}`"
+        :title="`${saved.incomeName} · +${formatCny(saved.amount)}`"
         :description="`${saved.payerName} · ${saved.incomeCategoryName} · ${saved.fundingChannelName}`"
         tone="income"
         :undoing="undoing"

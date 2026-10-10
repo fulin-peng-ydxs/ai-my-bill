@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { formatCny } from '../domain/money'
+import { formatLedgerCounterparty } from '../domain/ledgerFormatting'
 import { pageScrollTop, scrollPageTo } from '../composables/pageScroll'
 import { usePageActivity } from '../composables/usePageActivity'
 import { useRefreshOnReturn } from '../composables/useRefreshOnReturn'
@@ -173,7 +175,7 @@ const contextActions = computed(() => {
     { key: 'detail', label: '查看调整详情' }, { key: 'trash', label: '移入回收站', danger: true },
   ]
   return [
-    { key: 'daily', label: contextBusy.value ? '正在加入日常…' : '加入或更新日常模板', disabled: contextBusy.value },
+    { key: 'daily', label: contextBusy.value ? '正在保存…' : `保存为日常${contextItem.value.entryType === 'EXPENSE' ? '支出' : '收入'}`, disabled: contextBusy.value },
     ...(contextItem.value.entryType === 'EXPENSE' ? [{ key: 'adjust', label: '记录退款/报销' }] : []),
     { key: 'trash', label: '移入回收站', danger: true },
   ]
@@ -283,17 +285,18 @@ async function contextAction(key: string): Promise<void> {
     return
   }
   if (key !== 'daily' || contextItem.value.entryType === 'ADJUSTMENT') return
+  const item = contextItem.value
   contextBusy.value = true
   try {
-    await upsertDailyTemplateFromLedger(contextItem.value.id)
+    await upsertDailyTemplateFromLedger(item.id)
     pendingUndo.value = undefined
-    toastMessage.value = `“${contextItem.value.title}”已加入日常`
+    toastMessage.value = `“${item.title}”已保存为日常${item.entryType === 'EXPENSE' ? '支出' : '收入'}`
     toastKind.value = 'success'
-    contextOpen.value = false
+    if (contextItem.value?.id === item.id) contextOpen.value = false
     toastOpen.value = true
   } catch (cause) {
     pendingUndo.value = undefined
-    toastMessage.value = cause instanceof Error ? cause.message : '加入日常失败，请重试。'
+    toastMessage.value = cause instanceof Error ? cause.message : '保存为日常失败，请重试。'
     toastKind.value = 'error'
     toastOpen.value = true
   } finally {
@@ -364,7 +367,6 @@ useRefreshOnReturn(() => list.refresh())
     <template #header>
       <PageHeading
         title="收支明细"
-        :subtitle="filters.lifecycle === 'TRASHED' ? '删除后 30 天内可恢复' : undefined"
       >
         <DataExportAction
           :request="exportRequest"
@@ -419,7 +421,12 @@ useRefreshOnReturn(() => list.refresh())
       />
     </template>
     <p class="ledger-gesture-hint">
-      <span class="touch-hint">轻点查看 · 左滑或长按管理</span><span class="pointer-hint">点击查看 · 右键管理</span>
+      <span><span class="touch-hint">轻点查看 · 长按管理</span><span class="pointer-hint">点击查看 · 右键管理</span></span>
+      <span
+        class="stable-inline-hint"
+        :class="{ 'is-hidden': filters.lifecycle !== 'TRASHED' }"
+        :aria-hidden="filters.lifecycle !== 'TRASHED' || undefined"
+      >30 天内可恢复</span>
     </p>
     <AppStateBlock
       v-if="list.error.value && (list.status.value === 'ready' || list.status.value === 'empty')"
@@ -579,9 +586,9 @@ useRefreshOnReturn(() => list.refresh())
         >
           <div><dt>账目类型</dt><dd>{{ trashDetailTarget.entryType === 'EXPENSE' ? '支出' : trashDetailTarget.entryType === 'INCOME' ? '收入' : trashDetailTarget.adjustmentType === 'REFUND' ? '退款' : '报销' }}</dd></div>
           <div><dt>业务时间</dt><dd>{{ formatShanghaiDateTime(trashDetailTarget.occurredAt) }}</dd></div>
-          <div><dt>金额</dt><dd>¥{{ trashDetailTarget.amount }}</dd></div>
+          <div><dt>金额</dt><dd>{{ formatCny(trashDetailTarget.amount) }}</dd></div>
           <div><dt>分类</dt><dd>{{ trashDetailTarget.categoryName }}</dd></div>
-          <div><dt>对象</dt><dd>{{ trashDetailTarget.counterpartyName }}</dd></div>
+          <div><dt>对象</dt><dd>{{ formatLedgerCounterparty(trashDetailTarget) }}</dd></div>
           <div><dt>资金渠道</dt><dd>{{ trashDetailTarget.fundingChannelName }}</dd></div>
           <div><dt>恢复期限</dt><dd>{{ trashDetailTarget.remainingDays === 0 ? '今天到期' : `剩余 ${trashDetailTarget.remainingDays} 天` }}</dd></div>
           <div v-if="trashDetailTarget.linkedAdjustmentCount">

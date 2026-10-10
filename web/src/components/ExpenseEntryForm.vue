@@ -10,7 +10,7 @@ import {
 } from '../api/expenses'
 import { listDictionaryCandidates } from '../api/dictionaries'
 import {
-  calculateExpenseTotal, decimalToScaledInteger, formatCny, isDecimalInRange, MONEY_MAX,
+  calculateExpenseTotal, decimalToScaledInteger, formatCny, formatDecimalDisplay, scaledIntegerToDecimal, isDecimalInRange, MONEY_MAX,
 } from '../domain/money'
 import { expenseContinuationFields } from '../domain/expense'
 import { createIdempotencyAttemptTracker } from '../domain/idempotency'
@@ -99,15 +99,15 @@ const calculatedAmount = computed(() => {
 const effectiveAdjustmentMinimum = computed(() => props.editEntry?.effectiveAdjustmentAmount ?? '0.00')
 const differenceText = computed(() => {
   if (editMode.value && decimalToScaledInteger(effectiveAdjustmentMinimum.value, 2) > 0n) {
-    return `已生效退款/报销合计 ¥${effectiveAdjustmentMinimum.value}，实付金额不得低于此金额`
+    return `已生效退款/报销合计 ${formatCny(effectiveAdjustmentMinimum.value)}，实付金额不得低于此金额`
   }
   if (!isDecimalInRange(form.paidAmount, 2, MONEY_MAX)) return '填写后显示与计算金额的差额'
   const paidCents = decimalToScaledInteger(form.paidAmount, 2)
   const calculatedCents = decimalToScaledInteger(calculatedAmount.value, 2)
   const difference = paidCents - calculatedCents
   if (difference === 0n) return '与计算金额一致'
-  const absolute = (difference < 0n ? -difference : difference).toString().padStart(3, '0')
-  return `${difference > 0n ? '高于' : '低于'}计算金额 ¥${absolute.slice(0, -2)}.${absolute.slice(-2)}`
+  const absolute = scaledIntegerToDecimal(difference < 0n ? -difference : difference, 2)
+  return `${difference > 0n ? '高于' : '低于'}计算金额 ${formatCny(absolute)}`
 })
 const supplementSummary = computed(() => [
   optionItems.purchase.find((item) => item.id === form.purchaseChannelId)?.name,
@@ -141,7 +141,11 @@ watch(() => props.editEntry, (value) => { if (value) applyEditEntry(value) }, { 
 watch(() => draft.restored.value, (restored) => {
   if (!restored || editMode.value) return
   const stored = draft.data.value
-  Object.assign(form, emptyForm(), stored)
+  Object.assign(form, emptyForm(), stored, {
+    unitPrice: formatDecimalDisplay(stored.unitPrice ?? ''),
+    quantity: formatDecimalDisplay(stored.quantity ?? '1'),
+    paidAmount: formatDecimalDisplay(stored.paidAmount ?? ''),
+  })
   paidOverridden.value = Boolean(stored.paidAmount)
 })
 
@@ -158,8 +162,8 @@ watch([() => draft.restored.value, () => props.templateRevision], ([restored, re
   Object.assign(form, emptyForm(), {
     productId: selection.productId ?? '', productName: selection.productName ?? '',
     primaryCategoryId: selection.primaryCategoryId ?? '', secondaryCategoryId: selection.secondaryCategoryId ?? '',
-    unitId: selection.unitId ?? '', unitPrice: selection.unitPrice ?? '', quantity: selection.quantity ?? '',
-    paidAmount: selection.paidAmount ?? '', fundingChannelId: selection.fundingChannelId ?? '',
+    unitId: selection.unitId ?? '', unitPrice: formatDecimalDisplay(selection.unitPrice ?? ''), quantity: formatDecimalDisplay(selection.quantity ?? ''),
+    paidAmount: formatDecimalDisplay(selection.paidAmount ?? ''), fundingChannelId: selection.fundingChannelId ?? '',
     purchaseChannelId: selection.purchaseChannelId ?? '', locationLabelId: selection.locationLabelId ?? '',
     occurredAt: toShanghaiLocalDateTime(), note: '',
   })
@@ -192,7 +196,7 @@ function clearError(field: ExpenseField): void {
 function amountChanged(): void {
   clearError('unitPrice')
   clearError('quantity')
-  if (!paidOverridden.value) form.paidAmount = calculatedAmount.value === '0.00' ? '' : calculatedAmount.value
+  if (!paidOverridden.value) form.paidAmount = calculatedAmount.value === '0.00' ? '' : formatDecimalDisplay(calculatedAmount.value)
   persist()
 }
 
@@ -219,7 +223,7 @@ function selectProduct(product: ProductSuggestion): void {
   form.primaryCategoryId = product.primaryCategoryId ?? ''
   form.secondaryCategoryId = product.secondaryCategoryId ?? ''
   form.unitId = product.unitId ?? ''
-  form.unitPrice = product.lastUnitPrice ?? ''
+  form.unitPrice = formatDecimalDisplay(product.lastUnitPrice ?? '')
   form.fundingChannelId = product.fundingChannelId ?? form.fundingChannelId
   form.purchaseChannelId = product.purchaseChannelId ?? ''
   clearError('productId')
@@ -623,7 +627,7 @@ useRefreshOnReturn(() => loadOptions())
 
       <SavedEntrySummary
         v-if="saved && !editMode"
-        :title="`${saved.productName} · −¥${saved.paidAmount}`"
+        :title="`${saved.productName} · −${formatCny(saved.paidAmount)}`"
         :description="`${saved.primaryCategoryName}${saved.secondaryCategoryName ? ` / ${saved.secondaryCategoryName}` : ''} · ${saved.fundingChannelName}`"
         tone="expense"
         :undoing="undoing"
@@ -640,8 +644,8 @@ useRefreshOnReturn(() => loadOptions())
           v-if="detailOpen"
           class="saved-expense-details"
         >
-          <div><dt>数量与单价</dt><dd>{{ saved.quantity }} {{ saved.unitName }} × ¥{{ saved.unitPrice }}</dd></div>
-          <div><dt>计算金额</dt><dd>¥{{ saved.calculatedAmount }}</dd></div>
+          <div><dt>数量与单价</dt><dd>{{ formatDecimalDisplay(saved.quantity) }} {{ saved.unitName }} × {{ formatCny(saved.unitPrice, 4) }}</dd></div>
+          <div><dt>计算金额</dt><dd>{{ formatCny(saved.calculatedAmount) }}</dd></div>
           <div><dt>购买渠道</dt><dd>{{ saved.purchaseChannelName || '未指定' }}</dd></div>
           <div><dt>地点</dt><dd>{{ saved.locationLabelName || '未指定' }}</dd></div>
           <div><dt>消费时间</dt><dd>{{ formatShanghaiDateTime(saved.occurredAt) }}</dd></div>

@@ -2,7 +2,7 @@
 import { BarChart } from 'echarts/charts'
 import { GridComponent } from 'echarts/components'
 import { use } from 'echarts/core'
-import { watch } from 'vue'
+import { computed, watch } from 'vue'
 
 import type { components } from '../api/generated/schema'
 import { formatCny } from '../domain/money'
@@ -16,6 +16,11 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{ select: [point: components['schemas']['ReportDataPoint']] }>()
+const cards = computed(() => props.points.map((point) => ({
+  point,
+  tone: point.value === 'EXPENSE' ? 'expense' : point.value === 'INCOME' || point.value === 'ADJUSTMENT' ? 'income' : 'neutral',
+  sign: point.value === 'EXPENSE' ? '−' : point.value === 'INCOME' || point.value === 'ADJUSTMENT' ? '+' : '',
+})))
 function color(value: string): string {
   if (value === 'INCOME') return token('--color-income-accent')
   if (value === 'EXPENSE') return token('--color-expense-accent')
@@ -68,13 +73,13 @@ watch(() => props.points, refresh, { deep: true })
       aria-label="可下钻指标"
     >
       <button
-        v-for="point in points"
+        v-for="{ point, tone, sign } in cards"
         :key="point.value"
         type="button"
         @click="emit('select', point)"
       >
         <span>{{ point.label }}</span>
-        <strong>{{ formatCny(point.amount) }}</strong>
+        <strong :class="`money-${tone}`">{{ sign }}{{ formatCny(point.amount) }}</strong>
         <small>{{ point.itemCount }} 条 · 查看明细</small>
       </button>
     </div>

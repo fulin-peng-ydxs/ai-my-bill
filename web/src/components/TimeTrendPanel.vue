@@ -6,7 +6,7 @@ import { computed, ref, watch } from 'vue'
 
 import type { ReportTimeMetric, TimeReport } from '../api/reports'
 import { useReportChart } from '../composables/useReportChart'
-import { formatCny } from '../domain/money'
+import { formatCny, formatDecimalDisplay } from '../domain/money'
 
 use([LineChart, GridComponent, LegendComponent])
 type Bucket = TimeReport['buckets'][number]
@@ -24,6 +24,8 @@ const emit = defineEmits<{ select: [bucket: Bucket] }>()
 const selected = ref(0)
 const selectedBucket = computed(() => props.report.buckets[selected.value])
 const definition = computed(() => DEFINITIONS[props.metric])
+const amountClass = computed(() => props.metric === 'BALANCE' ? undefined
+  : props.metric === 'GROSS_EXPENSE' || props.metric === 'NET_EXPENSE' ? 'money-expense' : 'money-income')
 const comparison = computed(() => props.report.comparisons.find((item) => item.metric === props.metric))
 function metricCount(bucket: Bucket): number {
   if (props.metric === 'TOTAL_INCOME') return bucket.incomeCount
@@ -56,8 +58,9 @@ watch(() => [props.report, props.metric], () => { selected.value = 0; refresh() 
 function comparisonText(value: NonNullable<typeof comparison.value>['periodOverPeriod'] | undefined): string {
   if (!value) return '暂无数据'
   if (value.unavailableReason) return value.unavailableReason
-  const percent = Number(value.changePercent)
-  return `${percent >= 0 ? '增加' : '减少'} ${Math.abs(percent).toFixed(2)}% · 对比 ${formatCny(value.amount ?? '0')}`
+  const percent = value.changePercent ?? '0'
+  const magnitude = formatDecimalDisplay(percent.replace(/^[-+]/, ''))
+  return `${percent.startsWith('-') && magnitude !== '0' ? '减少' : '增加'} ${magnitude}% · 对比 ${formatCny(value.amount ?? '0')}`
 }
 </script>
 
@@ -90,8 +93,8 @@ function comparisonText(value: NonNullable<typeof comparison.value>['periodOverP
       aria-label="时间点固定读数"
     >
       <strong>{{ selectedBucket.label }} · {{ metricCount(selectedBucket) }} 条</strong>
-      <span>当期 <b>{{ formatCny(selectedBucket[definition.field]) }}</b></span>
-      <span>累计 <b>{{ formatCny(selectedBucket[definition.cumulative]) }}</b></span>
+      <span>当期 <b :class="amountClass">{{ formatCny(selectedBucket[definition.field]) }}</b></span>
+      <span>累计 <b :class="amountClass">{{ formatCny(selectedBucket[definition.cumulative]) }}</b></span>
     </div>
     <div
       ref="host"
