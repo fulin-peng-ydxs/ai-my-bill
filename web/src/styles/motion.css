@@ -1,0 +1,98 @@
+/* 动效值只来自 tokens；位置/键盘布局与动画各自拥有独立元素。 */
+:is(.primary-button, .secondary-button, .icon-button, .compact-action, .text-action,
+    .segmented-control button, .bottom-navigation a, .settings-disclosure-list button) {
+  transition: background-color var(--motion-fast) var(--motion-ease-move),
+    color var(--motion-fast) var(--motion-ease-move),
+    scale var(--motion-press) var(--motion-ease-move);
+}
+:is(.primary-button, .secondary-button, .icon-button):active:not(:disabled) { scale: var(--motion-scale); }
+.bottom-navigation a:active { background: var(--color-surface-secondary); }
+.segmented-control { position: relative; }
+.segmented-control button[aria-pressed="true"] { border-bottom-color: transparent; }
+.segmented-indicator {
+  --segment-width: calc((100% - (var(--segment-count, 1) - 1) * var(--space-sm)) / var(--segment-count, 1));
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: var(--segment-width);
+  height: 2px;
+  background: var(--color-primary);
+  pointer-events: none;
+  transform: translateX(calc(var(--segment-index, 0) * (100% + var(--space-sm))));
+  transition: transform var(--motion-switch) var(--motion-ease-move);
+}
+.form-disclosure summary > svg, .status-notice-chevron {
+  transition: transform var(--motion-standard) var(--motion-ease-move);
+}
+.ledger-date-items { position: relative; }
+.motion-list-move { transition: transform var(--motion-standard) var(--motion-ease-move); }
+.motion-list-enter-active { transition: opacity var(--motion-switch) var(--motion-ease-enter); }
+.motion-list-leave-active {
+  position: absolute;
+  width: 100%;
+  pointer-events: none;
+  transition: opacity var(--motion-fast) var(--motion-ease-exit);
+}
+.motion-list-enter-from, .motion-list-leave-to { opacity: 0; }
+
+.motion-fade-enter-active, .motion-fade-leave-active,
+.motion-candidate-enter-active, .motion-candidate-leave-active,
+.motion-toast-enter-active, .motion-toast-leave-active {
+  transition: opacity var(--motion-fast) var(--motion-ease-enter),
+    transform var(--motion-fast) var(--motion-ease-enter);
+}
+.motion-toast-enter-active { transition-duration: var(--motion-switch); }
+.motion-candidate-leave-active { transition-duration: var(--motion-press); }
+.motion-fade-leave-active, .motion-candidate-leave-active, .motion-toast-leave-active {
+  pointer-events: none;
+  transition-timing-function: var(--motion-ease-exit);
+}
+.motion-fade-enter-from, .motion-fade-leave-to { opacity: 0; }
+.motion-candidate-enter-from { opacity: 0; transform: translateY(calc(-1 * var(--motion-distance-small))); }
+.motion-candidate-leave-to { opacity: 0; }
+.motion-toast-enter-from, .motion-toast-leave-to { opacity: 0; transform: translateY(calc(-1 * var(--motion-distance))); }
+
+@keyframes motion-fade-in { from { opacity: var(--motion-backdrop-start, 0); } to { opacity: 1; } }
+@keyframes motion-fade-out { from { opacity: var(--motion-backdrop-start, 1); } to { opacity: 0; } }
+@keyframes motion-dialog-in { from { opacity: var(--motion-opacity-start, 0); transform: var(--motion-panel-start, scale(var(--motion-scale))); } to { opacity: 1; transform: none; } }
+@keyframes motion-dialog-out { from { opacity: var(--motion-opacity-start, 1); transform: var(--motion-panel-start, none); } to { opacity: 0; transform: scale(var(--motion-scale)); } }
+@keyframes motion-drawer-in { from { transform: var(--motion-panel-start, translateY(100%)); } to { transform: none; } }
+@keyframes motion-drawer-out { from { transform: var(--motion-panel-start, none); } to { transform: translateY(100%); } }
+@keyframes motion-side-in { from { transform: var(--motion-panel-start, translateX(100%)); } to { transform: none; } }
+@keyframes motion-side-out { from { transform: var(--motion-panel-start, none); } to { transform: translateX(100%); } }
+
+:is(.app-dialog, .app-drawer)[data-motion-phase="opening"]::backdrop {
+  animation: motion-fade-in var(--motion-standard) var(--motion-ease-enter) both;
+}
+:is(.app-dialog, .app-drawer)[data-motion-phase="closing"]::backdrop {
+  animation: motion-fade-out var(--motion-fast) var(--motion-ease-exit) both;
+}
+.app-dialog[data-motion-phase="opening"] .dialog-panel {
+  animation: motion-dialog-in var(--motion-standard) var(--motion-ease-enter) both;
+}
+.app-dialog[data-motion-phase="closing"] .dialog-panel {
+  animation: motion-dialog-out var(--motion-fast) var(--motion-ease-exit) both;
+}
+.app-drawer[data-motion-phase="opening"] .drawer-panel {
+  animation: motion-drawer-in var(--motion-enter) var(--motion-ease-enter) both;
+}
+.app-drawer[data-motion-phase="closing"] .drawer-panel {
+  animation: motion-drawer-out var(--motion-standard) var(--motion-ease-exit) both;
+}
+@media (min-width: 1024px) {
+  .app-drawer[data-motion-phase="opening"] .drawer-panel { animation-name: motion-side-in; }
+  .app-drawer[data-motion-phase="closing"] .drawer-panel { animation-name: motion-side-out; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --motion-press: 0ms;
+    --motion-fast: 0ms;
+    --motion-switch: 0ms;
+    --motion-standard: 0ms;
+    --motion-enter: 0ms;
+  }
+  :is(.app-dialog, .app-drawer) .overlay-panel,
+  :is(.app-dialog, .app-drawer)::backdrop { animation: none !important; }
+  :is(.primary-button, .secondary-button, .icon-button):active:not(:disabled) { scale: 1; }
+}

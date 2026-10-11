@@ -2,9 +2,12 @@
 import { ref, watch, type Component } from 'vue'
 import { ChevronDown } from 'lucide-vue-next'
 import SectionTitle from './SectionTitle.vue'
+import { useDisclosureMotion } from '../composables/useDisclosureMotion'
 
 const props = defineProps<{ title: string, summary: string, invalid?: boolean, icon?: Component, compact?: boolean }>()
 const expanded = ref(false)
+const details = ref<globalThis.HTMLDetailsElement>()
+const disclosure = useDisclosureMotion(details, () => Boolean(props.invalid))
 // 折叠只降低低频字段的视觉权重，校验失败仍必须让错误立即可见。
 watch(() => props.invalid, (invalid) => { if (invalid) expanded.value = true }, { immediate: true })
 
@@ -18,12 +21,13 @@ function toggled(event: globalThis.Event): void {
 
 <template>
   <details
+    ref="details"
     class="form-section form-disclosure"
     :class="{ 'form-disclosure-compact': compact }"
     :open="expanded"
     @toggle="toggled"
   >
-    <summary>
+    <summary @click="disclosure.toggle">
       <span>
         <SectionTitle
           as="strong"

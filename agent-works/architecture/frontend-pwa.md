@@ -57,6 +57,14 @@ flowchart LR
 
 记一笔页头及“我的”使用 `panel=dictionaries` 打开共享 `DictionaryManager`/`DictionaryIndexPanel`。详情只接受 entry/profile 来源并返回原索引；已从索引进入时退回对应历史项，直接打开时替换为受控入口，避免返回循环。关闭抽屉留在原入口，记账表单无需丢弃草稿。独立索引路由仍可访问。入口统一显示“选项管理”；个人和默认列表复用 DictionaryToolbar、DictionaryItemList、DictionaryListFooter，管理页大小来自 DICTIONARY_PAGE_SIZE。长列表保持内容高度，个人列表由 PageWorkspace 正文滚动，默认列表随管理页正文滚动，多页末尾仅提供 AppPagination，单页结束提示居中，翻页和搜索通过现有分页接口替换结果；选项、日常模板与明细内容共用 content-list，末尾提示共用 list-end-note；历史筛选候选同样复用 AppPagination。填报候选仍是有界首批，ComboboxField 展示批次数量并引导搜索，不把批次当作全部数据。底部导航保留本账号报表/明细的最近 URL 条件，换账号清空；明细清除条件时移除报表来源元数据，返回报表后底部导航中的明细 URL 也移除旧下钻返回上下文；记账页内收支表单各保存一个实例。修改密码由 `PasswordChangeSheet` 调用既有 `session.changePassword`，接受服务端轮换会话；临时输入只存在组件内存，成功或关闭即清空，不进入持久化存储。
 
+## 动效与呈现生命周期
+
+动效规则见 [DESIGN §4.7](../../DESIGN.md#47-统一动效)。`tokens.css` 定义参数，`motion.css` 定义 CSS 效果；`motion.ts` 提供读取参数和有界完成监听，`useMotionPreference` 以单一、可释放的系统媒体监听同步脚本偏好。`AppTransition` 只承接普通显隐，不接管原生顶层或路由缓存。
+
+打开抽屉时，`useDialogController` 先进入原生 top layer，再驱动 opening/open 阶段。业务接受关闭意图后进入 closing；`AppOverlayContent` 暂停父插槽重新求值，保留当前 VNode 树至退场结束，dialog 进入 inert，遮罩继续阻止背景交互。完成事件或超时触发原生 close、堆栈与焦点收尾；重开取消旧监听并从当前视觉位置续接，过期动画事件不得关闭新弹层。系统减少动态效果或后台切换可立即完成，页面停用和卸载立即关闭并取消资源；业务 busy、未保存确认和请求仍由原消费者负责。
+
+`useContentMotion` 在已就绪的单份内容上播放可取消的过渡，读取 CSS 参数，不改变缓存键或重建表单。CachedPageView 在恢复滚动后播放正文过渡，并向后代提供本轮入场状态以抑制图表、表单和状态块重复播放。`useDisclosureMotion` 保留 details 语义，短折叠测量起终高度，长内容、错误与键盘路径即时完成。短列表使用 Vue TransitionGroup，重排与手势拖动分开；图表的首次/数据变化动画及环境变化禁用策略统一由 useReportChart 注入，减少动态效果同时关闭首次和更新插值。
+
 ## 一次页面操作经过哪些层
 
 以保存支出为例，`LedgerEntryPreferenceView` 组织页面，`ExpenseEntryForm` 收集输入，分类、单位、资金渠道、购买渠道与地点通过共享 `DictionaryCombobox` 搜索或新增个人字典项，再将服务端返回的稳定 ID 写入表单；收入的付款方、收入分类及默认资金渠道沿用同一数据链路，二级分类始终绑定当前一级分类。`domain/ledgerEntryForm` 与 money 等工具处理表单规则和精确金额，`api/expenses` 调用 `api/http`，后者实际请求同源 `/api/v1`。业务返回后页面更新保存反馈；字段错误保留到对应输入项，不能在 API 封装层把失败改成成功。

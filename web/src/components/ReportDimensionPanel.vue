@@ -35,7 +35,6 @@ function displayValue(point: Point): string {
 }
 
 const { host, token, refresh } = useReportChart(() => ({
-  animationDuration: globalThis.matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 180,
   color: [token(props.tone === 'income' ? '--color-income-accent' : '--color-expense-accent')],
   textStyle: { color: token('--color-text') },
   grid: { left: 8, right: 112, top: 8, bottom: 8, containLabel: true },

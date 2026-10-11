@@ -1,15 +1,17 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 export interface SegmentedOption {
   value: string
   label: string
   disabled?: boolean
 }
 
-defineProps<{
+const props = defineProps<{
   label: string
   modelValue: string
   options: readonly SegmentedOption[]
 }>()
+const selectedIndex = computed(() => props.options.findIndex(option => option.value === props.modelValue))
 
 const emit = defineEmits<{
   'update:modelValue': [value: string]
@@ -19,11 +21,16 @@ const emit = defineEmits<{
 <template>
   <fieldset
     class="segmented-control"
-    :style="{ '--segment-count': options.length }"
+    :style="{ '--segment-count': options.length, '--segment-index': Math.max(0, selectedIndex) }"
   >
     <legend class="sr-only">
       {{ label }}
     </legend>
+    <span
+      v-if="selectedIndex >= 0"
+      class="segmented-indicator"
+      aria-hidden="true"
+    />
     <button
       v-for="option in options"
       :key="option.value"

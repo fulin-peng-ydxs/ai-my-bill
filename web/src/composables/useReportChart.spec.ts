@@ -9,6 +9,7 @@ vi.mock('echarts/core', () => ({ use: vi.fn(), init: () => chart }))
 vi.mock('echarts/renderers', () => ({ SVGRenderer: {} }))
 vi.mock('vue', async (original) => ({
   ...await original<typeof import('vue')>(),
+  inject: (_key: unknown, fallback: unknown) => fallback,
   onMounted: (callback: () => void) => hooks.mounted.push(callback),
   onActivated: (callback: () => void) => hooks.activated.push(callback),
   onDeactivated: (callback: () => void) => hooks.deactivated.push(callback),
@@ -26,10 +27,11 @@ function setup() {
   vi.stubGlobal('MutationObserver', Observer)
   vi.stubGlobal('document', document)
   vi.stubGlobal('window', window)
+  vi.stubGlobal('getComputedStyle', () => ({ getPropertyValue: () => '180ms' }))
   const state = useReportChart(() => ({ series: [], tooltip: { show: true } }))
   state.host.value = host as unknown as HTMLDivElement
   hooks.mounted.forEach((callback) => callback())
-  return { host, document, window }
+  return { host, document, window, state }
 }
 afterEach(() => {
   hooks.unmounted.forEach((callback) => callback())
@@ -41,7 +43,8 @@ afterEach(() => {
 describe('report chart lifecycle', () => {
   it('keeps readings fixed and provides no click-to-drill handler in the chart', () => {
     setup()
-    expect(chart.setOption).toHaveBeenCalledWith({ series: [] }, true)
+    expect(chart.setOption).toHaveBeenCalledWith(expect.objectContaining({ series: [], animation: true, animationDuration: 180, animationDurationUpdate: 180 }), true)
+    expect(chart.setOption.mock.calls[0]![0]).not.toHaveProperty('tooltip')
     expect(chart.on).not.toHaveBeenCalled()
   })
   it('does not redraw a cached hidden page and redraws on return', async () => {
@@ -56,5 +59,6 @@ describe('report chart lifecycle', () => {
     await nextTick()
     expect(chart.setOption).toHaveBeenCalledTimes(1)
     expect(chart.resize).toHaveBeenCalledTimes(1)
+    expect(chart.setOption).toHaveBeenLastCalledWith(expect.objectContaining({ animation: false, animationDurationUpdate: 0 }), true)
   })
 })

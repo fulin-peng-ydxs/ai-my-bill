@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppTransition from './AppTransition.vue'
 import { CheckCircle2, CircleAlert, X } from 'lucide-vue-next'
 import { onActivated, onDeactivated, ref, watch } from 'vue'
 import { usePageActivity } from '../composables/usePageActivity'
@@ -39,7 +40,7 @@ function focusLeft(event: globalThis.FocusEvent): void {
 
 <template>
   <Teleport :to="dialogMessageTarget ?? 'body'">
-    <Transition name="toast">
+    <AppTransition effect="toast">
       <div
         v-if="open && active && pageActive"
         class="app-toast"
@@ -83,6 +84,6 @@ function focusLeft(event: globalThis.FocusEvent): void {
           />
         </button>
       </div>
-    </Transition>
+    </AppTransition>
   </Teleport>
 </template>

@@ -1,7 +1,9 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref, watch } from 'vue'
+import type { ContentMotion } from './composables/useContentMotion'
 import { RouterView, useRoute, useRouter } from 'vue-router'
 
+import { dictionaryIndexTarget } from './domain/dictionaryNavigation'
 import { pageCacheKey, pageCacheLimit } from './app/pageCache'
 import CachedPageView from './components/CachedPageView.vue'
 import AppShell from './components/AppShell.vue'
@@ -10,7 +12,13 @@ import UnsavedChangesDialog from './components/UnsavedChangesDialog.vue'
 import { useSessionStore } from './stores/session'
 
 const route = useRoute()
+const pageMotion = ref<ContentMotion>('fade')
 const router = useRouter()
+watch(router.currentRoute, (to, from) => {
+  const detail = 'personal-dictionary-detail'
+  const returning = from.name === detail && to.fullPath === router.resolve(dictionaryIndexTarget(from.query.from)).fullPath
+  pageMotion.value = to.name === detail && from.name !== detail ? 'forward' : returning ? 'back' : 'fade'
+}, { flush: 'sync' })
 const sessionStore = useSessionStore()
 const isAnonymous = computed(() => route.meta.role === 'anonymous')
 const isSessionInitializing = computed(() => sessionStore.status === 'unknown' || sessionStore.status === 'loading')
@@ -43,6 +51,7 @@ const hasPagePermission = computed(() => {
           :key="pageCacheKey(viewRoute)"
           :component="Component"
           :route="viewRoute"
+          :motion="pageMotion"
         />
       </KeepAlive>
     </RouterView>

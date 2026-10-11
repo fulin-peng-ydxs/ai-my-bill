@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref, watch } from 'vue'
 
 import type { LedgerEntryTypeFilter, LedgerItem, LedgerLifecycleFilter } from '../api/ledgerEntries'
 import { formatLedgerDate } from '../domain/ledgerFormatting'
 import LedgerListItem from './LedgerListItem.vue'
+import { activateEnteringElement, deactivateLeavingElement } from '../composables/motion'
 
 const props = defineProps<{
   items: LedgerItem[]
@@ -13,6 +14,16 @@ const props = defineProps<{
   lifecycle: LedgerLifecycleFilter
   busyItemId?: string
 }>()
+const animateMutation = ref(false)
+watch(() => props.items, (items, previous) => {
+  // 仅小列表的单条变更；翻页、批量筛选与增量加载不逐行播放。
+  const previousIds = new Set(previous.map(item => item.id))
+  const nextIds = new Set(items.map(item => item.id))
+  const changed = [...previousIds].filter(id => !nextIds.has(id)).length + [...nextIds].filter(id => !previousIds.has(id)).length
+  animateMutation.value = Math.max(items.length, previous.length) <= 40 && changed === 1 && !props.loadingMore
+}, { flush: 'sync' })
+watch(() => [props.type, props.lifecycle], () => { animateMutation.value = false }, { flush: 'sync' })
+
 const emit = defineEmits<{ more: [], context: [item: LedgerItem], open: [item: LedgerItem] }>()
 
 const groups = computed(() => {
@@ -38,7 +49,15 @@ const groups = computed(() => {
       class="ledger-date-group"
     >
       <h2>{{ formatLedgerDate(group.date) }}</h2>
-      <div class="ledger-date-items content-list">
+      <TransitionGroup
+        tag="div"
+        class="ledger-date-items content-list"
+        name="motion-list"
+        :css="animateMutation"
+        :move-class="animateMutation ? 'motion-list-move' : 'motion-list-static'"
+        @before-enter="activateEnteringElement"
+        @before-leave="deactivateLeavingElement"
+      >
         <LedgerListItem
           v-for="item in group.items"
           :key="item.id"
@@ -48,7 +67,7 @@ const groups = computed(() => {
           @context="emit('context', $event)"
           @open="emit('open', $event)"
         />
-      </div>
+      </TransitionGroup>
     </section>
     <div class="ledger-progress list-end-note">
       <span>已加载 {{ items.length }} 笔</span>

@@ -35,7 +35,6 @@ function metricCount(bucket: Bucket): number {
   return bucket.itemCount
 }
 const { host, token, refresh } = useReportChart(() => ({
-  animationDuration: globalThis.matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 180,
   color: [token(definition.value.color), token(definition.value.color)],
   textStyle: { color: token('--color-text') },
   grid: { left: 8, right: 12, top: 42, bottom: 32, containLabel: true },

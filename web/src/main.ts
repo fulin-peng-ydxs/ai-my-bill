@@ -8,6 +8,7 @@ import { usePwaInstallStore } from './pwa/install'
 import { registerServiceWorker } from './pwa/register'
 import router from './router'
 import './styles/tokens.css'
+import './styles/motion.css'
 import { useThemeStore } from './stores/theme'
 
 const pinia = createPinia()

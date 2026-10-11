@@ -1,7 +1,8 @@
 /* eslint-disable vue/one-component-per-file -- 生命周期宿主测试需要同时挂载父层、子层及 KeepAlive 容器。 */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { createRenderer, defineComponent, h, KeepAlive, markRaw, nextTick, ref } from 'vue'
+import { createRenderer, defineComponent, h, KeepAlive, markRaw, nextTick, ref, ssrContextKey } from 'vue'
 import { dialogMessageTarget, useDialogController } from './useDialogController'
+import AppOverlayContent from '../components/AppOverlayContent.vue'
 
 class FocusTarget {
   isConnected = true
@@ -9,6 +10,10 @@ class FocusTarget {
 }
 class NativeDialog extends FocusTarget {
   open = false
+  dataset: Record<string, string> = {}
+  style = { setProperty: vi.fn(), removeProperty: vi.fn() }
+  panel?: EventTarget
+  querySelector() { return this.panel }
   showModal(): void { this.open = true }
   close(): void { this.open = false }
   contains(target: unknown): boolean { return target === this }
@@ -18,15 +23,23 @@ class NativeDialog extends FocusTarget {
 interface HostNode { children: HostNode[]; parent?: HostNode }
 const renderer = createRenderer<HostNode, HostNode>({
   createElement: () => ({ children: [] }), createText: () => ({ children: [] }), createComment: () => ({ children: [] }),
-  insert: (node, parent) => { node.parent = parent; parent.children.push(node) }, remove: () => {},
-  setText: () => {}, setElementText: () => {}, patchProp: () => {}, parentNode: node => node.parent ?? null, nextSibling: () => null,
+  insert: (node, parent, anchor) => {
+    if (node.parent) node.parent.children.splice(node.parent.children.indexOf(node), 1)
+    node.parent = parent
+    const index = anchor ? parent.children.indexOf(anchor) : -1
+    if (index >= 0) parent.children.splice(index, 0, node)
+    else parent.children.push(node)
+  },
+  remove: node => { if (node.parent) node.parent.children.splice(node.parent.children.indexOf(node), 1) },
+  setText: () => {}, setElementText: () => {}, patchProp: () => {}, parentNode: node => node.parent ?? null,
+  nextSibling: node => node.parent?.children[node.parent.children.indexOf(node) + 1] ?? null,
 })
 const cleanups: (() => void)[] = []
 beforeEach(() => {
   vi.stubGlobal('HTMLElement', FocusTarget)
   vi.stubGlobal('document', { activeElement: new FocusTarget() })
 })
-afterEach(() => { cleanups.splice(0).reverse().forEach(stop => stop()); vi.unstubAllGlobals() })
+afterEach(() => { cleanups.splice(0).reverse().forEach(stop => stop()); vi.useRealTimers(); vi.unstubAllGlobals() })
 
 async function settle(): Promise<void> { await nextTick(); await nextTick() }
 
@@ -55,6 +68,77 @@ function tap(layer: Awaited<ReturnType<typeof mountDialog>>, start = pointer(lay
 }
 
 describe('shared dialog dismissal', () => {
+  it('freezes slot evaluation during exit and releases retained content after close', async () => {
+    const frozen = ref(false), content = ref('编辑内容')
+    const renderContent = vi.fn(() => [h('div', content.value)])
+    const app = renderer.createApp({ setup: () => () => h(AppOverlayContent, { frozen: frozen.value }, { default: renderContent }) })
+    app.provide(ssrContextKey, { modules: new Set() })
+    app.mount({ children: [] })
+    cleanups.push(() => app.unmount())
+    renderContent.mockClear()
+    frozen.value = true
+    content.value = ''
+    await settle()
+    expect(renderContent).not.toHaveBeenCalled()
+    frozen.value = false
+    await settle()
+    expect(renderContent).toHaveBeenCalledOnce()
+  })
+  it('finishes an active exit immediately when the system enables reduced motion', async () => {
+    vi.useFakeTimers()
+    const media = Object.assign(new EventTarget(), { matches: false })
+    vi.stubGlobal('matchMedia', () => media)
+    vi.stubGlobal('getComputedStyle', () => ({ animationDuration: '180ms', animationDelay: '0s', animationName: 'motion-test' }))
+    const layer = await mountDialog()
+    layer.element.panel = new EventTarget()
+    layer.open.value = false
+    await settle()
+    expect(layer.element.open).toBe(true)
+    media.matches = true
+    media.dispatchEvent(new Event('change'))
+    await settle()
+    expect(layer.element.open).toBe(false)
+    expect(vi.getTimerCount()).toBe(0)
+  })
+  it('retains top-layer ownership until exit ends and cancels obsolete exit on reopen', async () => {
+    vi.useFakeTimers()
+    vi.stubGlobal('getComputedStyle', () => ({ animationDuration: '0.18s', animationDelay: '0s', animationName: 'motion-test' }))
+    const layer = await mountDialog()
+    layer.element.panel = new EventTarget()
+    layer.open.value = false
+    await settle()
+    expect(layer.controller.phase.value).toBe('closing')
+    expect(layer.element.open).toBe(true)
+    expect(dialogMessageTarget.value).toBe(layer.element)
+    layer.open.value = true
+    await settle()
+    await vi.advanceTimersByTimeAsync(300)
+    expect(layer.element.open).toBe(true)
+    expect(layer.controller.phase.value).toBe('open')
+    layer.open.value = false
+    await settle()
+    layer.element.panel.dispatchEvent(new Event('animationend'))
+    expect(layer.element.open).toBe(false)
+    expect(layer.controller.phase.value).toBe('closed')
+    expect(dialogMessageTarget.value).toBeUndefined()
+  })
+  it('finishes an exit even when animation events are lost, and unmount cancels pending work', async () => {
+    vi.useFakeTimers()
+    vi.stubGlobal('getComputedStyle', () => ({ animationDuration: '120ms', animationDelay: '0s', animationName: 'motion-test' }))
+    const layer = await mountDialog()
+    layer.element.panel = new EventTarget()
+    layer.open.value = false
+    await settle()
+    await vi.advanceTimersByTimeAsync(200)
+    expect(layer.element.open).toBe(false)
+    layer.open.value = true
+    await settle()
+    layer.open.value = false
+    await settle()
+    cleanups.pop()!()
+    expect(layer.element.open).toBe(false)
+    expect(vi.getTimerCount()).toBe(0)
+  })
   it('closes only the top layer and returns focus to its parent', async () => {
     const parent = await mountDialog()
     vi.stubGlobal('document', { activeElement: parent.element })

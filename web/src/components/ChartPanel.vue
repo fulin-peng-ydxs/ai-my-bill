@@ -33,7 +33,6 @@ const { host, token, refresh } = useReportChart(() => {
   const muted = token('--color-muted')
   const border = token('--color-border')
   return {
-    animationDuration: globalThis.matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 180,
     textStyle: { color: text },
     grid: { left: 8, right: 8, top: 32, bottom: 28, containLabel: true },
     xAxis: { type: 'category', data: props.points.map((point) => point.label), axisTick: { show: false },

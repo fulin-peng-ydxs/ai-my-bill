@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { SlidersHorizontal } from 'lucide-vue-next'
-import { computed, nextTick, reactive, watch } from 'vue'
+import { computed, nextTick, reactive, ref, watch } from 'vue'
+import { useContentMotion } from '../composables/useContentMotion'
 
 import DictionaryManager from '../components/DictionaryManager.vue'
 import { useDictionaryPanel } from '../composables/useDictionaryPanel'
@@ -20,6 +21,12 @@ import { useSessionStore } from '../stores/session'
 const dictionariesOpen = useDictionaryPanel('entry')
 const preferences = usePreferencesStore()
 const session = useSessionStore()
+const formPanel = ref<globalThis.HTMLElement>()
+const formMotion = useContentMotion()
+watch(() => preferences.values.recentEntryType, async () => {
+  await nextTick()
+  void formMotion.play(formPanel.value)
+})
 const saveState = computed(() => preferences.fieldStates.recentEntryType)
 const templateStates = reactive<Record<EntryType, { selection?: DailyTemplateSelection, revision: number }>>({
   EXPENSE: { revision: 0 },
@@ -83,6 +90,7 @@ function clearTemplate(type: EntryType): void {
       />
     </template>
     <section
+      ref="formPanel"
       class="entry-type-panel"
       aria-label="本次记录"
     >

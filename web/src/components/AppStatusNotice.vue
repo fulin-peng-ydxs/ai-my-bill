@@ -1,14 +1,22 @@
 <script setup lang="ts">
 import { ChevronDown, TriangleAlert } from 'lucide-vue-next'
 import { canRetryRequest, type RequestError } from '../api/errors'
+import { ref } from 'vue'
+import { useDisclosureMotion } from '../composables/useDisclosureMotion'
+
+const details = ref<globalThis.HTMLDetailsElement>()
+const disclosure = useDisclosureMotion(details)
 
 defineProps<{ title: string, message?: string, error?: RequestError, actionLabel?: string, busy?: boolean }>()
 defineEmits<{ action: [] }>()
 </script>
 
 <template>
-  <details class="status-notice">
-    <summary>
+  <details
+    ref="details"
+    class="status-notice"
+  >
+    <summary @click="disclosure.toggle">
       <TriangleAlert
         :size="16"
         aria-hidden="true"

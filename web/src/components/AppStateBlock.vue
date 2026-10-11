@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
+import { useContentMotion } from '../composables/useContentMotion'
 
 const props = withDefaults(defineProps<{
   kind?: 'loading' | 'empty' | 'error' | 'permission' | 'success' | 'info'
@@ -14,6 +15,15 @@ const props = withDefaults(defineProps<{
 })
 
 const role = computed(() => props.kind === 'error' || props.kind === 'permission' ? 'alert' : 'status')
+const region = ref<globalThis.HTMLElement>()
+const motion = useContentMotion()
+function reveal(): void {
+  // 加载和权限拒绝立即呈现，不延迟反馈或保留旧区域。
+  if (props.kind !== 'loading' && props.kind !== 'permission') void motion.play(region.value)
+  else motion.cancel()
+}
+onMounted(reveal)
+watch(() => props.kind, reveal, { flush: 'post' })
 
 defineEmits<{
   action: []
@@ -22,6 +32,7 @@ defineEmits<{
 
 <template>
   <section
+    ref="region"
     class="state-block"
     :class="`state-block-${kind}`"
     :role="role"

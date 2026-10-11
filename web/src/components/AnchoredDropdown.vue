@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppTransition from './AppTransition.vue'
 import { inject, nextTick, onActivated, onBeforeUnmount, onDeactivated, ref, watch } from 'vue'
 import { dropdownLayout } from '../domain/dropdownLayout'
 import { reserveDrawerCandidateSpace } from '../composables/drawerCandidateSpace'
@@ -157,15 +158,18 @@ onBeforeUnmount(unlisten)
 </script>
 
 <template>
-  <div
-    v-if="open"
-    :id="id"
-    ref="panel"
-    class="anchored-dropdown"
-    :style="position"
-    @pointerdown="emit('interact')"
-    @mousedown="preserveInputFocus"
-  >
-    <slot />
-  </div>
+  <AppTransition effect="candidate">
+    <div
+      v-if="open"
+      :id="id"
+      ref="panel"
+      class="anchored-dropdown"
+      :style="position"
+      :inert="!open"
+      @pointerdown="emit('interact')"
+      @mousedown="preserveInputFocus"
+    >
+      <slot />
+    </div>
+  </AppTransition>
 </template>

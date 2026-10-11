@@ -1,6 +1,6 @@
 <script setup lang="ts" generic="T extends ReorderItem">
 import { GripVertical } from 'lucide-vue-next'
-import { nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, useId, watch } from 'vue'
+import { nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, useId, watch, type ComponentPublicInstance } from 'vue'
 
 export interface ReorderItem { id: string, name: string, parentId?: string | null }
 export interface ReorderMove { id: string, targetId: string, direction: 'UP' | 'DOWN' }
@@ -8,7 +8,8 @@ defineOptions({ inheritAttrs: false })
 const props = defineProps<{ items: T[], label: string, disabled?: boolean, itemClass?: (item: T) => string }>()
 defineSlots<{ default(props: { item: T }): unknown }>()
 const emit = defineEmits<{ move: [move: ReorderMove] }>()
-const list = ref<globalThis.HTMLElement>()
+const listHost = ref<ComponentPublicInstance>()
+const list = { get value(): globalThis.HTMLElement | undefined { return listHost.value?.$el } }
 const hintId = useId()
 const dragged = ref('')
 const dragOffset = ref(0)
@@ -148,8 +149,11 @@ onBeforeUnmount(() => { cancel(); globalThis.document.removeEventListener('visib
   >
     拖动手柄调整同级顺序；键盘聚焦手柄后使用上下方向键，Esc 取消拖动。
   </p>
-  <ul
-    ref="list"
+  <TransitionGroup
+    ref="listHost"
+    tag="ul"
+    name="motion-reorder"
+    :move-class="items.length <= 40 && !dragged ? 'motion-list-move' : 'motion-list-static'"
     v-bind="$attrs"
     class="reorder-list"
     :aria-label="label"
@@ -184,5 +188,5 @@ onBeforeUnmount(() => { cancel(); globalThis.document.removeEventListener('visib
       </button>
       <slot :item="item" />
     </li>
-  </ul>
+  </TransitionGroup>
 </template>

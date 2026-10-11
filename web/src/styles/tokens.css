@@ -26,6 +26,17 @@
   --color-expense-accent: #34c759;
   --color-expense-text: #188038;
   --color-overlay: rgb(0 0 0 / 40%);
+  --motion-press: 80ms;
+  --motion-fast: 120ms;
+  --motion-switch: 160ms;
+  --motion-standard: 180ms;
+  --motion-enter: 240ms;
+  --motion-ease-enter: cubic-bezier(.2, .8, .2, 1);
+  --motion-ease-exit: cubic-bezier(.4, 0, 1, 1);
+  --motion-ease-move: cubic-bezier(.4, 0, .2, 1);
+  --motion-distance-small: 4px;
+  --motion-distance: 8px;
+  --motion-scale: .98;
   --radius-compact: 5px;
   --radius-tool: 8px;
   --radius-control: 11px;
@@ -334,7 +345,7 @@ html:has(.app-shell:not(.admin-shell)), body:has(.app-shell:not(.admin-shell)) {
 @media (max-width: 735px) {
   .scroll-region-body { scrollbar-width: none; }
   .scroll-region-body::-webkit-scrollbar { display: none; }
-  .scroll-position-indicator { display: block; position: absolute; top: 0; right: 2px; width: 3px; border-radius: var(--radius-pill); background: var(--color-muted); pointer-events: none; opacity: 0; transition: opacity 120ms ease-out; }
+  .scroll-position-indicator { display: block; position: absolute; top: 0; right: 2px; width: 3px; border-radius: var(--radius-pill); background: var(--color-muted); pointer-events: none; opacity: 0; transition: opacity var(--motion-fast) var(--motion-ease-exit); }
   .scroll-position-indicator.is-visible { opacity: .6; }
 }
 .page-scroll-region { flex: 1; min-height: 0; min-width: 0; display: grid; align-content: start; gap: var(--space-md); }
@@ -1533,11 +1544,6 @@ body:has(dialog[open]) {
   cursor: pointer;
   font-weight: 600;
 }
-.toast-enter-active,
-.toast-leave-active { transition: opacity 160ms ease, transform 160ms ease; }
-.toast-enter-from,
-.toast-leave-to { opacity: 0; transform: translateY(-8px); }
-
 @media (max-width: 833px) {
   .admin-page-heading { display: grid; }
   .admin-page-heading .primary-button { width: 100%; justify-content: center; }
@@ -1605,10 +1611,6 @@ body:has(dialog[open]) {
 }
 
 
-@media (prefers-reduced-motion: reduce) {
-  .toast-enter-active,
-  .toast-leave-active { transition: none; }
-}
 
 .auth-help-trigger { justify-self: center; }
 
