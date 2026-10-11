@@ -6,6 +6,7 @@ import AppDialog from './AppDialog.vue'
 import AppPagination from './AppPagination.vue'
 import AppDataTable from './AppDataTable.vue'
 import AppStateBlock from './AppStateBlock.vue'
+import AppLoadingHint from './AppLoadingHint.vue'
 import AppToast from './AppToast.vue'
 import ChartPanel from './ChartPanel.vue'
 import ReportDimensionPanel from './ReportDimensionPanel.vue'
@@ -22,6 +23,7 @@ import IncrementalLedgerList from './IncrementalLedgerList.vue'
 import MoneySummary from './MoneySummary.vue'
 import SegmentedControl from './SegmentedControl.vue'
 import TimeTrendPanel from './TimeTrendPanel.vue'
+import ReportComparisonDialog from './ReportComparisonDialog.vue'
 import SettingsDisclosureList from './SettingsDisclosureList.vue'
 
 async function render(component: Parameters<typeof h>[0], props?: Record<string, unknown>): Promise<string> {
@@ -32,6 +34,14 @@ async function render(component: Parameters<typeof h>[0], props?: Record<string,
 }
 
 describe('shared frontend foundations', () => {
+  it('omits idle edit loading space while keeping pending feedback and default inline space', async () => {
+    expect(await render(AppLoadingHint, { pending: false, reserveSpace: false })).not.toContain('class="loading-hint')
+    expect(await render(AppLoadingHint, { pending: false })).toContain('loading-placeholder')
+    const pending = await render(AppLoadingHint, { pending: true, reserveSpace: false, immediate: true })
+    expect(pending).toContain('role="status"')
+    expect(pending).toContain('更新中…')
+    expect(pending).not.toContain('loading-placeholder')
+  })
   it('exposes page boundaries and prevents paging during a refresh', async () => {
     expect(await render(AppPagination, { page: 0, totalPages: 1, label: '用户分页' })).not.toContain('<nav')
     const first = await render(AppPagination, { page: 0, totalPages: 3, label: '用户分页' })
@@ -208,11 +218,31 @@ describe('shared frontend foundations', () => {
         periodOverPeriod: { startDate: '2026-09-01', endDate: '2026-09-10', amount: '10.00', changePercent: '100.00' },
         yearOverYear: { startDate: '2025-10-01', endDate: '2025-10-10', amount: '20.00', changePercent: '-12.50' },
       }] }
-    const html = await render(TimeTrendPanel, { metric: 'BALANCE', report })
+    const html = await render(ReportComparisonDialog, { open: true, metricLabel: '结余', comparison: report.comparisons[0] })
     expect(html).toContain('增加 100% · 对比 ¥10')
     expect(html).toContain('减少 12.50% · 对比 ¥20')
     report.comparisons[0].periodOverPeriod.changePercent = '-0.00'
-    expect(await render(TimeTrendPanel, { metric: 'BALANCE', report })).toContain('增加 0%')
+    expect(await render(ReportComparisonDialog, { open: true, metricLabel: '结余', comparison: report.comparisons[0] })).toContain('增加 0%')
+  })
+
+  it('starts trend readings at the latest matching record and prevents drilling into empty periods', async () => {
+    const emptyBucket = { totalIncome: '0', grossExpense: '0', adjustmentAmount: '0', netExpense: '0', balance: '0',
+      cumulativeIncome: '0', cumulativeGrossExpense: '0', cumulativeAdjustmentAmount: '0', cumulativeNetExpense: '0', cumulativeBalance: '0',
+      incomeCount: 0, expenseCount: 0, adjustmentCount: 0, itemCount: 0 }
+    const report = { grain: 'DAY', startDate: '2026-10-01', endDate: '2026-10-03', comparisons: [], buckets: [
+      { ...emptyBucket, startDate: '2026-10-01', endDate: '2026-10-01', label: '10月1日', incomeCount: 1, totalIncome: '20' },
+      { ...emptyBucket, startDate: '2026-10-02', endDate: '2026-10-02', label: '10月2日', adjustmentCount: 1, netExpense: '-10', cumulativeNetExpense: '-10' },
+      { ...emptyBucket, startDate: '2026-10-03', endDate: '2026-10-03', label: '10月3日', cumulativeNetExpense: '-10' },
+    ] }
+    const net = await render(TimeTrendPanel, { metric: 'NET_EXPENSE', report })
+    expect(net).toContain('10月2日 · 1 条')
+    expect(net).toContain('aria-label="查看10月2日的净支出明细"')
+    expect(net).toContain('范围合计 <b class="money-expense">-¥10</b>')
+    expect(net).toContain('aria-haspopup="dialog"')
+    expect(net).not.toContain('<details')
+    expect(await render(TimeTrendPanel, { metric: 'TOTAL_INCOME', report })).toContain('10月1日 · 1 条')
+    const empty = await render(TimeTrendPanel, { metric: 'GROSS_EXPENSE', report })
+    expect(empty).toMatch(/<button[^>]*aria-label="查看10月1日的原始支出明细"[^>]*disabled/)
   })
 
   it('renders a labeled dialog without inventing a second primary action', async () => {

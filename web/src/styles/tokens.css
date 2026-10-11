@@ -695,7 +695,6 @@ body:has(dialog[open]) .page-scroll-region { overflow: hidden; }
 /* 结果更新只暂停下钻，保留卡片表面、文字和数字，避免每次请求闪变。 */
 .report-result[disabled] button:disabled { opacity: 1; }
 .report-result[disabled][aria-busy="true"] button:disabled { cursor: wait; }
-.report-refresh-status { margin-inline-start: var(--space-sm); font-weight: 400; }
 .danger-text:not(:disabled) { color: var(--color-danger) !important; }
 
 .app-dialog,
@@ -1027,18 +1026,15 @@ body:has(dialog[open]) {
 
 .report-page .segmented-control { width: 100%; }
 
-.report-dimension {
-  display: flex;
-  align-items: end;
-  justify-content: space-between;
-  gap: var(--space-lg);
-  padding-block: var(--space-sm);
-}
-
-.report-dimension > div { display: grid; gap: var(--space-xs); min-width: min(100%, 240px); }
-.report-dimension label { color: var(--color-muted); font-size: 12px; font-weight: 400; }
-.report-dimension .select-control { background: transparent; border-color: transparent; padding-inline: 0; }
-.report-dimension p { max-width: 540px; margin: 0; color: var(--color-muted); font-size: 13px; }
+.report-dimension { display: flex; flex-wrap: wrap; align-items: center; gap: 0 var(--space-sm); }
+/* 原生 select 覆盖完整触摸区域，视觉底板复用已应用条件的紧凑表面。 */
+.compact-select { position: relative; display: inline-flex; align-items: center; min-height: 44px; min-width: 44px; max-width: 100%; color: var(--color-primary); font-size: 13px; line-height: 20px; cursor: pointer; }
+.compact-select strong { font-weight: 500; }
+.compact-select svg { flex: 0 0 auto; }
+.compact-select .select-control { position: absolute; inset: 0; width: 100%; height: 100%; min-height: 44px; opacity: 0; cursor: pointer; }
+.compact-select:has(select:focus-visible) .filter-chip-content { outline: 2px solid var(--color-focus); outline-offset: 0; }
+.compact-select:has(select:disabled) { color: var(--color-muted); cursor: default; }
+.compact-select:has(select:enabled):active .filter-chip-content { background: var(--color-surface-secondary); }
 
 .chart-panel {
   display: grid;
@@ -1058,7 +1054,8 @@ body:has(dialog[open]) {
 
 .chart-panel h2 { margin: 0; font-size: var(--font-section-size); line-height: var(--font-section-line); }
 .chart-panel header > span { color: var(--color-muted); font-size: 13px; }
-.chart-canvas { width: 100%; min-height: 280px; touch-action: pan-y; }
+/* 图形仅展示，读数和下钻在图外；避开渲染器的触摸监听吞掉正文滚动。 */
+.chart-canvas { width: 100%; min-height: 280px; pointer-events: none; touch-action: pan-y; }
 .chart-readout { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-xs) var(--space-md); padding-block: var(--space-sm); border-block: 1px solid var(--color-border); font-size: 13px; }
 .chart-readout > strong { grid-column: 1 / -1; }
 .chart-readout > span { display: grid; gap: var(--space-xs); color: var(--color-muted); }
@@ -1110,8 +1107,13 @@ body:has(dialog[open]) {
 
 .comparison-grid small { color: var(--color-muted); }
 .comparison-grid strong { font-size: 14px; font-weight: 600; }
-.time-drill { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--space-sm); }
-.time-drill label { grid-column: 1 / -1; color: var(--color-muted); font-size: 12px; font-weight: 600; }
+.time-trend > header b { font-family: var(--font-data); font-variant-numeric: tabular-nums; }
+.time-drill { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: var(--space-sm); }
+.time-drill > button { white-space: nowrap; }
+.time-drill .chart-readout { grid-column: 1 / -1; }
+.trend-range-summary { display: flex; align-items: center; flex-wrap: wrap; gap: 0 var(--space-sm); color: var(--color-muted); font-size: 12px; }
+.trend-range-summary .text-action { font-size: 12px; white-space: nowrap; }
+.comparison-grid article > span { color: var(--color-muted); font-size: 12px; }
 
 .quality-rule {
   display: grid;
@@ -1158,12 +1160,10 @@ body:has(dialog[open]) {
 .dimension-rank-value em { color: var(--color-warning-text); font-size: 12px; font-style: normal; font-weight: 600; }
 
 @media (max-width: 640px) {
-  .report-dimension { align-items: stretch; flex-direction: column; }
   .chart-panel { padding: var(--space-md); }
   .chart-canvas { min-height: 240px; }
   .chart-actions { grid-template-columns: 1fr; }
   .comparison-grid { grid-template-columns: 1fr; }
-  .time-drill { grid-template-columns: 1fr; }
   .quality-rule { grid-template-columns: 1fr; }
   .quality-rule strong { grid-row: auto; }
   .dimension-ranking > button { gap: var(--space-sm); min-height: 56px; padding-block: var(--space-sm); }
@@ -1221,7 +1221,8 @@ body:has(dialog[open]) {
 .ledger-date-items { display: grid; }
 .incremental-ledger-list { gap: var(--space-xl); }
 .ledger-date-group { gap: var(--space-sm); }
-.ledger-date-group h2 { margin: 0; padding-inline: var(--space-md); color: var(--color-muted); font-size: 13px; font-weight: 600; }
+.ledger-date-heading { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-sm); padding-inline: var(--space-md); }
+.ledger-date-heading h2 { flex: 0 0 auto; margin: 0; color: var(--color-muted); font-size: 13px; font-weight: 600; }
 .ledger-date-items {
   background: var(--color-surface);
   border: 1px solid var(--color-border);
@@ -2166,8 +2167,6 @@ body:has(dialog[open]) {
 .form-field input, .form-field textarea, .form-field select, .select-control, .entry-combobox input { font-size: 16px; }
 .form-grid-two > *, .form-field { min-width: 0; }
 .form-grid-two input, .form-grid-two select { padding-inline: var(--space-sm); }
-.stable-inline-hint { flex: 0 0 auto; color: var(--color-muted); font-size: 12px; line-height: 18px; white-space: nowrap; }
-.stable-inline-hint.is-hidden { visibility: hidden; }
 .pointer-hint { display: none; }
 @media (hover: hover) and (pointer: fine) { .touch-hint { display: none; } .pointer-hint { display: inline; } }
 .password-change-form { display: grid; gap: var(--space-lg); }
@@ -2266,6 +2265,7 @@ body:has(dialog[open]) {
 .entry-receipt > .form-section { padding-block: var(--space-lg); gap: 0; }
 .entry-receipt > .form-section > .form-section-fields { gap: var(--space-sm); }
 .entry-receipt > .form-section:first-child { border-bottom: 0; padding-bottom: var(--space-sm); }
+.app-drawer .entry-receipt > .form-section:first-child { padding-top: 0; }
 .entry-receipt > .form-section:first-child + .form-section { padding-top: var(--space-sm); }
 .entry-receipt-calculation { border-top: 1px solid var(--color-border); padding-top: var(--space-md); margin-top: var(--space-xs); }
 .entry-receipt :is(.product-combobox, .entry-subject-field) > label,
@@ -2417,7 +2417,7 @@ body:has(dialog[open]) {
 
 /* 搜索独占一行；范围与筛选共享工具行，已选条件另行展示。 */
 .list-search-controls { display: grid; grid-template-columns: minmax(0, 1fr); min-width: 0; }
-.ledger-gesture-hint { display: flex; justify-content: space-between; align-items: center; gap: var(--space-sm); margin: 0; color: var(--color-muted); font-size: 12px; line-height: 18px; }
+.ledger-gesture-hint { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 0 var(--space-sm); text-align: right; color: var(--color-muted); font-size: 12px; line-height: 18px; }
 .page-workspace .drill-context { padding-block: var(--space-sm); }
 .page-workspace .applied-filter-bar { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-xs); }
 .page-workspace .filter-context { display: grid; }
@@ -2426,10 +2426,7 @@ body:has(dialog[open]) {
 .page-workspace .filter-chip { max-width: 100%; }
 .filter-toolbar { display: flex; justify-content: space-between; align-items: center; gap: var(--space-sm); min-width: 0; }
 .filter-toolbar .segmented-control { flex: 1 1 0; min-width: 0; }
-.page-workspace .report-dimension { padding: 0; gap: var(--space-sm); }
-.page-workspace .report-dimension > div { min-width: 0; flex: 1; }
-.page-workspace .report-dimension { flex-direction: row; }
-.page-workspace .report-dimension label { min-height: 18px; }
+
 @media (max-width: 735px) {
   .page-workspace { gap: var(--space-sm); }
   .list-search-controls .global-search { padding-inline: var(--space-sm); gap: var(--space-xs); }
@@ -2437,7 +2434,6 @@ body:has(dialog[open]) {
   .page-workspace .chart-panel { gap: var(--space-sm); padding: var(--space-md); }
   .page-workspace .chart-panel > header { align-items: center; flex-wrap: wrap; gap: 0 var(--space-sm); }
   .page-workspace .chart-actions button { padding: var(--space-md) 0; min-height: 56px; }
-  .page-workspace .report-dimension .select-control { padding-inline: 0; }
 }
 
 /* 点击反馈使用中性色，触摸不描蓝框；键盘导航仍保留可见焦点。 */

@@ -442,14 +442,6 @@ useRefreshOnReturn(() => list.refresh())
         </template>
       </AppliedFilterBar>
     </template>
-    <p class="ledger-gesture-hint">
-      <span><span class="touch-hint">轻点查看 · 长按管理</span><span class="pointer-hint">点击查看 · 右键管理</span></span>
-      <span
-        class="stable-inline-hint"
-        :class="{ 'is-hidden': filters.lifecycle !== 'TRASHED' }"
-        :aria-hidden="filters.lifecycle !== 'TRASHED' || undefined"
-      >30 天内可恢复</span>
-    </p>
     <AppLoadingHint
       :pending="list.refreshing.value && !list.loadingMore.value"
       page
@@ -480,7 +472,15 @@ useRefreshOnReturn(() => list.refresh())
           @more="list.more"
           @context="openContext"
           @open="openEdit"
-        />
+        >
+          <template #first-date-aside>
+            <span class="ledger-gesture-hint">
+              <span class="touch-hint">轻点查看 · 长按管理</span>
+              <span class="pointer-hint">点击查看 · 右键管理</span>
+              <span v-if="filters.lifecycle === 'TRASHED'">30 天内可恢复</span>
+            </span>
+          </template>
+        </IncrementalLedgerList>
       </template>
     </AppAsyncRegion>
 

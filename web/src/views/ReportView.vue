@@ -26,6 +26,8 @@ import MoneySummary, { type MoneySummaryItem } from '../components/MoneySummary.
 import ReportDimensionPanel from '../components/ReportDimensionPanel.vue'
 import SegmentedControl from '../components/SegmentedControl.vue'
 import TimeTrendPanel from '../components/TimeTrendPanel.vue'
+import CompactSelect from '../components/CompactSelect.vue'
+import ReportComparisonDialog from '../components/ReportComparisonDialog.vue'
 import { useReportData } from '../composables/useReportData'
 import { useDictionaryFilterLabels } from '../composables/useDictionaryFilterLabels'
 import DictionaryFilterPicker from '../components/DictionaryFilterPicker.vue'
@@ -46,6 +48,12 @@ const searchText = ref('')
 const filters = ref<ReportFilters>({ query: '', scope: 'ALL', range: 'THIS_MONTH' })
 const draft = ref<ReportFilters>({ ...filters.value })
 const filterOpen = ref(false)
+const comparisonOpen = ref(false)
+const comparisonResult = ref<{ label: string, comparison: TimeReport['comparisons'][number] | undefined }>()
+function openComparison(value: NonNullable<typeof comparisonResult.value>): void {
+  comparisonResult.value = value
+  comparisonOpen.value = true
+}
 const focusedFilter = ref<keyof ReportFilters>()
 const rangeError = ref('')
 const defaultRange = computed<LedgerDateRange>(() => preferences.values.reportDefaultRange)
@@ -71,6 +79,16 @@ function optionsFor(scope: ReportScope): { value: ReportDimension, label: string
   ] : []),
 ] }
 const dimensionOptions = computed(() => optionsFor(filters.value.scope))
+const grainOptions = [
+  { value: 'DAY', label: '按日' }, { value: 'WEEK', label: '按周' }, { value: 'MONTH', label: '按月' },
+  { value: 'QUARTER', label: '按季' }, { value: 'YEAR', label: '按年' },
+]
+const metricOptions = computed(() => [
+  ...(filters.value.scope !== 'EXPENSE' ? [{ value: 'TOTAL_INCOME', label: '总收入' }] : []),
+  { value: 'GROSS_EXPENSE', label: '原始支出' }, { value: 'ADJUSTMENT', label: '退款/报销冲减' },
+  { value: 'NET_EXPENSE', label: '净支出' },
+  ...(filters.value.scope === 'ALL' ? [{ value: 'BALANCE', label: '结余' }] : []),
+])
 const dimensionTitle = computed(() => optionsFor(shownFilters.value.scope).find(item => item.value === shownPresentation.value.dimension)?.label ?? '分析维度')
 
 const filterSummaries = computed<AppliedFilterSummary[]>(() => {
@@ -120,7 +138,7 @@ const summaryItems = computed<MoneySummaryItem[]>(() => {
 })
 
 let pendingReturnPosition: { path: string, top: number } | undefined
-onDeactivated(() => { pendingReturnPosition = undefined })
+onDeactivated(() => { pendingReturnPosition = undefined; comparisonOpen.value = false })
 async function load(restoreReturnPosition = false): Promise<void> {
   // 下钻返回参数只在路由变化时使用；缓存页刷新继续保留最新的实际滚动位置。
   if (restoreReturnPosition) {
@@ -297,92 +315,38 @@ useRefreshOnReturn(() => load())
         </template>
       </AppliedFilterBar>
 
-      <section class="report-dimension">
-        <div>
-          <label for="report-dimension">
-            分析维度
-            <AppLoadingHint
-              class="report-refresh-status"
-              :pending="request.refreshing.value"
-            />
-          </label>
-          <select
-            id="report-dimension"
-            class="select-control"
-            :value="presentation.dimension"
-            @change="updatePresentation({ dimension: ($event.target as HTMLSelectElement).value as ReportDimension })"
-          >
-            <option
-              v-for="item in dimensionOptions"
-              :key="item.value"
-              :value="item.value"
-            >
-              {{ item.label }}
-            </option>
-          </select>
-        </div>
-        <div v-if="presentation.dimension === 'TIME'">
-          <label for="report-grain">时间粒度</label>
-          <select
-            id="report-grain"
-            class="select-control"
-            :value="presentation.grain"
-            @change="updatePresentation({ grain: ($event.target as HTMLSelectElement).value as ReportTimeGrain })"
-          >
-            <option value="DAY">
-              日
-            </option><option value="WEEK">
-              周
-            </option><option value="MONTH">
-              月
-            </option>
-            <option value="QUARTER">
-              季
-            </option><option value="YEAR">
-              年
-            </option>
-          </select>
-        </div>
-        <div v-if="presentation.dimension === 'TIME'">
-          <label for="report-metric">趋势指标</label>
-          <select
-            id="report-metric"
-            class="select-control"
-            :value="presentation.metric"
-            @change="updatePresentation({ metric: ($event.target as HTMLSelectElement).value as ReportTimeMetric })"
-          >
-            <option
-              v-if="filters.scope !== 'EXPENSE'"
-              value="TOTAL_INCOME"
-            >
-              总收入
-            </option>
-            <option
-              v-if="filters.scope !== 'INCOME'"
-              value="GROSS_EXPENSE"
-            >
-              原始支出
-            </option>
-            <option
-              v-if="filters.scope !== 'INCOME'"
-              value="ADJUSTMENT"
-            >
-              退款/报销冲减
-            </option>
-            <option
-              v-if="filters.scope !== 'INCOME'"
-              value="NET_EXPENSE"
-            >
-              净支出
-            </option>
-            <option
-              v-if="filters.scope === 'ALL'"
-              value="BALANCE"
-            >
-              结余
-            </option>
-          </select>
-        </div>
+      <section
+        class="report-dimension"
+        aria-label="分析方式"
+      >
+        <CompactSelect
+          id="report-dimension"
+          label="维度"
+          :show-label="true"
+          :model-value="presentation.dimension"
+          :options="dimensionOptions"
+          @update:model-value="updatePresentation({ dimension: $event as ReportDimension })"
+        />
+        <CompactSelect
+          v-if="presentation.dimension === 'TIME'"
+          id="report-grain"
+          label="时间粒度"
+          :model-value="presentation.grain"
+          :options="grainOptions"
+          @update:model-value="updatePresentation({ grain: $event as ReportTimeGrain })"
+        />
+        <CompactSelect
+          v-if="presentation.dimension === 'TIME' && filters.scope !== 'INCOME'"
+          id="report-metric"
+          label="查看指标"
+          :model-value="presentation.metric"
+          :options="metricOptions"
+          @update:model-value="updatePresentation({ metric: $event as ReportTimeMetric })"
+        />
+        <AppLoadingHint
+          :pending="request.refreshing.value"
+          page
+        />
       </section>
     </template>
     <AppStateBlock
@@ -407,7 +371,7 @@ useRefreshOnReturn(() => load())
       @retry="load"
     />
     <MoneySummary
-      v-if="request.data.value"
+      v-if="request.data.value && shownPresentation.dimension !== 'TIME'"
       :items="summaryItems"
       label="已展示条件金额摘要"
     />
@@ -437,6 +401,7 @@ useRefreshOnReturn(() => load())
         :report="request.data.value.time"
         :metric="shownPresentation.metric"
         @select="drillTime"
+        @compare="openComparison"
       />
       <ReportDimensionPanel
         v-else-if="request.data.value.expense"
@@ -457,6 +422,12 @@ useRefreshOnReturn(() => load())
     </fieldset>
 
     <template #overlays>
+      <ReportComparisonDialog
+        v-if="comparisonResult"
+        v-model:open="comparisonOpen"
+        :metric-label="comparisonResult.label"
+        :comparison="comparisonResult.comparison"
+      />
       <FilterSheet
         id="report-filter"
         v-model:open="filterOpen"

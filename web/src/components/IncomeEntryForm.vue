@@ -250,6 +250,7 @@ useRefreshOnReturn(() => loadOptions())
     <AppLoadingHint
       :pending="loading"
       :page="!editMode"
+      :reserve-space="!editMode"
       label="读取选项…"
     />
     <AppStatusNotice

@@ -46,11 +46,17 @@ const groups = computed(() => {
     :aria-label="lifecycle === 'ACTIVE' ? '有效收支列表' : '回收站列表'"
   >
     <section
-      v-for="group in groups"
+      v-for="(group, index) in groups"
       :key="group.date"
       class="ledger-date-group"
     >
-      <h2>{{ formatLedgerDate(group.date) }}</h2>
+      <header class="ledger-date-heading">
+        <h2>{{ formatLedgerDate(group.date) }}</h2>
+        <slot
+          v-if="index === 0"
+          name="first-date-aside"
+        />
+      </header>
       <TransitionGroup
         tag="div"
         class="ledger-date-items content-list"

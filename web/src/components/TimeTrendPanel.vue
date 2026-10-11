@@ -6,7 +6,8 @@ import { computed, ref, watch } from 'vue'
 
 import type { ReportTimeMetric, TimeReport } from '../api/reports'
 import { useReportChart } from '../composables/useReportChart'
-import { formatCny, formatDecimalDisplay } from '../domain/money'
+import { formatCny } from '../domain/money'
+import CompactSelect from './CompactSelect.vue'
 
 use([LineChart, GridComponent, LegendComponent])
 type Bucket = TimeReport['buckets'][number]
@@ -20,13 +21,19 @@ const DEFINITIONS: Record<ReportTimeMetric, { label: string, field: AmountKey, c
   BALANCE: { label: '结余', field: 'balance', cumulative: 'cumulativeBalance', color: '--color-warning' },
 }
 const props = defineProps<{ report: TimeReport, metric: ReportTimeMetric }>()
-const emit = defineEmits<{ select: [bucket: Bucket] }>()
+const emit = defineEmits<{
+  select: [bucket: Bucket]
+  compare: [value: { label: string, comparison: TimeReport['comparisons'][number] | undefined }]
+}>()
 const selected = ref(0)
 const selectedBucket = computed(() => props.report.buckets[selected.value])
+const periodOptions = computed(() => props.report.buckets.map((bucket, index) => ({ value: String(index), label: bucket.label })))
 const definition = computed(() => DEFINITIONS[props.metric])
 const amountClass = computed(() => props.metric === 'BALANCE' ? undefined
   : props.metric === 'GROSS_EXPENSE' || props.metric === 'NET_EXPENSE' ? 'money-expense' : 'money-income')
 const comparison = computed(() => props.report.comparisons.find((item) => item.metric === props.metric))
+const rangeAmount = computed(() => comparison.value?.currentAmount
+  ?? props.report.buckets.at(-1)?.[definition.value.cumulative] ?? '0')
 function metricCount(bucket: Bucket): number {
   if (props.metric === 'TOTAL_INCOME') return bucket.incomeCount
   if (props.metric === 'GROSS_EXPENSE') return bucket.expenseCount
@@ -44,23 +51,23 @@ const { host, token, refresh } = useReportChart(() => ({
   yAxis: { type: 'value', axisLabel: { color: token('--color-muted'), formatter: (value: number) => `¥${value}` },
     splitLine: { lineStyle: { color: token('--color-border'), type: 'dashed' } } },
   series: [
-    { name: '当期', type: 'line', silent: true, showSymbol: props.report.buckets.length < 32, smooth: false,
+    // SVG 连线的入场裁剪会在 WebKit 首次切换时隐藏线条；两条线直接呈现完整形状。
+    { name: '当期', type: 'line', animation: false, silent: true, showSymbol: props.report.buckets.length < 32, smooth: false,
       lineStyle: { color: token(definition.value.color), width: 3 }, itemStyle: { color: token(definition.value.color) },
       data: props.report.buckets.map((item) => Number(item[definition.value.field])) },
-    { name: '累计', type: 'line', silent: true, showSymbol: false,
+    { name: '累计', type: 'line', animation: false, silent: true, showSymbol: false,
       lineStyle: { color: token(definition.value.color), type: 'dashed', width: 2, opacity: 0.65 },
       data: props.report.buckets.map((item) => Number(item[definition.value.cumulative])) },
   ],
 }))
 
-watch(() => [props.report, props.metric], () => { selected.value = 0; refresh() }, { deep: true })
-function comparisonText(value: NonNullable<typeof comparison.value>['periodOverPeriod'] | undefined): string {
-  if (!value) return '暂无数据'
-  if (value.unavailableReason) return value.unavailableReason
-  const percent = value.changePercent ?? '0'
-  const magnitude = formatDecimalDisplay(percent.replace(/^[-+]/, ''))
-  return `${percent.startsWith('-') && magnitude !== '0' ? '减少' : '增加'} ${magnitude}% · 对比 ${formatCny(value.amount ?? '0')}`
-}
+watch(() => [props.report, props.metric], () => {
+  // 优先呈现最近有记录的时段，避免首个补零日期让用户误以为整段时间没有账目。
+  let latest = props.report.buckets.length - 1
+  while (latest >= 0 && metricCount(props.report.buckets[latest]) === 0) latest -= 1
+  selected.value = Math.max(0, latest)
+  refresh()
+}, { deep: true, immediate: true })
 </script>
 
 <template>
@@ -69,32 +76,21 @@ function comparisonText(value: NonNullable<typeof comparison.value>['periodOverP
     aria-label="时间趋势"
   >
     <header>
-      <div>
-        <p class="eyebrow">
-          时间趋势
-        </p><h2 class="section-title">
-          {{ definition.label }}
-        </h2>
-      </div><span>实线为当期，虚线为累计</span>
+      <h2 class="section-title">
+        {{ definition.label }}趋势
+      </h2>
+      <div class="trend-range-summary">
+        <span>范围合计 <b :class="amountClass">{{ formatCny(rangeAmount) }}</b></span>
+        <button
+          class="text-action"
+          type="button"
+          aria-haspopup="dialog"
+          @click="emit('compare', { label: definition.label, comparison })"
+        >
+          范围对比
+        </button>
+      </div>
     </header>
-    <div
-      class="comparison-grid"
-      aria-label="对比结果"
-    >
-      <article><small>环比</small><strong>{{ comparisonText(comparison?.periodOverPeriod) }}</strong></article>
-      <article><small>同比</small><strong>{{ comparisonText(comparison?.yearOverYear) }}</strong></article>
-    </div>
-    <div
-      v-if="selectedBucket"
-      id="time-point-reading"
-      class="chart-readout"
-      role="group"
-      aria-label="时间点固定读数"
-    >
-      <strong>{{ selectedBucket.label }} · {{ metricCount(selectedBucket) }} 条</strong>
-      <span>当期 <b :class="amountClass">{{ formatCny(selectedBucket[definition.field]) }}</b></span>
-      <span>累计 <b :class="amountClass">{{ formatCny(selectedBucket[definition.cumulative]) }}</b></span>
-    </div>
     <div
       ref="host"
       class="chart-canvas"
@@ -104,28 +100,34 @@ function comparisonText(value: NonNullable<typeof comparison.value>['periodOverP
       v-if="selectedBucket"
       class="time-drill"
     >
-      <label for="time-point">选择时间点</label>
-      <select
+      <CompactSelect
         id="time-point"
-        v-model.number="selected"
-        class="select-control"
-        aria-describedby="time-point-reading"
-      >
-        <option
-          v-for="(bucket, index) in report.buckets"
-          :key="bucket.startDate"
-          :value="index"
-        >
-          {{ bucket.label }} · {{ formatCny(bucket[definition.field]) }} · {{ metricCount(bucket) }} 条
-        </option>
-      </select>
+        label="查看时段"
+        described-by="time-point-reading"
+        :show-label="true"
+        :model-value="String(selected)"
+        :options="periodOptions"
+        @update:model-value="selected = Number($event)"
+      />
       <button
-        class="secondary-button"
+        class="text-action"
         type="button"
-        @click="emit('select', report.buckets[selected])"
+        :aria-label="`查看${selectedBucket.label}的${definition.label}明细`"
+        :disabled="metricCount(selectedBucket) === 0"
+        @click="emit('select', selectedBucket)"
       >
         查看明细
       </button>
+      <div
+        id="time-point-reading"
+        class="chart-readout"
+        role="status"
+        aria-label="所选时段金额"
+      >
+        <strong>{{ selectedBucket.label }} · {{ metricCount(selectedBucket) }} 条</strong>
+        <span>当期 <b :class="amountClass">{{ formatCny(selectedBucket[definition.field]) }}</b></span>
+        <span>累计至该时段 <b :class="amountClass">{{ formatCny(selectedBucket[definition.cumulative]) }}</b></span>
+      </div>
     </div>
   </section>
 </template>
