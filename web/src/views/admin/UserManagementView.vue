@@ -12,11 +12,11 @@ import {
   type AdminUserStatus,
   type TemporaryCredential,
 } from '../../api/adminUsers'
-import { normalizeRequestError } from '../../api/errors'
+import { isAccessDenied, normalizeRequestError } from '../../api/errors'
 import AppDataTable from '../../components/AppDataTable.vue'
 import AppDialog from '../../components/AppDialog.vue'
 import AppDrawer from '../../components/AppDrawer.vue'
-import AppStateBlock from '../../components/AppStateBlock.vue'
+import AppAsyncRegion from '../../components/AppAsyncRegion.vue'
 import AppToast from '../../components/AppToast.vue'
 import AppPagination from '../../components/AppPagination.vue'
 import FormField from '../../components/FormField.vue'
@@ -255,7 +255,7 @@ useRefreshOnReturn(() => load('refresh'))
       <button
         type="button"
         class="icon-button"
-        :disabled="refreshing"
+        :disabled="refreshing || status === 'loading' || isAccessDenied(error)"
         aria-label="刷新用户列表"
         @click="load('refresh')"
       >
@@ -264,115 +264,103 @@ useRefreshOnReturn(() => load('refresh'))
           aria-hidden="true"
         />
       </button>
-      <span class="admin-result-count">{{ data?.total ?? 0 }} 位用户</span>
+      <span
+        v-if="data && status !== 'error'"
+        class="admin-result-count"
+      >{{ data.total }} 位用户</span>
     </form>
 
-    <AppStateBlock
-      v-if="staleWarning"
-      kind="error"
-      title="刷新未完成"
-      :message="staleWarning.message"
-      action-label="重试"
-      @action="load('refresh')"
-    />
-    <AppStateBlock
-      v-if="status === 'loading'"
-      kind="loading"
-      title="正在加载用户"
-      message="正在读取账号状态，不会访问账目数据。"
-    />
-    <AppStateBlock
-      v-else-if="status === 'error'"
-      :kind="error?.kind === 'forbidden' ? 'permission' : 'error'"
-      title="用户列表不可用"
-      :message="error?.message"
-      :action-label="error?.retryable ? '重试' : undefined"
-      @action="load()"
-    />
-    <AppStateBlock
-      v-else-if="status === 'empty'"
-      kind="empty"
-      title="没有匹配的用户"
-      :message="appliedQuery || statusFilter ? '调整搜索条件后重试。' : '创建第一位普通用户后，会在这里显示。'"
-      :action-label="appliedQuery || statusFilter ? '清除条件' : '创建用户'"
-      @action="handleEmptyAction"
-    />
-
-    <template v-else-if="status === 'ready'">
-      <AppDataTable
-        class="admin-users-table"
-        caption="普通用户账号"
-      >
-        <template #head>
-          <tr><th>用户名</th><th>状态</th><th>注册时间</th><th>最近活跃</th><th><span class="sr-only">操作</span></th></tr>
-        </template>
-        <tr
-          v-for="user in users"
-          :key="user.accountId"
+    <AppAsyncRegion
+      :status="status"
+      :error="error"
+      :stale-warning="staleWarning"
+      :refreshing="refreshing"
+      loading-title="正在加载用户"
+      loading-message="正在读取账号状态，不会访问账目数据。"
+      error-title="用户列表不可用"
+      empty-title="没有匹配的用户"
+      :empty-message="appliedQuery || statusFilter ? '调整搜索条件后重试。' : '创建第一位普通用户后，会在这里显示。'"
+      :empty-action-label="appliedQuery || statusFilter ? '清除条件' : '创建用户'"
+      @retry="load()"
+      @stale-retry="load('refresh')"
+      @empty-action="handleEmptyAction"
+    >
+      <template #default>
+        <AppDataTable
+          class="admin-users-table"
+          caption="普通用户账号"
         >
-          <th scope="row">
-            <span
-              class="table-identity"
-              :title="user.username"
-            >{{ user.username }}</span>
-          </th>
-          <td>
-            <span
-              class="status-badge"
-              :data-status="user.status"
-            >{{ statusLabel(user.status) }}</span>
-          </td>
-          <td>{{ formatAdminTime(user.registeredAt) }}</td>
-          <td>{{ formatAdminTime(user.lastActiveAt) }}</td>
-          <td>
+          <template #head>
+            <tr><th>用户名</th><th>状态</th><th>注册时间</th><th>最近活跃</th><th><span class="sr-only">操作</span></th></tr>
+          </template>
+          <tr
+            v-for="user in users"
+            :key="user.accountId"
+          >
+            <th scope="row">
+              <span
+                class="table-identity"
+                :title="user.username"
+              >{{ user.username }}</span>
+            </th>
+            <td>
+              <span
+                class="status-badge"
+                :data-status="user.status"
+              >{{ statusLabel(user.status) }}</span>
+            </td>
+            <td>{{ formatAdminTime(user.registeredAt) }}</td>
+            <td>{{ formatAdminTime(user.lastActiveAt) }}</td>
+            <td>
+              <button
+                type="button"
+                class="text-action"
+                @click="openUser(user)"
+              >
+                管理
+              </button>
+            </td>
+          </tr>
+        </AppDataTable>
+
+        <ul
+          class="admin-user-cards"
+          aria-label="普通用户账号"
+        >
+          <li
+            v-for="user in users"
+            :key="user.accountId"
+            :data-status="user.status"
+          >
+            <div>
+              <strong>{{ user.username }}</strong><span
+                class="status-badge"
+                :data-status="user.status"
+              >{{ statusLabel(user.status) }}</span>
+            </div>
+            <dl><dt>注册</dt><dd>{{ formatAdminTime(user.registeredAt) }}</dd><dt>活跃</dt><dd>{{ formatAdminTime(user.lastActiveAt) }}</dd></dl>
             <button
               type="button"
-              class="text-action"
+              class="icon-button"
+              :aria-label="`管理 ${user.username}`"
               @click="openUser(user)"
             >
-              管理
+              <MoreHorizontal
+                :size="20"
+                aria-hidden="true"
+              />
             </button>
-          </td>
-        </tr>
-      </AppDataTable>
-
-      <ul
-        class="admin-user-cards"
-        aria-label="普通用户账号"
-      >
-        <li
-          v-for="user in users"
-          :key="user.accountId"
-          :data-status="user.status"
-        >
-          <div>
-            <strong>{{ user.username }}</strong><span
-              class="status-badge"
-              :data-status="user.status"
-            >{{ statusLabel(user.status) }}</span>
-          </div>
-          <dl><dt>注册</dt><dd>{{ formatAdminTime(user.registeredAt) }}</dd><dt>活跃</dt><dd>{{ formatAdminTime(user.lastActiveAt) }}</dd></dl>
-          <button
-            type="button"
-            class="icon-button"
-            :aria-label="`管理 ${user.username}`"
-            @click="openUser(user)"
-          >
-            <MoreHorizontal
-              :size="20"
-              aria-hidden="true"
-            />
-          </button>
-        </li>
-      </ul>
-      <AppPagination
-        :page="pageIndex"
-        :total-pages="totalPages"
-        label="用户分页"
-        :busy="refreshing"
-        @update:page="changePage"
-      />
-    </template>
+          </li>
+        </ul>
+        <AppPagination
+          :page="pageIndex"
+          :total-pages="totalPages"
+          label="用户分页"
+          :busy="refreshing"
+          @update:page="changePage"
+        />
+      </template>
+    </AppAsyncRegion>
 
     <AppDialog
       id="create-user"

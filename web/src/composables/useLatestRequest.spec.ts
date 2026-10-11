@@ -47,6 +47,17 @@ describe('useLatestRequest', () => {
     scope.stop()
   })
 
+  it('keeps a successful empty state after cancellation or a refresh without another empty predicate', async () => {
+    const scope = effectScope()
+    const state = scope.run(() => useLatestRequest<string[]>())!
+    await state.execute(async () => [], { isEmpty: (items) => !items.length })
+    await state.execute(async () => { throw new DOMException('aborted', 'AbortError') }, { intent: 'silent' })
+    expect(state.status.value).toBe('empty')
+    await state.execute(async () => { throw new TypeError('offline') }, { intent: 'silent' })
+    expect(state.status.value).toBe('empty')
+    scope.stop()
+  })
+
   it('drops a late response even when the request implementation ignores abort', async () => {
     const scope = effectScope()
     const state = scope.run(() => useLatestRequest<string[]>())!

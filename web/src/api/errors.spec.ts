@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { ApiClientError, ApiTimeoutError } from './http'
-import { normalizeRequestError } from './errors'
+import { canRetryRequest, normalizeRequestError } from './errors'
 
 describe('request error normalization', () => {
   it('keeps the public error contract and field errors', () => {
@@ -19,6 +19,12 @@ describe('request error normalization', () => {
       traceId: 'trace-safe',
       retryable: false,
     })
+  })
+
+  it.each([401, 403])('never retries access failure %i even if the server marks it retryable', (status) => {
+    const error = normalizeRequestError(new ApiClientError(status, { code: 'DENIED', message: '拒绝访问', fieldErrors: {}, traceId: 'fixture', retryable: true }))
+    expect(error.retryable).toBe(false)
+    expect(canRetryRequest({ ...error, retryable: true })).toBe(false)
   })
 
   it('distinguishes cancelation from a retryable network failure', () => {

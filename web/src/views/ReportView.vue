@@ -13,6 +13,8 @@ import PageWorkspace from '../components/PageWorkspace.vue'
 import PageHeading from '../components/PageHeading.vue'
 import { hasFilterChanges } from '../domain/filterChanges'
 import AppliedFilterBar, { type AppliedFilterSummary } from '../components/AppliedFilterBar.vue'
+import AppStatusNotice from '../components/AppStatusNotice.vue'
+import AppRequestError from '../components/AppRequestError.vue'
 import AppStateBlock from '../components/AppStateBlock.vue'
 import ChartPanel from '../components/ChartPanel.vue'
 import FilterSheet from '../components/FilterSheet.vue'
@@ -389,13 +391,20 @@ useRefreshOnReturn(() => load())
       title="正在计算报表"
       message="正在更新，请稍候。"
     />
-    <AppStateBlock
-      v-if="request.error.value"
-      :kind="request.error.value.kind === 'forbidden' ? 'permission' : 'error'"
-      title="报表加载失败"
-      :message="request.data.value ? '仍显示上次成功条件的结果，暂不可下钻。' : request.error.value.message"
-      :action-label="request.error.value.kind === 'forbidden' ? undefined : '重试'"
+    <AppStatusNotice
+      v-if="request.error.value && request.data.value"
+      title="报表尚未更新"
+      :error="request.error.value"
+      :message="`${request.error.value.message} 仍显示上次成功条件的结果，暂不可下钻。`"
+      action-label="重试"
+      :busy="request.refreshing.value"
       @action="load"
+    />
+    <AppRequestError
+      v-else-if="request.error.value"
+      title="报表加载失败"
+      :error="request.error.value"
+      @retry="load"
     />
     <MoneySummary
       v-if="request.data.value"

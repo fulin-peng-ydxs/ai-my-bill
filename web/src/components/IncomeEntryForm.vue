@@ -19,7 +19,8 @@ import {
   emptyIncomeForm, incomeFormFromResponse, incomeRequestFromForm, validateIncomeForm,
   type IncomeField, type IncomeFormState,
 } from '../domain/ledgerEntryForm'
-import AppStateBlock from './AppStateBlock.vue'
+import AppStatusNotice from './AppStatusNotice.vue'
+import { canRetryRequest, normalizeRequestError, type RequestError } from '../api/errors'
 import AppToast from './AppToast.vue'
 import SavedEntrySummary from './SavedEntrySummary.vue'
 import DailyTemplateFallbackNotice from './DailyTemplateFallbackNotice.vue'
@@ -51,7 +52,7 @@ const categories = ref<DictionaryItem[]>([])
 const funding = ref<DictionaryItem[]>([])
 const recentNames = ref<string[]>([])
 const loading = ref(true)
-const loadError = ref('')
+const optionFailures = ref<{ label: string, error: RequestError }[]>([])
 const errors = reactive<Partial<Record<IncomeField, string>>>({})
 const submitting = ref(false)
 watch(submitting, value => emit('busyChange', value), { flush: 'sync' })
@@ -130,17 +131,24 @@ function ensureItem(target: typeof payers, itemType: DictionaryItem['type'], id?
 }
 
 async function loadOptions(): Promise<void> {
-  loading.value = true; loadError.value = ''
-  try {
-    const [payerPage, categoryPage, fundingPage, names] = await Promise.all([
-      listDictionaryCandidates('payer'), listDictionaryCandidates('income-category'),
-      listDictionaryCandidates('funding-channel'), listRecentIncomeNames(''),
-    ])
-    payers.value = payerPage.items; categories.value = categoryPage.items; funding.value = fundingPage.items
-    recentNames.value = names.items
-    if (props.editEntry) ensureEditOptions(props.editEntry)
-  } catch { loadError.value = '收入填报选项暂未完整加载。' }
-  finally { loading.value = false }
+  loading.value = true
+  optionFailures.value = []
+  const requests = [
+    { label: '付款方', load: () => listDictionaryCandidates('payer').then((page) => { payers.value = page.items }), clear: () => { payers.value = [] } },
+    { label: '收入分类', load: () => listDictionaryCandidates('income-category').then((page) => { categories.value = page.items }), clear: () => { categories.value = [] } },
+    { label: '收款方式', load: () => listDictionaryCandidates('funding-channel').then((page) => { funding.value = page.items }), clear: () => { funding.value = [] } },
+    { label: '最近名称', load: () => listRecentIncomeNames('').then((page) => { recentNames.value = page.items }), clear: () => { recentNames.value = [] } },
+  ]
+  const results = await Promise.allSettled(requests.map((request) => request.load()))
+  results.forEach((result, index) => {
+    if (result.status === 'rejected') {
+      const request = requests[index]!
+      request.clear()
+      optionFailures.value.push({ label: request.label, error: normalizeRequestError(result.reason) })
+    }
+  })
+  if (props.editEntry) ensureEditOptions(props.editEntry)
+  loading.value = false
 }
 
 function selectPayer(item: DictionaryChoice): void {
@@ -225,18 +233,16 @@ useRefreshOnReturn(() => loadOptions())
     class="entry-form"
     :aria-label="editMode ? '编辑收入' : '收入填报'"
   >
-    <AppStateBlock
+    <span
       v-if="loading"
-      kind="loading"
-      title="正在加载收入选项"
-      message="草稿仍会保存在当前设备。"
-    />
-    <AppStateBlock
-      v-else-if="loadError"
-      kind="error"
-      title="部分选项暂未加载"
-      :message="loadError"
-      action-label="重试"
+      class="entry-options-status"
+      role="status"
+    >正在加载收入选项…</span>
+    <AppStatusNotice
+      v-else-if="optionFailures.length"
+      title="部分选项暂不可用"
+      :message="optionFailures.map(({ label, error }) => `${label}：${error.message}`).join('；')"
+      :action-label="optionFailures.every(({ error }) => canRetryRequest(error)) ? '重试' : undefined"
       @action="loadOptions"
     />
     <DraftBackupNotice

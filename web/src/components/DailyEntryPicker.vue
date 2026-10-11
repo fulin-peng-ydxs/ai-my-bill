@@ -7,7 +7,10 @@ import {
   type DailyTemplateEntryType, type DailyTemplateSelection, type DailyTemplateSummary,
 } from '../api/dailyTemplates'
 import AppDrawer from './AppDrawer.vue'
-import AppStateBlock from './AppStateBlock.vue'
+import AppAsyncRegion from './AppAsyncRegion.vue'
+import AppStatusNotice from './AppStatusNotice.vue'
+import { isAccessDenied, normalizeRequestError, type RequestError } from '../api/errors'
+import { useLatestRequest } from '../composables/useLatestRequest'
 import EntryTypeSwitch from './EntryTypeSwitch.vue'
 
 const props = defineProps<{ entryType: DailyTemplateEntryType }>()
@@ -15,11 +18,11 @@ const emit = defineEmits<{ select: [selection: DailyTemplateSelection] }>()
 
 const open = ref(false)
 const activeType = ref<DailyTemplateEntryType>(props.entryType)
-const items = ref<DailyTemplateSummary[]>([])
-const loading = ref(false)
-const error = ref('')
+const request = useLatestRequest<Awaited<ReturnType<typeof listDailyTemplates>>>()
+const items = computed(() => request.data.value?.items ?? [])
+const actionError = ref<RequestError>()
+const regionStatus = computed(() => isAccessDenied(actionError.value) ? 'error' : request.status.value)
 const busyId = ref('')
-let loadRevision = 0
 const title = computed(() => activeType.value === 'EXPENSE' ? '日常支出' : '日常收入')
 
 watch(() => props.entryType, (value) => {
@@ -27,7 +30,7 @@ watch(() => props.entryType, (value) => {
 })
 
 watch(open, (value) => {
-  if (!value) return
+  if (!value) { request.cancel(); return }
   const typeChanged = activeType.value !== props.entryType
   activeType.value = props.entryType
   if (!typeChanged) void load()
@@ -38,32 +41,20 @@ watch(activeType, () => {
 })
 
 async function load(): Promise<void> {
-  const revision = ++loadRevision
-  const requestedType = activeType.value
-  loading.value = true
-  error.value = ''
-  try {
-    const response = await listDailyTemplates(requestedType)
-    if (revision !== loadRevision) return
-    items.value = response.items
-  } catch (cause) {
-    if (revision !== loadRevision) return
-    error.value = cause instanceof Error ? cause.message : '日常模板加载失败，请重试。'
-  } finally {
-    if (revision === loadRevision) loading.value = false
-  }
+  actionError.value = undefined
+  await request.execute((signal) => listDailyTemplates(activeType.value, signal), { isEmpty: (page) => page.items.length === 0 })
 }
 
 async function choose(item: DailyTemplateSummary): Promise<void> {
   if (busyId.value) return
   busyId.value = item.id
-  error.value = ''
+  actionError.value = undefined
   try {
     const selection = await selectDailyTemplate(item.id)
     emit('select', selection)
     open.value = false
   } catch (cause) {
-    error.value = cause instanceof Error ? cause.message : '模板应用失败，请重试。'
+    actionError.value = normalizeRequestError(cause)
   } finally {
     busyId.value = ''
   }
@@ -72,12 +63,13 @@ async function choose(item: DailyTemplateSummary): Promise<void> {
 async function remove(item: DailyTemplateSummary): Promise<void> {
   if (busyId.value) return
   busyId.value = item.id
-  error.value = ''
+  actionError.value = undefined
   try {
     await removeDailyTemplate(item.id)
-    items.value = items.value.filter((candidate) => candidate.id !== item.id)
+    if (request.data.value) request.data.value = { ...request.data.value, items: items.value.filter((candidate) => candidate.id !== item.id) }
+    if (!items.value.length) request.status.value = 'empty'
   } catch (cause) {
-    error.value = cause instanceof Error ? cause.message : '模板移除失败，请重试。'
+    actionError.value = normalizeRequestError(cause)
   } finally {
     busyId.value = ''
   }
@@ -106,59 +98,54 @@ async function remove(item: DailyTemplateSummary): Promise<void> {
         label="日常模板类型"
         :disabled="Boolean(busyId)"
       />
-      <AppStateBlock
-        v-if="loading"
-        kind="loading"
-        title="正在加载日常模板"
+      <AppStatusNotice
+        v-if="actionError && !isAccessDenied(actionError)"
+        title="操作未完成"
+        :error="actionError"
       />
-      <AppStateBlock
-        v-else-if="error"
-        kind="error"
-        title="暂时无法完成操作"
-        :message="error"
-        action-label="重新加载"
-        @action="load"
-      />
-      <AppStateBlock
-        v-else-if="!items.length"
-        kind="empty"
-        title="还没有日常模板"
-        :message="`到明细中长按一笔有效账目，选择“保存为日常${activeType === 'EXPENSE' ? '支出' : '收入'}”。`"
-      />
-      <ul
-        v-else
-        class="daily-template-list content-list"
+      <AppAsyncRegion
+        :status="regionStatus"
+        :error="isAccessDenied(actionError) ? actionError : request.error.value"
+        loading-title="正在加载日常模板"
+        error-title="日常模板暂不可用"
+        empty-title="还没有日常模板"
+        :empty-message="`到明细中打开一笔有效账目的更多操作，选择“保存为日常${activeType === 'EXPENSE' ? '支出' : '收入'}”。`"
+        @retry="load"
       >
-        <li
-          v-for="item in items"
-          :key="item.id"
+        <ul
+          class="daily-template-list content-list"
         >
-          <button
-            type="button"
-            class="daily-template-choice"
-            :disabled="Boolean(busyId)"
-            @click="choose(item)"
+          <li
+            v-for="item in items"
+            :key="item.id"
           >
-            <strong>{{ item.displayName }}</strong>
-            <span>{{ item.contextName }} · {{ item.entryType === 'EXPENSE' ? '−' : '+' }}{{ formatCny(item.amount) }}</span>
-          </button>
-          <button
-            type="button"
-            class="text-action daily-template-remove"
-            :disabled="Boolean(busyId)"
-            :aria-label="`移除日常模板：${item.displayName}`"
-            @click="remove(item)"
-          >
-            {{ busyId === item.id ? '处理中…' : '移除' }}
-          </button>
-        </li>
-      </ul>
-      <p
-        v-if="items.length"
-        class="daily-template-note list-end-note"
-      >
-        本批 {{ items.length }} 项 · 移除不会删除原账目。
-      </p>
+            <button
+              type="button"
+              class="daily-template-choice"
+              :disabled="Boolean(busyId)"
+              @click="choose(item)"
+            >
+              <strong>{{ item.displayName }}</strong>
+              <span>{{ item.contextName }} · {{ item.entryType === 'EXPENSE' ? '−' : '+' }}{{ formatCny(item.amount) }}</span>
+            </button>
+            <button
+              type="button"
+              class="text-action daily-template-remove"
+              :disabled="Boolean(busyId)"
+              :aria-label="`移除日常模板：${item.displayName}`"
+              @click="remove(item)"
+            >
+              {{ busyId === item.id ? '处理中…' : '移除' }}
+            </button>
+          </li>
+        </ul>
+        <p
+          v-if="items.length"
+          class="daily-template-note list-end-note"
+        >
+          本批 {{ items.length }} 项 · 移除不会删除原账目。
+        </p>
+      </AppAsyncRegion>
     </div>
   </AppDrawer>
 </template>

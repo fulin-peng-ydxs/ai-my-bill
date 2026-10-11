@@ -6,7 +6,7 @@ import ComboboxField from './ComboboxField.vue'
 
 import { createDictionaryItem } from '../api/dictionaries'
 import { listExpenseProducts, type ProductSuggestion } from '../api/expenses'
-import { normalizeRequestError } from '../api/errors'
+import { canRetryRequest, normalizeRequestError } from '../api/errors'
 import { useDebouncedQuery } from '../composables/useDebouncedQuery'
 import { useLatestRequest } from '../composables/useLatestRequest'
 import { normalizeDictionaryName } from '../domain/dictionaries'
@@ -148,6 +148,7 @@ watch(() => props.modelName, (value) => {
         role="alert"
       >
         {{ request.error.value.message }} <button
+          v-if="canRetryRequest(request.error.value)"
           type="button"
           class="compact-action"
           @click="search(searchTerm)"

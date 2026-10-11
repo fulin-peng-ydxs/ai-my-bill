@@ -1,4 +1,5 @@
 import { defineStore } from 'pinia'
+import { normalizeRequestError, type RequestError } from '../api/errors'
 
 import { getPreferences, resetPreferences, savePreferences } from '../api/preferences'
 import {
@@ -28,6 +29,7 @@ export const usePreferencesStore = defineStore('preferences', {
     status: 'idle' as 'idle' | 'loading' | 'ready' | 'error',
     fieldStates: {} as Partial<Record<PreferenceField, PreferenceSaveState>>,
     errorMessage: undefined as string | undefined,
+    requestError: undefined as RequestError | undefined,
     revision: 0,
   }),
   getters: {
@@ -39,6 +41,7 @@ export const usePreferencesStore = defineStore('preferences', {
       this.accountId = accountId
       this.status = 'loading'
       this.errorMessage = undefined
+      this.requestError = undefined
       const cached = await readAccountStorage(accountId, 'preferences')
       if (requestRevision !== this.revision || this.accountId !== accountId) return
       if (cached) {
@@ -57,6 +60,7 @@ export const usePreferencesStore = defineStore('preferences', {
       } catch (error) {
         if (requestRevision !== this.revision || this.accountId !== accountId) return
         this.status = 'error'
+        this.requestError = normalizeRequestError(error)
         this.errorMessage = error instanceof Error ? error.message : '偏好加载失败，已使用安全默认值。'
       }
     },
@@ -68,6 +72,7 @@ export const usePreferencesStore = defineStore('preferences', {
       this.values = normalizePreferences({ ...this.values, ...patch })
       fields.forEach((field) => { this.fieldStates[field] = 'saving' })
       this.errorMessage = undefined
+      this.requestError = undefined
       this.applyTheme()
       const requestedRevision = ++this.revision
       const previous = queues.get(this) ?? Promise.resolve()
@@ -83,6 +88,7 @@ export const usePreferencesStore = defineStore('preferences', {
         } catch (error) {
           if (this.accountId === requestAccountId && requestedRevision === this.revision) {
             fields.forEach((field) => { this.fieldStates[field] = 'error' })
+            this.requestError = normalizeRequestError(error)
             this.errorMessage = error instanceof Error ? error.message : '偏好保存失败，当前选择已保留。'
           }
           throw error
@@ -107,12 +113,14 @@ export const usePreferencesStore = defineStore('preferences', {
         fields.forEach((field) => { this.fieldStates[field] = 'idle' })
         this.status = 'ready'
         this.errorMessage = undefined
+        this.requestError = undefined
         await this.cache()
       } catch (error) {
         if (this.accountId === requestAccountId && requestedRevision === this.revision) {
           this.values = before
           this.applyTheme()
           fields.forEach((field) => { this.fieldStates[field] = 'error' })
+          this.requestError = normalizeRequestError(error)
           this.errorMessage = error instanceof Error ? error.message : '恢复默认失败，原偏好保持不变。'
         }
         throw error
@@ -151,11 +159,13 @@ export const usePreferencesStore = defineStore('preferences', {
       this.status = 'idle'
       this.fieldStates = {}
       this.errorMessage = undefined
+      this.requestError = undefined
     },
     discardPending(): void {
       this.values = { ...this.confirmedValues }
       this.fieldStates = {}
       this.errorMessage = undefined
+      this.requestError = undefined
       this.applyTheme()
     },
   },

@@ -1,8 +1,10 @@
 import { onScopeDispose, ref, shallowRef } from 'vue'
 
 import { normalizeRequestError, type RequestError } from '../api/errors'
+import type { PageState } from '../app/pageRegistry'
 
-export type DataRegionStatus = 'idle' | 'loading' | 'ready' | 'empty' | 'error'
+// idle 只表示内部尚未请求或已取消；对外区域四态沿用页面登记的同一类型。
+export type DataRegionStatus = PageState | 'idle'
 export type RequestIntent = 'replace' | 'refresh' | 'silent'
 
 export interface LatestRequestOptions<T> {
@@ -21,6 +23,7 @@ export function useLatestRequest<T>(onAccessDenied?: () => void) {
   const refreshing = ref(false)
   let generation = 0
   let controller: AbortController | undefined
+  let successfulStatus: 'ready' | 'empty' = 'ready'
 
   function cancel(): void {
     generation += 1
@@ -28,7 +31,7 @@ export function useLatestRequest<T>(onAccessDenied?: () => void) {
     controller = undefined
     refreshing.value = false
     error.value = undefined
-    if (status.value === 'loading') status.value = data.value === undefined ? 'idle' : 'ready'
+    if (status.value === 'loading') status.value = data.value === undefined ? 'idle' : successfulStatus
   }
 
   async function execute(
@@ -51,13 +54,14 @@ export function useLatestRequest<T>(onAccessDenied?: () => void) {
       const result = await request(controller.signal)
       if (requestGeneration !== generation) return undefined
       data.value = result
-      status.value = options.isEmpty?.(result) ? 'empty' : 'ready'
+      successfulStatus = options.isEmpty?.(result) ? 'empty' : 'ready'
+      status.value = successfulStatus
       return result
     } catch (cause) {
       if (requestGeneration !== generation) return undefined
       const normalized = normalizeRequestError(cause)
       if (normalized.kind === 'canceled') {
-        status.value = data.value === undefined ? 'idle' : 'ready'
+        status.value = data.value === undefined ? 'idle' : successfulStatus
         return undefined
       }
       // 身份或权限失效时，任何刷新方式都必须撤下旧数据。
@@ -68,7 +72,7 @@ export function useLatestRequest<T>(onAccessDenied?: () => void) {
         onAccessDenied?.()
       } else if (intent === 'silent' && data.value !== undefined) {
         staleWarning.value = normalized
-        status.value = options.isEmpty?.(data.value) ? 'empty' : 'ready'
+        status.value = options.isEmpty ? options.isEmpty(data.value) ? 'empty' : 'ready' : successfulStatus
       } else {
         error.value = normalized
         status.value = 'error'

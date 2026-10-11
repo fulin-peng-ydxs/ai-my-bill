@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { isAccessDenied } from '../../api/errors'
 import { useRefreshOnReturn } from '../../composables/useRefreshOnReturn'
 import { MoreHorizontal, RefreshCw, Search } from 'lucide-vue-next'
 import { computed, onMounted, ref } from 'vue'
@@ -12,6 +13,7 @@ import {
 } from '../../api/adminOperations'
 import AppDataTable from '../../components/AppDataTable.vue'
 import AppDrawer from '../../components/AppDrawer.vue'
+import AppAsyncRegion from '../../components/AppAsyncRegion.vue'
 import AppStateBlock from '../../components/AppStateBlock.vue'
 import AppPagination from '../../components/AppPagination.vue'
 import { useLatestRequest } from '../../composables/useLatestRequest'
@@ -103,7 +105,7 @@ useRefreshOnReturn(() => load(true))
       <button
         type="button"
         class="secondary-button admin-heading-action"
-        :disabled="refreshing"
+        :disabled="refreshing || status === 'loading' || isAccessDenied(error)"
         @click="load(true)"
       >
         <RefreshCw
@@ -190,125 +192,113 @@ useRefreshOnReturn(() => load(true))
           清除
         </button>
       </div>
-      <span class="admin-result-count">{{ data?.total ?? 0 }} 条日志</span>
+      <span
+        v-if="data && status !== 'error'"
+        class="admin-result-count"
+      >{{ data.total }} 条日志</span>
     </form>
 
-    <AppStateBlock
-      v-if="staleWarning"
-      kind="error"
-      title="刷新未完成"
-      :message="`${staleWarning.message} 当前仍显示上次成功结果。`"
-      action-label="重试"
-      @action="load(true)"
-    />
-    <AppStateBlock
-      v-if="status === 'loading'"
-      kind="loading"
-      title="正在加载操作日志"
-      message="只读取已清理的管理审计记录。"
-    />
-    <AppStateBlock
-      v-else-if="status === 'error'"
-      :kind="error?.kind === 'forbidden' ? 'permission' : 'error'"
-      title="操作日志不可用"
-      :message="error?.message"
-      :action-label="error?.retryable ? '重试' : undefined"
-      @action="load()"
-    />
-    <AppStateBlock
-      v-else-if="status === 'empty'"
-      kind="empty"
-      :title="hasAppliedFilters ? '没有匹配日志' : '还没有操作日志'"
-      :message="hasAppliedFilters ? '调整管理员、动作、对象、结果或时间条件后重试。' : '完成创建用户、状态变更等高影响管理操作后，记录会出现在这里。'"
-      :action-label="hasAppliedFilters ? '清除条件' : undefined"
-      @action="clearFilters"
-    />
-
-    <template v-else-if="status === 'ready'">
-      <AppDataTable
-        class="admin-audit-table"
-        caption="管理员操作日志"
-      >
-        <template #head>
-          <tr><th>时间</th><th>管理员</th><th>动作</th><th>对象</th><th>结果</th><th><span class="sr-only">详情</span></th></tr>
-        </template>
-        <tr
-          v-for="item in items"
-          :key="item.id"
+    <AppAsyncRegion
+      :status="status"
+      :error="error"
+      :stale-warning="staleWarning"
+      :refreshing="refreshing"
+      loading-title="正在加载操作日志"
+      loading-message="只读取已清理的管理审计记录。"
+      error-title="操作日志不可用"
+      :empty-title="hasAppliedFilters ? '没有匹配日志' : '还没有操作日志'"
+      :empty-message="hasAppliedFilters ? '调整管理员、动作、对象、结果或时间条件后重试。' : '完成创建用户、状态变更等高影响管理操作后，记录会出现在这里。'"
+      :empty-action-label="hasAppliedFilters ? '清除条件' : undefined"
+      @retry="load()"
+      @stale-retry="load(true)"
+      @empty-action="clearFilters"
+    >
+      <template #default>
+        <AppDataTable
+          class="admin-audit-table"
+          caption="管理员操作日志"
         >
-          <td>{{ formatAdminTime(item.occurredAt) }}</td>
-          <td>
-            <span
-              class="table-identity"
-              :title="item.administrator"
-            >{{ item.administrator }}</span>
-          </td>
-          <td>{{ adminActionLabel(item.action) }}</td>
-          <td>
-            <span
-              class="table-identity"
-              :title="`${adminObjectLabel(item.objectType)} · ${item.objectId}`"
-            >{{ adminObjectLabel(item.objectType) }} · {{ item.objectId }}</span>
-          </td>
-          <td>
-            <span
-              class="status-badge"
-              :data-status="item.result"
-            >{{ resultLabel(item.result) }}</span>
-          </td>
-          <td>
+          <template #head>
+            <tr><th>时间</th><th>管理员</th><th>动作</th><th>对象</th><th>结果</th><th><span class="sr-only">详情</span></th></tr>
+          </template>
+          <tr
+            v-for="item in items"
+            :key="item.id"
+          >
+            <td>{{ formatAdminTime(item.occurredAt) }}</td>
+            <td>
+              <span
+                class="table-identity"
+                :title="item.administrator"
+              >{{ item.administrator }}</span>
+            </td>
+            <td>{{ adminActionLabel(item.action) }}</td>
+            <td>
+              <span
+                class="table-identity"
+                :title="`${adminObjectLabel(item.objectType)} · ${item.objectId}`"
+              >{{ adminObjectLabel(item.objectType) }} · {{ item.objectId }}</span>
+            </td>
+            <td>
+              <span
+                class="status-badge"
+                :data-status="item.result"
+              >{{ resultLabel(item.result) }}</span>
+            </td>
+            <td>
+              <button
+                type="button"
+                class="text-action"
+                @click="openDetail(item)"
+              >
+                查看
+              </button>
+            </td>
+          </tr>
+        </AppDataTable>
+
+        <ul
+          class="admin-audit-cards"
+          aria-label="管理员操作日志"
+        >
+          <li
+            v-for="item in items"
+            :key="item.id"
+            :data-status="item.result"
+          >
+            <div>
+              <strong>{{ adminActionLabel(item.action) }}</strong>
+              <span
+                class="status-badge"
+                :data-status="item.result"
+              >{{ resultLabel(item.result) }}</span>
+            </div>
+            <p>{{ adminObjectLabel(item.objectType) }} · {{ item.objectId }}</p>
+            <small>{{ item.administrator }} · {{ formatAdminTime(item.occurredAt) }}</small>
             <button
               type="button"
-              class="text-action"
+              class="icon-button"
+              :aria-label="`查看 ${adminActionLabel(item.action)} 日志`"
               @click="openDetail(item)"
             >
-              查看
+              <MoreHorizontal
+                :size="20"
+                aria-hidden="true"
+              />
             </button>
-          </td>
-        </tr>
-      </AppDataTable>
+          </li>
+        </ul>
 
-      <ul
-        class="admin-audit-cards"
-        aria-label="管理员操作日志"
-      >
-        <li
-          v-for="item in items"
-          :key="item.id"
-          :data-status="item.result"
-        >
-          <div>
-            <strong>{{ adminActionLabel(item.action) }}</strong>
-            <span
-              class="status-badge"
-              :data-status="item.result"
-            >{{ resultLabel(item.result) }}</span>
-          </div>
-          <p>{{ adminObjectLabel(item.objectType) }} · {{ item.objectId }}</p>
-          <small>{{ item.administrator }} · {{ formatAdminTime(item.occurredAt) }}</small>
-          <button
-            type="button"
-            class="icon-button"
-            :aria-label="`查看 ${adminActionLabel(item.action)} 日志`"
-            @click="openDetail(item)"
-          >
-            <MoreHorizontal
-              :size="20"
-              aria-hidden="true"
-            />
-          </button>
-        </li>
-      </ul>
-
-      <AppPagination
-        v-if="status === 'ready'"
-        :page="applied.page"
-        :total-pages="totalPages"
-        label="操作日志分页"
-        :busy="refreshing"
-        @update:page="changePage"
-      />
-    </template>
+        <AppPagination
+          v-if="status === 'ready'"
+          :page="applied.page"
+          :total-pages="totalPages"
+          label="操作日志分页"
+          :busy="refreshing"
+          @update:page="changePage"
+        />
+      </template>
+    </AppAsyncRegion>
 
     <AppDrawer
       id="admin-audit-detail"

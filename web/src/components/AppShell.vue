@@ -10,7 +10,7 @@ import { registerUnsavedChanges } from '../composables/unsavedChanges'
 import { useSessionStore } from '../stores/session'
 import { usePreferencesStore } from '../stores/preferences'
 import AppDrawer from './AppDrawer.vue'
-import AppStateBlock from './AppStateBlock.vue'
+import AppRequestError from './AppRequestError.vue'
 import BottomNavigation from './BottomNavigation.vue'
 
 const route = useRoute()
@@ -130,14 +130,12 @@ watch(() => sessionStore.session?.accountId, (accountId, previousAccountId) => {
       </nav>
     </AppDrawer>
     <main class="shell-content">
-      <AppStateBlock
+      <AppRequestError
         v-if="logoutError"
         class="shell-error"
-        kind="error"
         title="退出未完成"
-        :message="logoutError"
-        action-label="重试"
-        @action="logout"
+        :error="logoutError"
+        @retry="logout"
       />
       <slot />
     </main>

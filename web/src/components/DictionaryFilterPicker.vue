@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { canRetryRequest } from '../api/errors'
 import { computed, ref, watch } from 'vue'
 
 import { getDictionaryItem, listDictionaryItems, type DictionaryItem, type DictionaryPage } from '../api/dictionaries'
@@ -118,7 +119,7 @@ watch(() => [props.type, props.modelValue], () => {
       >
         {{ request.error.value.message }}
         <button
-          v-if="request.error.value.kind !== 'forbidden'"
+          v-if="canRetryRequest(request.error.value)"
           type="button"
           class="compact-action"
           @click="load"

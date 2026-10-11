@@ -1,4 +1,5 @@
 import { ref } from 'vue'
+import { normalizeRequestError, type RequestError } from '../api/errors'
 import { useRouter } from 'vue-router'
 
 import { hasUnsavedChangesNow, requestDiscardChanges } from './unsavedChanges'
@@ -11,7 +12,7 @@ export function useLogout() {
   const preferencesStore = usePreferencesStore()
   const router = useRouter()
   const loggingOut = ref(false)
-  const logoutError = ref<string>()
+  const logoutError = ref<RequestError>()
 
   async function logout(): Promise<void> {
     if (loggingOut.value) return
@@ -26,7 +27,7 @@ export function useLogout() {
       preferencesStore.clearMemory()
       await router.replace('/login')
     } catch (error) {
-      logoutError.value = error instanceof Error ? error.message : '退出未完成，请重试。'
+      logoutError.value = normalizeRequestError(error)
     } finally {
       loggingOut.value = false
     }

@@ -1,10 +1,11 @@
 <script setup lang="ts">
+import { isAccessDenied } from '../../api/errors'
 import { useRefreshOnReturn } from '../../composables/useRefreshOnReturn'
 import { Archive, Database, HeartPulse, RefreshCw, Users } from 'lucide-vue-next'
 import { computed, onMounted } from 'vue'
 
 import { getAdminOverview } from '../../api/adminOperations'
-import AppStateBlock from '../../components/AppStateBlock.vue'
+import AppAsyncRegion from '../../components/AppAsyncRegion.vue'
 import { useLatestRequest } from '../../composables/useLatestRequest'
 import { adminBackupPresentation, formatAdminBytes, formatAdminTime } from '../../domain/adminPresentation'
 
@@ -30,7 +31,7 @@ useRefreshOnReturn(() => load(true))
       <button
         type="button"
         class="secondary-button admin-heading-action"
-        :disabled="refreshing"
+        :disabled="refreshing || status === 'loading' || isAccessDenied(error)"
         @click="load(true)"
       >
         <RefreshCw
@@ -42,93 +43,85 @@ useRefreshOnReturn(() => load(true))
     </header>
 
 
-    <AppStateBlock
-      v-if="staleWarning"
-      kind="error"
-      title="刷新未完成"
-      :message="`${staleWarning.message} 当前仍显示上次成功结果。`"
-      action-label="重试"
-      @action="load(true)"
-    />
-    <AppStateBlock
-      v-if="status === 'loading'"
-      kind="loading"
-      title="正在检查运行状态"
-      message="只读取账号和服务元数据。"
-    />
-    <AppStateBlock
-      v-else-if="status === 'error'"
-      :kind="error?.kind === 'forbidden' ? 'permission' : 'error'"
-      title="运行概况不可用"
-      :message="error?.message"
-      action-label="重试"
-      @action="load()"
-    />
-
-    <template v-else-if="status === 'ready' && data">
-      <div class="admin-metric-grid">
-        <article class="admin-metric-card admin-account-metric">
-          <div class="admin-metric-icon">
-            <Users
-              :size="20"
-              aria-hidden="true"
-            />
-          </div>
-          <p>普通用户</p>
-          <strong>{{ data.accounts.total }}</strong>
-          <dl>
-            <div><dt>正常</dt><dd>{{ data.accounts.active }}</dd></div>
-            <div><dt>待首次登录</dt><dd>{{ data.accounts.pendingFirstLogin }}</dd></div>
-            <div><dt>已停用</dt><dd>{{ data.accounts.disabled }}</dd></div>
-            <div><dt>注销处理中</dt><dd>{{ data.accounts.deletionPending }}</dd></div>
-            <div><dt>有效会话</dt><dd>{{ data.accounts.activeSessions }}</dd></div>
-          </dl>
-          <small>最近活跃：{{ formatAdminTime(data.accounts.lastActiveAt) }}</small>
-        </article>
-
-        <article
-          class="admin-metric-card"
-          data-tone="success"
+    <AppAsyncRegion
+      :status="status"
+      :error="error"
+      :stale-warning="staleWarning"
+      :refreshing="refreshing"
+      loading-title="正在检查运行状态"
+      loading-message="只读取账号和服务元数据。"
+      error-title="运行概况不可用"
+      @retry="load()"
+      @stale-retry="load(true)"
+    >
+      <template #default>
+        <div
+          v-if="data"
+          class="admin-metric-grid"
         >
-          <div class="admin-metric-icon">
-            <HeartPulse
-              :size="20"
-              aria-hidden="true"
-            />
-          </div>
-          <p>服务健康</p>
-          <strong>正常</strong>
-          <small>检查时间：{{ formatAdminTime(data.service.checkedAt) }}</small>
-        </article>
+          <article class="admin-metric-card admin-account-metric">
+            <div class="admin-metric-icon">
+              <Users
+                :size="20"
+                aria-hidden="true"
+              />
+            </div>
+            <p>普通用户</p>
+            <strong>{{ data.accounts.total }}</strong>
+            <dl>
+              <div><dt>正常</dt><dd>{{ data.accounts.active }}</dd></div>
+              <div><dt>待首次登录</dt><dd>{{ data.accounts.pendingFirstLogin }}</dd></div>
+              <div><dt>已停用</dt><dd>{{ data.accounts.disabled }}</dd></div>
+              <div><dt>注销处理中</dt><dd>{{ data.accounts.deletionPending }}</dd></div>
+              <div><dt>有效会话</dt><dd>{{ data.accounts.activeSessions }}</dd></div>
+            </dl>
+            <small>最近活跃：{{ formatAdminTime(data.accounts.lastActiveAt) }}</small>
+          </article>
 
-        <article
-          class="admin-metric-card"
-          :data-tone="backup.tone"
-        >
-          <div class="admin-metric-icon">
-            <Archive
-              :size="20"
-              aria-hidden="true"
-            />
-          </div>
-          <p>生产备份</p>
-          <strong>{{ backup.label }}</strong>
-          <small>{{ backup.detail }}</small>
-          <small>最近成功：{{ formatAdminTime(data.backup.latestCompletedAt) }}</small>
-        </article>
+          <article
+            class="admin-metric-card"
+            data-tone="success"
+          >
+            <div class="admin-metric-icon">
+              <HeartPulse
+                :size="20"
+                aria-hidden="true"
+              />
+            </div>
+            <p>服务健康</p>
+            <strong>正常</strong>
+            <small>检查时间：{{ formatAdminTime(data.service.checkedAt) }}</small>
+          </article>
 
-        <article class="admin-metric-card">
-          <div class="admin-metric-icon">
-            <Database
-              :size="20"
-              aria-hidden="true"
-            />
-          </div>
-          <p>数据库已用</p>
-          <strong>{{ formatAdminBytes(data.storage.databaseBytes) }}</strong>
-          <small>来自当前 PostgreSQL 数据库实际占用。</small>
-        </article>
-      </div>
-    </template>
+          <article
+            class="admin-metric-card"
+            :data-tone="backup.tone"
+          >
+            <div class="admin-metric-icon">
+              <Archive
+                :size="20"
+                aria-hidden="true"
+              />
+            </div>
+            <p>生产备份</p>
+            <strong>{{ backup.label }}</strong>
+            <small>{{ backup.detail }}</small>
+            <small>最近成功：{{ formatAdminTime(data.backup.latestCompletedAt) }}</small>
+          </article>
+
+          <article class="admin-metric-card">
+            <div class="admin-metric-icon">
+              <Database
+                :size="20"
+                aria-hidden="true"
+              />
+            </div>
+            <p>数据库已用</p>
+            <strong>{{ formatAdminBytes(data.storage.databaseBytes) }}</strong>
+            <small>来自当前 PostgreSQL 数据库实际占用。</small>
+          </article>
+        </div>
+      </template>
+    </AppAsyncRegion>
   </section>
 </template>

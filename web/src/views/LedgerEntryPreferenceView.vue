@@ -5,6 +5,7 @@ import { computed, nextTick, reactive, watch } from 'vue'
 import DictionaryManager from '../components/DictionaryManager.vue'
 import { useDictionaryPanel } from '../composables/useDictionaryPanel'
 import type { DailyTemplateSelection } from '../api/dailyTemplates'
+import AppStatusNotice from '../components/AppStatusNotice.vue'
 import AppStateBlock from '../components/AppStateBlock.vue'
 import PageWorkspace from '../components/PageWorkspace.vue'
 import PageHeading from '../components/PageHeading.vue'
@@ -91,9 +92,10 @@ function clearTemplate(type: EntryType): void {
         title="正在保存最近类型"
         message="选择已经生效，正在同步到当前账号。"
       />
-      <AppStateBlock
+      <AppStatusNotice
         v-else-if="saveState === 'error'"
-        kind="error"
+        :error="preferences.requestError"
+        :busy="preferences.isSaving"
         title="最近类型尚未同步"
         message="当前选择会保留在本次会话中，可以原位重试。"
         action-label="重试"

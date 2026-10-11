@@ -6,9 +6,9 @@ export type DailyTemplateSelection = components['schemas']['DailyTemplateSelecti
 export type DailyTemplateList = components['schemas']['DailyTemplateList']
 export type DailyTemplateEntryType = components['schemas']['EntryType']
 
-export function listDailyTemplates(type: DailyTemplateEntryType): Promise<DailyTemplateList> {
+export function listDailyTemplates(type: DailyTemplateEntryType, signal?: AbortSignal): Promise<DailyTemplateList> {
   const params = new URLSearchParams({ type })
-  return apiRequest(`/daily-templates?${params}`)
+  return apiRequest(`/daily-templates?${params}`, { signal })
 }
 
 export function selectDailyTemplate(templateId: string): Promise<DailyTemplateSelection> {

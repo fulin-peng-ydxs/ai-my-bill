@@ -13,10 +13,13 @@ import {
   type DefaultDictionaryStatus,
   type DefaultDictionaryType,
 } from '../../api/defaultDictionaries'
-import { normalizeRequestError } from '../../api/errors'
+import { isAccessDenied, normalizeRequestError, type RequestError } from '../../api/errors'
 import AppDialog from '../../components/AppDialog.vue'
 import AppDrawer from '../../components/AppDrawer.vue'
 import DictionaryListFooter from '../../components/DictionaryListFooter.vue'
+import AppAsyncRegion from '../../components/AppAsyncRegion.vue'
+import AppStatusNotice from '../../components/AppStatusNotice.vue'
+import AppRequestError from '../../components/AppRequestError.vue'
 import AppStateBlock from '../../components/AppStateBlock.vue'
 import AppToast from '../../components/AppToast.vue'
 import DictionaryCombobox, { type DictionaryChoice } from '../../components/DictionaryCombobox.vue'
@@ -44,11 +47,11 @@ const createError = ref('')
 const busy = ref(false)
 const activeRoots = ref<DefaultDictionaryItem[]>([])
 const parentStatus = ref<'idle' | 'loading' | 'ready' | 'error'>('idle')
-const parentError = ref('')
+const parentError = ref<RequestError>()
 const toastOpen = ref(false)
 const toastMessage = ref('')
 const toastKind = ref<'success' | 'error'>('success')
-const summaries = ref<Awaited<ReturnType<typeof listDefaultDictionarySummaries>>>()
+const summaryRequest = useLatestRequest<Awaited<ReturnType<typeof listDefaultDictionarySummaries>>>()
 const { data, status, error, staleWarning, refreshing, execute, cancel } = useLatestRequest<Awaited<ReturnType<typeof listDefaultDictionaryItems>>>(() => {
   selected.value = undefined
   actionsOpen.value = false
@@ -68,11 +71,7 @@ async function load(intent: 'replace' | 'refresh' = 'replace'): Promise<void> {
 }
 
 async function loadSummaries(): Promise<void> {
-  try {
-    summaries.value = await listDefaultDictionarySummaries()
-  } catch {
-    summaries.value = undefined
-  }
+  await summaryRequest.execute((signal) => listDefaultDictionarySummaries(signal))
 }
 
 function search(value: string): void {
@@ -98,7 +97,7 @@ async function openCreate(): Promise<void> {
 
 async function loadParentOptions(): Promise<void> {
   parentStatus.value = 'loading'
-  parentError.value = ''
+  parentError.value = undefined
   activeRoots.value = []
   try {
     let currentPage = 0
@@ -112,7 +111,7 @@ async function loadParentOptions(): Promise<void> {
     parentStatus.value = 'ready'
   } catch (cause) {
     parentStatus.value = 'error'
-    parentError.value = normalizeRequestError(cause).message
+    parentError.value = normalizeRequestError(cause)
   }
 }
 
@@ -265,70 +264,69 @@ useRefreshOnReturn(() => Promise.all([load('refresh'), loadSummaries()]).then(()
           :key="item.type"
           :value="item.type"
         >
-          {{ item.label }} · {{ summaries?.items.find((summary) => summary.type === item.type)?.active ?? 0 }} 启用
+          {{ item.label }}<template v-if="summaryRequest.data.value?.items.find((summary) => summary.type === item.type)">
+            · {{ summaryRequest.data.value.items.find((summary) => summary.type === item.type)?.active }} 启用
+          </template>
         </option>
       </select>
     </div>
+
+    <span
+      v-if="summaryRequest.status.value === 'loading'"
+      role="status"
+    >正在读取各类数量…</span>
+    <AppStatusNotice
+      v-else-if="summaryRequest.error.value"
+      title="各类数量暂不可用"
+      :error="summaryRequest.error.value"
+      action-label="重试"
+      @action="loadSummaries"
+    />
 
     <DictionaryToolbar
       v-model:query="queryDraft"
       v-model:status="statusFilter"
       :label="definition.label"
-      :total="data?.total ?? 0"
+      :total="status === 'ready' || status === 'empty' ? data?.total : undefined"
       :page="pageIndex"
       :shown="status === 'ready' ? items.length : undefined"
-      :refreshing="refreshing"
+      :refreshing="refreshing || status === 'loading' || isAccessDenied(error)"
       @search="search"
       @refresh="load('refresh')"
     />
 
-    <AppStateBlock
-      v-if="staleWarning"
-      kind="error"
-      title="刷新未完成"
-      :message="staleWarning.message"
-      action-label="重试"
-      @action="load('refresh')"
-    />
-    <AppStateBlock
-      v-if="status === 'loading'"
-      kind="loading"
-      :title="`正在加载${definition.label}`"
-      message="这里只读取系统默认项，不访问用户数据。"
-    />
-    <AppStateBlock
-      v-else-if="status === 'error'"
-      :kind="error?.kind === 'forbidden' ? 'permission' : 'error'"
-      :title="`${definition.label}暂不可用`"
-      :message="error?.message"
-      :action-label="error?.retryable ? '重试' : undefined"
-      @action="load()"
-    />
-    <AppStateBlock
-      v-else-if="status === 'empty'"
-      kind="empty"
-      :title="appliedQuery || statusFilter ? '没有匹配项' : `${definition.label}还是空的`"
-      :message="appliedQuery || statusFilter ? '清除搜索和状态条件后重试。' : '新增后，只会随以后创建的用户生成个人副本。'"
-      :action-label="appliedQuery || statusFilter ? '清除条件' : '新增默认项'"
-      @action="clearConditionsOrCreate"
-    />
-    <DictionaryItemList
-      v-else-if="status === 'ready'"
-      :items="items"
-      :label="definition.label"
-      :busy="busy || refreshing"
-      @move="reorder"
-      @select="openActions"
-    />
+    <AppAsyncRegion
+      :status="status"
+      :error="error"
+      :stale-warning="staleWarning"
+      :refreshing="refreshing"
+      :loading-title="`正在加载${definition.label}`"
+      loading-message="这里只读取系统默认项，不访问用户数据。"
+      :error-title="`${definition.label}暂不可用`"
+      :empty-title="appliedQuery || statusFilter ? '没有匹配项' : `${definition.label}还是空的`"
+      :empty-message="appliedQuery || statusFilter ? '清除搜索和状态条件后重试。' : '新增后，只会随以后创建的用户生成个人副本。'"
+      :empty-action-label="appliedQuery || statusFilter ? '清除条件' : '新增默认项'"
+      @retry="load()"
+      @stale-retry="load('refresh')"
+      @empty-action="clearConditionsOrCreate"
+    >
+      <DictionaryItemList
+        :items="items"
+        :label="definition.label"
+        :busy="busy || refreshing"
+        @move="reorder"
+        @select="openActions"
+      />
 
-    <DictionaryListFooter
-      v-if="status === 'ready'"
-      :page="pageIndex"
-      :total="data?.total ?? 0"
-      :label="definition.label"
-      :busy="refreshing"
-      @update:page="pageIndex = $event; load()"
-    />
+      <DictionaryListFooter
+        v-if="status === 'ready'"
+        :page="pageIndex"
+        :total="data?.total ?? 0"
+        :label="definition.label"
+        :busy="refreshing"
+        @update:page="pageIndex = $event; load()"
+      />
+    </AppAsyncRegion>
 
     <AppDrawer
       id="default-dictionary-actions"
@@ -377,13 +375,11 @@ useRefreshOnReturn(() => Promise.all([load('refresh'), loadSummaries()]).then(()
           kind="loading"
           title="正在加载一级分类"
         />
-        <AppStateBlock
+        <AppRequestError
           v-else-if="definition.hierarchical && parentStatus === 'error'"
-          kind="error"
           title="一级分类暂不可用"
-          :message="parentError"
-          action-label="重试"
-          @action="loadParentOptions"
+          :error="parentError"
+          @retry="loadParentOptions"
         />
         <FormField
           field-id="default-dictionary-name"

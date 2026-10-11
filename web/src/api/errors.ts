@@ -21,6 +21,15 @@ export interface RequestError {
   cause: unknown
 }
 
+export function isAccessDenied(error?: RequestError): boolean {
+  return error?.kind === 'forbidden' || error?.kind === 'unauthorized'
+}
+
+/** 请求重试不能恢复身份或权限，也不能覆盖服务端明确不可重试的判断。 */
+export function canRetryRequest(error?: RequestError): boolean {
+  return Boolean(error?.retryable && !isAccessDenied(error))
+}
+
 function kindForStatus(status: number): RequestErrorKind {
   if (status === 401) return 'unauthorized'
   if (status === 403) return 'forbidden'
@@ -49,7 +58,7 @@ export function normalizeRequestError(error: unknown): RequestError {
       message: error.body?.message ?? error.message,
       fieldErrors: bodyFields(error.body),
       traceId: error.body?.traceId,
-      retryable: error.body?.retryable ?? error.status >= 500,
+      retryable: error.status !== 401 && error.status !== 403 && (error.body?.retryable ?? error.status >= 500),
       cause: error,
     }
   }

@@ -22,7 +22,7 @@ import { hasFilterChanges } from '../domain/filterChanges'
 import AppliedFilterBar, { type AppliedFilterSummary } from '../components/AppliedFilterBar.vue'
 import AppDialog from '../components/AppDialog.vue'
 import AppDrawer from '../components/AppDrawer.vue'
-import AppStateBlock from '../components/AppStateBlock.vue'
+import AppAsyncRegion from '../components/AppAsyncRegion.vue'
 import AppToast from '../components/AppToast.vue'
 import DataExportAction from '../components/DataExportAction.vue'
 import FilterSheet from '../components/FilterSheet.vue'
@@ -449,48 +449,35 @@ useRefreshOnReturn(() => list.refresh())
         :aria-hidden="filters.lifecycle !== 'TRASHED' || undefined"
       >30 天内可恢复</span>
     </p>
-    <AppStateBlock
-      v-if="list.error.value && (list.status.value === 'ready' || list.status.value === 'empty')"
-      kind="error"
-      :title="list.lastOperation.value === 'refresh' ? '明细刷新未完成' : '更多明细加载失败'"
-      :message="list.error.value.message"
-      action-label="重试"
-      @action="list.retry"
-    />
-    <AppStateBlock
-      v-if="list.status.value === 'loading'"
-      kind="loading"
-      title="正在加载收支明细"
-    />
-    <AppStateBlock
-      v-else-if="list.status.value === 'error'"
-      kind="error"
-      title="收支明细加载失败"
-      :message="list.error.value?.message"
-      action-label="重试"
-      @action="list.replace(filters)"
-    />
-    <AppStateBlock
-      v-else-if="list.status.value === 'empty'"
-      kind="empty"
-      :title="hasFilters ? '没有匹配的明细' : filters.lifecycle === 'ACTIVE' ? '这段时间还没有记录' : '回收站为空'"
-      :message="hasFilters ? '试试调整日期、类型或搜索内容。' : filters.lifecycle === 'ACTIVE' ? '记下一笔，或通过筛选查看其他日期。' : '删除的账目会在这里保留 30 天。'"
-      :action-label="hasFilters ? '清除筛选' : filters.lifecycle === 'ACTIVE' ? '记一笔' : undefined"
-      @action="hasFilters ? clearFilters() : router.push('/entry')"
-    />
-    <template v-else>
-      <IncrementalLedgerList
-        :items="list.items.value"
-        :type="filters.type"
-        :has-more="list.hasMore.value"
-        :loading-more="list.loadingMore.value"
-        :lifecycle="filters.lifecycle"
-        :busy-item-id="lifecycleBusyId"
-        @more="list.more"
-        @context="openContext"
-        @open="openEdit"
-      />
-    </template>
+    <AppAsyncRegion
+      :status="list.status.value"
+      :error="list.error.value"
+      :stale-warning="list.staleWarning.value"
+      :refreshing="list.refreshing.value"
+      loading-title="正在加载收支明细"
+      error-title="收支明细加载失败"
+      :stale-title="list.lastOperation.value === 'refresh' ? '明细可能不是最新' : '更多明细加载失败'"
+      :empty-title="hasFilters ? '没有匹配的明细' : filters.lifecycle === 'ACTIVE' ? '这段时间还没有记录' : '回收站为空'"
+      :empty-message="hasFilters ? '试试调整日期、类型或搜索内容。' : filters.lifecycle === 'ACTIVE' ? '记下一笔，或通过筛选查看其他日期。' : '删除的账目会在这里保留 30 天。'"
+      :empty-action-label="hasFilters ? '清除筛选' : filters.lifecycle === 'ACTIVE' ? '记一笔' : undefined"
+      @retry="list.replace(filters)"
+      @stale-retry="list.retry"
+      @empty-action="hasFilters ? clearFilters() : router.push('/entry')"
+    >
+      <template #default>
+        <IncrementalLedgerList
+          :items="list.items.value"
+          :type="filters.type"
+          :has-more="list.hasMore.value"
+          :loading-more="list.loadingMore.value"
+          :lifecycle="filters.lifecycle"
+          :busy-item-id="lifecycleBusyId"
+          @more="list.more"
+          @context="openContext"
+          @open="openEdit"
+        />
+      </template>
+    </AppAsyncRegion>
 
     <template #overlays>
       <FilterSheet
@@ -629,57 +616,52 @@ useRefreshOnReturn(() => list.refresh())
         :busy="editBusy"
         @update:open="requestEditOpen"
       >
-        <AppStateBlock
-          v-if="editRequest.status.value === 'loading'"
-          kind="loading"
-          title="正在加载账目详情"
-        />
-        <AppStateBlock
-          v-else-if="editRequest.status.value === 'error'"
-          kind="error"
-          title="账目详情加载失败"
-          :message="editRequest.error.value?.message"
-          action-label="重试"
-          @action="loadEdit"
-        />
-        <ExpenseEntryForm
-          v-else-if="editOpen && editRequest.data.value && 'productName' in editRequest.data.value"
-          :key="`${editRequest.data.value.id}:${editRequest.data.value.version}`"
-          :account-id="session.session?.accountId"
-          :edit-entry="editRequest.data.value"
-          @saved="editSaved"
-          @busy-change="editBusy = $event"
+        <AppAsyncRegion
+          :status="editRequest.status.value"
+          :error="editRequest.error.value"
+          loading-title="正在加载账目详情"
+          error-title="账目详情加载失败"
+          @retry="loadEdit"
         >
-          <template #actions="{ submitting }">
-            <button
-              type="button"
-              class="secondary-button"
-              :disabled="submitting"
-              @click="manageDetail('edit')"
-            >
-              更多操作
-            </button>
-          </template>
-        </ExpenseEntryForm>
-        <IncomeEntryForm
-          v-else-if="editOpen && editRequest.data.value && 'incomeName' in editRequest.data.value"
-          :key="`${editRequest.data.value.id}:${editRequest.data.value.version}`"
-          :account-id="session.session?.accountId"
-          :edit-entry="editRequest.data.value"
-          @saved="editSaved"
-          @busy-change="editBusy = $event"
-        >
-          <template #actions="{ submitting }">
-            <button
-              type="button"
-              class="secondary-button"
-              :disabled="submitting"
-              @click="manageDetail('edit')"
-            >
-              更多操作
-            </button>
-          </template>
-        </IncomeEntryForm>
+          <ExpenseEntryForm
+            v-if="editOpen && editRequest.data.value && 'productName' in editRequest.data.value"
+            :key="`${editRequest.data.value.id}:${editRequest.data.value.version}`"
+            :account-id="session.session?.accountId"
+            :edit-entry="editRequest.data.value"
+            @saved="editSaved"
+            @busy-change="editBusy = $event"
+          >
+            <template #actions="{ submitting }">
+              <button
+                type="button"
+                class="secondary-button"
+                :disabled="submitting"
+                @click="manageDetail('edit')"
+              >
+                更多操作
+              </button>
+            </template>
+          </ExpenseEntryForm>
+          <IncomeEntryForm
+            v-else-if="editOpen && editRequest.data.value && 'incomeName' in editRequest.data.value"
+            :key="`${editRequest.data.value.id}:${editRequest.data.value.version}`"
+            :account-id="session.session?.accountId"
+            :edit-entry="editRequest.data.value"
+            @saved="editSaved"
+            @busy-change="editBusy = $event"
+          >
+            <template #actions="{ submitting }">
+              <button
+                type="button"
+                class="secondary-button"
+                :disabled="submitting"
+                @click="manageDetail('edit')"
+              >
+                更多操作
+              </button>
+            </template>
+          </IncomeEntryForm>
+        </AppAsyncRegion>
       </AppDrawer>
       <AppDrawer
         id="expense-adjustment-create"
@@ -714,25 +696,20 @@ useRefreshOnReturn(() => list.refresh())
             更多操作
           </button>
         </template>
-        <AppStateBlock
-          v-if="adjustmentRequest.status.value === 'loading'"
-          kind="loading"
-          title="正在加载调整详情"
-        />
-        <AppStateBlock
-          v-else-if="adjustmentRequest.status.value === 'error'"
-          kind="error"
-          title="调整详情加载失败"
-          :message="adjustmentRequest.error.value?.message"
-          action-label="重试"
-          @action="adjustmentTarget && openAdjustmentDetail(adjustmentTarget)"
-        />
-        <ExpenseAdjustmentDetail
-          v-else-if="adjustmentRequest.data.value"
-          :adjustment="adjustmentRequest.data.value"
-          :busy="revoking"
-          @revoke="revokeConfirmOpen = true"
-        />
+        <AppAsyncRegion
+          :status="adjustmentRequest.status.value"
+          :error="adjustmentRequest.error.value"
+          loading-title="正在加载调整详情"
+          error-title="调整详情加载失败"
+          @retry="adjustmentTarget && openAdjustmentDetail(adjustmentTarget)"
+        >
+          <ExpenseAdjustmentDetail
+            v-if="adjustmentRequest.data.value"
+            :adjustment="adjustmentRequest.data.value"
+            :busy="revoking"
+            @revoke="revokeConfirmOpen = true"
+          />
+        </AppAsyncRegion>
       </AppDrawer>
       <AppDialog
         id="purge-ledger"

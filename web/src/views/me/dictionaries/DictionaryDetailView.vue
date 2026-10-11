@@ -19,10 +19,12 @@ import {
   type DictionaryStatus,
   type ProductMergePreview,
 } from '../../../api/dictionaries'
-import { normalizeRequestError } from '../../../api/errors'
+import { isAccessDenied, normalizeRequestError, type RequestError } from '../../../api/errors'
 import AppDialog from '../../../components/AppDialog.vue'
 import AppDrawer from '../../../components/AppDrawer.vue'
 import DictionaryListFooter from '../../../components/DictionaryListFooter.vue'
+import AppAsyncRegion from '../../../components/AppAsyncRegion.vue'
+import AppRequestError from '../../../components/AppRequestError.vue'
 import AppStateBlock from '../../../components/AppStateBlock.vue'
 import AppToast from '../../../components/AppToast.vue'
 import DictionaryCombobox, { type DictionaryChoice } from '../../../components/DictionaryCombobox.vue'
@@ -53,7 +55,7 @@ const editorName = ref('')
 const editorParentId = ref('')
 const activeRoots = ref<DictionaryItem[]>([])
 const parentOptionsStatus = ref<'idle' | 'loading' | 'ready' | 'error'>('idle')
-const parentOptionsError = ref('')
+const parentOptionsError = ref<RequestError>()
 const editorError = ref('')
 const busy = ref(false)
 const toastOpen = ref(false)
@@ -66,6 +68,7 @@ const mergeCandidateStatus = ref<'idle' | 'loading' | 'ready' | 'error'>('idle')
 const mergeTargetId = ref('')
 const mergePreview = ref<ProductMergePreview>()
 const mergeError = ref('')
+const mergeCandidateError = ref<RequestError>()
 const mergeBusy = ref(false)
 const mergeConfirmOpen = ref(false)
 const { data, status, error, staleWarning, refreshing, execute, cancel } = useLatestRequest<Awaited<ReturnType<typeof listDictionaryItems>>>(() => {
@@ -117,7 +120,7 @@ async function openCreate(): Promise<void> {
   editorError.value = ''
   activeRoots.value = []
   parentOptionsStatus.value = definition.value.hierarchical ? 'loading' : 'idle'
-  parentOptionsError.value = ''
+  parentOptionsError.value = undefined
   editorOpen.value = true
   if (definition.value.hierarchical) {
     await loadParentOptions()
@@ -127,7 +130,7 @@ async function openCreate(): Promise<void> {
 async function loadParentOptions(): Promise<void> {
   if (!definition.value?.hierarchical) return
   parentOptionsStatus.value = 'loading'
-  parentOptionsError.value = ''
+  parentOptionsError.value = undefined
   activeRoots.value = []
   try {
     let rootPage = 0
@@ -141,7 +144,7 @@ async function loadParentOptions(): Promise<void> {
     parentOptionsStatus.value = 'ready'
   } catch (cause) {
     parentOptionsStatus.value = 'error'
-    parentOptionsError.value = normalizeRequestError(cause).message
+    parentOptionsError.value = normalizeRequestError(cause)
   }
 }
 
@@ -214,6 +217,7 @@ async function loadMergeCandidates(query: string): Promise<void> {
   if (!selected.value) return
   mergeCandidateStatus.value = 'loading'
   mergeError.value = ''
+  mergeCandidateError.value = undefined
   mergeTargetId.value = ''
   mergePreview.value = undefined
   try {
@@ -222,7 +226,7 @@ async function loadMergeCandidates(query: string): Promise<void> {
     mergeCandidateStatus.value = 'ready'
   } catch (cause) {
     mergeCandidateStatus.value = 'error'
-    mergeError.value = normalizeRequestError(cause).message
+    mergeCandidateError.value = normalizeRequestError(cause)
   }
 }
 
@@ -394,62 +398,46 @@ useRefreshOnReturn(() => load('refresh'))
         v-model:query="queryDraft"
         v-model:status="statusFilter"
         :label="definition.label"
-        :total="data?.total ?? 0"
+        :total="status === 'ready' || status === 'empty' ? data?.total : undefined"
         :page="pageIndex"
         :shown="status === 'ready' ? items.length : undefined"
-        :refreshing="refreshing"
+        :refreshing="refreshing || status === 'loading' || isAccessDenied(error)"
         @search="search"
         @refresh="load('refresh')"
       />
     </template>
-    <AppStateBlock
-      v-if="staleWarning"
-      kind="error"
-      title="刷新未完成"
-      :message="staleWarning.message"
-      action-label="重试"
-      @action="load('refresh')"
-    />
-    <AppStateBlock
-      v-if="status === 'loading'"
-      kind="loading"
-      :title="`正在加载${definition.label}`"
-    />
-    <AppStateBlock
-      v-else-if="status === 'error'"
-      :kind="error?.kind === 'forbidden' ? 'permission' : 'error'"
-      :title="`${definition.label}暂不可用`"
-      :message="error?.message"
-      :action-label="error?.retryable ? '重试' : undefined"
-      @action="load()"
-    />
-    <AppStateBlock
-      v-else-if="status === 'empty'"
-      kind="empty"
-      :title="appliedQuery || statusFilter ? '没有匹配项' : `还没有${definition.label}`"
-      :message="appliedQuery || statusFilter ? '清除搜索和状态条件后重试。' : `新增第一项${definition.singular}，之后可在记账候选中使用。`"
-      :action-label="appliedQuery || statusFilter ? '清除条件' : '新增'"
-      @action="handleEmptyAction"
-    />
+    <AppAsyncRegion
+      :status="status"
+      :error="error"
+      :stale-warning="staleWarning"
+      :refreshing="refreshing"
+      :loading-title="`正在加载${definition.label}`"
+      :error-title="`${definition.label}暂不可用`"
+      :empty-title="appliedQuery || statusFilter ? '没有匹配项' : `还没有${definition.label}`"
+      :empty-message="appliedQuery || statusFilter ? '清除搜索和状态条件后重试。' : `新增第一项${definition.singular}，之后可在记账候选中使用。`"
+      :empty-action-label="appliedQuery || statusFilter ? '清除条件' : '新增'"
+      @retry="load()"
+      @stale-retry="load('refresh')"
+      @empty-action="handleEmptyAction"
+    >
+      <DictionaryItemList
+        :items="items"
+        :label="definition.label"
+        :busy="busy || refreshing"
+        history-hint
+        @move="reorder"
+        @select="openActions"
+      />
 
-    <DictionaryItemList
-      v-else-if="status === 'ready'"
-      :items="items"
-      :label="definition.label"
-      :busy="busy || refreshing"
-      history-hint
-      @move="reorder"
-      @select="openActions"
-    />
-
-    <DictionaryListFooter
-      v-if="status === 'ready'"
-      :page="pageIndex"
-      :total="data?.total ?? 0"
-      :label="definition.label"
-      :busy="refreshing"
-      @update:page="turnPage"
-    />
+      <DictionaryListFooter
+        v-if="status === 'ready'"
+        :page="pageIndex"
+        :total="data?.total ?? 0"
+        :label="definition.label"
+        :busy="refreshing"
+        @update:page="turnPage"
+      />
+    </AppAsyncRegion>
 
     <template #overlays>
       <AppDrawer
@@ -519,13 +507,11 @@ useRefreshOnReturn(() => load('refresh'))
             kind="loading"
             title="正在读取可合并商品"
           />
-          <AppStateBlock
+          <AppRequestError
             v-else-if="mergeCandidateStatus === 'error'"
-            kind="error"
             title="可合并商品暂不可用"
-            :message="mergeError"
-            action-label="重试"
-            @action="loadMergeCandidates(mergeQuery)"
+            :error="mergeCandidateError"
+            @retry="loadMergeCandidates(mergeQuery)"
           />
           <AppStateBlock
             v-else-if="mergeCandidateStatus === 'ready' && mergeCandidates.length === 0"
@@ -617,13 +603,11 @@ useRefreshOnReturn(() => load('refresh'))
             kind="loading"
             title="正在加载一级分类"
           />
-          <AppStateBlock
+          <AppRequestError
             v-else-if="definition.hierarchical && editorMode === 'create' && parentOptionsStatus === 'error'"
-            kind="error"
             title="一级分类暂不可用"
-            :message="parentOptionsError"
-            action-label="重试"
-            @action="loadParentOptions"
+            :error="parentOptionsError"
+            @retry="loadParentOptions"
           />
           <FormField
             field-id="dictionary-name"

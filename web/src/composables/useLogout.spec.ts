@@ -1,6 +1,7 @@
 import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { ApiClientError } from '../api/http'
 import { useSessionStore } from '../stores/session'
 import { useLogout } from './useLogout'
 
@@ -16,6 +17,20 @@ beforeEach(() => {
 })
 
 describe('useLogout', () => {
+  it('keeps the current session and exposes a nonretryable permission failure', async () => {
+    const sessionStore = useSessionStore()
+    sessionStore.status = 'authenticated'
+    vi.spyOn(sessionStore, 'logout').mockRejectedValue(new ApiClientError(403, {
+      code: 'DENIED', message: '退出请求被拒绝', fieldErrors: {}, traceId: 'fixture', retryable: true,
+    }))
+    const logout = useLogout()
+    await logout.logout()
+    expect(logout.logoutError.value).toMatchObject({ kind: 'forbidden', retryable: false })
+    expect(sessionStore.status).toBe('authenticated')
+    expect(replace).not.toHaveBeenCalled()
+    expect(logout.loggingOut.value).toBe(false)
+  })
+
   it('ignores repeated logout requests while the first request is pending', async () => {
     let finishLogout: () => void = () => undefined
     const pendingLogout = new Promise<void>((resolve) => {

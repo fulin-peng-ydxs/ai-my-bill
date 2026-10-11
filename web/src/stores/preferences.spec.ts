@@ -56,6 +56,16 @@ describe('preferences store', () => {
     expect(store.fieldStates.reportDefaultRange).toBe('idle')
   })
 
+  it('retains permission classification for failed preference synchronization', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ code: 'DENIED', message: '无法修改偏好', retryable: true }), { status: 403, headers: { 'Content-Type': 'application/json' } })))
+    const store = usePreferencesStore()
+    store.accountId = ACCOUNT
+    await expect(store.update({ reportDefaultRange: 'THIS_YEAR' })).rejects.toThrow()
+    expect(store.requestError).toMatchObject({ kind: 'forbidden', retryable: false })
+    store.discardPending()
+    expect(store.requestError).toBeUndefined()
+  })
+
   it('rolls back an optimistic reset when the server rejects it', async () => {
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('offline')))
     const store = usePreferencesStore()

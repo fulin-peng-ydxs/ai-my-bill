@@ -9,7 +9,7 @@ type Status = 'ACTIVE' | 'INACTIVE' | ''
 
 defineProps<{
   label: string
-  total: number
+  total?: number
   refreshing: boolean
   page?: number
   shown?: number
@@ -55,7 +55,10 @@ const statusOptions = [
         aria-hidden="true"
       />
     </button>
-    <span class="dictionary-result-count">
+    <span
+      v-if="total !== undefined"
+      class="dictionary-result-count"
+    >
       <template v-if="shown && total > shown">
         第 {{ (page ?? 0) * DICTIONARY_PAGE_SIZE + 1 }}–{{ (page ?? 0) * DICTIONARY_PAGE_SIZE + shown }} 项 /
       </template>共 {{ total }} 项

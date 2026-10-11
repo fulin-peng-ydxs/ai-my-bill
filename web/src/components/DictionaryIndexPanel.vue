@@ -4,7 +4,7 @@ import { computed, onMounted } from 'vue'
 import { listDictionarySummaries } from '../api/dictionaries'
 import { useLatestRequest } from '../composables/useLatestRequest'
 import { dictionaryDefinition, dictionaryDefinitions, type DictionaryType } from '../domain/dictionaries'
-import AppStateBlock from './AppStateBlock.vue'
+import AppAsyncRegion from './AppAsyncRegion.vue'
 import SettingsDisclosureList, { type SettingsDisclosureItem } from './SettingsDisclosureList.vue'
 
 const emit = defineEmits<{ select: [type: DictionaryType] }>()
@@ -19,12 +19,12 @@ const items = computed<SettingsDisclosureItem[]>(() => dictionaryDefinitions.map
   return {
     key: definition.type,
     label: definition.label,
-    value: summary ? `${summary.active} 启用 · ${summary.total} 项` : '0 项',
+    value: summary ? `${summary.active} 启用 · ${summary.total} 项` : '数量暂不可用',
   }
 }))
 
 async function load(intent: 'replace' | 'refresh' = 'replace'): Promise<void> {
-  await execute((signal) => listDictionarySummaries(signal), { intent })
+  await execute((signal) => listDictionarySummaries(signal), { intent: intent === 'refresh' ? 'silent' : 'replace' })
 }
 
 onMounted(() => void load())
@@ -32,31 +32,19 @@ useRefreshOnReturn(() => load('refresh'))
 </script>
 
 <template>
-  <AppStateBlock
-    v-if="staleWarning"
-    kind="error"
-    title="刷新未完成"
-    :message="staleWarning.message"
-    action-label="重试"
-    @action="load('refresh')"
-  />
-  <AppStateBlock
-    v-if="status === 'loading'"
-    kind="loading"
-    title="正在读取选项"
-  />
-  <AppStateBlock
-    v-else-if="status === 'error'"
-    :kind="error?.kind === 'forbidden' ? 'permission' : 'error'"
-    title="选项暂不可用"
-    :message="error?.message"
-    action-label="重试"
-    @action="load()"
-  />
-  <SettingsDisclosureList
-    v-else-if="status === 'ready'"
-    label="选项类型"
-    :items="items"
-    @select="select"
-  />
+  <AppAsyncRegion
+    :status="status"
+    :error="error"
+    :stale-warning="staleWarning"
+    loading-title="正在读取选项"
+    error-title="选项暂不可用"
+    @retry="load()"
+    @stale-retry="load('refresh')"
+  >
+    <SettingsDisclosureList
+      label="选项类型"
+      :items="items"
+      @select="select"
+    />
+  </AppAsyncRegion>
 </template>

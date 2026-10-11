@@ -23,7 +23,8 @@ import {
 import { useLedgerDraft } from '../composables/useLedgerDraft'
 import DraftBackupNotice from './DraftBackupNotice.vue'
 import { registerUnsavedChanges, unsavedChangeScope } from '../composables/unsavedChanges'
-import AppStateBlock from './AppStateBlock.vue'
+import AppStatusNotice from './AppStatusNotice.vue'
+import { canRetryRequest, normalizeRequestError, type RequestError } from '../api/errors'
 import AppToast from './AppToast.vue'
 import SavedEntrySummary from './SavedEntrySummary.vue'
 import DailyTemplateFallbackNotice from './DailyTemplateFallbackNotice.vue'
@@ -67,7 +68,7 @@ const draft = useLedgerDraft(accountId, expenseType, computed(() => !editMode.va
 const optionItems = reactive<Record<OptionGroup, ExpenseOption[]>>({
   categories: [], units: [], funding: [], purchase: [], locations: [],
 })
-const optionFailures = ref<string[]>([])
+const optionFailures = ref<{ label: string, error: RequestError }[]>([])
 const optionsLoading = ref(false)
 const errors = reactive<Partial<Record<ExpenseField, string>>>({})
 const submitting = ref(false)
@@ -280,7 +281,10 @@ async function loadOptions(): Promise<void> {
   results.forEach((result, index) => {
     const [key, label] = requests[index]
     if (result.status === 'fulfilled') optionItems[key] = result.value.items
-    else optionFailures.value.push(label)
+    else {
+      optionItems[key] = []
+      optionFailures.value.push({ label, error: normalizeRequestError(result.reason) })
+    }
   })
   if (props.editEntry) ensureEditOptions(props.editEntry)
   optionsLoading.value = false
@@ -388,18 +392,16 @@ useRefreshOnReturn(() => loadOptions())
     class="entry-form"
     :aria-label="editMode ? '编辑支出' : '支出填报'"
   >
-    <AppStateBlock
+    <span
       v-if="optionsLoading"
-      kind="loading"
-      title="正在加载填报选项"
-      message="商品搜索和已加载字段仍可继续填写。"
-    />
-    <AppStateBlock
+      class="entry-options-status"
+      role="status"
+    >正在加载填报选项…</span>
+    <AppStatusNotice
       v-else-if="optionFailures.length"
-      kind="error"
-      title="部分选项暂未加载"
-      :message="`${optionFailures.join('、')}加载失败，其他字段不受影响。`"
-      action-label="重试"
+      title="部分选项暂不可用"
+      :message="optionFailures.map(({ label, error }) => `${label}：${error.message}`).join('；')"
+      :action-label="optionFailures.every(({ error }) => canRetryRequest(error)) ? '重试' : undefined"
       @action="loadOptions"
     />
     <DraftBackupNotice

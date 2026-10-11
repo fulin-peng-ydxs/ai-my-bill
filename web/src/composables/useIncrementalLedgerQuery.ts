@@ -1,4 +1,4 @@
-import { computed, ref } from 'vue'
+import { ref } from 'vue'
 
 import { listLedgerEntries, type LedgerFilters, type LedgerItem, type LedgerPage } from '../api/ledgerEntries'
 import { useLatestRequest } from './useLatestRequest'
@@ -80,6 +80,8 @@ export function useIncrementalLedgerQuery() {
     items, hasMore, loadingMore, replace, more, refresh, lastOperation,
     retry: () => lastOperation.value === 'refresh' ? refresh() : more(),
     status: request.status,
-    error: computed(() => request.error.value ?? request.staleWarning.value),
+    error: request.error,
+    staleWarning: request.staleWarning,
+    refreshing: request.refreshing,
   }
 }

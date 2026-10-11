@@ -29,9 +29,11 @@ flowchart LR
 | /me 与个人字典 | 偏好、主题、安装、字典、修改密码与注销 | preferences/theme、accountStorage、PWA 安装模块 |
 | /admin 及子页面 | 用户、默认字典、运行概况、审计 | 管理 API；不查询个人账目 |
 
-加载、空、错误和就绪状态登记为 pageStates；权限态由角色守卫和 AppShell 承接。普通用户访问管理 URL 时保留地址并呈现权限反馈，管理员访问个人页面回管理入口。内部页面导航保留未保存内容；刷新、退出与账号变更的保护由 unsavedChanges 处理。
+加载、空、错误和就绪状态登记为 pageStates；路由权限态由角色守卫和 AppShell 承接，请求权限错误由共享错误呈现承接。普通用户访问管理 URL 时保留地址并呈现权限反馈，管理员访问个人页面回管理入口。内部页面导航保留未保存内容；刷新、退出与账号变更的保护由 unsavedChanges 处理。
 
 `App` 在认证外壳中用有界 KeepAlive 保存登记页面，缓存根键包含 accountId/role；登录、退出或身份改变会销毁旧实例，权限不匹配的页面不挂载。`pageCacheKey` 按页面和合法字典类型区分实例，query 更新同一页；上限由登记页面数与字典类型数推导。`CachedPageView` 提供该实例的局部路由上下文，避免隐藏页响应其他页面的 query/params，并在离页前记录滚动、重新布局后恢复；缓存页关闭浏览器的旧 DOM 滚动锚定，避免再次偏移。`usePageActivity` 阻止旧异步响应改变当前页面的滚动，`useRefreshOnReturn` 在重新激活时更新候选或列表；明细只刷新已经加载的分页深度。同条件网络/服务异常保留原结果并提示过期；替换条件失败显示区域错误，`useLatestRequest` 在 401/403 时清除受保护的旧结果。
+
+标准数据区域由 `AppAsyncRegion` 分流首次加载、阻断错误、成功空结果与 ready 插槽；`AppRequestError` 将 401/403 映射为权限错误，并按 `canRetryRequest` 决定是否提供原请求重试。`AppStatusNotice` 独立承接仍可继续的降级状态，展开后显示原因与有效恢复入口。`useLatestRequest` 保留最近成功的 ready/empty 判定，取消及静默刷新失败不会把已确认空结果改成 ready。默认字典数量摘要使用独立请求状态，失败不伪造零值，也不替代列表状态。明细的追加失败单独暴露 staleWarning，重试保留原操作与游标；报表继续由 `useReportData` 发布整份成功快照，保留旧快照时暂停下钻，不能用标准区域替代领域一致性约束。
 
 管理导航由 AppShell 与 AppDrawer 消费同一组登记路由；断点与布局遵循 DESIGN 的响应式契约。用户、操作日志、个人及默认字典使用 AppPagination；查询条件改变回到首页，翻页替换当前结果。
 

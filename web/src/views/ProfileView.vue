@@ -4,6 +4,8 @@ import { useRouter } from 'vue-router'
 
 import AppDrawer from '../components/AppDrawer.vue'
 import AppDialog from '../components/AppDialog.vue'
+import AppStatusNotice from '../components/AppStatusNotice.vue'
+import AppRequestError from '../components/AppRequestError.vue'
 import AppStateBlock from '../components/AppStateBlock.vue'
 import AppToast from '../components/AppToast.vue'
 import DataExportAction from '../components/DataExportAction.vue'
@@ -11,6 +13,7 @@ import PageHeading from '../components/PageHeading.vue'
 import PageWorkspace from '../components/PageWorkspace.vue'
 import SettingsGroup from '../components/SettingsGroup.vue'
 import DictionaryManager from '../components/DictionaryManager.vue'
+import { useLatestRequest } from '../composables/useLatestRequest'
 import { useRefreshOnReturn } from '../composables/useRefreshOnReturn'
 import { useDictionaryPanel } from '../composables/useDictionaryPanel'
 import PasswordChangeSheet from '../components/PasswordChangeSheet.vue'
@@ -25,7 +28,7 @@ import { usePwaInstallStore } from '../pwa/install'
 import { deleteCurrentAccount } from '../api/accountDeletion'
 import { normalizeRequestError } from '../api/errors'
 import { clearAccountStorage } from '../storage/accountStorage'
-import { listDictionaryCandidates, type DictionaryItem } from '../api/dictionaries'
+import { listDictionaryCandidates } from '../api/dictionaries'
 import {
   ledgerRangeOptions,
   preferenceLabel,
@@ -52,9 +55,10 @@ const deletionOpen = ref(false)
 const deletionConfirmation = ref('')
 const deletionError = ref('')
 const deletionBusy = ref(false)
-const fundingChannels = ref<DictionaryItem[]>([])
-const fundingLoading = ref(true)
-const fundingError = ref<string>()
+const fundingRequest = useLatestRequest<Awaited<ReturnType<typeof listDictionaryCandidates>>>()
+const fundingChannels = computed(() => fundingRequest.data.value?.items ?? [])
+const fundingLoading = computed(() => fundingRequest.status.value === 'idle' || fundingRequest.status.value === 'loading')
+const fundingError = fundingRequest.error
 const toastOpen = ref(false)
 const toastMessage = ref('')
 const toastKind = ref<'success' | 'error'>('success')
@@ -113,7 +117,7 @@ const drawerDescription = computed(() => activeSetting.value === 'funding'
 function openSetting(key: string): void {
   if (['funding', 'ledgerRange', 'reportRange', 'appearance', 'install'].includes(key)) {
     activeSetting.value = key as typeof activeSetting.value
-    if (key === 'funding' && fundingLoading.value) void loadFundingChannels()
+    if (key === 'funding' && fundingRequest.status.value === 'idle') void loadFundingChannels()
   }
 }
 
@@ -123,7 +127,7 @@ function updatePreference(patch: Parameters<typeof preferencesStore.update>[0]):
 
 function selectDefaultFunding(item: DictionaryChoice): void {
   if (!fundingChannels.value.some((channel) => channel.id === item.id)) {
-    fundingChannels.value = [{ id: item.id, name: item.name, type: 'funding-channel', status: 'ACTIVE', sortOrder: 0, referenced: false }, ...fundingChannels.value]
+    if (fundingRequest.data.value) fundingRequest.data.value = { ...fundingRequest.data.value, items: [{ id: item.id, name: item.name, type: 'funding-channel', status: 'ACTIVE', sortOrder: 0, referenced: false }, ...fundingChannels.value] }
   }
   updatePreference({ defaultFundingChannelId: item.id })
 }
@@ -138,15 +142,7 @@ function retryPreferences(): void {
 }
 
 async function loadFundingChannels(): Promise<void> {
-  fundingLoading.value = true
-  fundingError.value = undefined
-  try {
-    fundingChannels.value = (await listDictionaryCandidates('funding-channel')).items
-  } catch (error) {
-    fundingError.value = error instanceof Error ? error.message : '资金渠道加载失败。'
-  } finally {
-    fundingLoading.value = false
-  }
+  await fundingRequest.execute((signal) => listDictionaryCandidates('funding-channel', '', signal))
 }
 
 async function confirmReset(): Promise<void> {
@@ -217,9 +213,10 @@ useRefreshOnReturn(() => { if (!fundingLoading.value) return loadFundingChannels
         :items="settingItems"
         @select="openSetting"
       />
-      <AppStateBlock
+      <AppStatusNotice
         v-if="preferencesStore.status === 'error'"
-        kind="error"
+        :error="preferencesStore.requestError"
+        :busy="preferencesStore.isSaving"
         title="云端偏好暂时不可用"
         :message="preferencesStore.errorMessage ?? '已使用当前设备的安全回退值。'"
         action-label="重试"
@@ -258,13 +255,11 @@ useRefreshOnReturn(() => { if (!fundingLoading.value) return loadFundingChannels
       title="账号操作"
       class="account-group"
     >
-      <AppStateBlock
+      <AppRequestError
         v-if="logoutError"
-        kind="error"
         title="退出未完成"
-        :message="logoutError"
-        action-label="重试"
-        @action="logout"
+        :error="logoutError"
+        @retry="logout"
       />
       <SettingsDisclosureList
         label="账号操作"
@@ -307,13 +302,11 @@ useRefreshOnReturn(() => { if (!fundingLoading.value) return loadFundingChannels
             kind="loading"
             title="正在读取资金渠道"
           />
-          <AppStateBlock
+          <AppRequestError
             v-else-if="fundingError && activeSetting === 'funding'"
-            kind="error"
             title="资金渠道加载失败"
-            :message="fundingError"
-            action-label="重试"
-            @action="loadFundingChannels"
+            :error="fundingError"
+            @retry="loadFundingChannels"
           />
           <DictionaryCombobox
             v-else-if="activeSetting === 'funding'"
@@ -384,9 +377,10 @@ useRefreshOnReturn(() => { if (!fundingLoading.value) return loadFundingChannels
             title="正在保存偏好"
             message="当前选择已经生效。"
           />
-          <AppStateBlock
+          <AppStatusNotice
             v-else-if="activeField && preferencesStore.fieldStates[activeField] === 'error'"
-            kind="error"
+            :error="preferencesStore.requestError"
+            :busy="preferencesStore.isSaving"
             title="偏好尚未同步"
             :message="preferencesStore.errorMessage ?? '当前选择已保留，可以重试。'"
             action-label="重试"
