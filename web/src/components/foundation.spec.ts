@@ -25,7 +25,10 @@ import TimeTrendPanel from './TimeTrendPanel.vue'
 import SettingsDisclosureList from './SettingsDisclosureList.vue'
 
 async function render(component: Parameters<typeof h>[0], props?: Record<string, unknown>): Promise<string> {
-  return renderToString(createSSRApp({ render: () => h(component, props) }))
+  const context: { teleports?: Record<string, string> } = {}
+  const markup = await renderToString(createSSRApp({ render: () => h(component, props) }), context)
+  // SSR 将传送内容写入独立目标；语义检查覆盖实际内容，不能只读取原容器占位。
+  return markup + Object.values(context.teleports ?? {}).join('')
 }
 
 describe('shared frontend foundations', () => {
