@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import ComboboxField from './ComboboxField.vue'
+import AppCandidateRegion from './AppCandidateRegion.vue'
 import { useDebouncedQuery } from '../composables/useDebouncedQuery'
 import { useLatestRequest } from '../composables/useLatestRequest'
 
@@ -71,52 +72,40 @@ watch(() => props.modelValue, (value) => { if (!open.value) query.value = value 
       :open="open"
       :invalid="Boolean(error)"
       :max-length="maxLength ?? 200"
-      :candidate-count="candidates.length"
+      :candidate-count="request.status.value === 'loading' || request.error.value ? undefined : candidates.length"
       @clear="select('')"
       @open="show"
       @input="change"
       @submit="newName ? select(newName) : debounced.submit(searchTerm)"
       @close="close"
     >
-      <small
-        v-if="request.status.value === 'loading'"
-        class="dropdown-status"
-      >正在查询最近名称…</small>
-      <small
-        v-else-if="request.error.value"
-        class="dropdown-status field-error"
-        role="alert"
+      <AppCandidateRegion
+        :status="request.status.value"
+        :error="request.error.value"
+        :has-candidates="candidates.length > 0"
+        loading-message="正在查询最近名称…"
+        empty-message="暂无最近名称，可搜索或填写新的名称。"
+        @retry="search(searchTerm)"
       >
-        {{ request.error.value.message }}
-        <button
-          type="button"
-          class="compact-action"
-          @click="search(searchTerm)"
-        >重试</button>
-      </small>
-      <ul
-        v-if="candidates.length"
-        class="product-options"
-        role="listbox"
-      >
-        <li
-          v-for="name in candidates"
-          :key="name"
+        <ul
+          class="product-options"
+          role="listbox"
         >
-          <button
-            type="button"
-            role="option"
-            :aria-selected="modelValue === name"
-            @click="select(name)"
+          <li
+            v-for="name in candidates"
+            :key="name"
           >
-            {{ name }}
-          </button>
-        </li>
-      </ul>
-      <small
-        v-else-if="request.status.value !== 'loading'"
-        class="dropdown-status"
-      >暂无最近名称，可搜索或填写新的名称。</small>
+            <button
+              type="button"
+              role="option"
+              :aria-selected="modelValue === name"
+              @click="select(name)"
+            >
+              {{ name }}
+            </button>
+          </li>
+        </ul>
+      </AppCandidateRegion>
       <button
         v-if="canUse"
         type="button"

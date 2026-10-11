@@ -3,10 +3,11 @@ import { formatCny } from '../domain/money'
 import { computed, ref, watch } from 'vue'
 
 import ComboboxField from './ComboboxField.vue'
+import AppCandidateRegion from './AppCandidateRegion.vue'
 
 import { createDictionaryItem } from '../api/dictionaries'
 import { listExpenseProducts, type ProductSuggestion } from '../api/expenses'
-import { canRetryRequest, normalizeRequestError } from '../api/errors'
+import { normalizeRequestError } from '../api/errors'
 import { useDebouncedQuery } from '../composables/useDebouncedQuery'
 import { useLatestRequest } from '../composables/useLatestRequest'
 import { normalizeDictionaryName } from '../domain/dictionaries'
@@ -138,49 +139,34 @@ watch(() => props.modelName, (value) => {
       @submit="debounced.submit(searchTerm)"
       @close="close"
     >
-      <small
-        v-if="request.status.value === 'loading'"
-        class="dropdown-status"
-      >正在查询商品…</small>
-      <small
-        v-else-if="request.error.value"
-        class="dropdown-status field-error"
-        role="alert"
+      <AppCandidateRegion
+        :status="request.status.value"
+        :error="request.error.value"
+        :has-candidates="candidates.length > 0"
+        loading-message="正在查询商品…"
+        empty-message="暂无匹配商品"
+        @retry="search(searchTerm)"
       >
-        {{ request.error.value.message }} <button
-          v-if="canRetryRequest(request.error.value)"
-          type="button"
-          class="compact-action"
-          @click="search(searchTerm)"
-        >重试</button>
-      </small>
-      <ul
-        v-if="candidates.length"
-        class="product-options"
-        role="listbox"
-      >
-        <li
-          v-for="item in candidates"
-          :key="item.id"
+        <ul
+          class="product-options"
+          role="listbox"
         >
-          <button
-            type="button"
-            role="option"
-            :aria-selected="modelValue === item.id"
-            @click="select(item)"
+          <li
+            v-for="item in candidates"
+            :key="item.id"
           >
-            <strong>{{ item.name }}</strong>
-            <span>{{ item.lastUnitPrice ? `最近 ${formatCny(item.lastUnitPrice, 4)}` : '尚无最近价格' }}</span>
-          </button>
-        </li>
-      </ul>
-      <div
-        v-else-if="request.status.value !== 'loading' && !request.error.value"
-        class="dropdown-status"
-      >
-        暂无匹配商品
-      </div>
-
+            <button
+              type="button"
+              role="option"
+              :aria-selected="modelValue === item.id"
+              @click="select(item)"
+            >
+              <strong>{{ item.name }}</strong>
+              <span>{{ item.lastUnitPrice ? `最近 ${formatCny(item.lastUnitPrice, 4)}` : '尚无最近价格' }}</span>
+            </button>
+          </li>
+        </ul>
+      </AppCandidateRegion>
       <button
         v-if="canCreate"
         type="button"

@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { canRetryRequest } from '../api/errors'
 import { computed, ref, watch } from 'vue'
 
 import { getDictionaryItem, listDictionaryItems, type DictionaryItem, type DictionaryPage } from '../api/dictionaries'
@@ -8,6 +7,7 @@ import { useLatestRequest } from '../composables/useLatestRequest'
 import type { DictionaryType } from '../domain/dictionaries'
 import ComboboxField from './ComboboxField.vue'
 import AppPagination from './AppPagination.vue'
+import AppCandidateRegion from './AppCandidateRegion.vue'
 
 const props = defineProps<{
   id: string
@@ -33,7 +33,7 @@ const pageCount = computed(() => Math.max(1, Math.ceil((request.data.value?.tota
 function load(): void {
   if (props.disabled || !open.value) { request.cancel(); return }
   void request.execute((signal) => listDictionaryItems(props.type, query.value.trim(), '', signal, page.value, 20,
-    { parentId: props.parentId, rootsOnly: props.rootsOnly }))
+    { parentId: props.parentId, rootsOnly: props.rootsOnly }), { isEmpty: (result) => result.items.length === 0 })
 }
 const debounced = useDebouncedQuery(() => { page.value = 0; load() })
 function start(search: boolean): void {
@@ -92,7 +92,20 @@ watch(() => [props.type, props.modelValue], () => {
             <strong>不限{{ label }}</strong>
           </button>
         </li>
-        <template v-if="request.status.value !== 'loading' && !request.error.value">
+      </ul>
+      <AppCandidateRegion
+        :status="request.status.value"
+        :error="request.error.value"
+        :has-candidates="items.length > 0"
+        loading-message="正在查询…"
+        empty-message="没有匹配选项"
+        @retry="load"
+      >
+        <ul
+          class="product-options"
+          role="listbox"
+          :aria-label="label"
+        >
           <li
             v-for="item in items"
             :key="item.id"
@@ -106,37 +119,13 @@ watch(() => [props.type, props.modelValue], () => {
               <strong>{{ item.name }}</strong><span v-if="item.status === 'INACTIVE'">已停用</span>
             </button>
           </li>
-        </template>
-      </ul>
-      <small
-        v-if="request.status.value === 'loading'"
-        class="dropdown-status"
-      >正在查询…</small>
-      <small
-        v-else-if="request.error.value"
-        class="dropdown-status field-error"
-        role="alert"
-      >
-        {{ request.error.value.message }}
-        <button
-          v-if="canRetryRequest(request.error.value)"
-          type="button"
-          class="compact-action"
-          @click="load"
-        >重试</button>
-      </small>
-      <p
-        v-else-if="request.data.value?.total === 0"
-        class="dropdown-status"
-      >
-        没有匹配选项
-      </p>
+        </ul>
+      </AppCandidateRegion>
       <AppPagination
-        v-if="!request.error.value"
+        v-if="request.status.value === 'ready'"
         :page="page"
         :total-pages="pageCount"
         :label="`${label}分页`"
-        :busy="request.status.value === 'loading'"
         @update:page="turnPage"
       />
     </ComboboxField>

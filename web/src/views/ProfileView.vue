@@ -26,7 +26,7 @@ import { useLogout } from '../composables/useLogout'
 import { clearAccountMemory } from '../composables/accountMemory'
 import { usePwaInstallStore } from '../pwa/install'
 import { deleteCurrentAccount } from '../api/accountDeletion'
-import { normalizeRequestError } from '../api/errors'
+import { canRetryRequest, normalizeRequestError, type RequestError } from '../api/errors'
 import { clearAccountStorage } from '../storage/accountStorage'
 import { listDictionaryCandidates } from '../api/dictionaries'
 import {
@@ -51,6 +51,7 @@ const preferencesStore = usePreferencesStore()
 const { loggingOut, logoutError, logout } = useLogout()
 const activeSetting = ref<'funding' | 'ledgerRange' | 'reportRange' | 'appearance' | 'install'>()
 const resetOpen = ref(false)
+const resetError = ref<RequestError>()
 const deletionOpen = ref(false)
 const deletionConfirmation = ref('')
 const deletionError = ref('')
@@ -146,11 +147,13 @@ async function loadFundingChannels(): Promise<void> {
 }
 
 async function confirmReset(): Promise<void> {
+  if (preferencesStore.isSaving || (resetError.value && !canRetryRequest(resetError.value))) return
+  resetError.value = undefined
   try {
     await preferencesStore.reset()
     resetOpen.value = false
-  } catch {
-    // 统一状态块保留错误与原偏好。
+  } catch (cause) {
+    resetError.value = normalizeRequestError(cause)
   }
 }
 
@@ -230,7 +233,7 @@ useRefreshOnReturn(() => { if (!fundingLoading.value) return loadFundingChannels
           type="button"
           class="text-action reset-preferences-action"
           :disabled="preferencesStore.isSaving"
-          @click="resetOpen = true"
+          @click="resetError = undefined; resetOpen = true"
         >
           恢复默认偏好
         </button>
@@ -424,13 +427,14 @@ useRefreshOnReturn(() => { if (!fundingLoading.value) return loadFundingChannels
         description="资金渠道、明细范围、报表范围、最近记账类型和主题都会恢复默认。"
         confirm-label="确认恢复"
         :busy="preferencesStore.isSaving"
+        :confirm-disabled="Boolean(resetError && !canRetryRequest(resetError))"
         @confirm="confirmReset"
       >
-        <AppStateBlock
-          v-if="preferencesStore.errorMessage"
-          kind="error"
+        <AppRequestError
+          v-if="resetError"
           title="恢复未完成"
-          :message="preferencesStore.errorMessage"
+          :error="resetError"
+          :show-retry="false"
         />
       </AppDialog>
       <AppToast

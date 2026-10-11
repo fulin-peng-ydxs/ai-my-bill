@@ -2,6 +2,7 @@
 import { computed, ref, watch, type Component } from 'vue'
 
 import ComboboxField from './ComboboxField.vue'
+import AppCandidateRegion from './AppCandidateRegion.vue'
 
 import { createDictionaryItem, getDictionaryItem, listDictionaryCandidates, listDictionaryItems } from '../api/dictionaries'
 import { normalizeRequestError } from '../api/errors'
@@ -108,7 +109,9 @@ function focus(searching: boolean): void {
   if (!open.value) interactionVersion++
   browsing.value = !searching
   open.value = true
-  if ((searchTerm.value || !props.items.length) && (searchedQuery.value !== searchTerm.value || !request.data.value)) {
+  // 失败后重新展开必须重查，不能让预载候选绕过失败状态。
+  if (request.status.value === 'error'
+    || ((searchTerm.value || !props.items.length) && (searchedQuery.value !== searchTerm.value || !request.data.value))) {
     void search(searchTerm.value)
   }
 }
@@ -192,47 +195,33 @@ async function create(): Promise<void> {
       @submit="debounced.submit(searchTerm)"
       @close="close"
     >
-      <small
-        v-if="request.status.value === 'loading'"
-        class="dropdown-status"
-      >正在查询{{ label }}…</small>
-      <small
-        v-else-if="request.error.value"
-        class="dropdown-status field-error"
-        role="alert"
+      <AppCandidateRegion
+        :status="request.status.value"
+        :error="request.error.value"
+        :has-candidates="candidates.length > 0"
+        :loading-message="`正在查询${label}…`"
+        empty-message="暂无匹配选项"
+        @retry="search(searchTerm)"
       >
-        {{ request.error.value.message }}
-        <button
-          type="button"
-          class="compact-action"
-          @click="search(searchTerm)"
-        >重试</button>
-      </small>
-      <ul
-        v-if="candidates.length"
-        class="product-options"
-        role="listbox"
-      >
-        <li
-          v-for="item in candidates"
-          :key="item.id"
+        <ul
+          class="product-options"
+          role="listbox"
         >
-          <button
-            type="button"
-            role="option"
-            :aria-selected="modelValue === item.id"
-            @click="select(item)"
+          <li
+            v-for="item in candidates"
+            :key="item.id"
           >
-            <strong>{{ item.name }}</strong>
-          </button>
-        </li>
-      </ul>
-      <div
-        v-else-if="request.status.value !== 'loading' && !request.error.value"
-        class="dropdown-status"
-      >
-        暂无匹配选项
-      </div>
+            <button
+              type="button"
+              role="option"
+              :aria-selected="modelValue === item.id"
+              @click="select(item)"
+            >
+              <strong>{{ item.name }}</strong>
+            </button>
+          </li>
+        </ul>
+      </AppCandidateRegion>
       <button
         v-if="canCreate"
         type="button"
