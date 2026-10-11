@@ -317,9 +317,9 @@ useRefreshOnReturn(() => load())
 
       <section
         class="report-dimension"
-        aria-label="分析方式"
+        aria-label="报表查看方式"
       >
-        <span class="report-analysis-label">分析</span>
+        <span class="report-analysis-label">查看方式</span>
         <div class="report-analysis-controls">
           <CompactSelect
             id="report-dimension"

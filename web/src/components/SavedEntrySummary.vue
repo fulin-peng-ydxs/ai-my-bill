@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { useId } from 'vue'
+import MoneyValue from './MoneyValue.vue'
 
-defineProps<{ title: string, description: string, tone: 'expense' | 'income', undoing: boolean }>()
+defineProps<{ title: string, amount: string, description: string, tone: 'expense' | 'income', undoing: boolean }>()
 defineEmits<{ undo: [] }>()
 const titleId = useId()
 </script>
@@ -18,7 +19,11 @@ const titleId = useId()
           刚刚保存
         </p>
         <h2 :id="titleId">
-          {{ title }}
+          {{ title }} · <MoneyValue
+            :amount="amount"
+            :tone="tone"
+            :sign="tone === 'expense' ? '−' : '+'"
+          />
         </h2>
         <p>{{ description }}</p>
       </div>

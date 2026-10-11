@@ -643,7 +643,8 @@ useRefreshOnReturn(() => loadOptions())
 
       <SavedEntrySummary
         v-if="saved && !editMode"
-        :title="`${saved.productName} · −${formatCny(saved.paidAmount)}`"
+        :title="saved.productName"
+        :amount="saved.paidAmount"
         :description="`${saved.primaryCategoryName}${saved.secondaryCategoryName ? ` / ${saved.secondaryCategoryName}` : ''} · ${saved.fundingChannelName}`"
         tone="expense"
         :undoing="undoing"

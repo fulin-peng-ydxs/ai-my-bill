@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { formatCny } from '../domain/money'
+import MoneyValue from './MoneyValue.vue'
 
 export interface MoneySummaryItem {
   key: string
@@ -27,7 +28,15 @@ defineProps<{
       :class="`money-${item.tone}`"
     >
       <dt>{{ item.label }}</dt>
-      <dd><span class="sr-only">{{ item.sign === '+' ? '正' : item.sign === '-' ? '负' : '' }}</span>{{ item.sign }}{{ formatCny(item.amount) }}</dd>
+      <dd>
+        <MoneyValue
+          v-if="item.tone === 'neutral'"
+          :amount="item.amount"
+        />
+        <template v-else>
+          <span class="sr-only">{{ item.sign === '+' ? '正' : item.sign === '-' ? '负' : '' }}</span>{{ item.sign }}{{ formatCny(item.amount) }}
+        </template>
+      </dd>
     </div>
   </dl>
 </template>

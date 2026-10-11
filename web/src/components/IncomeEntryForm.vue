@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { Clock3, NotebookPen, UserRound } from 'lucide-vue-next'
-import { formatCny, formatDecimalDisplay } from '../domain/money'
+import { formatDecimalDisplay } from '../domain/money'
 import { useRefreshOnReturn } from '../composables/useRefreshOnReturn'
 import { useLatestRequest } from '../composables/useLatestRequest'
 import { computed, inject, onScopeDispose, reactive, ref, useId, watch } from 'vue'
@@ -417,7 +417,8 @@ useRefreshOnReturn(() => loadOptions())
 
       <SavedEntrySummary
         v-if="saved && !editMode"
-        :title="`${saved.incomeName} · +${formatCny(saved.amount)}`"
+        :title="saved.incomeName"
+        :amount="saved.amount"
         :description="`${saved.payerName} · ${saved.incomeCategoryName} · ${saved.fundingChannelName}`"
         tone="income"
         :undoing="undoing"

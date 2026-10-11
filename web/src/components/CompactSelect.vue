@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { ChevronDown } from 'lucide-vue-next'
+import { ChevronsUpDown } from 'lucide-vue-next'
 
 const props = defineProps<{
   id: string
@@ -27,7 +27,7 @@ const selectedLabel = computed(() => props.options.find(item => item.value === p
         v-if="showLabel"
         class="filter-chip-label"
       >{{ label }}：</span><strong>{{ selectedLabel }}</strong></span>
-      <ChevronDown :size="12" />
+      <ChevronsUpDown :size="12" />
     </span>
     <select
       :id="id"

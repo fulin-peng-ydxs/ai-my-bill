@@ -570,6 +570,13 @@ body:has(dialog[open]) .page-scroll-region { overflow: hidden; }
   border-radius: var(--radius-control);
 }
 
+/* 原生选择器沿用候选控件的中性焦点，底边与表面共同标明当前字段。 */
+.form-field select:focus,
+.select-control:focus {
+  background-color: var(--color-surface-secondary);
+  border-bottom-color: var(--color-muted);
+}
+
 .form-field input::placeholder { color: var(--color-placeholder); }
 
 .date-time-control {
@@ -658,6 +665,7 @@ body:has(dialog[open]) .page-scroll-region { overflow: hidden; }
 }
 
 .secondary-button {
+  border-radius: var(--radius-pill);
   gap: var(--space-sm);
   padding: var(--space-sm) var(--space-md);
   white-space: nowrap;
@@ -1027,16 +1035,17 @@ body:has(dialog[open]) {
 
 .report-page .segmented-control { width: 100%; }
 
-.report-dimension { display: flex; align-items: center; gap: var(--space-sm); padding: var(--space-xs) var(--space-sm); background: var(--color-surface); border-block: 1px solid var(--color-border); }
+.report-dimension { display: flex; align-items: center; gap: var(--space-sm); padding-block: var(--space-xs); background: transparent; border-top: 1px solid var(--color-border); }
 .report-analysis-label { flex: 0 0 auto; color: var(--color-muted); font-size: 12px; }
 .report-analysis-controls { display: flex; flex: 1; flex-wrap: wrap; align-items: center; gap: 0 var(--space-sm); min-width: 0; }
-.report-dimension .filter-chip-content { background: var(--color-surface-secondary); border-color: transparent; }
-/* 原生 select 覆盖完整触摸区域，视觉底板复用已应用条件的紧凑表面。 */
+.report-dimension .filter-chip-content { background: transparent; border: 0; border-bottom: 1px solid var(--color-border); border-radius: 0; }
+.report-dimension .compact-select:active .filter-chip-content { background: transparent; border-color: var(--color-muted); }
+/* 原生 select 覆盖完整触摸区域；报表工具行与时间点选择各自提供视觉表面。 */
 .compact-select { position: relative; display: inline-flex; align-items: center; min-height: 44px; min-width: 44px; max-width: 100%; color: var(--color-primary); font-size: 13px; line-height: 20px; cursor: pointer; }
 .compact-select strong { font-weight: 500; }
 .compact-select svg { flex: 0 0 auto; }
 .compact-select .select-control { position: absolute; inset: 0; width: 100%; height: 100%; min-height: 44px; opacity: 0; cursor: pointer; }
-.compact-select:has(select:focus) .filter-chip-content { box-shadow: inset 0 -1px 0 var(--color-muted); }
+.compact-select:has(select:focus) .filter-chip-content { border-bottom-color: var(--color-muted); box-shadow: inset 0 -1px 0 var(--color-muted); }
 .compact-select:has(select:disabled) { color: var(--color-muted); cursor: default; }
 .compact-select:has(select:enabled):active .filter-chip-content { background: var(--color-surface-secondary); }
 
@@ -1274,6 +1283,8 @@ body:has(dialog[open]) {
 .money-expense { color: var(--color-expense-text); }
 .money-income { color: var(--color-income-text); }
 .money-adjustment { color: var(--color-income-text); }
+.money-value.money-income { color: var(--color-income-text); }
+.money-value.money-expense { color: var(--color-expense-text); }
 .ledger-adjustment-state { margin: 0; color: var(--color-expense-text); font-size: 13px; font-weight: 600; }
 
 .adjustment-form,

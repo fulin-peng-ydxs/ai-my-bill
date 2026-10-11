@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { formatCny } from '../domain/money'
+import MoneyValue from './MoneyValue.vue'
 import { computed, ref, watch } from 'vue'
 
 import {
@@ -126,7 +126,11 @@ async function remove(item: DailyTemplateSummary): Promise<void> {
               @click="choose(item)"
             >
               <strong>{{ item.displayName }}</strong>
-              <span>{{ item.contextName }} · {{ item.entryType === 'EXPENSE' ? '−' : '+' }}{{ formatCny(item.amount) }}</span>
+              <span>{{ item.contextName }} · <MoneyValue
+                :amount="item.amount"
+                :tone="item.entryType === 'EXPENSE' ? 'expense' : 'income'"
+                :sign="item.entryType === 'EXPENSE' ? '−' : '+'"
+              /></span>
             </button>
             <button
               type="button"

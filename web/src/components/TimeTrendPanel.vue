@@ -8,6 +8,7 @@ import type { ReportTimeMetric, TimeReport } from '../api/reports'
 import { useReportChart } from '../composables/useReportChart'
 import { formatCny } from '../domain/money'
 import CompactSelect from './CompactSelect.vue'
+import MoneyValue from './MoneyValue.vue'
 
 use([LineChart, GridComponent, LegendComponent])
 type Bucket = TimeReport['buckets'][number]
@@ -80,7 +81,10 @@ watch(() => [props.report, props.metric], () => {
         {{ definition.label }}趋势
       </h2>
       <div class="trend-range-summary">
-        <span>范围合计 <b :class="amountClass">{{ formatCny(rangeAmount) }}</b></span>
+        <span>范围合计 <b :class="amountClass"><MoneyValue
+          v-if="metric === 'BALANCE'"
+          :amount="rangeAmount"
+        /><template v-else>{{ formatCny(rangeAmount) }}</template></b></span>
         <button
           class="text-action"
           type="button"
@@ -125,8 +129,14 @@ watch(() => [props.report, props.metric], () => {
         aria-label="所选时段金额"
       >
         <strong>{{ selectedBucket.label }} · {{ metricCount(selectedBucket) }} 条</strong>
-        <span>当期 <b :class="amountClass">{{ formatCny(selectedBucket[definition.field]) }}</b></span>
-        <span>累计至该时段 <b :class="amountClass">{{ formatCny(selectedBucket[definition.cumulative]) }}</b></span>
+        <span>当期 <b :class="amountClass"><MoneyValue
+          v-if="metric === 'BALANCE'"
+          :amount="selectedBucket[definition.field]"
+        /><template v-else>{{ formatCny(selectedBucket[definition.field]) }}</template></b></span>
+        <span>累计至该时段 <b :class="amountClass"><MoneyValue
+          v-if="metric === 'BALANCE'"
+          :amount="selectedBucket[definition.cumulative]"
+        /><template v-else>{{ formatCny(selectedBucket[definition.cumulative]) }}</template></b></span>
       </div>
     </div>
   </section>

@@ -21,6 +21,7 @@ import FormDisclosure from './FormDisclosure.vue'
 import GlobalLedgerSearch from './GlobalLedgerSearch.vue'
 import IncrementalLedgerList from './IncrementalLedgerList.vue'
 import MoneySummary from './MoneySummary.vue'
+import MoneyValue from './MoneyValue.vue'
 import SegmentedControl from './SegmentedControl.vue'
 import TimeTrendPanel from './TimeTrendPanel.vue'
 import ReportComparisonDialog from './ReportComparisonDialog.vue'
@@ -30,10 +31,26 @@ async function render(component: Parameters<typeof h>[0], props?: Record<string,
   const context: { teleports?: Record<string, string> } = {}
   const markup = await renderToString(createSSRApp({ render: () => h(component, props) }), context)
   // SSR 将传送内容写入独立目标；语义检查覆盖实际内容，不能只读取原容器占位。
-  return markup + Object.values(context.teleports ?? {}).join('')
+  return (markup + Object.values(context.teleports ?? {}).join('')).replace(/<!--[\s\S]*?-->/g, '')
 }
 
 describe('shared frontend foundations', () => {
+  it('renders currency, signs and digits together with semantic tone without losing precision', async () => {
+    const expense = await render(MoneyValue, { amount: '999999999.99', tone: 'expense', sign: '−' })
+    expect(expense).toContain('<span class="money-value money-expense">−¥999,999,999.99</span>')
+    expect(await render(MoneyValue, { amount: '12.30', tone: 'income', sign: '+' }))
+      .toContain('<span class="money-value money-income">+¥12.30</span>')
+  })
+  it('derives balance direction from its value and leaves zero neutral', async () => {
+    expect(await render(MoneyValue, { amount: '-12.50' }))
+      .toContain('<span class="money-value money-expense">−¥12.50</span>')
+    expect(await render(MoneyValue, { amount: '12.50' }))
+      .toContain('<span class="money-value money-income">+¥12.50</span>')
+    for (const amount of ['0.00', '-0.00']) {
+      expect(await render(MoneyValue, { amount }))
+        .toContain('<span class="money-value money-neutral">¥0</span>')
+    }
+  })
   it('omits idle edit loading space while keeping pending feedback and default inline space', async () => {
     expect(await render(AppLoadingHint, { pending: false, reserveSpace: false })).not.toContain('class="loading-hint')
     expect(await render(AppLoadingHint, { pending: false })).toContain('loading-placeholder')
