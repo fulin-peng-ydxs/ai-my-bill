@@ -48,6 +48,9 @@ export function useLatestRequest<T>(onAccessDenied?: () => void) {
     if (intent === 'replace' || data.value === undefined) {
       data.value = undefined
       status.value = 'loading'
+    } else {
+      // 失败后的同条件重试也保留最后成功快照，不短暂落入空白错误区域。
+      status.value = successfulStatus
     }
 
     try {

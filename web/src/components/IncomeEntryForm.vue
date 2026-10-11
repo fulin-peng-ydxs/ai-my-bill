@@ -2,6 +2,7 @@
 import { Clock3, NotebookPen, UserRound } from 'lucide-vue-next'
 import { formatCny, formatDecimalDisplay } from '../domain/money'
 import { useRefreshOnReturn } from '../composables/useRefreshOnReturn'
+import { useLatestRequest } from '../composables/useLatestRequest'
 import { computed, inject, onScopeDispose, reactive, ref, useId, watch } from 'vue'
 
 import type { DailyTemplateSelection } from '../api/dailyTemplates'
@@ -20,7 +21,8 @@ import {
   type IncomeField, type IncomeFormState,
 } from '../domain/ledgerEntryForm'
 import AppStatusNotice from './AppStatusNotice.vue'
-import { canRetryRequest, normalizeRequestError, type RequestError } from '../api/errors'
+import AppLoadingHint from './AppLoadingHint.vue'
+import { canRetryRequest, isAccessDenied, normalizeRequestError, type RequestError } from '../api/errors'
 import AppToast from './AppToast.vue'
 import SavedEntrySummary from './SavedEntrySummary.vue'
 import DailyTemplateFallbackNotice from './DailyTemplateFallbackNotice.vue'
@@ -51,7 +53,9 @@ const payers = ref<DictionaryItem[]>([])
 const categories = ref<DictionaryItem[]>([])
 const funding = ref<DictionaryItem[]>([])
 const recentNames = ref<string[]>([])
-const loading = ref(true)
+const optionsRequest = useLatestRequest<Awaited<ReturnType<typeof readOptions>>>()
+const loading = computed(() => optionsRequest.status.value === 'loading' || optionsRequest.refreshing.value)
+const initialLoading = computed(() => optionsRequest.status.value === 'loading')
 const optionFailures = ref<{ label: string, error: RequestError }[]>([])
 const errors = reactive<Partial<Record<IncomeField, string>>>({})
 const submitting = ref(false)
@@ -130,25 +134,34 @@ function ensureItem(target: typeof payers, itemType: DictionaryItem['type'], id?
   target.value = [...target.value, { id, type: itemType, name, status: 'ACTIVE', sortOrder: 0, referenced: true }]
 }
 
+async function readOptions(signal: globalThis.AbortSignal) {
+  const [payerResult, categoryResult, fundingResult, namesResult] = await Promise.allSettled([
+    listDictionaryCandidates('payer', '', signal),
+    listDictionaryCandidates('income-category', '', signal),
+    listDictionaryCandidates('funding-channel', '', signal),
+    listRecentIncomeNames('', signal),
+  ])
+  return { payerResult, categoryResult, fundingResult, namesResult }
+}
+
 async function loadOptions(): Promise<void> {
-  loading.value = true
   optionFailures.value = []
-  const requests = [
-    { label: '付款方', load: () => listDictionaryCandidates('payer').then((page) => { payers.value = page.items }), clear: () => { payers.value = [] } },
-    { label: '收入分类', load: () => listDictionaryCandidates('income-category').then((page) => { categories.value = page.items }), clear: () => { categories.value = [] } },
-    { label: '收款方式', load: () => listDictionaryCandidates('funding-channel').then((page) => { funding.value = page.items }), clear: () => { funding.value = [] } },
-    { label: '最近名称', load: () => listRecentIncomeNames('').then((page) => { recentNames.value = page.items }), clear: () => { recentNames.value = [] } },
-  ]
-  const results = await Promise.allSettled(requests.map((request) => request.load()))
-  results.forEach((result, index) => {
-    if (result.status === 'rejected') {
-      const request = requests[index]!
-      request.clear()
-      optionFailures.value.push({ label: request.label, error: normalizeRequestError(result.reason) })
+  const results = await optionsRequest.execute(readOptions, { intent: 'silent' })
+  if (!results) return
+  // 批次通过请求代次检查后再更新字段，旧批次不能覆盖切回页面后的新结果。
+  function apply<T>(label: string, result: PromiseSettledResult<{ items: T[] }>, target: { value: T[] }): void {
+    if (result.status === 'fulfilled') target.value = result.value.items
+    else {
+      const error = normalizeRequestError(result.reason)
+      if (isAccessDenied(error)) target.value = []
+      optionFailures.value.push({ label, error })
     }
-  })
+  }
+  apply('付款方', results.payerResult, payers)
+  apply('收入分类', results.categoryResult, categories)
+  apply('收款方式', results.fundingResult, funding)
+  apply('最近名称', results.namesResult, recentNames)
   if (props.editEntry) ensureEditOptions(props.editEntry)
-  loading.value = false
 }
 
 function selectPayer(item: DictionaryChoice): void {
@@ -231,16 +244,17 @@ useRefreshOnReturn(() => loadOptions())
 <template>
   <section
     class="entry-form"
+    :aria-busy="loading"
     :aria-label="editMode ? '编辑收入' : '收入填报'"
   >
-    <span
-      v-if="loading"
-      class="entry-options-status"
-      role="status"
-    >正在加载收入选项…</span>
+    <AppLoadingHint
+      :pending="loading"
+      :page="!editMode"
+      label="读取选项…"
+    />
     <AppStatusNotice
-      v-else-if="optionFailures.length"
-      title="部分选项暂不可用"
+      v-if="!loading && optionFailures.length"
+      title="部分选项读取失败"
       :message="optionFailures.map(({ label, error }) => `${label}：${error.message}`).join('；')"
       :action-label="optionFailures.every(({ error }) => canRetryRequest(error)) ? '重试' : undefined"
       @action="loadOptions"
@@ -347,7 +361,7 @@ useRefreshOnReturn(() => loadOptions())
             class="entry-setting-field"
             label="收款方式"
             :items="funding"
-            :loading="loading"
+            :loading="initialLoading"
             :model-value="form.fundingChannelId"
             :disabled="submitting"
             :error="errors.fundingChannelId"

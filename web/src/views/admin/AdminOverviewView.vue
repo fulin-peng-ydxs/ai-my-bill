@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useDelayedLoading } from '../../composables/useDelayedLoading'
 import { isAccessDenied } from '../../api/errors'
 import { useRefreshOnReturn } from '../../composables/useRefreshOnReturn'
 import { Archive, Database, HeartPulse, RefreshCw, Users } from 'lucide-vue-next'
@@ -12,6 +13,8 @@ import { adminBackupPresentation, formatAdminBytes, formatAdminTime } from '../.
 const { data, status, error, staleWarning, refreshing, execute } = useLatestRequest<Awaited<ReturnType<typeof getAdminOverview>>>()
 
 const backup = computed(() => adminBackupPresentation(data.value?.backup.status ?? 'UNAVAILABLE'))
+
+const refreshVisible = useDelayedLoading(refreshing)
 
 async function load(refresh = false): Promise<void> {
   await execute((signal) => getAdminOverview(signal), { intent: refresh ? 'silent' : 'replace' })
@@ -38,7 +41,7 @@ useRefreshOnReturn(() => load(true))
           :size="18"
           aria-hidden="true"
         />
-        {{ refreshing ? '刷新中…' : '刷新概况' }}
+        {{ refreshVisible ? '刷新中…' : '刷新概况' }}
       </button>
     </header>
 

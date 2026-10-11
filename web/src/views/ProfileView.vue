@@ -5,6 +5,7 @@ import { useRouter } from 'vue-router'
 import AppDrawer from '../components/AppDrawer.vue'
 import AppDialog from '../components/AppDialog.vue'
 import AppStatusNotice from '../components/AppStatusNotice.vue'
+import AppLoadingHint from '../components/AppLoadingHint.vue'
 import AppRequestError from '../components/AppRequestError.vue'
 import AppStateBlock from '../components/AppStateBlock.vue'
 import AppToast from '../components/AppToast.vue'
@@ -143,7 +144,7 @@ function retryPreferences(): void {
 }
 
 async function loadFundingChannels(): Promise<void> {
-  await fundingRequest.execute((signal) => listDictionaryCandidates('funding-channel', '', signal))
+  await fundingRequest.execute((signal) => listDictionaryCandidates('funding-channel', '', signal), { intent: 'silent' })
 }
 
 async function confirmReset(): Promise<void> {
@@ -374,9 +375,22 @@ useRefreshOnReturn(() => { if (!fundingLoading.value) return loadFundingChannels
             v-else-if="activeSetting === 'appearance'"
             :disabled="preferencesStore.isSaving"
           />
+          <template v-if="activeSetting === 'funding'">
+            <AppLoadingHint :pending="fundingRequest.refreshing.value" />
+            <AppStatusNotice
+              v-if="fundingRequest.staleWarning.value"
+              title="资金渠道可能不是最新"
+              :error="fundingRequest.staleWarning.value"
+              message="当前仍显示上次成功结果。"
+              action-label="重试"
+              :busy="fundingRequest.refreshing.value"
+              @action="loadFundingChannels"
+            />
+          </template>
           <AppStateBlock
             v-if="activeField && preferencesStore.fieldStates[activeField] === 'saving'"
             kind="loading"
+            immediate
             title="正在保存偏好"
             message="当前选择已经生效。"
           />

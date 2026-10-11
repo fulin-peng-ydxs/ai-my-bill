@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppLoadingHint from '../components/AppLoadingHint.vue'
 import { pageScrollTop, scrollPageTo } from '../composables/pageScroll'
 import { usePageActivity } from '../composables/usePageActivity'
 import { useRefreshOnReturn } from '../composables/useRefreshOnReturn'
@@ -300,11 +301,10 @@ useRefreshOnReturn(() => load())
         <div>
           <label for="report-dimension">
             分析维度
-            <span
+            <AppLoadingHint
               class="report-refresh-status"
-              role="status"
-              aria-live="polite"
-            >{{ request.refreshing.value ? '更新中…' : '' }}</span>
+              :pending="request.refreshing.value"
+            />
           </label>
           <select
             id="report-dimension"

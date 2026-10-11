@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useDelayedLoading } from '../../composables/useDelayedLoading'
 import { isAccessDenied } from '../../api/errors'
 import { useRefreshOnReturn } from '../../composables/useRefreshOnReturn'
 import { MoreHorizontal, RefreshCw, Search } from 'lucide-vue-next'
@@ -48,6 +49,8 @@ const hasAppliedFilters = computed(() => Boolean(
   || applied.value.result
   || applied.value.period !== 'ALL',
 ))
+
+const refreshVisible = useDelayedLoading(refreshing)
 
 async function load(refresh = false): Promise<void> {
   const snapshot = { ...applied.value }
@@ -112,7 +115,7 @@ useRefreshOnReturn(() => load(true))
           :size="18"
           aria-hidden="true"
         />
-        {{ refreshing ? '刷新中…' : '刷新日志' }}
+        {{ refreshVisible ? '刷新中…' : '刷新日志' }}
       </button>
     </header>
 

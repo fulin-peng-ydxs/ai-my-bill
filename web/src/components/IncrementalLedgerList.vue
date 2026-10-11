@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useDelayedLoading } from '../composables/useDelayedLoading'
 import { computed, ref, watch } from 'vue'
 
 import type { LedgerEntryTypeFilter, LedgerItem, LedgerLifecycleFilter } from '../api/ledgerEntries'
@@ -24,6 +25,7 @@ watch(() => props.items, (items, previous) => {
 }, { flush: 'sync' })
 watch(() => [props.type, props.lifecycle], () => { animateMutation.value = false }, { flush: 'sync' })
 
+const loadingVisible = useDelayedLoading(() => props.loadingMore)
 const emit = defineEmits<{ more: [], context: [item: LedgerItem], open: [item: LedgerItem] }>()
 
 const groups = computed(() => {
@@ -78,7 +80,7 @@ const groups = computed(() => {
         :disabled="loadingMore"
         @click="emit('more')"
       >
-        {{ loadingMore ? '正在加载…' : '加载更多' }}
+        {{ loadingVisible ? '正在加载…' : '加载更多' }}
       </button>
       <span v-else>已显示全部结果</span>
     </div>

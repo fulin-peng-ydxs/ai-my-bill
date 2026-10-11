@@ -3,6 +3,7 @@ import { RefreshCw } from 'lucide-vue-next'
 import { DICTIONARY_PAGE_SIZE } from '../domain/dictionaries'
 
 import GlobalLedgerSearch from './GlobalLedgerSearch.vue'
+import AppLoadingHint from './AppLoadingHint.vue'
 import SegmentedControl from './SegmentedControl.vue'
 
 type Status = 'ACTIVE' | 'INACTIVE' | ''
@@ -55,13 +56,13 @@ const statusOptions = [
         aria-hidden="true"
       />
     </button>
-    <span
-      v-if="total !== undefined"
-      class="dictionary-result-count"
-    >
-      <template v-if="shown && total > shown">
-        第 {{ (page ?? 0) * DICTIONARY_PAGE_SIZE + 1 }}–{{ (page ?? 0) * DICTIONARY_PAGE_SIZE + shown }} 项 /
-      </template>共 {{ total }} 项
+    <span class="dictionary-result-count">
+      <AppLoadingHint :pending="refreshing" />
+      <template v-if="total !== undefined">
+        <template v-if="shown && total > shown">
+          第 {{ (page ?? 0) * DICTIONARY_PAGE_SIZE + 1 }}–{{ (page ?? 0) * DICTIONARY_PAGE_SIZE + shown }} 项 /
+        </template>共 {{ total }} 项
+      </template>
     </span>
   </div>
 </template>

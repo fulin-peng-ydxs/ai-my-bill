@@ -1,8 +1,9 @@
 /* eslint-disable vue/one-component-per-file -- 生命周期宿主测试需要同时挂载父层、子层及 KeepAlive 容器。 */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { createRenderer, defineComponent, h, KeepAlive, markRaw, nextTick, ref, ssrContextKey } from 'vue'
+import { defineComponent, h, KeepAlive, markRaw, nextTick, ref, ssrContextKey } from 'vue'
 import { dialogMessageTarget, useDialogController } from './useDialogController'
 import AppOverlayContent from '../components/AppOverlayContent.vue'
+import { renderer } from '../test/lifecycleRenderer'
 
 class FocusTarget {
   isConnected = true
@@ -19,21 +20,6 @@ class NativeDialog extends FocusTarget {
   contains(target: unknown): boolean { return target === this }
   getBoundingClientRect() { return { left: 100, right: 300, top: 100, bottom: 300 } }
 }
-// 无浏览器的宿主只负责 Vue 生命周期，原生 top layer/触摸另由实际页面验证。
-interface HostNode { children: HostNode[]; parent?: HostNode }
-const renderer = createRenderer<HostNode, HostNode>({
-  createElement: () => ({ children: [] }), createText: () => ({ children: [] }), createComment: () => ({ children: [] }),
-  insert: (node, parent, anchor) => {
-    if (node.parent) node.parent.children.splice(node.parent.children.indexOf(node), 1)
-    node.parent = parent
-    const index = anchor ? parent.children.indexOf(anchor) : -1
-    if (index >= 0) parent.children.splice(index, 0, node)
-    else parent.children.push(node)
-  },
-  remove: node => { if (node.parent) node.parent.children.splice(node.parent.children.indexOf(node), 1) },
-  setText: () => {}, setElementText: () => {}, patchProp: () => {}, parentNode: node => node.parent ?? null,
-  nextSibling: node => node.parent?.children[node.parent.children.indexOf(node) + 1] ?? null,
-})
 const cleanups: (() => void)[] = []
 beforeEach(() => {
   vi.stubGlobal('HTMLElement', FocusTarget)

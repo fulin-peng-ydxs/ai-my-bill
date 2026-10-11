@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { Clock3, NotebookPen } from 'lucide-vue-next'
 import { useRefreshOnReturn } from '../composables/useRefreshOnReturn'
+import { useLatestRequest } from '../composables/useLatestRequest'
 import { computed, inject, onScopeDispose, reactive, ref, useId, watch } from 'vue'
 
 import { ApiClientError } from '../api/http'
@@ -8,7 +9,7 @@ import type { DailyTemplateSelection } from '../api/dailyTemplates'
 import {
   createExpense, getExpense, undoCreatedExpense, updateExpense, type ExpenseResponse, type ProductSuggestion,
 } from '../api/expenses'
-import { listDictionaryCandidates } from '../api/dictionaries'
+import { listDictionaryCandidates, type DictionaryPage } from '../api/dictionaries'
 import {
   calculateExpenseTotal, decimalToScaledInteger, formatCny, formatDecimalDisplay, scaledIntegerToDecimal, isDecimalInRange, MONEY_MAX,
 } from '../domain/money'
@@ -24,7 +25,8 @@ import { useLedgerDraft } from '../composables/useLedgerDraft'
 import DraftBackupNotice from './DraftBackupNotice.vue'
 import { registerUnsavedChanges, unsavedChangeScope } from '../composables/unsavedChanges'
 import AppStatusNotice from './AppStatusNotice.vue'
-import { canRetryRequest, normalizeRequestError, type RequestError } from '../api/errors'
+import AppLoadingHint from './AppLoadingHint.vue'
+import { canRetryRequest, isAccessDenied, normalizeRequestError, type RequestError } from '../api/errors'
 import AppToast from './AppToast.vue'
 import SavedEntrySummary from './SavedEntrySummary.vue'
 import DailyTemplateFallbackNotice from './DailyTemplateFallbackNotice.vue'
@@ -69,7 +71,9 @@ const optionItems = reactive<Record<OptionGroup, ExpenseOption[]>>({
   categories: [], units: [], funding: [], purchase: [], locations: [],
 })
 const optionFailures = ref<{ label: string, error: RequestError }[]>([])
-const optionsLoading = ref(false)
+const optionsRequest = useLatestRequest<PromiseSettledResult<DictionaryPage>[]>()
+const optionsLoading = computed(() => optionsRequest.status.value === 'loading' || optionsRequest.refreshing.value)
+const optionsInitialLoading = computed(() => optionsRequest.status.value === 'loading')
 const errors = reactive<Partial<Record<ExpenseField, string>>>({})
 const submitting = ref(false)
 watch(submitting, value => emit('busyChange', value), { flush: 'sync' })
@@ -268,7 +272,6 @@ function selectCategory(item: DictionaryChoice, level: 'primary' | 'secondary'):
 }
 
 async function loadOptions(): Promise<void> {
-  optionsLoading.value = true
   optionFailures.value = []
   const requests = [
     ['categories', '支出分类', 'expense-category'],
@@ -277,17 +280,18 @@ async function loadOptions(): Promise<void> {
     ['purchase', '购买渠道', 'purchase-channel'],
     ['locations', '地点标签', 'location'],
   ] as const
-  const results = await Promise.allSettled(requests.map(([, , type]) => listDictionaryCandidates(type)))
+  const results = await optionsRequest.execute((signal) => Promise.allSettled(requests.map(([, , type]) => listDictionaryCandidates(type, '', signal))), { intent: 'silent' })
+  if (!results) return
   results.forEach((result, index) => {
     const [key, label] = requests[index]
     if (result.status === 'fulfilled') optionItems[key] = result.value.items
     else {
-      optionItems[key] = []
-      optionFailures.value.push({ label, error: normalizeRequestError(result.reason) })
+      const error = normalizeRequestError(result.reason)
+      if (isAccessDenied(error)) optionItems[key] = []
+      optionFailures.value.push({ label, error })
     }
   })
   if (props.editEntry) ensureEditOptions(props.editEntry)
-  optionsLoading.value = false
 }
 
 function validate(): boolean {
@@ -390,16 +394,17 @@ useRefreshOnReturn(() => loadOptions())
 <template>
   <section
     class="entry-form"
+    :aria-busy="optionsLoading"
     :aria-label="editMode ? '编辑支出' : '支出填报'"
   >
-    <span
-      v-if="optionsLoading"
-      class="entry-options-status"
-      role="status"
-    >正在加载填报选项…</span>
+    <AppLoadingHint
+      :pending="optionsLoading"
+      :page="!editMode"
+      label="读取选项…"
+    />
     <AppStatusNotice
-      v-else-if="optionFailures.length"
-      title="部分选项暂不可用"
+      v-if="!optionsLoading && optionFailures.length"
+      title="部分选项读取失败"
       :message="optionFailures.map(({ label, error }) => `${label}：${error.message}`).join('；')"
       :action-label="optionFailures.every(({ error }) => canRetryRequest(error)) ? '重试' : undefined"
       @action="loadOptions"
@@ -470,7 +475,7 @@ useRefreshOnReturn(() => loadOptions())
                 label="一级分类"
                 :items="rootCategories"
                 :model-value="form.primaryCategoryId"
-                :disabled="submitting || optionsLoading"
+                :disabled="submitting || optionsInitialLoading"
                 :error="errors.primaryCategoryId"
                 @select="selectCategory($event, 'primary')"
                 @resolved="ensureOption('categories', $event.id, $event.name, $event.parentId)"
@@ -484,7 +489,7 @@ useRefreshOnReturn(() => loadOptions())
                 :items="secondaryCategories"
                 :model-value="form.secondaryCategoryId"
                 :parent-id="form.primaryCategoryId"
-                :disabled="submitting || optionsLoading || !form.primaryCategoryId"
+                :disabled="submitting || optionsInitialLoading || !form.primaryCategoryId"
                 :error="errors.secondaryCategoryId"
                 @select="selectCategory($event, 'secondary')"
                 @resolved="ensureOption('categories', $event.id, $event.name, $event.parentId)"
@@ -561,7 +566,7 @@ useRefreshOnReturn(() => loadOptions())
           <FundingChannelPicker
             class="entry-setting-field"
             :items="optionItems.funding"
-            :loading="optionsLoading"
+            :loading="optionsInitialLoading"
             :model-value="form.fundingChannelId"
             :disabled="submitting"
             :error="errors.fundingChannelId"

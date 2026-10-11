@@ -7,7 +7,6 @@ import DictionaryManager from '../components/DictionaryManager.vue'
 import { useDictionaryPanel } from '../composables/useDictionaryPanel'
 import type { DailyTemplateSelection } from '../api/dailyTemplates'
 import AppStatusNotice from '../components/AppStatusNotice.vue'
-import AppStateBlock from '../components/AppStateBlock.vue'
 import PageWorkspace from '../components/PageWorkspace.vue'
 import PageHeading from '../components/PageHeading.vue'
 import DailyEntryPicker from '../components/DailyEntryPicker.vue'
@@ -94,18 +93,12 @@ function clearTemplate(type: EntryType): void {
       class="entry-type-panel"
       aria-label="本次记录"
     >
-      <AppStateBlock
-        v-if="saveState === 'saving'"
-        kind="loading"
-        title="正在保存最近类型"
-        message="选择已经生效，正在同步到当前账号。"
-      />
       <AppStatusNotice
-        v-else-if="saveState === 'error'"
+        v-if="saveState === 'error'"
         :error="preferences.requestError"
         :busy="preferences.isSaving"
-        title="最近类型尚未同步"
-        message="当前选择会保留在本次会话中，可以原位重试。"
+        title="记账类型偏好未同步"
+        message="当前收支类型已在本次使用中生效，不影响继续记账。重试后可同步下次进入时默认使用的类型。"
         action-label="重试"
         @action="preferences.retry('recentEntryType').catch(() => undefined)"
       />

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppLoadingHint from '../components/AppLoadingHint.vue'
 import { formatCny } from '../domain/money'
 import { formatLedgerCounterparty } from '../domain/ledgerFormatting'
 import { pageScrollTop, scrollPageTo } from '../composables/pageScroll'
@@ -449,6 +450,10 @@ useRefreshOnReturn(() => list.refresh())
         :aria-hidden="filters.lifecycle !== 'TRASHED' || undefined"
       >30 天内可恢复</span>
     </p>
+    <AppLoadingHint
+      :pending="list.refreshing.value && !list.loadingMore.value"
+      page
+    />
     <AppAsyncRegion
       :status="list.status.value"
       :error="list.error.value"

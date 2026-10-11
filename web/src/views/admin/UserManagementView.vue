@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppLoadingHint from '../../components/AppLoadingHint.vue'
 import { useRefreshOnReturn } from '../../composables/useRefreshOnReturn'
 import { MoreHorizontal, Plus, RefreshCw, Search } from 'lucide-vue-next'
 import { computed, onMounted, ref } from 'vue'
@@ -264,10 +265,10 @@ useRefreshOnReturn(() => load('refresh'))
           aria-hidden="true"
         />
       </button>
-      <span
-        v-if="data && status !== 'error'"
-        class="admin-result-count"
-      >{{ data.total }} 位用户</span>
+      <span class="admin-result-count">
+        <AppLoadingHint :pending="refreshing" />
+        <template v-if="data && status !== 'error'">{{ data.total }} 位用户</template>
+      </span>
     </form>
 
     <AppAsyncRegion

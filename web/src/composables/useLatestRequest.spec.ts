@@ -11,6 +11,22 @@ function deferred<T>() {
 }
 
 describe('useLatestRequest', () => {
+  it('retains the successful snapshot throughout a slow refresh and retry', async () => {
+    const scope = effectScope()
+    const state = scope.run(() => useLatestRequest<string[]>())!
+    await state.execute(async () => ['缓存内容'])
+    await state.execute(async () => { throw new TypeError('offline') }, { intent: 'refresh' })
+    const response = deferred<string[]>()
+    const retry = state.execute(() => response.promise, { intent: 'refresh' })
+    expect(state.status.value).toBe('ready')
+    expect(state.refreshing.value).toBe(true)
+    expect(state.data.value).toEqual(['缓存内容'])
+    response.resolve(['最新内容'])
+    await retry
+    expect(state.data.value).toEqual(['最新内容'])
+    expect(state.refreshing.value).toBe(false)
+    scope.stop()
+  })
   it.each([401, 403])('clears protected results on HTTP %i even during silent refresh', async (code) => {
     const scope = effectScope()
     const onAccessDenied = vi.fn()

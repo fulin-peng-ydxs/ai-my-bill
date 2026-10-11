@@ -2,15 +2,17 @@
 import type { RequestError } from '../api/errors'
 import type { DataRegionStatus } from '../composables/useLatestRequest'
 import AppRequestError from './AppRequestError.vue'
+import { useDelayedLoading } from '../composables/useDelayedLoading'
 
 // idle 可展示调用方已成功预载的候选，但不能据此把尚未请求的数据判为空。
-defineProps<{
+const props = defineProps<{
   status: DataRegionStatus
   error?: RequestError
   hasCandidates: boolean
   loadingMessage: string
   emptyMessage: string
 }>()
+const loadingVisible = useDelayedLoading(() => props.status === 'loading')
 defineEmits<{ retry: [] }>()
 </script>
 
@@ -20,7 +22,10 @@ defineEmits<{ retry: [] }>()
     class="dropdown-status"
     role="status"
     aria-busy="true"
-  >{{ loadingMessage }}</small>
+  ><span
+    :class="{ 'loading-placeholder': !loadingVisible }"
+    :aria-hidden="!loadingVisible || undefined"
+  >{{ loadingMessage }}</span></small>
   <AppRequestError
     v-else-if="status === 'error'"
     compact

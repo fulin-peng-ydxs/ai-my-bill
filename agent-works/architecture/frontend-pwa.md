@@ -59,6 +59,8 @@ flowchart LR
 
 ## 动效与呈现生命周期
 
+读取状态与加载提示分离：`useDelayedLoading` 只控制连续等待 500ms 后的视觉呈现，不延迟请求、结果、错误或业务 busy。`AppStateBlock`、`AppCandidateRegion` 复用占位策略，`AppLoadingHint` 承接行内及 PageHeading 既有状态区的刷新提示；需要展示进度的写操作用 immediate 保持即时反馈。收支切换仍由 preferences store 乐观更新并持久化最近类型，正常同步不展示进度或成功提示，仅失败时由 `AppStatusNotice` 承接说明与可重试入口，表单保持可用。计时器随完成、组件停用、页面停用及作用域销毁清理，KeepAlive 返回重新计时。同条件刷新消费 `useLatestRequest` 的成功快照；填报选项的批次也经请求代次检查后再发布，普通刷新失败保留已有选项，权限失败撤下对应候选。首次无快照与替换查询仍由真实四态控制，不用延迟逻辑伪造 ready 或 empty。
+
 动效规则见 [DESIGN §4.7](../../DESIGN.md#47-统一动效)。`tokens.css` 定义参数，`motion.css` 定义 CSS 效果；`motion.ts` 提供读取参数和有界完成监听，`useMotionPreference` 以单一、可释放的系统媒体监听同步脚本偏好。`AppTransition` 只承接普通显隐，不接管原生顶层或路由缓存。
 
 打开抽屉时，`useDialogController` 先进入原生 top layer，再驱动 opening/open 阶段。业务接受关闭意图后进入 closing；`AppOverlayContent` 暂停父插槽重新求值，保留当前 VNode 树至退场结束，dialog 进入 inert，遮罩继续阻止背景交互。完成事件或超时触发原生 close、堆栈与焦点收尾；重开取消旧监听并从当前视觉位置续接，过期动画事件不得关闭新弹层。系统减少动态效果或后台切换可立即完成，页面停用和卸载立即关闭并取消资源；业务 busy、未保存确认和请求仍由原消费者负责。
