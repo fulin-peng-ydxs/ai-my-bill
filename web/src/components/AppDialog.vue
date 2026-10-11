@@ -32,7 +32,7 @@ const emit = defineEmits<{
 }>()
 const isOpen = computed(() => props.open)
 const { visibleHeight, bottomInset, topInset } = useKeyboardViewport()
-const { dialog, handleCancel, handleClose } = useDialogController(isOpen, (value) => { if (!props.busy) emit('update:open', value) })
+const { dialog, handleCancel, handleClose, handlePointerDown, handlePointerUp, handlePointerCancel, handleBackdropClick } = useDialogController(isOpen, (value) => { if (!props.busy) emit('update:open', value) })
 </script>
 
 <template>
@@ -45,6 +45,10 @@ const { dialog, handleCancel, handleClose } = useDialogController(isOpen, (value
     :aria-describedby="description ? `${id}-description` : undefined"
     @cancel="handleCancel"
     @close="handleClose"
+    @pointerdown="handlePointerDown"
+    @pointerup="handlePointerUp"
+    @pointercancel="handlePointerCancel"
+    @click="handleBackdropClick"
   >
     <div class="overlay-panel dialog-panel">
       <header class="overlay-header">

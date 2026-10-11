@@ -2,7 +2,7 @@
 import { Clock3, NotebookPen, UserRound } from 'lucide-vue-next'
 import { formatCny, formatDecimalDisplay } from '../domain/money'
 import { useRefreshOnReturn } from '../composables/useRefreshOnReturn'
-import { computed, onScopeDispose, reactive, ref, useId, watch } from 'vue'
+import { computed, inject, onScopeDispose, reactive, ref, useId, watch } from 'vue'
 
 import type { DailyTemplateSelection } from '../api/dailyTemplates'
 import { listDictionaryCandidates, type DictionaryItem } from '../api/dictionaries'
@@ -12,7 +12,7 @@ import {
 } from '../api/incomes'
 import { useLedgerDraft } from '../composables/useLedgerDraft'
 import DraftBackupNotice from './DraftBackupNotice.vue'
-import { registerUnsavedChanges } from '../composables/unsavedChanges'
+import { registerUnsavedChanges, unsavedChangeScope } from '../composables/unsavedChanges'
 import { createIdempotencyAttemptTracker } from '../domain/idempotency'
 import { toShanghaiLocalDateTime } from '../domain/businessTime'
 import {
@@ -38,7 +38,7 @@ const formId = useId()
 
 const props = defineProps<{ accountId?: string, defaultFundingChannelId?: string | null,
   templateSelection?: DailyTemplateSelection, templateRevision?: number, editEntry?: IncomeResponse }>()
-const emit = defineEmits<{ 'templateConsumed': [], saved: [value: IncomeResponse] }>()
+const emit = defineEmits<{ 'templateConsumed': [], saved: [value: IncomeResponse], busyChange: [value: boolean] }>()
 const empty = () => emptyIncomeForm(props.defaultFundingChannelId)
 
 const form = reactive<IncomeFormState>(empty())
@@ -54,6 +54,8 @@ const loading = ref(true)
 const loadError = ref('')
 const errors = reactive<Partial<Record<IncomeField, string>>>({})
 const submitting = ref(false)
+watch(submitting, value => emit('busyChange', value), { flush: 'sync' })
+onScopeDispose(() => emit('busyChange', false))
 const undoing = ref(false)
 const saved = ref<IncomeResponse>()
 const savedKey = ref('')
@@ -117,7 +119,7 @@ watch(() => props.defaultFundingChannelId, (value) => { if (!editMode.value && !
 
 const unregisterEditGuard = registerUnsavedChanges(editDirty, () => {
   if (props.editEntry) applyEditEntry(props.editEntry)
-})
+}, inject(unsavedChangeScope, undefined))
 onScopeDispose(unregisterEditGuard)
 
 function persist(): void { void draft.replace(Object.fromEntries(Object.entries(form).filter(([, value]) => value))) }

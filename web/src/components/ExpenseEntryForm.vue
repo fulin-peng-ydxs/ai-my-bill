@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { Clock3, NotebookPen } from 'lucide-vue-next'
 import { useRefreshOnReturn } from '../composables/useRefreshOnReturn'
-import { computed, onScopeDispose, reactive, ref, useId, watch } from 'vue'
+import { computed, inject, onScopeDispose, reactive, ref, useId, watch } from 'vue'
 
 import { ApiClientError } from '../api/http'
 import type { DailyTemplateSelection } from '../api/dailyTemplates'
@@ -22,7 +22,7 @@ import {
 } from '../domain/ledgerEntryForm'
 import { useLedgerDraft } from '../composables/useLedgerDraft'
 import DraftBackupNotice from './DraftBackupNotice.vue'
-import { registerUnsavedChanges } from '../composables/unsavedChanges'
+import { registerUnsavedChanges, unsavedChangeScope } from '../composables/unsavedChanges'
 import AppStateBlock from './AppStateBlock.vue'
 import AppToast from './AppToast.vue'
 import SavedEntrySummary from './SavedEntrySummary.vue'
@@ -48,7 +48,7 @@ const props = defineProps<{
   templateRevision?: number
   editEntry?: ExpenseResponse
 }>()
-const emit = defineEmits<{ 'templateConsumed': [], saved: [value: ExpenseResponse] }>()
+const emit = defineEmits<{ 'templateConsumed': [], saved: [value: ExpenseResponse], busyChange: [value: boolean] }>()
 
 type OptionGroup = 'categories' | 'units' | 'funding' | 'purchase' | 'locations'
 
@@ -71,6 +71,8 @@ const optionFailures = ref<string[]>([])
 const optionsLoading = ref(false)
 const errors = reactive<Partial<Record<ExpenseField, string>>>({})
 const submitting = ref(false)
+watch(submitting, value => emit('busyChange', value), { flush: 'sync' })
+onScopeDispose(() => emit('busyChange', false))
 const undoing = ref(false)
 const saved = ref<ExpenseResponse>()
 const savedIdempotencyKey = ref('')
@@ -189,7 +191,7 @@ watch(() => props.defaultFundingChannelId, (value) => {
 
 const unregisterEditGuard = registerUnsavedChanges(editDirty, () => {
   if (props.editEntry) applyEditEntry(props.editEntry)
-})
+}, inject(unsavedChangeScope, undefined))
 onScopeDispose(unregisterEditGuard)
 
 function persist(): void {

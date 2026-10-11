@@ -192,7 +192,6 @@ async function reorder(move: ReorderMove): Promise<void> {
 function requestStatusChange(): void {
   if (!selected.value || busy.value) return
   if (selected.value.status === 'ACTIVE') {
-    actionsOpen.value = false
     statusConfirmOpen.value = true
   } else void mutateSelected()
 }
@@ -334,6 +333,7 @@ useRefreshOnReturn(() => Promise.all([load('refresh'), loadSummaries()]).then(()
     <AppDrawer
       id="default-dictionary-actions"
       v-model:open="actionsOpen"
+      :busy="busy"
       :title="selected?.name ?? '默认项操作'"
       description="排序和状态只改变后来创建用户的初始化副本。"
     >

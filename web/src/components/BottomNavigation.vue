@@ -1,12 +1,14 @@
 <script setup lang="ts">
 import { ChartNoAxesCombined, CircleUserRound, List, Plus } from 'lucide-vue-next'
 import { reactive, watch } from 'vue'
-import { RouterLink, useRoute } from 'vue-router'
+import { RouterLink, useRoute, useRouter } from 'vue-router'
+import { ledgerRouteQuery, parseLedgerRoute } from '../domain/ledgerQuery'
 
 import { useSessionStore } from '../stores/session'
 import { primaryNavigationPages } from '../app/pageRegistry'
 
 const route = useRoute()
+const router = useRouter()
 const session = useSessionStore()
 const targets = reactive<Record<string, string>>({})
 watch(() => session.session?.accountId, () => {
@@ -14,6 +16,12 @@ watch(() => session.session?.accountId, () => {
 }, { flush: 'sync' })
 watch(() => route.fullPath, () => {
   if (route.name === 'reports' || route.name === 'bill-details') targets[String(route.name)] = route.fullPath
+  // 已返回报表，后续从底部进入明细是独立浏览，不再携带旧下钻返回入口。
+  const ledgerTarget = targets['bill-details']
+  if (route.name === 'reports' && ledgerTarget) {
+    const parsed = parseLedgerRoute(router.resolve(ledgerTarget).query)
+    if (parsed.drill) targets['bill-details'] = router.resolve({ path: '/ledger', query: ledgerRouteQuery(parsed.filters) }).fullPath
+  }
 }, { immediate: true })
 
 const icons = {

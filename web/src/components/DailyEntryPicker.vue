@@ -96,6 +96,7 @@ async function remove(item: DailyTemplateSummary): Promise<void> {
   <AppDrawer
     id="daily-entry-picker"
     v-model:open="open"
+    :busy="Boolean(busyId)"
     :title="title"
     description="回填可复用字段，时间更新为当前时间，备注清空；请核对后保存。"
   >

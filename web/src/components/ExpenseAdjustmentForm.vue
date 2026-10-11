@@ -1,11 +1,11 @@
 <script setup lang="ts">
-import { computed, onScopeDispose, reactive, ref, useId } from 'vue'
+import { computed, inject, onScopeDispose, reactive, ref, useId, watch } from 'vue'
 import { ReceiptText, SlidersHorizontal } from 'lucide-vue-next'
 
 import { createExpenseAdjustment, type ExpenseAdjustmentResponse, type ExpenseAdjustmentType } from '../api/expenseAdjustments'
 import { ApiClientError } from '../api/http'
 import type { LedgerItem } from '../api/ledgerEntries'
-import { registerUnsavedChanges } from '../composables/unsavedChanges'
+import { registerUnsavedChanges, unsavedChangeScope } from '../composables/unsavedChanges'
 import { shanghaiLocalDateTimeToIso, toShanghaiLocalDateTime } from '../domain/businessTime'
 import { createIdempotencyAttemptTracker } from '../domain/idempotency'
 import { decimalToScaledInteger, formatCny, isDecimalInRange, MONEY_MAX, scaledIntegerToDecimal, subtractMoney } from '../domain/money'
@@ -18,16 +18,18 @@ import MoneySummary from './MoneySummary.vue'
 import SegmentedControl from './SegmentedControl.vue'
 
 const props = defineProps<{ source: LedgerItem }>()
-const emit = defineEmits<{ saved: [value: ExpenseAdjustmentResponse] }>()
+const emit = defineEmits<{ saved: [value: ExpenseAdjustmentResponse], busyChange: [value: boolean] }>()
 const formId = useId()
 const form = reactive({ adjustmentType: 'REFUND' as ExpenseAdjustmentType, amount: '', occurredAt: toShanghaiLocalDateTime(), note: '' })
 const errors = reactive<Partial<Record<keyof typeof form, string>>>({})
 const submitting = ref(false)
+watch(submitting, value => emit('busyChange', value), { flush: 'sync' })
+onScopeDispose(() => emit('busyChange', false))
 const submitError = ref('')
 const attempt = createIdempotencyAttemptTracker()
 const initial = JSON.stringify(form)
 const dirty = computed(() => JSON.stringify(form) !== initial)
-const unregister = registerUnsavedChanges(dirty, () => Object.assign(form, JSON.parse(initial)))
+const unregister = registerUnsavedChanges(dirty, () => Object.assign(form, JSON.parse(initial)), inject(unsavedChangeScope, undefined))
 onScopeDispose(unregister)
 
 const paid = computed(() => props.source.amount)

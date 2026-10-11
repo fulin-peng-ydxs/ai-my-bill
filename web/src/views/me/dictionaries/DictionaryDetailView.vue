@@ -195,7 +195,6 @@ function openActions(item: DictionaryListItem): void {
 
 function openRename(): void {
   if (!selected.value) return
-  actionsOpen.value = false
   editorMode.value = 'rename'
   editorName.value = selected.value.name
   editorError.value = ''
@@ -203,7 +202,6 @@ function openRename(): void {
 }
 
 async function openMerge(): Promise<void> {
-  actionsOpen.value = false
   mergeQuery.value = ''
   mergeTargetId.value = ''
   mergePreview.value = undefined
@@ -252,6 +250,7 @@ async function confirmMerge(): Promise<void> {
     await mergeProduct(selected.value.id, mergeTargetId.value)
     mergeConfirmOpen.value = false
     mergeOpen.value = false
+    actionsOpen.value = false
     selected.value = undefined
     showToast('商品已合并，历史名称快照保持不变')
     await load('refresh')
@@ -301,7 +300,6 @@ async function reorder(move: ReorderMove): Promise<void> {
 function requestStatusChange(): void {
   if (!selected.value || busy.value) return
   if (selected.value.status === 'ACTIVE') {
-    actionsOpen.value = false
     statusConfirmOpen.value = true
   } else void mutateSelected()
 }
@@ -457,6 +455,7 @@ useRefreshOnReturn(() => load('refresh'))
       <AppDrawer
         id="dictionary-actions"
         v-model:open="actionsOpen"
+        :busy="busy || mergeBusy"
         :title="selected?.name ?? `${definition.label}操作`"
         :description="selected?.referenced ? '此项已被引用；改名或停用不会改写历史名称快照。' : '管理操作只影响当前账号。'"
       >
@@ -503,6 +502,7 @@ useRefreshOnReturn(() => load('refresh'))
       <AppDrawer
         id="product-merge"
         v-model:open="mergeOpen"
+        :busy="mergeBusy"
         title="合并商品"
         :description="`选择保留商品后，${selected?.name ?? '当前商品'}将不再作为候选；历史账目名称仍保留。`"
       >

@@ -10,6 +10,28 @@ import {
 } from './unsavedChanges'
 
 describe('unsaved changes coordinator', () => {
+  it('discards only the child form, preserving its parent and unrelated entry drafts', async () => {
+    const parent = ref(true)
+    const child = ref(true)
+    const entry = ref(true)
+    const unregister = [
+      registerUnsavedChanges(parent, () => { parent.value = false }, 'ledger-edit'),
+      registerUnsavedChanges(child, () => { child.value = false }, 'expense-adjustment-create'),
+      registerUnsavedChanges(entry, () => { entry.value = false }),
+    ]
+    try {
+      const closing = requestDiscardChanges('navigation', 'expense-adjustment-create')
+      await confirmDiscardChanges()
+      expect(await closing).toBe(true)
+      expect([parent.value, child.value, entry.value]).toEqual([true, false, true])
+      expect(await requestDiscardChanges('navigation', 'expense-adjustment-create')).toBe(true)
+      const leaving = requestDiscardChanges('navigation')
+      await confirmDiscardChanges()
+      expect(await leaving).toBe(true)
+      expect([parent.value, entry.value]).toEqual([false, false])
+    } finally { unregister.forEach(stop => stop()) }
+  })
+
   it('cancels a route leave without permanently bypassing the next attempt', async () => {
     const dirty = ref(true)
     const unregister = registerUnsavedChanges(dirty, () => { dirty.value = false })

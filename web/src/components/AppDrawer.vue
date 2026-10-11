@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { X } from 'lucide-vue-next'
 import { computed, provide, ref, watch } from 'vue'
+import { unsavedChangeScope } from '../composables/unsavedChanges'
 import { pageActionTarget } from '../composables/pageActionTarget'
 import { reserveDrawerCandidateSpace } from '../composables/drawerCandidateSpace'
 
@@ -23,10 +24,11 @@ const candidateSpace = ref(false)
 const actions = ref<globalThis.HTMLElement>()
 // 抽屉动作拥有独立目标，不能传送到背后页面的保存区。
 provide(pageActionTarget, actions)
+provide(unsavedChangeScope, props.id)
 provide(reserveDrawerCandidateSpace, () => { candidateSpace.value = true })
 watch(isOpen, (open) => { if (open) candidateSpace.value = false })
 const { visibleHeight, bottomInset } = useKeyboardViewport()
-const { dialog, handleCancel, handleClose } = useDialogController(isOpen, (value) => { if (!props.busy) emit('update:open', value) })
+const { dialog, handleCancel, handleClose, handlePointerDown, handlePointerUp, handlePointerCancel, handleBackdropClick } = useDialogController(isOpen, (value) => { if (!props.busy) emit('update:open', value) })
 </script>
 
 <template>
@@ -40,6 +42,10 @@ const { dialog, handleCancel, handleClose } = useDialogController(isOpen, (value
     :aria-describedby="description ? `${id}-description` : undefined"
     @cancel="handleCancel"
     @close="handleClose"
+    @pointerdown="handlePointerDown"
+    @pointerup="handlePointerUp"
+    @pointercancel="handlePointerCancel"
+    @click="handleBackdropClick"
   >
     <section class="overlay-panel drawer-panel">
       <header class="overlay-header">

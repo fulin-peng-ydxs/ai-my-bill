@@ -115,7 +115,6 @@ function handleEmptyAction(): void {
 }
 
 function askAction(action: UserAction): void {
-  userActionsOpen.value = false
   pendingAction.value = action
 }
 
@@ -150,6 +149,7 @@ async function confirmAction(): Promise<void> {
     if (action === 'deletion') {
       await deleteAdminUser(target)
       selectedUser.value = undefined
+      userActionsOpen.value = false
       toastMessage.value = '账号及在线个人数据已永久删除'
       toastKind.value = 'success'
       toastOpen.value = true
@@ -431,6 +431,7 @@ useRefreshOnReturn(() => load('refresh'))
     <AppDrawer
       id="user-actions"
       v-model:open="userActionsOpen"
+      :busy="actionBusy"
       :title="selectedUser?.username ?? '用户操作'"
       description="所有高影响操作都会记录管理员审计。"
     >

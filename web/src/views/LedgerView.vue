@@ -66,13 +66,16 @@ const rangeError = ref('')
 const contextItem = ref<LedgerItem>()
 const contextOpen = ref(false)
 const contextBusy = ref(false)
+const contextRefreshing = ref(false)
 const toastOpen = ref(false)
 const toastMessage = ref('')
 const toastKind = ref<'success' | 'error'>('success')
 const editOpen = ref(false)
+const editBusy = ref(false)
 const editTarget = ref<LedgerItem>()
 const adjustmentSource = ref<LedgerItem>()
 const adjustmentOpen = ref(false)
+const adjustmentBusy = ref(false)
 const adjustmentTarget = ref<LedgerItem>()
 const adjustmentDetailOpen = ref(false)
 const revokeConfirmOpen = ref(false)
@@ -140,7 +143,7 @@ function updateLifecycle(value: string): void {
 }
 
 function clearFilters(): void {
-  navigate(clearedLedgerFilters(defaultRange.value, filters.value.lifecycle))
+  void router.replace({ query: ledgerRouteQuery(clearedLedgerFilters(defaultRange.value, filters.value.lifecycle)) })
 }
 
 function applyFilters(): void {
@@ -215,14 +218,18 @@ function openAdjustmentForm(item: LedgerItem): void {
 
 async function requestAdjustmentOpen(value: boolean): Promise<void> {
   if (value) { adjustmentOpen.value = true; return }
-  if (await requestDiscardChanges('navigation')) adjustmentOpen.value = false
+  if (!adjustmentBusy.value && await requestDiscardChanges('navigation', 'expense-adjustment-create')) adjustmentOpen.value = false
 }
 
 async function adjustmentSaved(): Promise<void> {
   adjustmentOpen.value = false
   pendingUndo.value = undefined
   toastKind.value = 'success'; toastMessage.value = '退款/报销调整已保存，原支出净额已更新。'; toastOpen.value = true
-  await list.replace(filters.value)
+  contextRefreshing.value = true
+  try {
+    await list.refresh()
+    refreshOverlayItems()
+  } finally { contextRefreshing.value = false }
 }
 
 async function confirmRevoke(): Promise<void> {
@@ -235,7 +242,8 @@ async function confirmRevoke(): Promise<void> {
     revokeAttempt.reset(); revokeConfirmOpen.value = false
     pendingUndo.value = undefined
     toastKind.value = 'success'; toastMessage.value = '调整已撤销，原支出净额已恢复。'; toastOpen.value = true
-    await list.replace(filters.value)
+    await list.refresh()
+    refreshOverlayItems()
   } catch (cause) {
     toastKind.value = 'error'; toastMessage.value = cause instanceof Error ? cause.message : '撤销调整失败，请重试。'; toastOpen.value = true
   } finally { revoking.value = false }
@@ -243,18 +251,13 @@ async function confirmRevoke(): Promise<void> {
 
 async function requestEditOpen(value: boolean): Promise<void> {
   if (value) { editOpen.value = true; return }
-  if (await requestDiscardChanges('navigation')) editOpen.value = false
+  if (!editBusy.value && await requestDiscardChanges('navigation', 'ledger-edit')) editOpen.value = false
 }
 
-async function manageDetail(source: 'edit' | 'trash' | 'adjustment'): Promise<void> {
+function manageDetail(source: 'edit' | 'trash' | 'adjustment'): void {
   const item = source === 'edit' ? editTarget.value : source === 'trash' ? trashDetailTarget.value : adjustmentTarget.value
   if (!item) return
-  if (source === 'edit') {
-    await requestEditOpen(false)
-    if (editOpen.value) return
-  } else if (source === 'trash') trashDetailOpen.value = false
-  else adjustmentDetailOpen.value = false
-  await nextTick()
+  // 进入下一层不是离开编辑：父抽屉与表单实例保持，关闭子层即可返回。
   openContext(item)
 }
 
@@ -268,20 +271,23 @@ async function editSaved(value: ExpenseResponse | IncomeResponse): Promise<void>
 }
 
 async function contextAction(key: string): Promise<void> {
-  if (!contextItem.value || contextBusy.value) return
+  if (!contextItem.value || contextBusy.value || contextRefreshing.value) return
   if (key === 'adjust' && contextItem.value.entryType === 'EXPENSE') {
-    const item = contextItem.value; contextOpen.value = false; openAdjustmentForm(item); return
+    openAdjustmentForm(contextItem.value); return
   }
   if (key === 'detail' && contextItem.value.entryType === 'ADJUSTMENT') {
-    const item = contextItem.value; contextOpen.value = false; openAdjustmentDetail(item); return
+    if (!adjustmentDetailOpen.value) openAdjustmentDetail(contextItem.value)
+    else contextOpen.value = false
+    return
   }
   if (key === 'trash' || key === 'restore') {
-    const item = contextItem.value; contextOpen.value = false
+    const item = contextItem.value
+    if (editOpen.value && !await requestDiscardChanges('navigation', 'ledger-edit')) return
     await runLifecycle(item, key)
     return
   }
   if (key === 'purge') {
-    purgeTarget.value = contextItem.value; contextOpen.value = false; purgeConfirmOpen.value = true
+    purgeTarget.value = contextItem.value; purgeConfirmOpen.value = true
     return
   }
   if (key !== 'daily' || contextItem.value.entryType === 'ADJUSTMENT') return
@@ -312,6 +318,7 @@ async function runLifecycle(item: Pick<LedgerItem, 'id' | 'entryType' | 'version
     const request = { id: item.id, entryType: item.entryType, version: item.version, action }
     const result = await changeLedgerLifecycle(item, action, lifecycleAttempt.keyFor(request))
     lifecycleAttempt.reset()
+    closeRecordOverlays(item.id)
     if (action === 'trash' && result) {
       pendingUndo.value = result
       toastMessage.value = '账目已移入回收站，相关统计已更新。'
@@ -341,6 +348,7 @@ async function confirmPurge(): Promise<void> {
     const request = { id: item.id, entryType: item.entryType, version: item.version, action: 'purge' }
     await changeLedgerLifecycle(item, 'purge', lifecycleAttempt.keyFor(request))
     lifecycleAttempt.reset(); purgeConfirmOpen.value = false; purgeTarget.value = undefined
+    closeRecordOverlays(item.id)
     pendingUndo.value = undefined
     toastKind.value = 'success'; toastMessage.value = '账目已永久删除，无法恢复。'; toastOpen.value = true
     await list.replace(filters.value)
@@ -349,8 +357,25 @@ async function confirmPurge(): Promise<void> {
   } finally { lifecycleBusyId.value = '' }
 }
 
+
 function returnToReports(context: LedgerDrillContext): void {
-  void router.push({ path: '/reports', query: context.reportQuery })
+  void router.replace({ path: '/reports', query: context.reportQuery })
+}
+
+/** 状态改变后旧详情已不可操作；失败则保留原层级供重试。 */
+function closeRecordOverlays(id: string): void {
+  if (contextItem.value?.id === id) contextOpen.value = false
+  if (editTarget.value?.id === id) editOpen.value = false
+  if (trashDetailTarget.value?.id === id) trashDetailOpen.value = false
+  if (adjustmentTarget.value?.id === id) adjustmentDetailOpen.value = false
+}
+
+function refreshOverlayItems(): void {
+  // 返回父层继续操作时使用最新净额与版本，保留 editRequest 中的用户填写。
+  for (const target of [contextItem, editTarget, adjustmentTarget, trashDetailTarget]) {
+    const updated = list.items.value.find(item => item.id === target.value?.id)
+    if (updated) target.value = updated
+  }
 }
 
 onBeforeRouteLeave(() => { rememberLedgerScroll(currentScrollKey.value, pageScrollTop()) })
@@ -401,7 +426,7 @@ useRefreshOnReturn(() => list.refresh())
       </div>
       <AppliedFilterBar
         :summaries="filterSummaries"
-        :clearable="hasFilters"
+        :clearable="hasFilters || Boolean(drill)"
         @open="openFilters()"
         @edit="openFilters"
         @clear="clearFilters"
@@ -558,7 +583,8 @@ useRefreshOnReturn(() => list.refresh())
         v-model:open="contextOpen"
         :title="contextItem ? `管理“${contextItem.title}”` : '账目操作'"
         :actions="contextActions"
-        :description="contextItem?.lifecycleStatus === 'TRASHED' ? '恢复会重新计入统计；永久删除不可恢复。' : '选择要对这条有效账目执行的操作。'"
+        :busy="contextBusy || contextRefreshing || Boolean(lifecycleBusyId)"
+        :description="contextItem?.lifecycleStatus === 'TRASHED' ? '恢复会重新计入统计；永久删除不可恢复。' : editOpen ? '以下操作使用已保存的账目，未保存的修改会保留在编辑页。' : '选择要对这条有效账目执行的操作。'"
         @select="contextAction"
       />
       <AppDrawer
@@ -600,6 +626,7 @@ useRefreshOnReturn(() => list.refresh())
         :open="editOpen"
         :title="editTarget?.entryType === 'EXPENSE' ? '编辑支出' : '编辑收入'"
         description="修改只作用于当前账目；账目类型不可转换。"
+        :busy="editBusy"
         @update:open="requestEditOpen"
       >
         <AppStateBlock
@@ -616,11 +643,12 @@ useRefreshOnReturn(() => list.refresh())
           @action="loadEdit"
         />
         <ExpenseEntryForm
-          v-else-if="editRequest.data.value && 'productName' in editRequest.data.value"
+          v-else-if="editOpen && editRequest.data.value && 'productName' in editRequest.data.value"
           :key="`${editRequest.data.value.id}:${editRequest.data.value.version}`"
           :account-id="session.session?.accountId"
           :edit-entry="editRequest.data.value"
           @saved="editSaved"
+          @busy-change="editBusy = $event"
         >
           <template #actions="{ submitting }">
             <button
@@ -634,11 +662,12 @@ useRefreshOnReturn(() => list.refresh())
           </template>
         </ExpenseEntryForm>
         <IncomeEntryForm
-          v-else-if="editRequest.data.value"
+          v-else-if="editOpen && editRequest.data.value && 'incomeName' in editRequest.data.value"
           :key="`${editRequest.data.value.id}:${editRequest.data.value.version}`"
           :account-id="session.session?.accountId"
           :edit-entry="editRequest.data.value"
           @saved="editSaved"
+          @busy-change="editBusy = $event"
         >
           <template #actions="{ submitting }">
             <button
@@ -657,13 +686,15 @@ useRefreshOnReturn(() => list.refresh())
         :open="adjustmentOpen"
         title="记录退款/报销"
         description="调整会冲减所选原支出的净额，不计入收入。"
+        :busy="adjustmentBusy"
         @update:open="requestAdjustmentOpen"
       >
         <ExpenseAdjustmentForm
-          v-if="adjustmentSource"
+          v-if="adjustmentOpen && adjustmentSource"
           :key="adjustmentSource.id"
           :source="adjustmentSource"
           @saved="adjustmentSaved"
+          @busy-change="adjustmentBusy = $event"
         />
       </AppDrawer>
       <AppDrawer

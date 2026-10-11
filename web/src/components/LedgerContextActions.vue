@@ -14,6 +14,7 @@ defineProps<{
   title: string
   actions: readonly LedgerContextAction[]
   description?: string
+  busy?: boolean
 }>()
 
 defineEmits<{
@@ -27,6 +28,7 @@ defineEmits<{
     :id="id"
     :open="open"
     :title="title"
+    :busy="busy"
     :description="description ?? '选择要对这条账目执行的操作。'"
     @update:open="$emit('update:open', $event)"
   >
@@ -36,7 +38,7 @@ defineEmits<{
         :key="action.key"
         type="button"
         :class="{ 'danger-text': action.danger }"
-        :disabled="action.disabled"
+        :disabled="busy || action.disabled"
         @click="$emit('select', action.key)"
       >
         {{ action.label }}
