@@ -319,30 +319,32 @@ useRefreshOnReturn(() => load())
         class="report-dimension"
         aria-label="分析方式"
       >
-        <CompactSelect
-          id="report-dimension"
-          label="维度"
-          :show-label="true"
-          :model-value="presentation.dimension"
-          :options="dimensionOptions"
-          @update:model-value="updatePresentation({ dimension: $event as ReportDimension })"
-        />
-        <CompactSelect
-          v-if="presentation.dimension === 'TIME'"
-          id="report-grain"
-          label="时间粒度"
-          :model-value="presentation.grain"
-          :options="grainOptions"
-          @update:model-value="updatePresentation({ grain: $event as ReportTimeGrain })"
-        />
-        <CompactSelect
-          v-if="presentation.dimension === 'TIME' && filters.scope !== 'INCOME'"
-          id="report-metric"
-          label="查看指标"
-          :model-value="presentation.metric"
-          :options="metricOptions"
-          @update:model-value="updatePresentation({ metric: $event as ReportTimeMetric })"
-        />
+        <span class="report-analysis-label">分析</span>
+        <div class="report-analysis-controls">
+          <CompactSelect
+            id="report-dimension"
+            label="维度"
+            :model-value="presentation.dimension"
+            :options="dimensionOptions"
+            @update:model-value="updatePresentation({ dimension: $event as ReportDimension })"
+          />
+          <CompactSelect
+            v-if="presentation.dimension === 'TIME'"
+            id="report-grain"
+            label="时间粒度"
+            :model-value="presentation.grain"
+            :options="grainOptions"
+            @update:model-value="updatePresentation({ grain: $event as ReportTimeGrain })"
+          />
+          <CompactSelect
+            v-if="presentation.dimension === 'TIME' && filters.scope !== 'INCOME'"
+            id="report-metric"
+            label="查看指标"
+            :model-value="presentation.metric"
+            :options="metricOptions"
+            @update:model-value="updatePresentation({ metric: $event as ReportTimeMetric })"
+          />
+        </div>
         <AppLoadingHint
           :pending="request.refreshing.value"
           page

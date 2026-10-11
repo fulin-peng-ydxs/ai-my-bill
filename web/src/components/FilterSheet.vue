@@ -24,6 +24,7 @@ defineEmits<{
     :id="id"
     :open="open"
     :title="title"
+    hide-footer-on-keyboard
     description="调整中的条件只有在应用后才会更新页面结果。"
     @update:open="$emit('update:open', $event)"
   >

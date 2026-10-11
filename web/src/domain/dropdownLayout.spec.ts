@@ -15,11 +15,25 @@ describe('visible dropdown bounds', () => {
     expect(dropdownLayout(anchor, viewport, 6000, true).maxHeight).toBe(240)
     expect(dropdownLayout(anchor, viewport, 6000, false).maxHeight).toBe(320)
   })
-  it('always stays below the field when the keyboard leaves little space', () => {
+  it('uses space above the field when the keyboard leaves too little below', () => {
     const result = dropdownLayout({ ...anchor, top: 330, bottom: 374 }, { ...viewport, bottom: 450 }, 1000, true)
-    expect(result.top).toBe(378)
-    expect(result.maxHeight).toBe(64)
-    expect(result.top + result.maxHeight).toBeLessThan(450)
+    expect(result.direction).toBe('above')
+    expect(result.top).toBe(86)
+    expect(result.maxHeight).toBe(240)
+    expect(result.top + result.maxHeight).toBeLessThan(330)
+  })
+  it('opens a bottommost drawer field above without relying on further body scrolling', () => {
+    const body = { ...viewport, top: 164, bottom: 774 }
+    const result = dropdownLayout({ ...anchor, top: 718, bottom: 762 }, body, 600, true)
+    expect(result.direction).toBe('above')
+    expect(result.maxHeight).toBe(240)
+    expect(result.top).toBeGreaterThanOrEqual(body.top + 8)
+    expect(result.top + result.maxHeight).toBeLessThan(718)
+  })
+  it('positions short upward lists using their actual height', () => {
+    const result = dropdownLayout({ ...anchor, top: 794, bottom: 838 }, viewport, 44, true)
+    expect(result.direction).toBe('above')
+    expect(result.top).toBe(744)
   })
   it('stays inside a scrolled visible viewport during keyboard panning', () => {
     const result = dropdownLayout({ ...anchor, top: 440, bottom: 484 },

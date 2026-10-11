@@ -50,7 +50,7 @@ async function place(reveal = false): Promise<void> {
   const parent = props.anchor.closest('.entry-combobox')
   const parentRect = parent?.getBoundingClientRect()
   const minimumHeight = layout.revealHeight
-  const needsReveal = reveal && scrollBody && layout.maxHeight < minimumHeight
+  const needsReveal = reveal && scrollBody && layout.direction !== 'above' && layout.maxHeight < minimumHeight
   position.value = {
     left: `${layout.left - (parentRect?.left ?? 0) + (parent?.scrollLeft ?? 0)}px`,
     width: `${layout.width}px`, maxHeight: `${needsReveal ? minimumHeight : layout.maxHeight}px`,

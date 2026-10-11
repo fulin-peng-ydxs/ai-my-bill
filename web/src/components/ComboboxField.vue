@@ -135,6 +135,7 @@ watch(() => props.disabled, (disabled) => { if (disabled) close(false) })
     ref="trigger"
     type="button"
     class="combobox-trigger"
+    :class="{ 'combobox-searching': searching && open }"
     role="combobox"
     aria-haspopup="listbox"
     :aria-expanded="open"

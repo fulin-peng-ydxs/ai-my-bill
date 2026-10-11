@@ -16,6 +16,7 @@ const props = defineProps<{
   title: string
   description?: string
   busy?: boolean
+  hideFooterOnKeyboard?: boolean
 }>()
 const emit = defineEmits<{
   'update:open': [value: boolean]
@@ -28,7 +29,7 @@ provide(pageActionTarget, actions)
 provide(unsavedChangeScope, props.id)
 provide(reserveDrawerCandidateSpace, () => { candidateSpace.value = true })
 watch(isOpen, (open) => { if (open) candidateSpace.value = false })
-const { visibleHeight, bottomInset } = useKeyboardViewport()
+const { keyboardOpen, visibleHeight, bottomInset } = useKeyboardViewport()
 const { dialog, phase, handleCancel, handleClose, handlePointerDown, handlePointerUp, handlePointerCancel, handleBackdropClick } = useDialogController(isOpen, (value) => { if (!props.busy) emit('update:open', value) })
 </script>
 
@@ -39,7 +40,7 @@ const { dialog, phase, handleCancel, handleClose, handlePointerDown, handlePoint
     :data-motion-phase="phase"
     :inert="phase === 'closing'"
     class="app-drawer"
-    :class="{ 'candidate-space': candidateSpace }"
+    :class="{ 'candidate-space': candidateSpace, 'keyboard-footer-hidden': hideFooterOnKeyboard && keyboardOpen }"
     :style="visibleHeight ? { '--drawer-viewport-height': `${visibleHeight}px`, '--drawer-viewport-bottom': `${bottomInset}px` } : undefined"
     :aria-labelledby="`${id}-title`"
     :aria-describedby="description ? `${id}-description` : undefined"

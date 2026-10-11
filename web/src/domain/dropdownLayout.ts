@@ -16,9 +16,13 @@ export function dropdownLayout(anchor: DropdownBounds, viewport: DropdownBounds,
   const bottom = savebar && savebar.top > anchor.bottom && savebar.top < viewport.bottom
     && savebar.bottom > viewport.top ? savebar.top : viewport.bottom
   const below = Math.max(0, bottom - anchor.bottom - gap - 4)
-  const maxHeight = Math.min(cap, below)
+  const above = Math.max(0, anchor.top - viewport.top - gap - 4)
+  const minimum = Math.min(132, contentHeight)
+  // 字段位于正文底部时可能没有更多可滚动内容；优先使用真实可见的上方空间。
+  const direction = below < minimum && above > below ? 'above' : 'below'
+  const maxHeight = Math.min(cap, direction === 'above' ? above : below)
   const revealHeight = Math.min(132, contentHeight,
     Math.max(0, bottom - viewport.top - (anchor.bottom - anchor.top) - gap - 4))
-  // 下拉方向保持稳定；可用空间不足由所属正文滚动让出，不跨越字段向上弹出。
-  return { left, top: anchor.bottom + 4, width, maxHeight, revealHeight }
+  const top = direction === 'above' ? anchor.top - Math.min(contentHeight + 2, maxHeight) - 4 : anchor.bottom + 4
+  return { left, top, width, maxHeight, revealHeight, direction }
 }

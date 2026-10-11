@@ -980,7 +980,8 @@ body:has(dialog[open]) {
 .filter-chip strong { font-weight: 500; }
 .filter-chip svg { flex: 0 0 auto; }
 .filter-chip-label { color: var(--color-muted); }
-.filter-chip:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 0; }
+.filter-chip:focus { outline: 0; }
+.filter-chip:focus .filter-chip-content { box-shadow: inset 0 -1px 0 var(--color-muted); }
 
 .filter-actions { flex: 0 0 auto; }
 
@@ -1026,13 +1027,16 @@ body:has(dialog[open]) {
 
 .report-page .segmented-control { width: 100%; }
 
-.report-dimension { display: flex; flex-wrap: wrap; align-items: center; gap: 0 var(--space-sm); }
+.report-dimension { display: flex; align-items: center; gap: var(--space-sm); padding: var(--space-xs) var(--space-sm); background: var(--color-surface); border-block: 1px solid var(--color-border); }
+.report-analysis-label { flex: 0 0 auto; color: var(--color-muted); font-size: 12px; }
+.report-analysis-controls { display: flex; flex: 1; flex-wrap: wrap; align-items: center; gap: 0 var(--space-sm); min-width: 0; }
+.report-dimension .filter-chip-content { background: var(--color-surface-secondary); border-color: transparent; }
 /* 原生 select 覆盖完整触摸区域，视觉底板复用已应用条件的紧凑表面。 */
 .compact-select { position: relative; display: inline-flex; align-items: center; min-height: 44px; min-width: 44px; max-width: 100%; color: var(--color-primary); font-size: 13px; line-height: 20px; cursor: pointer; }
 .compact-select strong { font-weight: 500; }
 .compact-select svg { flex: 0 0 auto; }
 .compact-select .select-control { position: absolute; inset: 0; width: 100%; height: 100%; min-height: 44px; opacity: 0; cursor: pointer; }
-.compact-select:has(select:focus-visible) .filter-chip-content { outline: 2px solid var(--color-focus); outline-offset: 0; }
+.compact-select:has(select:focus) .filter-chip-content { box-shadow: inset 0 -1px 0 var(--color-muted); }
 .compact-select:has(select:disabled) { color: var(--color-muted); cursor: default; }
 .compact-select:has(select:enabled):active .filter-chip-content { background: var(--color-surface-secondary); }
 
@@ -2438,9 +2442,14 @@ body:has(dialog[open]) {
 
 /* 点击反馈使用中性色，触摸不描蓝框；键盘导航仍保留可见焦点。 */
 :is(input, textarea, select, button, a, summary, [role="button"]) { -webkit-tap-highlight-color: transparent; }
-:is(input, textarea, select):focus-visible { outline: 0; box-shadow: inset 0 -1px 0 var(--color-muted); }
+:is(input, textarea):focus-visible, select:focus { outline: 0; box-shadow: inset 0 -1px 0 var(--color-muted); }
 .combobox-trigger:focus { outline: 0; }
-.combobox-trigger:focus-visible { box-shadow: inset 0 -1px 0 var(--color-muted); }
+.combobox-trigger:is(:focus, [aria-expanded="true"]):not(.combobox-searching) { box-shadow: inset 0 -1px 0 var(--color-muted); background-color: var(--color-surface-secondary); }
+.combobox-trigger.combobox-searching { outline: 0; box-shadow: none; }
+.dropdown-search-header input:focus { outline: 0; box-shadow: inset 0 -1px 0 var(--color-muted); }
+@media (max-width: 735px) {
+  .app-drawer.keyboard-footer-hidden .overlay-actions { display: none; }
+}
 .entry-category-picker > summary small { padding: 0; background: transparent; border: 0; }
 .chart-action-indicator { grid-column: 3; grid-row: 1 / span 2; color: var(--color-muted); }
 .settings-actions-centered button { display: flex; justify-content: center; }
