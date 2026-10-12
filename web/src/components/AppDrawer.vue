@@ -68,6 +68,7 @@ const { dialog, phase, handleCancel, handleClose, handlePointerDown, handlePoint
           <button
             type="button"
             class="icon-button"
+            autofocus
             aria-label="关闭"
             :disabled="busy"
             @click="emit('update:open', false)"

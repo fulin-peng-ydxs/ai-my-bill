@@ -50,7 +50,6 @@ defineEmits<{ action: [] }>()
 .status-notice { color: var(--color-warning-text); }
 .status-notice summary { display: flex; align-items: center; gap: var(--space-sm); min-height: var(--control-height); width: fit-content; max-width: 100%; cursor: pointer; font-size: 12px; list-style: none; }
 .status-notice summary::-webkit-details-marker { display: none; }
-.status-notice summary:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 2px; }
 .status-notice summary > svg { flex: 0 0 auto; }
 .status-notice[open] .status-notice-chevron { transform: rotate(180deg); }
 .status-notice-detail { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-sm); color: var(--color-muted); font-size: 12px; padding-bottom: var(--space-sm); overflow-wrap: anywhere; }

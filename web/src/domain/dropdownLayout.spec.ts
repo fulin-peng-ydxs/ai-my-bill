@@ -45,14 +45,39 @@ describe('visible dropdown bounds', () => {
     expect(dropdownLayout(anchor, viewport, 44, true).revealHeight).toBe(44)
     expect(dropdownLayout(anchor, viewport, 1000, true).revealHeight).toBe(132)
     const smallBody = { ...viewport, top: 300, bottom: 450 }
-    expect(dropdownLayout({ ...anchor, top: 330, bottom: 374 }, smallBody, 1000, true).revealHeight).toBe(94)
+    expect(dropdownLayout({ ...anchor, top: 330, bottom: 374 }, smallBody, 1000, true).revealHeight).toBe(102)
+  })
+  it('makes room for search and candidates on either side of a keyboard-constrained field', () => {
+    const body = { ...viewport, top: 164, bottom: 444 }
+    for (const top of [288, 278]) {
+      const field = { ...anchor, top, bottom: top + 44 }
+      const initial = dropdownLayout(field, body, 600, true)
+      expect(initial.maxHeight).toBeLessThan(132)
+      expect(initial.revealScroll < 0).toBe(initial.direction === 'above')
+      const revealed = dropdownLayout({ ...field, top: field.top - initial.revealScroll,
+        bottom: field.bottom - initial.revealScroll }, body, 600, true)
+      expect(revealed.maxHeight).toBeGreaterThanOrEqual(132)
+      expect(revealed.revealScroll).toBe(0)
+      expect(revealed.top).toBeGreaterThanOrEqual(body.top)
+      expect(revealed.top + revealed.maxHeight).toBeLessThanOrEqual(body.bottom)
+    }
+  })
+  it('uses downward scroll space when a short upward list cannot move because the body is at its start', () => {
+    const body = { ...viewport, top: 108, bottom: 350 }
+    const field = { ...anchor, top: 226, bottom: 270 }
+    const initial = dropdownLayout(field, body, 600, true, undefined, 0)
+    expect(initial.direction).toBe('below')
+    const revealed = dropdownLayout({ ...field, top: field.top - initial.revealScroll,
+      bottom: field.bottom - initial.revealScroll }, body, 600, true, undefined, initial.revealScroll)
+    expect(revealed.maxHeight).toBe(132)
+    expect(revealed.top + revealed.maxHeight).toBeLessThanOrEqual(body.bottom)
   })
   it('ignores a save bar above the field and respects one covering the lower viewport', () => {
     const offscreenBar = { ...anchor, top: -80, bottom: -30 }
     expect(dropdownLayout(anchor, viewport, 1000, true, offscreenBar).maxHeight).toBe(240)
     const overlayBar = { ...anchor, top: 400, bottom: 450 }
     const result = dropdownLayout(anchor, viewport, 1000, true, overlayBar)
-    expect(result.top + result.maxHeight).toBeLessThan(400)
+    expect(result.top + result.maxHeight).toBeLessThanOrEqual(400)
   })
   it('keeps long fields within a narrow viewport and does not stretch a short list', () => {
     const result = dropdownLayout({ ...anchor, left: -10, width: 450 }, viewport, 44, true)

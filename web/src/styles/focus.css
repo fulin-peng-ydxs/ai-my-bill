@@ -1,0 +1,56 @@
+/* 焦点反馈的共享入口；组件只调整 --focus-ring-offset，不另画同类轮廓。 */
+:is(button, a, summary, [role="button"]):focus-visible {
+  outline: var(--focus-ring-width) solid var(--color-focus);
+  outline-offset: var(--focus-ring-offset);
+}
+
+:is(input, textarea):focus-visible,
+select:focus {
+  outline: 0;
+  box-shadow: var(--focus-line);
+}
+
+.form-field select:focus,
+.select-control:focus {
+  background-color: var(--color-surface-secondary);
+  border-bottom-color: var(--color-muted);
+}
+
+/* 搜索、日期把焦点画在可见外层，内部输入不重复强调。 */
+:is(.global-search, .admin-search, .date-time-control):focus-within {
+  outline: 0;
+  box-shadow: var(--focus-line);
+}
+:is(.global-search, .admin-search, .date-time-control) input:focus-visible {
+  outline: 0;
+  box-shadow: none;
+}
+
+.filter-chip:focus,
+.combobox-trigger:focus { outline: 0; }
+.filter-chip:focus .filter-chip-content { box-shadow: var(--focus-line); }
+.compact-select:has(select:focus) .filter-chip-content {
+  border-bottom-color: var(--color-muted);
+  box-shadow: var(--focus-line);
+}
+
+/* 浏览态强调入口；进入搜索后仅保留搜索输入焦点。 */
+.combobox-trigger:is(:focus, [aria-expanded="true"]):not(.combobox-searching) {
+  box-shadow: var(--focus-line);
+  background-color: var(--color-surface-secondary);
+}
+.combobox-trigger.combobox-searching { outline: 0; box-shadow: none; }
+.dropdown-search-header input:focus { outline: 0; box-shadow: var(--focus-line); }
+
+/* 正文不是一整块动作；保留键盘滚动入口，反馈由内部操作控件承载。 */
+.page-scroll-region:focus,
+.data-table-scroll:focus { outline: none; }
+
+/* 最后按实际输入方式抑制动作轮廓，不抑制编辑和选择入口的中性底线。 */
+:is(input, textarea, select, button, a, summary, [role="button"]) {
+  -webkit-tap-highlight-color: transparent;
+}
+:is(button, a, summary, [role="button"]):focus:not(:focus-visible),
+:root[data-input-modality="pointer"] :is(button, a, summary, [role="button"]):focus {
+  outline: none;
+}

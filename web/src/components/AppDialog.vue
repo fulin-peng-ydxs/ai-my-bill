@@ -79,6 +79,7 @@ const { dialog, phase, handleCancel, handleClose, handlePointerDown, handlePoint
             v-if="showCancel"
             type="button"
             class="secondary-button"
+            autofocus
             :disabled="busy"
             @click="emit('update:open', false)"
           >
@@ -87,6 +88,7 @@ const { dialog, phase, handleCancel, handleClose, handlePointerDown, handlePoint
           <button
             type="button"
             class="primary-button"
+            :autofocus="!showCancel"
             :class="{ 'danger-button': danger }"
             :disabled="busy || confirmDisabled"
             @click="emit('confirm')"

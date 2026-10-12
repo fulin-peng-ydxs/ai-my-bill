@@ -46,15 +46,16 @@ async function place(reveal = false): Promise<void> {
   const actions = pinned ? savebar : props.anchor.closest('dialog')?.querySelector('.overlay-actions')
   const layout = dropdownLayout(rect, { left: leftEdge, top: topEdge, right: rightEdge,
     bottom: bottomEdge, width }, panel.value?.scrollHeight ?? 320,
-  globalThis.window.matchMedia('(max-width: 735px)').matches, actions?.getBoundingClientRect())
+  globalThis.window.matchMedia('(max-width: 735px)').matches, actions?.getBoundingClientRect(), scrollBody?.scrollTop)
   const parent = props.anchor.closest('.entry-combobox')
   const parentRect = parent?.getBoundingClientRect()
   const minimumHeight = layout.revealHeight
-  const needsReveal = reveal && scrollBody && layout.direction !== 'above' && layout.maxHeight < minimumHeight
+  const needsReveal = reveal && scrollBody && layout.revealScroll !== 0
+  const panelTop = needsReveal && layout.direction === 'above' ? rect.top - minimumHeight - 4 : layout.top
   position.value = {
     left: `${layout.left - (parentRect?.left ?? 0) + (parent?.scrollLeft ?? 0)}px`,
     width: `${layout.width}px`, maxHeight: `${needsReveal ? minimumHeight : layout.maxHeight}px`,
-    top: `${layout.top - (parentRect?.top ?? 0) + (parent?.scrollTop ?? 0)}px`,
+    top: `${panelTop - (parentRect?.top ?? 0) + (parent?.scrollTop ?? 0)}px`,
     visibility: layout.maxHeight > 0 || needsReveal ? 'visible' : 'hidden',
   }
   if (needsReveal) {
@@ -62,7 +63,7 @@ async function place(reveal = false): Promise<void> {
     revealing = true
     await nextTick()
     if (active && props.open && scrollBody.isConnected) {
-      scrollBody.scrollTop += Math.max(0, rect.bottom + minimumHeight + 12 - bottomEdge)
+      scrollBody.scrollTop += layout.revealScroll
     }
     revealing = false
     if (active && props.open) await place()
@@ -124,8 +125,16 @@ function listen(): void {
   globalThis.document.addEventListener('visibilitychange', pageHidden)
   globalThis.window.addEventListener('pagehide', pageHide)
   if (panel.value && globalThis.ResizeObserver) {
-    panelObserver = new globalThis.ResizeObserver(schedulePlace)
+    // 初次过渡及异步候选可能晚于首次定位；实际内容/正文高度改变后再让位一次。
+    let observedSize = ''
+    const scrollBody = props.anchor?.closest<globalThis.HTMLElement>('.overlay-body, [data-page-scroll]')
+    panelObserver = new globalThis.ResizeObserver(() => {
+      const size = `${panel.value?.scrollHeight}:${scrollBody?.clientHeight}`
+      if (size !== observedSize) { observedSize = size; scheduleReveal() }
+      else schedulePlace()
+    })
     panelObserver.observe(panel.value)
+    if (scrollBody) panelObserver.observe(scrollBody)
   }
 }
 function unlisten(): void {

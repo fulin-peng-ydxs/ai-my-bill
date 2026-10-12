@@ -78,6 +78,7 @@ watch(() => [props.type, props.modelValue], () => {
       @close="close"
     >
       <ul
+        v-if="!query.trim()"
         class="product-options"
         role="listbox"
         :aria-label="label"
