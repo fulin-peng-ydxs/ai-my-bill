@@ -615,6 +615,7 @@ useRefreshOnReturn(() => list.refresh())
       </AppDrawer>
       <AppDrawer
         id="ledger-edit"
+        full-height
         :open="editOpen"
         :title="editTarget?.entryType === 'EXPENSE' ? '编辑支出' : '编辑收入'"
         description="修改只作用于当前账目；账目类型不可转换。"
@@ -670,6 +671,7 @@ useRefreshOnReturn(() => list.refresh())
       </AppDrawer>
       <AppDrawer
         id="expense-adjustment-create"
+        full-height
         :open="adjustmentOpen"
         title="记录退款/报销"
         description="调整会冲减所选原支出的净额，不计入收入。"
@@ -686,6 +688,7 @@ useRefreshOnReturn(() => list.refresh())
       </AppDrawer>
       <AppDrawer
         id="expense-adjustment-detail"
+        full-height
         :open="adjustmentDetailOpen"
         title="调整详情"
         description="已撤销记录仍保留，用于还原调整轨迹。"

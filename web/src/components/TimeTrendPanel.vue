@@ -1,7 +1,4 @@
 <script setup lang="ts">
-import { LineChart } from 'echarts/charts'
-import { GridComponent, LegendComponent } from 'echarts/components'
-import { use } from 'echarts/core'
 import { computed, ref, watch } from 'vue'
 
 import type { ReportTimeMetric, TimeReport } from '../api/reports'
@@ -9,8 +6,7 @@ import { useReportChart } from '../composables/useReportChart'
 import { formatCny } from '../domain/money'
 import CompactSelect from './CompactSelect.vue'
 import MoneyValue from './MoneyValue.vue'
-
-use([LineChart, GridComponent, LegendComponent])
+import AppStateBlock from './AppStateBlock.vue'
 type Bucket = TimeReport['buckets'][number]
 type AmountKey = 'totalIncome' | 'grossExpense' | 'adjustmentAmount' | 'netExpense' | 'balance'
   | 'cumulativeIncome' | 'cumulativeGrossExpense' | 'cumulativeAdjustmentAmount' | 'cumulativeNetExpense' | 'cumulativeBalance'
@@ -42,7 +38,7 @@ function metricCount(bucket: Bucket): number {
   if (props.metric === 'NET_EXPENSE') return bucket.expenseCount + bucket.adjustmentCount
   return bucket.itemCount
 }
-const { host, token, refresh } = useReportChart(() => ({
+const { host, token, refresh, failed } = useReportChart(() => ({
   color: [token(definition.value.color), token(definition.value.color)],
   textStyle: { color: token('--color-text') },
   grid: { left: 8, right: 12, top: 42, bottom: 32, containLabel: true },
@@ -99,6 +95,14 @@ watch(() => [props.report, props.metric], () => {
       ref="host"
       class="chart-canvas"
       aria-hidden="true"
+    />
+    <AppStateBlock
+      v-if="failed"
+      kind="error"
+      title="图表加载失败"
+      message="金额与明细仍可查看。"
+      action-label="重试图表"
+      @action="refresh"
     />
     <div
       v-if="selectedBucket"

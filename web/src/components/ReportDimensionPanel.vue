@@ -1,7 +1,4 @@
 <script setup lang="ts">
-import { BarChart } from 'echarts/charts'
-import { GridComponent } from 'echarts/components'
-import { use } from 'echarts/core'
 import { computed, watch } from 'vue'
 
 import type { ExpenseReport, IncomeReport } from '../api/reports'
@@ -9,7 +6,6 @@ import { useReportChart } from '../composables/useReportChart'
 import { formatCny, formatDecimalDisplay } from '../domain/money'
 import AppStateBlock from './AppStateBlock.vue'
 
-use([BarChart, GridComponent])
 type Point = ExpenseReport['points'][number] | IncomeReport['points'][number]
 type QualityRule = NonNullable<ExpenseReport['qualityRule']>
 const props = defineProps<{
@@ -34,7 +30,7 @@ function displayValue(point: Point): string {
   return isCount.value ? `${Number(point.amount)} 条` : formatCny(point.amount)
 }
 
-const { host, token, refresh } = useReportChart(() => ({
+const { host, token, refresh, failed } = useReportChart(() => ({
   color: [token(props.tone === 'income' ? '--color-income-accent' : '--color-expense-accent')],
   textStyle: { color: token('--color-text') },
   grid: { left: 8, right: 112, top: 8, bottom: 8, containLabel: true },
@@ -83,6 +79,14 @@ watch(() => props.report, refresh, { deep: true })
       ref="host"
       class="chart-canvas report-ranking-chart"
       aria-hidden="true"
+    />
+    <AppStateBlock
+      v-if="failed && !isQuality && points.length"
+      kind="error"
+      title="图表加载失败"
+      message="金额与明细仍可查看。"
+      action-label="重试图表"
+      @action="refresh"
     />
 
     <div

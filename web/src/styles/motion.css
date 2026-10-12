@@ -62,22 +62,22 @@
 @keyframes motion-side-out { from { transform: var(--motion-panel-start, none); } to { transform: translateX(100%); } }
 
 :is(.app-dialog, .app-drawer)[data-motion-phase="opening"]::backdrop {
-  animation: motion-fade-in var(--motion-standard) var(--motion-ease-enter) both;
+  animation: motion-fade-in var(--motion-enter) var(--motion-ease-enter) both;
 }
 :is(.app-dialog, .app-drawer)[data-motion-phase="closing"]::backdrop {
-  animation: motion-fade-out var(--motion-fast) var(--motion-ease-exit) both;
+  animation: motion-fade-out var(--motion-exit) var(--motion-ease-exit) both;
 }
 .app-dialog[data-motion-phase="opening"] .dialog-panel {
-  animation: motion-dialog-in var(--motion-standard) var(--motion-ease-enter) both;
+  animation: motion-dialog-in var(--motion-enter) var(--motion-ease-enter) both;
 }
 .app-dialog[data-motion-phase="closing"] .dialog-panel {
-  animation: motion-dialog-out var(--motion-fast) var(--motion-ease-exit) both;
+  animation: motion-dialog-out var(--motion-exit) var(--motion-ease-exit) both;
 }
 .app-drawer[data-motion-phase="opening"] .drawer-panel {
   animation: motion-drawer-in var(--motion-enter) var(--motion-ease-enter) both;
 }
 .app-drawer[data-motion-phase="closing"] .drawer-panel {
-  animation: motion-drawer-out var(--motion-standard) var(--motion-ease-exit) both;
+  animation: motion-drawer-out var(--motion-exit) var(--motion-ease-exit) both;
 }
 @media (min-width: 1024px) {
   .app-drawer[data-motion-phase="opening"] .drawer-panel { animation-name: motion-side-in; }
@@ -91,6 +91,7 @@
     --motion-switch: 0ms;
     --motion-standard: 0ms;
     --motion-enter: 0ms;
+    --motion-exit: 0ms;
   }
   :is(.app-dialog, .app-drawer) .overlay-panel,
   :is(.app-dialog, .app-drawer)::backdrop { animation: none !important; }

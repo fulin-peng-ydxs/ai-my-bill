@@ -1,15 +1,11 @@
 <script setup lang="ts">
-import { BarChart } from 'echarts/charts'
-import { GridComponent } from 'echarts/components'
-import { use } from 'echarts/core'
 import { computed, watch } from 'vue'
 import { ChevronRight } from 'lucide-vue-next'
 
 import type { components } from '../api/generated/schema'
 import { formatCny } from '../domain/money'
 import { useReportChart } from '../composables/useReportChart'
-
-use([BarChart, GridComponent])
+import AppStateBlock from './AppStateBlock.vue'
 
 const props = defineProps<{
   title: string
@@ -28,7 +24,7 @@ function color(value: string): string {
   return token('--color-warning')
 }
 
-const { host, token, refresh } = useReportChart(() => {
+const { host, token, refresh, failed } = useReportChart(() => {
   const text = token('--color-text')
   const muted = token('--color-muted')
   const border = token('--color-border')
@@ -67,6 +63,14 @@ watch(() => props.points, refresh, { deep: true })
       ref="host"
       class="chart-canvas"
       aria-hidden="true"
+    />
+    <AppStateBlock
+      v-if="failed"
+      kind="error"
+      title="图表加载失败"
+      message="金额与明细仍可查看。"
+      action-label="重试图表"
+      @action="refresh"
     />
     <div
       class="chart-actions"

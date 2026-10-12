@@ -16,6 +16,7 @@ const props = defineProps<{
   title: string
   description?: string
   busy?: boolean
+  fullHeight?: boolean
   hideFooterOnKeyboard?: boolean
 }>()
 const emit = defineEmits<{
@@ -40,7 +41,7 @@ const { dialog, phase, handleCancel, handleClose, handlePointerDown, handlePoint
     :data-motion-phase="phase"
     :inert="phase === 'closing'"
     class="app-drawer"
-    :class="{ 'candidate-space': candidateSpace, 'keyboard-footer-hidden': hideFooterOnKeyboard && keyboardOpen }"
+    :class="{ 'candidate-space': candidateSpace, 'full-height': fullHeight, 'keyboard-footer-hidden': hideFooterOnKeyboard && keyboardOpen }"
     :style="visibleHeight ? { '--drawer-viewport-height': `${visibleHeight}px`, '--drawer-viewport-bottom': `${bottomInset}px` } : undefined"
     :aria-labelledby="`${id}-title`"
     :aria-describedby="description ? `${id}-description` : undefined"

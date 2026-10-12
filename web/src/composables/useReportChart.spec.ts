@@ -5,8 +5,7 @@ const { hooks, chart } = vi.hoisted(() => ({
     deactivated: [] as Array<() => void>, unmounted: [] as Array<() => void> },
   chart: { on: vi.fn(), setOption: vi.fn(), resize: vi.fn(), dispose: vi.fn() },
 }))
-vi.mock('echarts/core', () => ({ use: vi.fn(), init: () => chart }))
-vi.mock('echarts/renderers', () => ({ SVGRenderer: {} }))
+vi.mock('./reportChartRuntime', () => ({ init: vi.fn(() => chart) }))
 vi.mock('vue', async (original) => ({
   ...await original<typeof import('vue')>(),
   inject: (_key: unknown, fallback: unknown) => fallback,
@@ -41,14 +40,16 @@ afterEach(() => {
 })
 
 describe('report chart lifecycle', () => {
-  it('keeps readings fixed and provides no click-to-drill handler in the chart', () => {
+  it('keeps readings fixed and provides no click-to-drill handler in the chart', async () => {
     setup()
+    await vi.dynamicImportSettled()
     expect(chart.setOption).toHaveBeenCalledWith(expect.objectContaining({ series: [], animation: true, animationDuration: 180, animationDurationUpdate: 180 }), true)
     expect(chart.setOption.mock.calls[0]![0]).not.toHaveProperty('tooltip')
     expect(chart.on).not.toHaveBeenCalled()
   })
   it('does not redraw a cached hidden page and redraws on return', async () => {
     setup()
+    await vi.dynamicImportSettled()
     hooks.deactivated.forEach((callback) => callback())
     chart.setOption.mockClear()
     hooks.activated.forEach((callback) => callback())
@@ -60,5 +61,34 @@ describe('report chart lifecycle', () => {
     expect(chart.setOption).toHaveBeenCalledTimes(1)
     expect(chart.resize).toHaveBeenCalledTimes(1)
     expect(chart.setOption).toHaveBeenLastCalledWith(expect.objectContaining({ animation: false, animationDurationUpdate: 0 }), true)
+  })
+  it('reconnects a chart when an empty ranking creates a new container', async () => {
+    const { state } = setup()
+    await vi.dynamicImportSettled()
+    chart.dispose.mockClear()
+    state.host.value = undefined
+    await nextTick()
+    expect(chart.dispose).toHaveBeenCalledOnce()
+    chart.setOption.mockClear()
+    state.host.value = Object.assign(new EventTarget(), { clientWidth: 390, clientHeight: 240 }) as unknown as HTMLDivElement
+    await nextTick()
+    await vi.dynamicImportSettled()
+    expect(chart.setOption).toHaveBeenCalledOnce()
+  })
+  it('ignores a pending runtime after unmount', async () => {
+    vi.resetModules()
+    const init = vi.fn(() => chart)
+    let resolve!: (value: { init: typeof init }) => void
+    vi.doMock('./reportChartRuntime', () => new Promise(done => { resolve = done }))
+    const { useReportChart: delayedChart } = await import('./useReportChart')
+    setup()
+    const state = delayedChart(() => ({ series: [] }))
+    state.host.value = Object.assign(new EventTarget(), { clientWidth: 390, clientHeight: 240 }) as unknown as HTMLDivElement
+    hooks.mounted.at(-1)!()
+    await vi.waitFor(() => expect(resolve).toBeDefined())
+    hooks.unmounted.at(-1)!()
+    resolve({ init })
+    await vi.dynamicImportSettled()
+    expect(init).not.toHaveBeenCalled()
   })
 })

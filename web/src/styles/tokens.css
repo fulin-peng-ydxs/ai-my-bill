@@ -33,7 +33,8 @@
   --motion-fast: 120ms;
   --motion-switch: 160ms;
   --motion-standard: 180ms;
-  --motion-enter: 240ms;
+  --motion-enter: 320ms;
+  --motion-exit: 240ms;
   --motion-ease-enter: cubic-bezier(.2, .8, .2, 1);
   --motion-ease-exit: cubic-bezier(.4, 0, 1, 1);
   --motion-ease-move: cubic-bezier(.4, 0, .2, 1);
@@ -740,6 +741,8 @@ body:has(dialog[open]) {
 
 .dialog-panel { border-radius: var(--radius-panel); }
 .drawer-panel { border-radius: var(--radius-panel) var(--radius-panel) 0 0; }
+/* 异步详情/长表单从打开起保留完整空间，内容到达不改变滑入距离。 */
+.app-drawer.full-height .drawer-panel { height: calc(var(--drawer-viewport-height) * .92); }
 /* 候选为绝对定位，不会撑高短抽屉；为字段、搜索与候选预留空间，键盘期间仍以可见高度为上限。 */
 @media (max-width: 1023px) {
   .app-drawer.candidate-space .drawer-panel {
@@ -2104,6 +2107,8 @@ body:has(dialog[open]) {
     min-height: var(--drawer-viewport-height);
     border-radius: 0;
   }
+
+  .app-drawer.full-height .drawer-panel { height: var(--drawer-viewport-height); }
 
 
 }

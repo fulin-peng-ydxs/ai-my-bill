@@ -47,7 +47,7 @@ flowchart LR
 
 没有辅助说明的独立金额由 `MoneyValue` 复用十进制格式化，正负号、货币符号与数字整段使用收支强调色；结余按正负推导，收支记录显式传入业务方向。收支表单用 `SavedEntrySummary` 承接刚保存记录与撤销，置于正文滚动区域内、表单表面之后，支出明细通过插槽保留。`AppToast` 统一消费 `useToastAutoDismiss` 管理成功提示的计时、交互暂停与清理，错误不自动关闭；缓存页和收支类型停用时清除旧提示，异步回调不能在隐藏页面重放反馈。保存记录 ID 用于区分连续相同文案的通知，提示关闭不清除已保存记录或撤销标识。位置与展示时长由 DESIGN 定义。
 
-`useReportChart` 统一初始化 ECharts SVG 实例，提供主题 token 读取和刷新入口；ResizeObserver 处理容器变化，MutationObserver 处理根节点主题变化，停用时断开观察器，卸载时销毁实例。查询参数和下钻条件由 reportQuery 承接；图表读数与查看明细的交互规则见 DESIGN。
+`useReportChart` 在图表容器挂载后异步加载独立的 `reportChartRuntime`，统一注册柱状图、折线图、坐标系、图例和 SVG 渲染器；报表路由和数据请求不等待 ECharts，金额及下钻入口先呈现，图表随后填入预留区域。并发图表共用模块加载，加载完成后读取最新条件，停用或卸载后不创建实例；图表依赖失败显示局部重试，已成功取得的金额与明细入口保持可用。ResizeObserver 处理容器变化，MutationObserver 处理根节点主题变化，停用时断开观察器，卸载时销毁实例。查询参数和下钻条件由 reportQuery 承接；图表读数与查看明细的交互规则见 DESIGN。
 
 `EntryReceipt` 统一收支新增和明细编辑的结构，`AmountField` 只承接字符串值与输入事件，金额计算、覆盖保护和提交仍由原表单及 domain 承担。`FormField` 的普通与复合帮助内容共用帮助 ID，和错误一起通过 aria-describedby 关联控件；支出金额差额和计算金额属于同一帮助区域。两类记账表单的分类及补充摘要来自当前值，字段错误触发对应区域展开；分类名称消费 `DictionaryCombobox` 的已选项解析通知，复用候选外 ID 的既有回显查询，不另建字典请求或选择状态。`SettingsGroup` 和 `SettingsDisclosureList` 统一设置分组与整行披露，普通及危险账号动作仍交给原处理器；筛选日期与业务时间复用 `DateTimeControl` 的原生输入边界处理。组件清单、控件对齐与说明排版见 DESIGN。
 
