@@ -24,7 +24,7 @@ function color(value: string): string {
   return token('--color-warning')
 }
 
-const { host, token, refresh, failed } = useReportChart(() => {
+const { host, token, numberLabelStyle, refresh, failed } = useReportChart(() => {
   const text = token('--color-text')
   const muted = token('--color-muted')
   const border = token('--color-border')
@@ -33,10 +33,10 @@ const { host, token, refresh, failed } = useReportChart(() => {
     grid: { left: 8, right: 8, top: 32, bottom: 28, containLabel: true },
     xAxis: { type: 'category', data: props.points.map((point) => point.label), axisTick: { show: false },
       axisLabel: { color: muted }, axisLine: { lineStyle: { color: border } } },
-    yAxis: { type: 'value', axisLabel: { color: muted, formatter: (value: number) => `¥${value}` },
+    yAxis: { type: 'value', axisLabel: { ...numberLabelStyle(), color: muted, formatter: (value: number) => `¥${value}` },
       axisLine: { lineStyle: { color: border } }, splitLine: { lineStyle: { color: border, type: 'dashed' } } },
     series: [{
-      type: 'bar', silent: true, label: { show: true, position: 'top', color: text, fontSize: 12, width: 100, overflow: 'truncate',
+      type: 'bar', silent: true, label: { ...numberLabelStyle(), show: true, position: 'top', color: text, width: 100, overflow: 'truncate',
         formatter: (item: { dataIndex: number }) => formatCny(props.points[item.dataIndex].amount) }, data: props.points.map((point) => ({ value: Number(point.amount), itemStyle: { color: color(point.value) } })),
       barMaxWidth: 64,
     }],

@@ -71,6 +71,18 @@
   --font-data-size: 18px;
   --font-data-line: 26px;
   --font-data: ui-monospace, "SFMono-Regular", Menlo, Monaco, "Cascadia Mono", monospace;
+  --font-number-input-size: 16px;
+  --font-number-input-line: 22px;
+  --font-amount-input-size: 26px;
+  --font-amount-input-line: 32px;
+  --font-amount-summary-size: 17px;
+  --font-amount-summary-line: 25px;
+  --font-number-caption-size: 12px;
+  --font-number-caption-line: 18px;
+  --font-number-readout-size: 13px;
+  --font-number-readout-line: 20px;
+  --font-number-comparison-size: 14px;
+  --font-number-comparison-line: 20px;
 }
 
 :root[data-theme="dark"] {
@@ -145,6 +157,58 @@ input, textarea, [contenteditable="true"] {
 strong { font-weight: 600; }
 button { color: inherit; }
 a { color: var(--color-primary); }
+
+/* 数字按业务角色共用字级；布局、对齐和语义色仍由各组件承接。 */
+.money-value,
+.money-summary-item dd,
+.chart-actions strong,
+.dimension-rank-value strong,
+.ledger-item-amount,
+.admin-metric-card > strong,
+.admin-metric-card dd,
+.chart-readout b,
+.trend-range-summary b {
+  font-family: var(--font-data);
+  font-variant-numeric: tabular-nums;
+}
+
+.money-summary-item dd,
+.chart-actions strong,
+.dimension-rank-value strong,
+.admin-metric-card dd,
+.saved-entry-summary .money-value {
+  font-size: var(--font-amount-summary-size);
+  line-height: var(--font-amount-summary-line);
+  font-weight: 600;
+}
+
+.ledger-item-amount,
+.admin-metric-card > strong {
+  font-size: var(--font-data-size);
+  line-height: var(--font-data-line);
+  font-weight: 600;
+}
+
+.chart-actions small,
+.dimension-rank-value small,
+.trend-range-summary {
+  font-size: var(--font-number-caption-size);
+  line-height: var(--font-number-caption-line);
+  font-variant-numeric: tabular-nums;
+}
+.trend-range-summary b { font-weight: 600; }
+.chart-readout {
+  font-size: var(--font-number-readout-size);
+  line-height: var(--font-number-readout-line);
+  font-variant-numeric: tabular-nums;
+}
+.chart-readout b { font-weight: 600; }
+.comparison-grid strong {
+  font-size: var(--font-number-comparison-size);
+  line-height: var(--font-number-comparison-line);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
 
 
 button:disabled,
@@ -606,7 +670,7 @@ body:has(dialog[open]) .page-scroll-region { overflow: hidden; }
 .date-time-with-indicator input::-webkit-calendar-picker-indicator { opacity: 0; width: 0; margin: 0; }
 .date-time-control input::-webkit-date-and-time-value { text-align: left; }
 .date-time-control input::-webkit-datetime-edit { padding: 0; }
-.form-field input[inputmode="decimal"] { text-align: left; font-variant-numeric: tabular-nums; }
+.form-field input[inputmode="decimal"] { text-align: left; font-size: var(--font-number-input-size); line-height: var(--font-number-input-line); font-variant-numeric: tabular-nums; }
 
 .form-field small,
 .form-intro,
@@ -890,7 +954,7 @@ body:has(dialog[open]) {
 .money-summary-item:last-child,
 .money-summary-item:nth-last-child(2):nth-child(odd) { border-bottom: 0; }
 .money-summary-item dt { color: var(--color-muted); font-size: 12px; }
-.money-summary-item dd { margin: 0; font-family: var(--font-data); font-size: var(--font-body-size); font-weight: 600; line-height: var(--font-body-line); font-variant-numeric: tabular-nums; text-align: right; overflow-wrap: anywhere; }
+.money-summary-item dd { margin: 0; text-align: right; overflow-wrap: anywhere; }
 .money-income dd { color: var(--color-income-text); }
 .money-expense dd { color: var(--color-expense-text); }
 
@@ -1055,10 +1119,10 @@ body:has(dialog[open]) {
 .chart-panel header > span { color: var(--color-muted); font-size: 13px; }
 /* 图形仅展示，读数和下钻在图外；避开渲染器的触摸监听吞掉正文滚动。 */
 .chart-canvas { width: 100%; min-height: 280px; pointer-events: none; touch-action: pan-y; }
-.chart-readout { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-xs) var(--space-md); padding-block: var(--space-sm); border-block: 1px solid var(--color-border); font-size: 13px; }
+.chart-readout { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-xs) var(--space-md); padding-block: var(--space-sm); border-block: 1px solid var(--color-border); }
 .chart-readout > strong { grid-column: 1 / -1; }
 .chart-readout > span { display: grid; gap: var(--space-xs); color: var(--color-muted); }
-:where(.chart-readout) b { color: var(--color-text); font-family: var(--font-data); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+:where(.chart-readout) b { color: var(--color-text); overflow-wrap: anywhere; }
 
 .chart-actions {
   display: grid;
@@ -1087,8 +1151,8 @@ body:has(dialog[open]) {
 .chart-actions button:last-child { border-bottom: 0; }
 @media (min-width: 641px) { .chart-actions button { border-bottom: 0; } }
 .chart-actions button > span { grid-row: 1 / span 2; overflow-wrap: anywhere; }
-.chart-actions strong { text-align: right; overflow-wrap: anywhere; font-family: var(--font-data); font-variant-numeric: tabular-nums; }
-.chart-actions small { grid-column: 2; text-align: right; color: var(--color-muted); font-size: 12px; line-height: 18px; }
+.chart-actions strong { text-align: right; overflow-wrap: anywhere; }
+.chart-actions small { grid-column: 2; text-align: right; color: var(--color-muted); }
 
 .comparison-grid {
   display: grid;
@@ -1104,12 +1168,10 @@ body:has(dialog[open]) {
 }
 
 .comparison-grid small { color: var(--color-muted); }
-.comparison-grid strong { font-size: 14px; font-weight: 600; }
-.time-trend > header b { font-family: var(--font-data); font-variant-numeric: tabular-nums; }
 .time-drill { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: var(--space-sm); }
 .time-drill > button { white-space: nowrap; }
 .time-drill .chart-readout { grid-column: 1 / -1; }
-.trend-range-summary { display: flex; align-items: center; flex-wrap: wrap; gap: 0 var(--space-sm); color: var(--color-muted); font-size: 12px; }
+.trend-range-summary { display: flex; align-items: center; flex-wrap: wrap; gap: 0 var(--space-sm); color: var(--color-muted); }
 .trend-range-summary .text-action { font-size: 12px; white-space: nowrap; }
 .comparison-grid article > span { color: var(--color-muted); font-size: 12px; }
 
@@ -1150,10 +1212,11 @@ body:has(dialog[open]) {
 .dimension-rank-value { display: grid; gap: var(--space-xs); min-width: 0; }
 .dimension-rank-main small,
 .dimension-rank-main span,
-.dimension-rank-value small { color: var(--color-muted); font-size: 12px; }
+.dimension-rank-value small { color: var(--color-muted); }
+.dimension-rank-main small,
+.dimension-rank-main span { font-size: 12px; }
 .dimension-rank-main strong { overflow-wrap: anywhere; }
 .dimension-rank-value { justify-items: end; text-align: right; }
-.dimension-rank-value strong { font-family: var(--font-data); font-size: var(--font-body-size); line-height: var(--font-body-line); font-variant-numeric: tabular-nums; }
 .dimension-rank-value em { color: var(--color-warning-text); font-size: 12px; font-style: normal; font-weight: 600; }
 
 @media (max-width: 640px) {
@@ -1261,7 +1324,7 @@ body:has(dialog[open]) {
 .ledger-type-expense { color: var(--color-expense-text); }
 .ledger-type-income { color: var(--color-income-text); }
 .ledger-type-adjustment { color: var(--color-income-text); }
-.ledger-item-amount { align-self: start; font-family: var(--font-data); font-size: var(--font-data-size); font-weight: 600; line-height: var(--font-data-line); font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+.ledger-item-amount { align-self: start; text-align: right; white-space: nowrap; }
 .ledger-row-busy { justify-self: end; color: var(--color-muted); font-size: 12px; }
 .money-expense { color: var(--color-expense-text); }
 .money-income { color: var(--color-income-text); }
@@ -1384,11 +1447,10 @@ body:has(dialog[open]) {
 .admin-metric-icon { color: var(--color-muted); }
 .admin-metric-card p,
 .admin-metric-card small { margin: 0; color: var(--color-muted); }
-.admin-metric-card > strong { font-family: var(--font-data); font-size: var(--font-data-size); line-height: var(--font-data-line); font-variant-numeric: tabular-nums; }
 .admin-metric-card dl { display: grid; gap: var(--space-sm); margin: var(--space-sm) 0; }
 .admin-metric-card dl div { display: flex; justify-content: space-between; gap: var(--space-md); }
 .admin-metric-card dt { color: var(--color-muted); }
-.admin-metric-card dd { margin: 0; font-family: var(--font-data); font-weight: 600; }
+.admin-metric-card dd { margin: 0; }
 
 .admin-audit-toolbar {
   display: grid;
@@ -2239,7 +2301,8 @@ body:has(dialog[open]) {
 .entry-amount-fields > .entry-combobox, .entry-short-fields > .entry-combobox { line-height: 20px; }
 .entry-amount-fields { --control-padding-inline: var(--space-sm); }
 .entry-amount-fields input, .entry-amount-fields .combobox-trigger { padding-inline: var(--control-padding-inline); }
-.entry-total-field input { font-size: 26px; line-height: 32px; font-variant-numeric: tabular-nums; font-weight: 600; }
+.form-field.entry-total-field input,
+.amount-field-control > span { font-size: var(--font-amount-input-size); line-height: var(--font-amount-input-line); font-variant-numeric: tabular-nums; font-weight: 600; }
 .entry-total-field.money-expense input { color: var(--color-expense-text); }
 .entry-total-field.money-income input { color: var(--color-income-text); }
 .task-entry-form :is(.form-field, .entry-combobox) > label { font-weight: 400; }
@@ -2296,7 +2359,6 @@ body:has(dialog[open]) {
 .entry-receipt .field-help-detail { display: inline; margin: 0 0 0 var(--space-sm); }
 .entry-receipt .entry-total-field > label { color: var(--color-text); font-weight: 600; }
 .amount-field-control { display: flex; align-items: baseline; gap: var(--space-sm); min-width: 0; }
-.amount-field-control > span { font-size: 26px; line-height: 32px; font-weight: 600; }
 .amount-field .amount-field-control input { flex: 1; width: 0; padding-inline: 0; border-color: transparent; background: transparent; border-radius: 0; }
 .amount-field.money-expense .amount-field-control { color: var(--color-expense-text); }
 .amount-field.money-income .amount-field-control { color: var(--color-income-text); }
@@ -2320,6 +2382,8 @@ body:has(dialog[open]) {
     --control-padding-inline: 12px;
     --font-body-size: 15px;
     --font-body-line: 22px;
+    --font-amount-summary-size: 15px;
+    --font-amount-summary-line: 22px;
     --font-page-size: 22px;
     --font-page-line: 28px;
     --font-section-size: 17px;
@@ -2343,7 +2407,6 @@ body:has(dialog[open]) {
   .entry-setting-field { grid-template-columns: minmax(0, .75fr) minmax(0, 2fr); align-items: center; column-gap: var(--space-md); }
   .entry-setting-field > small { grid-column: 2; }
   .entry-setting-field > label { font-weight: 400; }
-  .entry-total-field input { font-size: 26px; line-height: 32px; }
   .form-field, .entry-combobox { gap: var(--space-xs); }
   .form-field input, .form-field select, .select-control, .entry-combobox > input { line-height: 22px; padding-block: var(--space-sm); }
   .form-field textarea { min-height: 88px; padding: var(--space-sm) var(--space-md); }

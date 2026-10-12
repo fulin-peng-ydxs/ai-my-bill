@@ -40,6 +40,21 @@ afterEach(() => {
 })
 
 describe('report chart lifecycle', () => {
+  it('reads current shared typography tokens for chart numbers instead of caching a local size', () => {
+    const { state } = setup()
+    const tokens: Record<string, string> = {
+      '--font-data': 'ui-monospace, monospace',
+      '--font-number-caption-size': '12px',
+      '--font-number-caption-line': '18px',
+    }
+    vi.stubGlobal('getComputedStyle', () => ({ getPropertyValue: (name: string) => tokens[name] ?? '' }))
+    expect(state.numberLabelStyle()).toEqual({
+      fontFamily: 'ui-monospace, monospace', fontSize: 12, lineHeight: 18, fontWeight: 400,
+    })
+    tokens['--font-number-caption-size'] = '14px'
+    tokens['--font-number-caption-line'] = '20px'
+    expect(state.numberLabelStyle()).toMatchObject({ fontSize: 14, lineHeight: 20 })
+  })
   it('keeps readings fixed and provides no click-to-drill handler in the chart', async () => {
     setup()
     await vi.dynamicImportSettled()

@@ -25,6 +25,15 @@ export function useReportChart(option: () => EChartsCoreOption) {
   function token(name: string): string {
     return host.value ? globalThis.getComputedStyle(host.value).getPropertyValue(name).trim() : ''
   }
+  // ECharts 的数字标签和数值坐标轴消费与页面辅助数字相同的字体 token。
+  function numberLabelStyle() {
+    return {
+      fontFamily: token('--font-data'),
+      fontSize: Number.parseFloat(token('--font-number-caption-size')),
+      lineHeight: Number.parseFloat(token('--font-number-caption-line')),
+      fontWeight: 400,
+    }
+  }
   function render(animate = false): void {
     if (!active || !host.value || host.value.clientWidth === 0 || host.value.clientHeight === 0) return
     if (!chart) {
@@ -84,5 +93,5 @@ export function useReportChart(option: () => EChartsCoreOption) {
   }
   onDeactivated(suspend)
   onBeforeUnmount(() => { disposed = true; suspend(); chart?.dispose() })
-  return { host, token, refresh, failed }
+  return { host, token, numberLabelStyle, refresh, failed }
 }

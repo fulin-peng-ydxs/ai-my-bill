@@ -30,17 +30,17 @@ function displayValue(point: Point): string {
   return isCount.value ? `${Number(point.amount)} 条` : formatCny(point.amount)
 }
 
-const { host, token, refresh, failed } = useReportChart(() => ({
+const { host, token, numberLabelStyle, refresh, failed } = useReportChart(() => ({
   color: [token(props.tone === 'income' ? '--color-income-accent' : '--color-expense-accent')],
   textStyle: { color: token('--color-text') },
   grid: { left: 8, right: 112, top: 8, bottom: 8, containLabel: true },
-  xAxis: { type: 'value', splitNumber: 3, axisLabel: { color: token('--color-muted'), hideOverlap: true,
+  xAxis: { type: 'value', splitNumber: 3, axisLabel: { ...numberLabelStyle(), color: token('--color-muted'), hideOverlap: true,
     formatter: (value: number) => isCount.value ? String(value) : `¥${value}` },
   splitLine: { lineStyle: { color: token('--color-border'), type: 'dashed' } } },
   yAxis: { type: 'category', data: chartPoints.value.map((point) => point.label),
     axisLabel: { color: token('--color-muted'), width: 92, overflow: 'truncate' }, axisTick: { show: false },
     axisLine: { lineStyle: { color: token('--color-border') } } },
-  series: [{ type: 'bar', silent: true, label: { show: true, position: 'right', fontSize: 12, color: token('--color-text'),
+  series: [{ type: 'bar', silent: true, label: { ...numberLabelStyle(), show: true, position: 'right', color: token('--color-text'),
     width: 104, overflow: 'truncate', formatter: (item: { dataIndex: number }) => displayValue(chartPoints.value[item.dataIndex]) }, data: chartPoints.value.map((point) => Number(point.amount)), barMaxWidth: 24 }],
 }))
 

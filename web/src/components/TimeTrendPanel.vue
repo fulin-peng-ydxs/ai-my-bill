@@ -38,14 +38,14 @@ function metricCount(bucket: Bucket): number {
   if (props.metric === 'NET_EXPENSE') return bucket.expenseCount + bucket.adjustmentCount
   return bucket.itemCount
 }
-const { host, token, refresh, failed } = useReportChart(() => ({
+const { host, token, numberLabelStyle, refresh, failed } = useReportChart(() => ({
   color: [token(definition.value.color), token(definition.value.color)],
   textStyle: { color: token('--color-text') },
   grid: { left: 8, right: 12, top: 42, bottom: 32, containLabel: true },
   legend: { top: 0, selectedMode: false, textStyle: { color: token('--color-muted') } },
   xAxis: { type: 'category', data: props.report.buckets.map((item) => item.label), axisLabel: { color: token('--color-muted') },
     axisLine: { lineStyle: { color: token('--color-border') } } },
-  yAxis: { type: 'value', axisLabel: { color: token('--color-muted'), formatter: (value: number) => `¥${value}` },
+  yAxis: { type: 'value', axisLabel: { ...numberLabelStyle(), color: token('--color-muted'), formatter: (value: number) => `¥${value}` },
     splitLine: { lineStyle: { color: token('--color-border'), type: 'dashed' } } },
   series: [
     // SVG 连线的入场裁剪会在 WebKit 首次切换时隐藏线条；两条线直接呈现完整形状。
