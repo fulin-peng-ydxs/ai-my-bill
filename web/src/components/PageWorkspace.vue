@@ -4,7 +4,9 @@ import { pageActionTarget, pageNoticeTarget } from '../composables/pageActionTar
 import { useKeyboardViewport } from '../composables/useKeyboardViewport'
 import { restorePageScrollBounds, revealFocusedPageControl } from '../composables/pageScroll'
 import ScrollRegion from './ScrollRegion.vue'
-defineProps<{ contentLabel: string }>()
+withDefaults(defineProps<{ contentLabel: string, contentLayout?: 'flow' | 'fill' }>(), {
+  contentLayout: 'flow',
+})
 const workspace = ref<globalThis.HTMLElement>()
 const actions = ref<globalThis.HTMLElement>()
 provide(pageActionTarget, actions)
@@ -33,6 +35,7 @@ watch([keyboardOpen, visibleHeight, topInset], revealFocus, { flush: 'post' })
     </div>
     <ScrollRegion
       class="page-scroll-region"
+      :class="{ 'workspace-body-fill': contentLayout === 'fill' && !keyboardOpen }"
       data-page-scroll
       role="region"
       :aria-label="contentLabel"

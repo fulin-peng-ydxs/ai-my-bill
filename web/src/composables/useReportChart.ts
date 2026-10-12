@@ -22,6 +22,7 @@ export function useReportChart(option: () => EChartsCoreOption) {
   let chart: ECharts | undefined
   let resizeObserver: ResizeObserver | undefined
   let themeObserver: MutationObserver | undefined
+  let resizeFrame: number | undefined
   function token(name: string): string {
     return host.value ? globalThis.getComputedStyle(host.value).getPropertyValue(name).trim() : ''
   }
@@ -64,13 +65,28 @@ export function useReportChart(option: () => EChartsCoreOption) {
   function refresh(): void { void nextTick(() => render(true)) }
   watch(reduced, () => render())
 
+  function cancelResize(): void {
+    if (resizeFrame !== undefined) cancelAnimationFrame(resizeFrame)
+    resizeFrame = undefined
+  }
+  function scheduleResize(): void {
+    if (!active || resizeFrame !== undefined) return
+    // SVG 尺寸更新会写回布局；离开观察器通知阶段，避免同帧循环并合并连续尺寸变化。
+    resizeFrame = requestAnimationFrame(() => {
+      resizeFrame = undefined
+      if (!active || !host.value?.clientWidth || !host.value.clientHeight) return
+      if (chart) chart.resize()
+      else render()
+    })
+  }
   function connect(): void {
+    cancelResize()
     resizeObserver?.disconnect()
     themeObserver?.disconnect()
     const element = host.value
     if (!element) return
     render(!chart)
-    resizeObserver = new ResizeObserver(() => { if (active) { if (chart) chart.resize(); else render() } })
+    resizeObserver = new ResizeObserver(scheduleResize)
     resizeObserver.observe(element)
     themeObserver = new MutationObserver(() => render())
     themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['class', 'data-theme'] })
@@ -79,6 +95,7 @@ export function useReportChart(option: () => EChartsCoreOption) {
   // 排行从空结果/质量线索切回图表时，容器可能被重新创建，不能继续写入旧 SVG。
   watch(host, (element, previous) => {
     if (!mounted || element === previous) return
+    cancelResize()
     resizeObserver?.disconnect()
     themeObserver?.disconnect()
     chart?.dispose()
@@ -88,6 +105,7 @@ export function useReportChart(option: () => EChartsCoreOption) {
   onActivated(() => { active = true; void nextTick(() => { if (!active) return; connect(); chart?.resize() }) })
   function suspend(): void {
     active = false
+    cancelResize()
     resizeObserver?.disconnect()
     themeObserver?.disconnect()
   }

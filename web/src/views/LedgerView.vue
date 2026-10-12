@@ -616,6 +616,7 @@ useRefreshOnReturn(() => list.refresh())
       <AppDrawer
         id="ledger-edit"
         full-height
+        content-layout="fill"
         :open="editOpen"
         :title="editTarget?.entryType === 'EXPENSE' ? '编辑支出' : '编辑收入'"
         description="修改只作用于当前账目；账目类型不可转换。"

@@ -243,7 +243,7 @@ useRefreshOnReturn(() => loadOptions())
 
 <template>
   <section
-    class="entry-form"
+    class="entry-form workspace-grow"
     :aria-busy="loading"
     :aria-label="editMode ? '编辑收入' : '收入填报'"
   >
@@ -297,7 +297,7 @@ useRefreshOnReturn(() => loadOptions())
     </section>
     <form
       :id="formId"
-      class="entry-form task-entry-form"
+      class="entry-form task-entry-form workspace-grow"
       @submit.prevent="submit(false)"
     >
       <EntryReceipt>

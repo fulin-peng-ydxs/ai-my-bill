@@ -22,7 +22,17 @@ function setup() {
   const document = Object.assign(new EventTarget(), { documentElement: {} })
   const window = new EventTarget()
   class Observer { observe = vi.fn(); disconnect = vi.fn() }
-  vi.stubGlobal('ResizeObserver', Observer)
+  let notifyResize: () => void = () => undefined
+  const frames = new Map<number, FrameRequestCallback>()
+  let frameId = 0
+  vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+    frames.set(++frameId, callback)
+    return frameId
+  })
+  vi.stubGlobal('cancelAnimationFrame', (id: number) => frames.delete(id))
+  vi.stubGlobal('ResizeObserver', class extends Observer {
+    constructor(callback: () => void) { super(); notifyResize = callback }
+  })
   vi.stubGlobal('MutationObserver', Observer)
   vi.stubGlobal('document', document)
   vi.stubGlobal('window', window)
@@ -30,7 +40,13 @@ function setup() {
   const state = useReportChart(() => ({ series: [], tooltip: { show: true } }))
   state.host.value = host as unknown as HTMLDivElement
   hooks.mounted.forEach((callback) => callback())
-  return { host, document, window, state }
+  return { host, document, window, state, frames,
+    notifyResize: () => notifyResize(),
+    flushFrames: () => {
+      const pending = [...frames.values()]
+      frames.clear()
+      pending.forEach(callback => callback(0))
+    } }
 }
 afterEach(() => {
   hooks.unmounted.forEach((callback) => callback())
@@ -40,6 +56,41 @@ afterEach(() => {
 })
 
 describe('report chart lifecycle', () => {
+  it('coalesces resize notifications outside the observer callback and skips zero-sized hosts', async () => {
+    const { notifyResize, flushFrames, frames, host } = setup()
+    await vi.dynamicImportSettled()
+    notifyResize()
+    notifyResize()
+    expect(chart.resize).not.toHaveBeenCalled()
+    expect(frames.size).toBe(1)
+    flushFrames()
+    expect(chart.resize).toHaveBeenCalledOnce()
+    host.clientHeight = 0
+    notifyResize()
+    flushFrames()
+    expect(chart.resize).toHaveBeenCalledOnce()
+  })
+  it('cancels pending resize work on hiding, replacing the host and unmounting', async () => {
+    const { notifyResize, flushFrames, frames, state } = setup()
+    await vi.dynamicImportSettled()
+    notifyResize()
+    hooks.deactivated.forEach(callback => callback())
+    expect(frames.size).toBe(0)
+    notifyResize()
+    expect(frames.size).toBe(0)
+    hooks.activated.forEach(callback => callback())
+    await nextTick()
+    chart.resize.mockClear()
+    notifyResize()
+    state.host.value = Object.assign(new EventTarget(), { clientWidth: 430, clientHeight: 360 }) as unknown as HTMLDivElement
+    await nextTick()
+    expect(frames.size).toBe(0)
+    notifyResize()
+    hooks.unmounted.forEach(callback => callback())
+    expect(frames.size).toBe(0)
+    flushFrames()
+    expect(chart.resize).not.toHaveBeenCalled()
+  })
   it('reads current shared typography tokens for chart numbers instead of caching a local size', () => {
     const { state } = setup()
     const tokens: Record<string, string> = {

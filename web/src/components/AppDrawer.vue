@@ -17,6 +17,7 @@ const props = defineProps<{
   description?: string
   busy?: boolean
   fullHeight?: boolean
+  contentLayout?: 'flow' | 'fill'
   hideFooterOnKeyboard?: boolean
 }>()
 const emit = defineEmits<{
@@ -80,7 +81,10 @@ const { dialog, phase, handleCancel, handleClose, handlePointerDown, handlePoint
             />
           </button>
         </header>
-        <ScrollRegion class="overlay-body">
+        <ScrollRegion
+          class="overlay-body"
+          :class="{ 'workspace-body-fill': contentLayout === 'fill' && !keyboardOpen }"
+        >
           <slot />
         </ScrollRegion>
         <div

@@ -59,6 +59,7 @@ function clearTemplate(type: EntryType): void {
 <template>
   <PageWorkspace
     content-label="记账表单"
+    content-layout="fill"
     class="entry-preference-page"
     data-page-key="ledger-entry"
   >
@@ -90,7 +91,7 @@ function clearTemplate(type: EntryType): void {
     </template>
     <section
       ref="formPanel"
-      class="entry-type-panel"
+      class="entry-type-panel workspace-grow"
       aria-label="本次记录"
     >
       <AppStatusNotice

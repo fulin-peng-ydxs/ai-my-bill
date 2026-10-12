@@ -1,9 +1,17 @@
 <script setup lang="ts">
 import FormSection from './FormSection.vue'
+import { ref } from 'vue'
+import { useReceiptSpacing } from '../composables/useReceiptSpacing'
+const receipt = ref<globalThis.HTMLElement>()
+const extraSpace = useReceiptSpacing(receipt)
 </script>
 
 <template>
-  <div class="entry-form-surface entry-receipt">
+  <div
+    ref="receipt"
+    class="entry-form-surface entry-receipt"
+    :style="{ '--entry-receipt-extra-space': `${extraSpace}px` }"
+  >
     <FormSection
       title="记录内容"
       quiet

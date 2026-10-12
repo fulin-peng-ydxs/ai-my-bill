@@ -284,6 +284,7 @@ useRefreshOnReturn(() => load())
 <template>
   <PageWorkspace
     content-label="报表结果"
+    :content-layout="shownPresentation.dimension === 'TIME' || shownPresentation.dimension === 'OVERVIEW' ? 'fill' : 'flow'"
     class="report-page"
     data-page-key="reports"
   >
@@ -380,6 +381,7 @@ useRefreshOnReturn(() => load())
     <fieldset
       v-if="request.data.value"
       class="report-result"
+      :class="{ 'workspace-grow': shownPresentation.dimension === 'TIME' || shownPresentation.dimension === 'OVERVIEW' }"
       :disabled="!request.canDrill.value"
       :aria-busy="request.refreshing.value"
     >
@@ -394,12 +396,14 @@ useRefreshOnReturn(() => load())
       />
       <ChartPanel
         v-else-if="shownPresentation.dimension === 'OVERVIEW'"
+        class="workspace-grow"
         title="收支概览"
         :points="request.data.value.summary.dataPoints"
         @select="drill"
       />
       <TimeTrendPanel
         v-else-if="request.data.value.time"
+        class="workspace-grow"
         :report="request.data.value.time"
         :metric="shownPresentation.metric"
         @select="drillTime"
