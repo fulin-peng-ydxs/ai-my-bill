@@ -3,6 +3,8 @@ import { effectScope, nextTick, ref } from 'vue'
 
 import { confirmDiscardChanges, requestDiscardChanges } from './unsavedChanges'
 import { LEDGER_DRAFT_TTL_MS, readLedgerDraft, useLedgerDraft, writeLedgerDraft } from './useLedgerDraft'
+import { createExpenseProductSelection } from '../domain/expenseProductSelection'
+import { emptyExpenseForm } from '../domain/ledgerEntryForm'
 
 const ACCOUNT = '10000000-0000-4000-8000-000000000001'
 const OTHER_ACCOUNT = '20000000-0000-4000-8000-000000000002'
@@ -20,6 +22,34 @@ function memoryStorage() {
 beforeEach(() => vi.unstubAllGlobals())
 
 describe('ledger draft storage', () => {
+  it('persists bounded expense ownership without adding form fields or leaking it into income drafts', async () => {
+    vi.stubGlobal('localStorage', memoryStorage())
+    const form = emptyExpenseForm('wechat')
+    const selection = createExpenseProductSelection(form)
+    selection.select({ id: 'product', name: '咖啡', unitId: 'cup', lastUnitPrice: '16' })
+    const productSelectionState = selection.serialize()
+    await writeLedgerDraft(ACCOUNT, 'EXPENSE', { ...form, productSelectionState })
+    const stored = await readLedgerDraft(ACCOUNT, 'EXPENSE')
+    const { productSelectionState: state, ...fields } = stored!
+    const restoredForm = Object.assign(emptyExpenseForm(), fields)
+    const restoredSelection = createExpenseProductSelection(restoredForm)
+    restoredSelection.restore(state)
+    restoredSelection.clear()
+    expect(restoredForm.unitPrice).toBe('')
+    expect(restoredForm.paidAmount).toBe('')
+    expect(restoredForm).not.toHaveProperty('productSelectionState')
+    await writeLedgerDraft(ACCOUNT, 'INCOME', { incomeName: '稿费', productSelectionState })
+    expect(await readLedgerDraft(ACCOUNT, 'INCOME')).toEqual({ incomeName: '稿费' })
+  })
+
+  it('keeps legacy fields when ownership metadata is malformed and does not persist metadata alone', async () => {
+    vi.stubGlobal('localStorage', memoryStorage())
+    await writeLedgerDraft(ACCOUNT, 'EXPENSE', { productName: '咖啡', unitPrice: '16', productSelectionState: '{' })
+    expect(await readLedgerDraft(ACCOUNT, 'EXPENSE')).toEqual({ productName: '咖啡', unitPrice: '16' })
+    await writeLedgerDraft(ACCOUNT, 'EXPENSE', { productSelectionState: createExpenseProductSelection(emptyExpenseForm()).serialize() })
+    expect(await readLedgerDraft(ACCOUNT, 'EXPENSE')).toBeUndefined()
+  })
+
   it('round-trips expense and income independently and strips unknown fields', async () => {
     vi.stubGlobal('localStorage', memoryStorage())
     await writeLedgerDraft(ACCOUNT, 'EXPENSE', {

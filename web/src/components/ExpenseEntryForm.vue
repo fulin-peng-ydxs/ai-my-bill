@@ -14,6 +14,7 @@ import {
   calculateExpenseTotal, decimalToScaledInteger, formatCny, formatDecimalDisplay, scaledIntegerToDecimal, isDecimalInRange, MONEY_MAX,
 } from '../domain/money'
 import { expenseContinuationFields } from '../domain/expense'
+import { createExpenseProductSelection } from '../domain/expenseProductSelection'
 import { createIdempotencyAttemptTracker } from '../domain/idempotency'
 import { formatShanghaiDateTime, toShanghaiLocalDateTime } from '../domain/businessTime'
 import {
@@ -63,6 +64,7 @@ interface ExpenseOption {
 
 const emptyForm = () => emptyExpenseForm(props.defaultFundingChannelId)
 const form = reactive<ExpenseFormState>(emptyForm())
+const productSelection = createExpenseProductSelection(form)
 const editMode = computed(() => Boolean(props.editEntry))
 const expenseType = ref<'EXPENSE'>('EXPENSE')
 const accountId = computed(() => props.accountId)
@@ -85,7 +87,6 @@ const detailOpen = ref(false)
 const toastOpen = ref(false)
 const toastMessage = ref('')
 const toastKind = ref<'success' | 'error'>('success')
-const paidOverridden = ref(false)
 const productCombobox = ref<{ reset: () => void }>()
 const idempotencyAttempt = createIdempotencyAttemptTracker()
 const appliedTemplateRevision = ref(props.templateRevision ?? 0)
@@ -135,7 +136,7 @@ function applyEditEntry(value: ExpenseResponse): void {
   editVersion.value = value.version
   editBaseline.value = JSON.stringify(form)
   versionConflict.value = false
-  paidOverridden.value = true
+  productSelection.reset(true)
   ensureEditOptions(value)
   Object.keys(errors).forEach((key) => delete errors[key as ExpenseField])
   idempotencyAttempt.reset()
@@ -154,13 +155,13 @@ watch(() => props.editEntry, (value) => { if (value) applyEditEntry(value) }, { 
 
 watch(() => draft.restored.value, (restored) => {
   if (!restored || editMode.value) return
-  const stored = draft.data.value
+  const { productSelectionState, ...stored } = draft.data.value
   Object.assign(form, emptyForm(), stored, {
     unitPrice: formatDecimalDisplay(stored.unitPrice ?? ''),
     quantity: formatDecimalDisplay(stored.quantity ?? '1'),
     paidAmount: formatDecimalDisplay(stored.paidAmount ?? ''),
   })
-  paidOverridden.value = Boolean(stored.paidAmount)
+  productSelection.restore(productSelectionState)
 })
 
 watch([() => draft.restored.value, () => props.templateRevision], ([restored, revision]) => {
@@ -182,7 +183,7 @@ watch([() => draft.restored.value, () => props.templateRevision], ([restored, re
     occurredAt: toShanghaiLocalDateTime(), note: '',
   })
   Object.keys(errors).forEach((key) => delete errors[key as ExpenseField])
-  paidOverridden.value = true
+  productSelection.template(emptyForm())
   saved.value = undefined
   templateUnavailableFields.value = selection.unavailableFields
   appliedTemplateRevision.value = revision
@@ -200,24 +201,34 @@ const unregisterEditGuard = registerUnsavedChanges(editDirty, () => {
 onScopeDispose(unregisterEditGuard)
 
 function persist(): void {
-  void draft.replace(Object.fromEntries(Object.entries(form).filter(([, value]) => value)))
+  void draft.replace({ ...Object.fromEntries(Object.entries(form).filter(([, value]) => value)),
+    productSelectionState: productSelection.serialize() })
 }
 
 function clearError(field: ExpenseField): void {
   delete errors[field]
 }
 
-function amountChanged(): void {
+function fieldChanged(field: keyof ExpenseFormState): void {
+  productSelection.touch(field)
+  templateUnavailableFields.value = templateUnavailableFields.value.filter(key =>
+    field === 'primaryCategoryId' || field === 'secondaryCategoryId'
+      ? key !== 'primaryCategoryId' && key !== 'secondaryCategoryId' : key !== field)
+  clearError(field)
+  persist()
+}
+
+function amountChanged(field: 'unitPrice' | 'quantity'): void {
+  productSelection.touch(field)
   clearError('unitPrice')
   clearError('quantity')
-  if (!paidOverridden.value) form.paidAmount = calculatedAmount.value === '0.00' ? '' : formatDecimalDisplay(calculatedAmount.value)
+  clearError('calculatedAmount')
+  productSelection.recalculate()
   persist()
 }
 
 function paidChanged(): void {
-  paidOverridden.value = true
-  clearError('paidAmount')
-  persist()
+  fieldChanged('paidAmount')
 }
 
 function ensureOption(key: OptionGroup, id?: string | null, name?: string | null, parentId?: string): void {
@@ -232,23 +243,25 @@ function selectProduct(product: ProductSuggestion): void {
   ensureOption('units', product.unitId, product.unitName)
   ensureOption('funding', product.fundingChannelId, product.fundingChannelName)
   ensureOption('purchase', product.purchaseChannelId, product.purchaseChannelName)
-  form.productId = product.id
-  form.productName = product.name
-  form.primaryCategoryId = product.primaryCategoryId ?? ''
-  form.secondaryCategoryId = product.secondaryCategoryId ?? ''
-  form.unitId = product.unitId ?? ''
-  form.unitPrice = formatDecimalDisplay(product.lastUnitPrice ?? '')
-  form.fundingChannelId = product.fundingChannelId ?? form.fundingChannelId
-  form.purchaseChannelId = product.purchaseChannelId ?? ''
-  clearError('productId')
-  paidOverridden.value = false
-  amountChanged()
+  changeProduct(() => productSelection.select(product))
 }
 
 function clearProduct(): void {
-  form.productId = ''
-  form.productName = ''
-  clearError('productId')
+  changeProduct(() => productSelection.clear())
+}
+
+function changeProduct(change: () => void): void {
+  const before = { ...form }
+  change()
+  if (before.productId !== form.productId) {
+    // 商品已替换或撤回，原模板的商品字段失效提示不再属于这次选择。
+    const productFields = ['productId', 'primaryCategoryId', 'secondaryCategoryId', 'unitId']
+    templateUnavailableFields.value = templateUnavailableFields.value.filter(key => !productFields.includes(key))
+  }
+  for (const key of Object.keys(before) as (keyof ExpenseFormState)[]) {
+    if (before[key] !== form[key]) clearError(key)
+  }
+  if (before.unitPrice !== form.unitPrice || before.quantity !== form.quantity) clearError('calculatedAmount')
   persist()
 }
 
@@ -256,9 +269,9 @@ function updatePrimaryCategory(value: string): void {
   form.primaryCategoryId = value
   if (!secondaryCategories.value.some((item) => item.id === form.secondaryCategoryId)) {
     form.secondaryCategoryId = ''
+    clearError('secondaryCategoryId')
   }
-  clearError('primaryCategoryId')
-  persist()
+  fieldChanged('primaryCategoryId')
 }
 
 function selectCategory(item: DictionaryChoice, level: 'primary' | 'secondary'): void {
@@ -266,8 +279,7 @@ function selectCategory(item: DictionaryChoice, level: 'primary' | 'secondary'):
   if (level === 'primary') updatePrimaryCategory(item.id)
   else {
     form.secondaryCategoryId = item.id
-    clearError('secondaryCategoryId')
-    persist()
+    fieldChanged('secondaryCategoryId')
   }
 }
 
@@ -327,7 +339,7 @@ async function submit(continueEntry: boolean): Promise<void> {
     Object.assign(form, emptyForm(), retained)
     productCombobox.value?.reset()
     if (continueEntry) form.quantity = ''
-    paidOverridden.value = false
+    productSelection.reset(false)
     templateUnavailableFields.value = []
     emit('templateConsumed')
     idempotencyAttempt.reset()
@@ -494,7 +506,7 @@ useRefreshOnReturn(() => loadOptions())
                 :error="errors.secondaryCategoryId"
                 @select="selectCategory($event, 'secondary')"
                 @resolved="ensureOption('categories', $event.id, $event.name, $event.parentId)"
-                @clear="form.secondaryCategoryId = ''; clearError('secondaryCategoryId'); persist()"
+                @clear="form.secondaryCategoryId = ''; fieldChanged('secondaryCategoryId')"
               />
             </div>
           </FormDisclosure>
@@ -514,7 +526,7 @@ useRefreshOnReturn(() => loadOptions())
                   placeholder="0"
                   :aria-describedby="describedBy"
                   :disabled="submitting"
-                  @input="amountChanged"
+                  @input="amountChanged('unitPrice')"
                 >
               </template>
             </FormField>
@@ -530,7 +542,7 @@ useRefreshOnReturn(() => loadOptions())
                   inputmode="decimal"
                   :aria-describedby="describedBy"
                   :disabled="submitting"
-                  @input="amountChanged"
+                  @input="amountChanged('quantity')"
                 >
               </template>
             </FormField>
@@ -542,8 +554,8 @@ useRefreshOnReturn(() => loadOptions())
               :model-value="form.unitId"
               :disabled="submitting"
               :error="errors.unitId"
-              @select="ensureOption('units', $event.id, $event.name); form.unitId = $event.id; clearError('unitId'); persist()"
-              @clear="form.unitId = ''; clearError('unitId'); persist()"
+              @select="ensureOption('units', $event.id, $event.name); form.unitId = $event.id; fieldChanged('unitId')"
+              @clear="form.unitId = ''; fieldChanged('unitId')"
             />
           </div>
         </template>
@@ -572,7 +584,7 @@ useRefreshOnReturn(() => loadOptions())
             :disabled="submitting"
             :error="errors.fundingChannelId"
             @selected="ensureOption('funding', $event.id, $event.name)"
-            @update:model-value="form.fundingChannelId = $event; clearError('fundingChannelId'); persist()"
+            @update:model-value="form.fundingChannelId = $event; fieldChanged('fundingChannelId')"
           />
 
           <FormField
@@ -612,7 +624,7 @@ useRefreshOnReturn(() => loadOptions())
             :disabled="submitting"
             :error="errors.purchaseChannelId"
             @selected="ensureOption('purchase', $event.id, $event.name)"
-            @update:model-value="form.purchaseChannelId = $event; clearError('purchaseChannelId'); persist()"
+            @update:model-value="form.purchaseChannelId = $event; fieldChanged('purchaseChannelId')"
           />
           <LocationLabelPicker
             :items="optionItems.locations"

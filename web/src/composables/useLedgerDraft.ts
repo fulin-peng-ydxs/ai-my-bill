@@ -2,6 +2,7 @@ import { computed, onScopeDispose, ref, watch, type Ref } from 'vue'
 
 import type { EntryType } from '../domain/preferences'
 import { unicodeCodePointLength } from '../domain/text'
+import { sanitizeProductSelectionState } from '../domain/expenseProductSelection'
 import { accountStorageSupportProblem, readAccountStorage, removeAccountStorage, writeAccountStorage } from '../storage/accountStorage'
 import { registerAccountMemoryCleanup } from './accountMemory'
 import { notifyUnsavedChangesChanged, registerUnsavedChanges } from './unsavedChanges'
@@ -40,7 +41,7 @@ function scope(type: EntryType): `draft:${EntryType}` {
 function sanitize(type: EntryType, value: unknown): LedgerDraftData {
   if (!value || typeof value !== 'object') return {}
   const source = value as Record<string, unknown>
-  return Object.fromEntries(Object.entries(FIELD_LIMITS[type]).flatMap(([field, limit]) => {
+  const data: LedgerDraftData = Object.fromEntries(Object.entries(FIELD_LIMITS[type]).flatMap(([field, limit]) => {
     const candidate = source[field]
     return typeof candidate === 'string'
       && unicodeCodePointLength(candidate) <= limit
@@ -48,6 +49,10 @@ function sanitize(type: EntryType, value: unknown): LedgerDraftData {
       ? [[field, candidate]]
       : []
   }))
+  const state = type === 'EXPENSE' && Object.keys(data).length > 0
+    ? sanitizeProductSelectionState(source.productSelectionState) : undefined
+  if (state) data.productSelectionState = state
+  return data
 }
 
 async function readStoredLedgerDraft(
