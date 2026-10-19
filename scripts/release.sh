@@ -111,6 +111,25 @@ print_plan() {
 EOF
 }
 
+# 在耗时构建和任何远端写入前拦截已满磁盘；不清理共享主机的其他服务。
+preflight_target() {
+  load_target "$1"
+  validate_local_connection_files
+  ssh_arguments
+  local command
+  printf -v command 'LC_ALL=C LANG=C bash -s -- %q' "${BILL_REMOTE_ROOT}"
+  ssh "${SSH_ARGS[@]}" -o ConnectTimeout=15 "${BILL_SSH_USER}@${BILL_HOST}" "${command}" <<'REMOTE'
+set -euo pipefail
+for directory in "$1" "$(docker info --format '{{.DockerRootDir}}')"; do
+  available=$(df -Pk "$directory" | awk 'END {print $4}')
+  [[ "$available" =~ ^[0-9]+$ && "$available" -ge 2097152 ]] || {
+    echo "发布预检失败：$directory 可用空间不足 2GiB；先处理容量，未上传或停止服务。" >&2
+    exit 1
+  }
+done
+REMOTE
+}
+
 deploy_target() {
   local target="$1"
   local commit artifact remote_incoming destination remote_command timestamp log_file
@@ -144,7 +163,7 @@ deploy_target() {
     "${artifact}/log-archive.sh" "${artifact}/apply-release.sh" "${artifact}/bootstrap-environment.sh" "${artifact}/preflight-host.sh" \
     "${artifact}/build.properties" "${artifact}/SHA256SUMS" \
     "${destination}:${remote_incoming}/"
-  printf -v remote_command 'bash %q --commit %q --incoming-dir %q --release-root %q --env-file %q --ca-file %q --health-url %q --backup-service %q --backup-status-file %q --compose-overlay %q --health-timeout %q' \
+  printf -v remote_command 'LC_ALL=C LANG=C bash %q --commit %q --incoming-dir %q --release-root %q --env-file %q --ca-file %q --health-url %q --backup-service %q --backup-status-file %q --compose-overlay %q --health-timeout %q' \
     "${remote_incoming}/apply-release.sh" "${commit}" "${remote_incoming}" "${BILL_REMOTE_ROOT}" \
     "${BILL_ENV_FILE}" "${BILL_CA_FILE}" "${BILL_HEALTH_URL}" "${BILL_BACKUP_SERVICE}" \
     "${BILL_BACKUP_STATUS_FILE}" "${BILL_COMPOSE_OVERLAY}" "${BILL_HEALTH_TIMEOUT_SECONDS}"
@@ -200,8 +219,7 @@ main() {
         # 长时间构建前先检查所有目标配置和本机连接材料，避免最后才发现拼写或路径错误。
         local candidate_target
         for candidate_target in "${SELECTED_TARGETS[@]}"; do
-          load_target "${candidate_target}"
-          validate_local_connection_files
+          preflight_target "${candidate_target}"
         done
         build_release
       fi

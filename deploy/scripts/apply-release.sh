@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+umask 077
 
 fail() {
   echo "错误：$*" >&2
@@ -101,8 +102,25 @@ compose_at() {
   (
     cd "${directory}"
     export MY_BILL_VERSION="$(cat REVISION 2>/dev/null || echo unknown)"
+    # 候选配置检查/构建使用候选资源；旧容器操作仍读取原运行配置。
+    if [[ "${directory}" == "${release_directory}" ]]; then
+      export MY_BILL_WEB_DIST="${release_directory}/web/dist"
+    fi
     docker compose --env-file "${env_file}" -f deploy/compose.yaml -f "${compose_overlay}" "$@"
   )
+}
+
+verify_web_release() {
+  local web_origin web_file expected_sha actual_sha
+  # API 健康不能证明前端已发布；实际 HTTPS 响应须与候选入口及 SW 一致。
+  web_origin="${health_url%%/api/v1/health}"
+  [[ "${web_origin}" != "${health_url}" ]] || return 1
+  for web_file in index.html sw.js; do
+    [[ -f "${release_directory}/web/dist/${web_file}" ]] || return 1
+    expected_sha="$(sha256sum "${release_directory}/web/dist/${web_file}" | awk '{print $1}')"
+    actual_sha="$(curl --connect-timeout 5 --max-time 15 --fail --silent --show-error --cacert "${ca_file}" "${web_origin}/${web_file}" | sha256sum | awk '{print $1}')" || return 1
+    [[ "${actual_sha}" == "${expected_sha}" ]] || return 1
+  done
 }
 
 echo "[1/8] 校验交付物"
@@ -132,7 +150,10 @@ if [[ ! "${old_revision}" =~ ^[0-9a-f]{40}$ ]]; then
   old_revision="unknown"
 fi
 old_revision_label="$(printf '%s' "${old_revision}" | tr -c 'a-zA-Z0-9._-' '_')"
-if [[ "${old_revision}" == "${commit}" ]] && curl --fail --silent --show-error --cacert "${ca_file}" "${health_url}" >/dev/null; then
+if [[ "${old_revision}" == "${commit}" ]] && [[ -f "${release_directory}/deployment.properties" ]] &&
+  grep -Fqx "MY_BILL_WEB_DIST=${release_root}/current/web/dist" "${env_file}" &&
+  curl --connect-timeout 5 --max-time 10 --fail --silent --show-error --cacert "${ca_file}" "${health_url}" >/dev/null &&
+  verify_web_release; then
   echo "目标已经运行健康候选 ${commit}，无需重复更新。"
   exit 0
 fi
@@ -158,6 +179,9 @@ on_exit() {
 trap on_exit EXIT
 
 echo "[2/8] 校验候选配置"
+[[ -f "${release_directory}/web/dist/index.html" && -f "${release_directory}/web/dist/sw.js" ]] || fail "候选缺少前端入口或 SW"
+[[ "${health_url}" == */api/v1/health ]] || fail "健康地址必须以 /api/v1/health 结尾"
+[[ "$(grep -c '^MY_BILL_WEB_DIST=' "${env_file}")" == 1 ]] || fail "运行配置必须有且仅有一个 MY_BILL_WEB_DIST"
 compose_at "${release_directory}" config --quiet
 
 timestamp="$(date -u '+%Y%m%dT%H%M%SZ')"
@@ -197,14 +221,25 @@ compose_at "${old_worktree}" stop -t 60 proxy app
 
 # Entry is closed and old containers are stopped: preserve their final retained output before replacement.
 preserve_container_logs() {
-  local service container
+  local service container log_path container_id
   echo "snapshotScope=retained-output since=24h tail=10000 previousRevision=${old_revision}"
   for service in app proxy db; do
     container="$(compose_at "${old_worktree}" ps -a -q "${service}")" || return 1
     [[ -n "${container}" ]] || continue
     echo "service=${service}"
     docker inspect --format 'container={{.Id}} image={{.Image}} created={{.Created}}' "${container}" || return 1
-    docker logs --timestamps --since 24h --tail 10000 "${container}" 2>&1 || return 1
+    if ! docker logs --timestamps --since 24h --tail 10000 "${container}" 2>&1; then
+      # 磁盘写满可能损坏 json-file，使 Docker 无法解码历史日志。
+      # 只对已停止且路径属于该容器的普通日志做有界只读保全，不修改 Docker 文件。
+      [[ "$(docker inspect --format '{{.State.Running}}' "${container}")" == false ]] || return 1
+      [[ "$(docker inspect --format '{{.HostConfig.LogConfig.Type}}' "${container}")" == json-file ]] || return 1
+      container_id="$(docker inspect --format '{{.Id}}' "${container}")" || return 1
+      log_path="$(docker inspect --format '{{.LogPath}}' "${container}")" || return 1
+      [[ "${container_id}" =~ ^[0-9a-f]{64}$ && "${log_path}" == /*/"${container_id}/${container_id}-json.log" && -f "${log_path}" && ! -L "${log_path}" ]] || return 1
+      echo "snapshotFallback=raw-json-file-tail maxBytes=10485760 service=${service} structuredLogsUnavailable=true"
+      tail -c 10485760 -- "${log_path}" || return 1
+      printf '\n'
+    fi
   done
 }
 log_archive_write snapshot "${old_revision}" preserve_container_logs
@@ -214,6 +249,20 @@ migration_attempted=true
 compose_at "${release_directory}" run --rm --no-deps -T migrate < /dev/null
 
 echo "[7/8] 原子切换候选并启动"
+# 持久化跟随 current 的挂载，保证后续 ops restart 也不会退回历史前端。
+# 保存原配置只用于受控回退；迁移已经尝试，失败不自动回切。
+environment_backup="${env_file}.before-${timestamp}-${short_commit}"
+[[ ! -e "${environment_backup}" ]] || fail "配置备份已存在"
+cp -p "${env_file}" "${environment_backup}"
+chmod 0600 "${environment_backup}"
+next_env="$(mktemp "${env_file}.next.XXXXXX")"
+awk -v dist="${release_root}/current/web/dist" '
+  /^MY_BILL_WEB_DIST=/ {print "MY_BILL_WEB_DIST=" dist; next}
+  {print}
+' "${env_file}" > "${next_env}"
+chmod --reference="${env_file}" "${next_env}"
+chown --reference="${env_file}" "${next_env}"
+mv -f "${next_env}" "${env_file}"
 if [[ -L "${current_path}" ]]; then
   next_link="${release_root}/.current.${commit}.next"
   [[ ! -e "${next_link}" && ! -L "${next_link}" ]] || fail "临时 current 链接已存在：${next_link}"
@@ -239,7 +288,12 @@ done
 compose_at "${release_directory}" up -d --no-deps --force-recreate proxy
 
 echo "[8/8] 验证 HTTPS 并记录版本"
-curl --fail --silent --show-error --cacert "${ca_file}" "${health_url}" >/dev/null
+deadline=$((SECONDS + health_timeout))
+until curl --connect-timeout 5 --max-time 10 --fail --silent --show-error --cacert "${ca_file}" "${health_url}" >/dev/null; do
+  [[ "${SECONDS}" -lt "${deadline}" ]] || fail "HTTPS 在等待期内未就绪"
+  sleep 3
+done
+verify_web_release || fail "HTTPS 前端入口或 SW 与候选不一致"
 cp "${incoming_dir}/manifest.txt" "${release_directory}/release-manifest.txt"
 cp "${incoming_dir}/build.properties" "${release_directory}/build.properties"
 app_jar_sha256="$(docker run --rm --entrypoint sha256sum my-bill-app /app/my-bill-server.jar | awk '{print $1}')"
@@ -257,6 +311,8 @@ proxyImage=${new_proxy_image}
 databaseImage=${database_image}
 schemaVersion=${schema_version}
 environmentSha256=${env_sha256}
+environmentBackup=${environment_backup}
+webDist=${release_directory}/web/dist
 EOF
 compose_at "${release_directory}" ps
 echo "持续更新完成：${old_revision} -> ${commit}"

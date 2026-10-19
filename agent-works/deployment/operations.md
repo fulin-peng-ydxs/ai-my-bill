@@ -67,7 +67,7 @@ npm run ops -- backup-verify intranet-main
 npm run ops -- backup-key-status intranet-main
 ```
 
-`backup` 先触发目标systemd备份服务并要求状态为 `SUCCEEDED`，随后自动拉取最新的CMS加密日归档和服务器生成的SHA-256文件；本地重新校验后才原子落入目标专属目录。指定历史日期可执行 `backup-pull <目标> YYYY-MM-DD`。同名完整副本只复核复用；不完整或冲突文件拒绝覆盖，也不自动删除异机历史副本。
+`backup` 先触发目标systemd备份服务并要求状态为 `SUCCEEDED`，随后自动拉取最新的CMS加密日归档和服务器生成的SHA-256文件；本地在临时目录重新校验后才移入目标专属目录。指定历史日期可执行 `backup-pull <目标> YYYY-MM-DD`。同名完整副本先与服务器最新摘要比较，一致才复核复用；同日服务器归档更新时，先下载并校验新副本，再把旧副本保留到 `history/<日期>/<旧SHA256>/` 后更新daily。不完整或历史冲突文件拒绝覆盖；拉取期间服务器摘要变化会停止并保留旧副本，也不自动删除异机历史副本。
 
 异机目录由目标字段 `BILL_OFFSITE_BACKUP_DIRECTORY` 指定；旧目标留空时默认 `.local/offsite-backups/<目标>`。默认目录只是被Git忽略的本机落点，不自动等于组织级灾备；运维必须把它纳入独立磁盘、对象存储或备份平台的访问控制、容量、保留和恢复制度。
 

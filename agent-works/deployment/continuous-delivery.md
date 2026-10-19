@@ -55,7 +55,7 @@ npm run release -- build
 
 入口拒绝未提交改动，并依次执行 `check`、`check:performance`、`check:security`、`check:e2e` 和 `build:release`。随后生成白名单 `source.tar`、`web-dist.tar.gz`、manifest、构建记录、目标端更新器及 `SHA256SUMS`，保存到 `.local/releases/<完整提交>/`。相同提交仅在全部摘要重新校验通过后复用；不存在跳过门禁开关。manifest 与源码同一提交，不把 `.local` 入库。
 
-经用户明确批准的单次风险例外可由 `MY_BILL_SECURITY_EXCEPTION_FILE` 指向私有JSON审批记录；字段为 `commit/target/host/dependency/id/approvedAt/expiresAt/reason`。记录绑定完整候选HEAD、精确依赖及公告和已获批实例，最长7天，无记录默认严格拦截；其他公告及后续提交不适用。构建记录保存 `securityStatus=accepted-candidate-risk` 和审批摘要，部署重新检查审批与目标，不能记为零漏洞通过。当前仅有[内网日志应用记录](cases/intranet-single-host/logging-management.md)中明确批准的公告白名单，不提供任意漏洞忽略能力。
+经用户明确批准的单次风险例外可由 `MY_BILL_SECURITY_EXCEPTION_FILE` 指向私有JSON审批记录；字段为 `commit/target/host/dependency/approvedAt/expiresAt/reason`，公告使用单个 `id` 或非空且不重复的 `ids` 数组（二者互斥）。记录绑定完整候选HEAD、精确依赖及公告和已获批实例，最长7天，无记录默认严格拦截；其他公告及后续提交不适用。构建记录保存 `securityStatus=accepted-candidate-risk` 和审批摘要，部署重新检查审批与目标，不能记为零漏洞通过。当前白名单仅含 `spring-webmvc:6.2.19` 的 `GHSA-pc63-qcmh-9cmg` 与 `GHSA-j9f9-w8pj-32f8`；历史授权见[内网日志应用记录](cases/intranet-single-host/logging-management.md)，每次候选仍须取得当前授权，不提供任意漏洞忽略能力。
 
 审批JSON仅在获批候选构建及部署期间临时保留，默认放系统临时目录并使用私有权限；全部相关操作结束或审批失效后清理，授权依据与发布结果保存在部署案例。日常安全检查生成的 `.local/security` 依赖清单属于可再生扫描输入，不作为过程文档归档。
 
@@ -73,7 +73,7 @@ npm run release -- build
 
 ## 单目标更新闭环
 
-`deploy` 在没有本提交制品时先自动执行完整 `build`，有制品时重新校验摘要。随后上传到目标的 `incoming/<提交>`，目标端依次完成：校验归档 → 独立释放目录 → Compose配置检查 → 保留旧镜像 → 构建 app/migrate/proxy → systemd维护前备份并核对本次完成时间 → 停止proxy/app → 执行migrate → 原子切换current → app健康 → proxy启动 → CA校验的HTTPS健康 → 记录版本、JAR/镜像ID、schema和配置摘要。不会执行首次部署的 provision、bootstrap、secret/TLS生成或数据库容器切换。应用与代理启动显式使用 `--no-deps`，数据库配置变更留给独立维护窗口；systemd状态读取解析 `Result=...` 属性，兼容不支持 `--value` 的旧版本。
+`deploy` 在没有本提交制品时先自动执行完整 `build`，有制品时重新校验摘要。部署入口在本地构建前只读检查发布根和 Docker 数据目录的可用空间，任一不足 2GiB 即停止；这是最低容量门槛，不保证所有候选的镜像构建/备份容量充足，不自动清理共享主机。随后上传到目标的 `incoming/<提交>`，目标端依次完成：校验归档 → 独立释放目录 → Compose配置检查 → 保留旧镜像 → 构建 app/migrate/proxy → systemd维护前备份并核对本次完成时间 → 停止proxy/app → 执行migrate → 私有备份运行env并将 MY_BILL_WEB_DIST 固定为发布根/current/web/dist → 原子切换current → app健康 → proxy启动 → 限时重试CA校验的HTTPS健康 → 核对HTTPS入口index.html及sw.js与候选摘要一致 → 记录版本、JAR/镜像ID、schema和配置摘要。历史固定前端挂载会随此次完整发布迁移为跟随current；候选Compose始终显式使用候选dist，后续运维重建也读取持久化路径。原env以0600保留在原路径的 `.before-<时间>-<提交>` 文件，不输出secret；迁移后的失败仍须人工判断回退边界。同提交复用也检查前端实际响应和成功部署记录，不能仅凭API健康返回成功。不会执行首次部署的 provision、bootstrap、secret/TLS生成或数据库容器切换。应用与代理启动显式使用 `--no-deps`，数据库配置变更留给独立维护窗口；systemd状态读取解析 `Result=...` 属性，兼容不支持 `--value` 的旧版本。
 
 这是维护窗口更新，不是零停机。每个目标独立完成后才进入下一个目标；因此同批目标可能短时间运行不同版本。`status` 是只读检查，不上传或修改文件。
 
@@ -93,6 +93,6 @@ npm run release -- build
 
 ## 发布日志保全
 
-候选增加独立 log-archive.sh 校验项及交付文件，执行器在解包前即可保存诊断。apply-release记录整个执行及原始退出码；旧app/proxy停止后、迁移前导出保留窗口快照，失败不进入迁移。重建后当前Docker日志仍由容量轮转管理；历史诊断从共享归档目录读取，权限、容量和查询见[统一运维入口](operations.md#发布快照与历史诊断)。Compose版本元数据来自该制品REVISION，日常start/restart不会把日志版本重置成unknown。
+候选增加独立 log-archive.sh 校验项及交付文件，执行器在解包前即可保存诊断。apply-release记录整个执行及原始退出码；旧app/proxy停止后、迁移前导出保留窗口快照，失败不进入迁移。若已停止的app/proxy使用json-file但Docker无法解码历史日志，更新器核对容器ID与LogPath后，只读保全日志尾部最多10MiB并标记raw fallback；不修剪Docker文件、不宣称结构化日志正常。运行中的数据库、未知日志驱动或无法保全的路径仍会阻止迁移。重建后当前Docker日志仍由容量轮转管理；历史诊断从共享归档目录读取，权限、容量和查询见[统一运维入口](operations.md#发布快照与历史诊断)。Compose版本元数据来自该制品REVISION，日常start/restart不会把日志版本重置成unknown。
 
 归档成功不替代发布健康/PWA/数据库验收；日志归档是快照而非连续7/30天历史。真实目标轮转、发布归档及故障处置需在部署时另行验收。

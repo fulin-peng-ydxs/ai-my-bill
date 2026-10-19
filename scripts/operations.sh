@@ -114,17 +114,41 @@ resolve_backup_date() {
 }
 
 pull_backup() {
-  local target="$1" requested="${2:-}" date destination root staging
+  local target="$1" requested="${2:-}" date destination root staging remote_checksum old_digest="" history
   date="$(resolve_backup_date "${target}" "${requested}")"
   load_target "${target}"; validate_local_connection_files; ssh_arguments; destination="${BILL_SSH_USER}@${BILL_HOST}"; root="$(local_backup_directory)"
   validate_local_storage_root "${root}"
   ensure_private_directory "${root}"; ensure_private_directory "${root}/daily"
-  if [[ -f "${root}/daily/${date}.cms" && -f "${root}/daily/${date}.sha256" ]]; then verify_backup "${target}" "${date}"; echo "复用已校验异机副本：${root}/daily/${date}.cms"; return; fi
-  [[ ! -e "${root}/daily/${date}.cms" && ! -e "${root}/daily/${date}.sha256" ]] || fail "本地副本不完整，拒绝覆盖：${root}/daily/${date}"
+  # 同日备份会被服务器刷新，不能仅凭本地文件自校验就视为最新副本。
+  remote_checksum="$(ssh "${SSH_ARGS[@]}" "${destination}" "cat /var/backups/my-bill/daily/${date}.sha256")"
+  [[ "${remote_checksum}" =~ ^[0-9a-f]{64}[[:space:]]+${date}\.cms$ ]] || fail "服务器备份校验文件格式不合法"
+  if [[ -f "${root}/daily/${date}.cms" && -f "${root}/daily/${date}.sha256" ]]; then
+    verify_backup "${target}" "${date}"
+    old_digest="$(LC_ALL=C shasum -a 256 "${root}/daily/${date}.cms" | awk '{print $1}')"
+    if [[ "${old_digest}" == "${remote_checksum:0:64}" ]]; then
+      echo "复用与服务器一致的已校验异机副本：${root}/daily/${date}.cms"
+      return
+    fi
+  else
+    [[ ! -e "${root}/daily/${date}.cms" && ! -e "${root}/daily/${date}.sha256" ]] || fail "本地副本不完整，拒绝覆盖：${root}/daily/${date}"
+  fi
   staging="$(mktemp -d "${root}/.pull-${date}.XXXXXX")"
   trap 'rm -rf -- "${staging:-}"' RETURN
   scp "${SCP_ARGS[@]}" "${destination}:/var/backups/my-bill/daily/${date}.cms" "${destination}:/var/backups/my-bill/daily/${date}.sha256" "${staging}/"
+  [[ "$(cat "${staging}/${date}.sha256")" == "${remote_checksum}" ]] || fail "拉取期间服务器备份已变化；保留本地旧副本，请重试"
   (cd "${staging}" && LC_ALL=C shasum -a 256 -c "${date}.sha256" >/dev/null)
+  if [[ -n "${old_digest}" ]]; then
+    history="${root}/history/${date}/${old_digest}"
+    ensure_private_directory "${root}/history"
+    ensure_private_directory "${root}/history/${date}"
+    ensure_private_directory "${history}"
+    if [[ -e "${history}/${date}.cms" || -e "${history}/${date}.sha256" ]]; then
+      cmp -s "${root}/daily/${date}.cms" "${history}/${date}.cms" && cmp -s "${root}/daily/${date}.sha256" "${history}/${date}.sha256" || fail "历史备份冲突，拒绝覆盖"
+    else
+      cp -p "${root}/daily/${date}.cms" "${root}/daily/${date}.sha256" "${history}/"
+    fi
+    echo "同日旧副本已保留：${history}"
+  fi
   mv "${staging}/${date}.cms" "${staging}/${date}.sha256" "${root}/daily/"
   rmdir "${staging}"; trap - RETURN
   echo "异机加密副本已校验：${root}/daily/${date}.cms"

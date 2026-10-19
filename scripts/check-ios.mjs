@@ -1,6 +1,7 @@
 import { spawn, execFile } from 'node:child_process'
-import { readFile, mkdir, writeFile, chmod } from 'node:fs/promises'
+import { readFile, mkdir, mkdtemp, writeFile, chmod } from 'node:fs/promises'
 import { resolve } from 'node:path'
+import { tmpdir } from 'node:os'
 import { promisify } from 'node:util'
 
 // 两个终端复用检查逻辑；模拟器 DOM 事件只证明结构与状态，原生操作须另验。
@@ -24,6 +25,7 @@ const runFile = promisify(execFile)
 let driver
 let sessionId
 let originalType
+let screenshotDir
 
 let parsedUrl
 try { parsedUrl = new URL(baseUrl) } catch { throw new Error('iOS 检查需要有效的本地 HTTP 地址及端口') }
@@ -150,7 +152,12 @@ async function restoreEntryType() {
 
 async function screenshot(name) {
   const image = await request('GET', `/session/${sessionId}/screenshot`)
-  const file = resolve(localDir, name)
+  if (!screenshotDir) {
+    const parent = resolve(tmpdir(), 'ai-agent/ai-my-bill')
+    await mkdir(parent, { recursive: true, mode: 0o700 })
+    screenshotDir = await mkdtemp(resolve(parent, useSimulator ? 'ios-simulator-' : 'ios-device-'))
+  }
+  const file = resolve(screenshotDir, name)
   await writeFile(file, Buffer.from(image, 'base64'), { mode: 0o600 })
   await chmod(file, 0o600)
   return file

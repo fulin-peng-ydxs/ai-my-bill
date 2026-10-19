@@ -103,19 +103,25 @@ let acceptedException = null
 if (process.env.MY_BILL_SECURITY_EXCEPTION_FILE) {
   const approval = JSON.parse(await readFile(process.env.MY_BILL_SECURITY_EXCEPTION_FILE, 'utf8'))
   const currentCommit = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim()
-  const allowedKeys = ['commit', 'target', 'host', 'dependency', 'id', 'approvedAt', 'expiresAt', 'reason']
-  if (Object.keys(approval).some(key => !allowedKeys.includes(key))
+  const allowedKeys = ['commit', 'target', 'host', 'dependency', 'id', 'ids', 'approvedAt', 'expiresAt', 'reason']
+  // Accept only the explicitly reviewed advisories; a list is not a generic ignore switch.
+  const approvedIds = approval.ids ?? (approval.id ? [approval.id] : [])
+  const allowedIds = new Set(['GHSA-pc63-qcmh-9cmg', 'GHSA-j9f9-w8pj-32f8'])
+  if ((approval.id !== undefined && approval.ids !== undefined)
+      || !Array.isArray(approvedIds) || approvedIds.length === 0
+      || new Set(approvedIds).size !== approvedIds.length
+      || approvedIds.some(id => !allowedIds.has(id))
+      || Object.keys(approval).some(key => !allowedKeys.includes(key))
       || approval.commit !== currentCommit
       || approval.target !== 'intranet-main' || approval.host !== '10.100.101.104'
       || approval.dependency !== 'Maven:org.springframework:spring-webmvc:6.2.19'
-      || approval.id !== 'GHSA-pc63-qcmh-9cmg'
       || typeof approval.reason !== 'string' || !approval.reason.trim()
       || !Number.isFinite(Date.parse(approval.approvedAt)) || !Number.isFinite(Date.parse(approval.expiresAt))
       || Date.parse(approval.approvedAt) > Date.now() || Date.parse(approval.expiresAt) <= Date.now()
       || Date.parse(approval.expiresAt) - Date.parse(approval.approvedAt) > 7 * 86400000) {
     throw new Error('security exception must match the approved intranet candidate, advisory and seven-day maximum validity')
   }
-  acceptedException = approval
+  acceptedException = { ...approval, ids: approvedIds }
 }
 
 const vulnerabilities = []
@@ -133,7 +139,7 @@ for (let offset = 0; offset < queries.length; offset += 500) {
     for (const vulnerability of result.vulns ?? []) {
       if (!vulnerability.withdrawn) {
         const dependency = labels[offset + index]
-        if (acceptedException?.dependency === dependency && acceptedException.id === vulnerability.id) {
+        if (acceptedException?.dependency === dependency && acceptedException.ids.includes(vulnerability.id)) {
           console.error(`ACCEPTED RISK: ${dependency} ${vulnerability.id} target=${acceptedException.target} commit=${acceptedException.commit}`)
         } else {
           vulnerabilities.push({ dependency, id: vulnerability.id })
