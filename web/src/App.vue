@@ -29,6 +29,10 @@ const hasPagePermission = computed(() => {
 </script>
 
 <template>
+  <div
+    class="pwa-status-bar-surface"
+    aria-hidden="true"
+  />
   <main
     v-if="isSessionInitializing"
     class="app-bootstrap-state"

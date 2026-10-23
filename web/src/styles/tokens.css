@@ -387,6 +387,21 @@ textarea:disabled {
   width: min(100%, 520px);
 }
 
+.pwa-status-bar-surface { display: none; }
+@media (display-mode: standalone) {
+  /* iOS 安装版按顶部固定实体背景采样状态栏，避免系统模糊向下覆盖页头。
+     独立于页面和弹层生命周期；仅覆盖安全区，不接收触摸或参与布局。 */
+  .pwa-status-bar-surface {
+    display: block;
+    position: fixed;
+    z-index: 10;
+    inset: 0 0 auto;
+    height: max(var(--space-sm), env(safe-area-inset-top, 0px));
+    background: var(--color-background);
+    pointer-events: none;
+  }
+}
+
 .app-shell {
   display: grid;
   grid-template-rows: minmax(0, 1fr) auto;

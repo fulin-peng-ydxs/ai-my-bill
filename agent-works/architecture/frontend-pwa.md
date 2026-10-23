@@ -96,6 +96,8 @@ flowchart LR
 
 主题首屏只恢复合法 `system/light/dark` 值，随后由 theme store 接管；登录后的服务端偏好为权威，本地仅回退。新增偏好要同步 Preference API 与 store，不能用额外 localStorage 取代跨设备保存。
 
+`App` 在会话与路由分支之外保留 `pwa-status-bar-surface` 实体背景；全局样式仅在 standalone 模式固定到顶部并消费主题 token，供 iOS 状态栏采样。它不随登录、页面缓存或弹层开关重建；覆盖范围与交互边界见 DESIGN §5.4。
+
 `web/build/themeAssets.ts` 在开发响应与生产构建时从 `styles/tokens.css` 生成首屏脚本的背景色、manifest 的安装底色及离线页的明暗色板。manifest 与离线页模板位于 `web/templates`，输出 URL 仍为 `/manifest.webmanifest` 与 `/offline.html`；离线页跟随系统主题，不读取个人偏好或账单缓存。修改主题颜色只维护 token 与 DESIGN，不复制静态色值。
 
 ## 缓存、构建与依赖
