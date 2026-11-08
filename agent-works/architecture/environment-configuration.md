@@ -4,7 +4,7 @@
 
 本文说明环境变量从哪里读取、如何进入进程、何时生效，以及密钥如何分发和轮换。开发使用 Shell 变量、可选的 `.local/dev.env` 与 application.yml，部署使用 Compose 配置和 secret 文件；用户偏好另存业务数据库，不属于基础设施配置。
 
-部署“目标描述”不是生产运行配置：`.local/deploy-targets/<目标>.env` 保存SSH连接、宿主/部署profile、软件源责任、路径、入口、TLS材料来源和本机凭据输出位置，由宿主准备、首次初始化与持续发布入口共用白名单解析且不进入Git；它指向目标机 `/etc/my-bill/production.env`，不会替代或复制其中的运行变量与secret。字段契约见 `deploy/targets/README.md`，宿主阶段见[宿主环境准备](../deployment/host-preparation.md)，首次初始化机制见[初始化自动化](../deployment/environment-bootstrap.md)。
+部署目标文件 `.local/deploy-targets/<目标>.env` 仅供运维端入口消费，不进入 Compose 或应用容器；它指向目标机 `/etc/my-bill/production.env`，不替代其中的运行变量与 secret。字段、解析格式和旧目标默认行为见[部署目标配置](../../deploy/targets/README.md)，宿主与初始化流程见[部署导航](../deployment/README.md)。
 
 ```mermaid
 flowchart TD
@@ -31,10 +31,6 @@ flowchart TD
 | Compose 插值 | docker compose | 当前 shell 同名变量可覆盖 --env-file；environment 只透传列出的字段，env 文件不是整体进入容器 |
 | /run/secrets/* | 启动脚本/认证属性 | 文件挂载；run-app 派生 SPRING_DATASOURCE_*，run-flyway 派生 FLYWAY_*，不输出值 |
 | user_preference、个人字典 | 业务服务 | 当前账号数据，不覆盖基础设施参数，不构成全局环境变量管理中心 |
-
-目标描述中的 `BILL_HOST_PROFILE`、`BILL_HOST_PACKAGE_SOURCE`、`BILL_HOST_TIMEZONE`、`BILL_HOST_FIREWALL_MODE` 只供构建端的环境入口和目标端宿主准备脚本消费，不进入Compose或应用容器。它们分别决定宿主是否允许变更、Docker包从哪里取得、timer使用的宿主时区以及防火墙责任边界；不应复制进 `production.env`。旧目标缺少这些字段时默认 `existing-linux/preconfigured/Asia/Shanghai/external`，保证升级入口后不会意外修改既有主机。
-
-`BILL_OFFSITE_BACKUP_DIRECTORY` 与 `BILL_OFFSITE_KEY_DIRECTORY` 也只存在于构建/运维端目标描述，分别定义加密归档和一次性解密材料的本地落点。二者必须是不同的安全绝对路径，不能取根目录或用户主目录；旧目标缺失时由 `ops` 使用仓库 `.local` 下的目标专属默认目录。路径本身不进入Compose，私钥正文也不进入目标文件。
 
 `web/vite.config.ts` 直接读取 process.env，不调用 loadEnv 加载根目录模板。`server.host` 与 `preview.host` 共用 `MY_BILL_WEB_HOST`，未设置或空值时回退 `0.0.0.0`；显式 Vite `--host` 优先于环境变量和配置默认值。总启动、前端启动器及直接运行 web 包均消费这一配置，不在各入口重复注入 host。前端没有自定义 VITE_* 密钥/连接配置；API 固定同源 /api/v1。MY_BILL_BUILD_ID 只决定构建缓存名，不能运行时通过服务器 env 改已构建资源。
 
@@ -95,7 +91,7 @@ flowchart TD
 
 ### iOS 复测配置
 
-`scripts/check-ios.sh` 解析项目 Node，调用共用的 `check-ios.mjs`。`npm run check:ios:simulator` 传入 `--simulator`，读取 `.local/simulator-test/config.json`；`npm run check:ios` 保持真机模式，读取 `.local/real-device-test/config.json`。二者均从 `.local/real-device-test/accounts.md` 读取测试密码，不从环境变量接收密码。操作、权限与证据边界见 [README 页面复测](../../README.md#页面复测方式与选择)。
+`scripts/check-ios.sh` 解析项目 Node，调用共用的 `check-ios.mjs`。`npm run check:ios:simulator` 传入 `--simulator`，读取 `.local/simulator-test/config.json`；`npm run check:ios` 保持真机模式，读取 `.local/real-device-test/config.json`。二者均从 `.local/real-device-test/accounts.md` 读取测试密码，不从环境变量接收密码。操作、权限与证据边界见 [页面复测](../testing/guide.md#页面复测方式与选择)。
 
 | 配置 | 加载与优先级 | 作用范围 |
 |---|---|---|
@@ -168,7 +164,7 @@ YAML 中未额外定义专名环境变量的固定属性包括会话 Cookie 名/
 
 secret 文件模式 0600；app/migrate 使用 UID/GID 10001，文件属主必须可供其读取。Compose 文件 secret 是绑定挂载，不能靠 uid/gid/mode 声明替代宿主权限。CA 私钥仅留签发端，TLS 叶私钥与备份解密私钥分离。
 
-数据库密码轮换必须同时更新数据库角色和相应文件，并按迁移/应用依赖重建容器；只替换文件可能令连接池后续重连失败。pepper 变更重建 app；叶证书更新需 Caddy reload；备份密钥轮换保留旧解密密钥到旧副本全部过期，不能简单覆盖。操作步骤见 [部署手册](../deployment/runbook.md) 和 [备份恢复](../deployment/backup-recovery.md)。
+数据库与 TLS 变更按[生效动作](#修改后需要做什么)处理；pepper 变更重建 app。备份密钥轮换保留旧解密密钥到旧副本全部过期，不能简单覆盖。操作步骤见[部署手册](../deployment/runbook.md)和[备份恢复](../deployment/backup-recovery.md)。
 
 | 现象 | 排查顺序 |
 |---|---|
@@ -179,11 +175,13 @@ secret 文件模式 0600；app/migrate 使用 UID/GID 10001，文件属主必须
 
 ## 验证边界
 
-配置验证分三层：静态检查变量是否被入口消费；在隔离环境测试实际生效与拒绝路径；在目标实例核验挂载/权限/启动结果。既有执行证据见验收记录与部署案例，不能用变量表存在代替轮换演练。备份脚本硬编码数据库/容器/路径，迁移到新模式时必须逐项核对，不能只换 env 就声称支持。
+配置验证分三层：静态检查变量消费、隔离环境测试生效与拒绝路径、目标实例核验挂载/权限/启动结果。检查选择见[开发验证规范](../testing/guide.md)，实例结果见[部署案例](../deployment/README.md#部署案例)，变量表不能代替轮换演练。备份脚本硬编码数据库/容器/路径，迁移到新模式时必须逐项核对，不能只换 env 就声称支持。
 
 ## 备份运行状态
 
 `MY_BILL_BACKUP_STATUS_FILE` 是应用进程内的文件路径，指向宿主原子发布并只读挂载的 `backup.properties`；默认空值表示未配置。内网覆盖文件固定为 `/run/my-bill-operations/backup.properties`，只在env模板添加同名键不会改写该固定值。内网 Compose 将 `/var/lib/my-bill/operations` 只读挂到 `/run/my-bill-operations`，只包含状态与时间，不包含归档、私钥或 Docker socket。生产者只写RUNNING/SUCCEEDED/FAILED及UTC时间，原子替换文件；状态目录需以root持有并允许应用只读访问。运行概况最多读4KiB；缺失/损坏返回 UNAVAILABLE，成功超过 26 小时或运行超过 1 小时返回 STALE，最近失败不得被历史成功覆盖。配置修改后重建 app 容器，状态文件更新无需重启。
+
+备份脚本将旧 `last-success` 的宿主偏移时间规范成 UTC，RUNNING/FAILED 仍携带最近成功时间。巡检允许最近成功未超过26小时、当前运行未超过一小时的 RUNNING；失败、过期或未来时间仍告警。
 
 ## 离线恢复工具配置
 
@@ -200,6 +198,8 @@ secret 文件模式 0600；app/migrate 使用 UID/GID 10001，文件属主必须
 ## 日志配置
 
 本地 PostgreSQL 新启动也由同一输出工具按 postgres.*.log 分片，复用既有数据库时不改变其输出位置；旧 .local/postgres.log 不清理。`dev:db start` 后台运行日志工具，`dev:db stop` 通过 pg_ctl 停止本项目集群。
+
+本地启动器使用 `umask 077`；同类服务在同一日志目录只允许一个启动器，避免多进程争用 application.log。启动失败或退出时回收本次子进程。launcher 包含 Maven 和应用控制台输出，用于应用尚未启动的诊断；启动器、Vite 与 PostgreSQL 输出在启动及写入时按下表的天数和容量清理。
 
 本地 `run-backend.sh` 启用 `local-logging` profile 并设置 `LOGGING_FILE_NAME`；总启动复用该入口。Logback 同时写终端与 application.log，按日期/大小归档；非本地入口只写控制台。生产 `prod` 使用 ECS 单行 JSON，仅写控制台，由 Docker 管理轮转。请求摘要只记录路由模板、方法、状态和耗时；MDC 关联 traceId，任务执行关联 jobId/jobType 并恢复原 MDC。异常输出只保留有限的类型/代码帧，不输出异常消息和 suppressed 内容；MyBatis使用NoLoggingImpl，业务包DEBUG也不会启用Mapper SQL/参数输出；业务代码仍不得把敏感值拼进日志消息。
 

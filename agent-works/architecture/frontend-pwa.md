@@ -4,7 +4,7 @@
 
 本文面向前端开发，解释 `web/src` 的路由、状态、资源生命周期、浏览器存储以及 PWA 构建与更新机制，当前实现以源码为准。
 
-界面布局、间距、对齐、滚动与图表交互、组件使用规则统一由 [DESIGN](../../DESIGN.md) 定义；本文只说明支撑这些行为的实现机制，不维护第二份设计规范。服务器认证与权限见[认证与租户隔离](auth-tenant.md)，业务计算见[后端与业务模块](backend-domains.md)，复测方法见 [README 页面复测](../../README.md#页面复测方式与选择)。
+界面契约见[DESIGN](../../DESIGN.md)，服务端权限见[认证与租户隔离](auth-tenant.md)，业务计算见[后端模块](backend-domains.md)，复测见[开发验证规范](../testing/guide.md)。
 
 ```mermaid
 flowchart LR
@@ -104,7 +104,7 @@ flowchart LR
 
 `sw.ts`、`pwa/cachePolicy.ts` 只缓存同源带内容哈希资源和无个人信息离线页；API、下载、个性化导航走网络，不提供离线记账。`MY_BILL_BUILD_ID` 生成静态缓存版本，发布须按提交设置。前端 API 固定同源 `/api/v1`，Vite 开发代理到本机后端；生产由 Caddy 分流。环境装配见 [配置架构](environment-configuration.md)。
 
-前端 build 产物为 `web/dist`，包含 `sw.js`；生产入口见[部署架构](../deployment/architecture.md)。接口类型由 OpenAPI 生成至 `api/generated/schema.ts`。页面登记连接路由、权限、导航与登记测试；设计契约与页面维护矩阵见 DESIGN，接口维护约束见 [AGENTS](../../AGENTS.md#工程与业务硬约束)。
+前端 build 产物为 `web/dist`，包含 `sw.js`；生产入口见[部署架构](../deployment/architecture.md)。接口类型由 OpenAPI 生成至 `api/generated/schema.ts`。页面登记连接路由、权限、导航与登记测试；设计契约见 DESIGN，页面维护矩阵见开发验证规范，接口维护约束见 [AGENTS](../../AGENTS.md#工程与业务硬约束)。
 
 ## 安装资产与更新机制
 
@@ -114,6 +114,4 @@ manifest 的 display 为 standalone，start_url 为 `/entry`；普通用户和�
 
 ## 验证与限制
 
-`npm --prefix web run check` 覆盖 typecheck、lint、Vitest、OpenAPI 漂移和构建；位于 stores/router/domain/pwa 的测试用于行为边界。命令也由根 `npm run check` 调用。工程检查不能证明目标设备上的安装、系统信任与独立窗口行为。
-
-页面复测的方式、数据环境、执行路径和证据边界统一维护于 [README 页面复测](../../README.md#页面复测方式与选择)，模拟器默认复测、真机触发及发布验收条件见 [AGENTS](../../AGENTS.md#页面改动的复测选择)。具体环境证据见[部署案例](../deployment/cases/README.md)，历史环境验收不能替代当前候选版本的验证。
+stores/router/domain/pwa 的测试覆盖状态、路由、业务计算和缓存边界；页面登记契约测试检查 DESIGN 与路由双向一致。前端工程检查、原生操作及安装版验证按[开发验证规范](../testing/guide.md)，具体环境证据见[部署案例](../deployment/README.md#部署案例)。

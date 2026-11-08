@@ -4,18 +4,11 @@
 
 本流程从“运维已取得一台可通过严格主机密钥校验、可使用 root 登录的 Linux 服务器”开始，负责安装或核对项目运行所需的宿主组件。它不安装操作系统镜像，不创建云主机、VM、网卡、安全组、DNS或公网地址，也不接管组织的软件源、补丁和防火墙制度。
 
-宿主准备完成只表示 Linux、systemd、Python、Docker和Compose等基础条件满足；应用仍需继续执行[首次环境初始化](environment-bootstrap.md)。真实机器是否执行成功只记录在[部署案例](cases/README.md)，不能因脚本存在而视为已安装。
+宿主准备完成只表示 Linux、systemd、Python、Docker和Compose等基础条件满足；应用仍需继续执行[首次环境初始化](environment-bootstrap.md)。真实机器是否执行成功只记录在[部署案例](README.md#部署案例)，不能因脚本存在而视为已安装。
 
 ## 抽象与具体配置
 
-| 层次 | 位置 | 职责 |
-|---|---|---|
-| 通用执行器 | `deploy/scripts/prepare-host.sh` | 识别系统、形成计划、安装缺失组件、验证结果 |
-| 宿主profile | `deploy/host-profiles/*.env` | 定义是否允许修改及Docker/Compose最低版本 |
-| 具体目标 | `.local/deploy-targets/<目标>.env` | 选择profile、软件源模式、SSH、IP和端口，不进入Git |
-| 事实案例 | `deployment/cases/*.md` | 记录实际系统版本、执行结果、例外和遗留问题 |
-
-`managed-linux` 用于新建或项目专用主机，允许安装缺失组件、启用Docker和设置时区；`existing-linux` 用于共享、既有或例外主机，只检查、不安装、不启动服务。已有目标文件未声明宿主profile时默认按 `existing-linux` 处理，防止升级后意外修改旧主机。
+`deploy/scripts/prepare-host.sh` 按 `deploy/host-profiles/*.env` 识别系统、生成计划、安装缺失组件并验证；机器取值保存在[部署目标配置](../../deploy/targets/README.md)，默认行为与字段契约以该处为准。`managed-linux` 用于项目专用主机，可安装缺失组件、启用 Docker 和设置时区；`existing-linux` 用于共享、既有或例外主机，只检查、不安装、不启动服务。
 
 ## 支持范围
 

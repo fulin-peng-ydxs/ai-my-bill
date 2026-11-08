@@ -2,7 +2,7 @@
 
 ## 范围与安全链
 
-覆盖 auth、安全过滤器和租户事务；面向接口与持久化开发。2026-09-28 静态核对。这里说明应用机制，真实部署验证见案例。
+覆盖 auth、安全过滤器和租户事务；面向接口与持久化开发，说明从身份到数据库行权限的执行链。
 
 ```mermaid
 flowchart LR
@@ -56,7 +56,7 @@ InitialAdminBootstrap 只在独立 bootstrap profile 下运行，锁账号表并
 
 ## 验证与限制
 
-AuthHttpIntegrationTest、AdminUserHttpIntegrationTest、PostgresSchemaIntegrationTest、DeploymentBoundaryTest、InitialAdminBootstrapTest 分别覆盖认证、账号管理、RLS、生产配置边界和初始化；真实数据库运行入口为 `npm run check:database`，初始化入口为 `bash scripts/test-initial-admin.sh`（先构建 JAR）。初始化测试使用一次性数据库，不连接业务库；实际运行结果记录于验收材料和案例。
+AuthHttpIntegrationTest、AdminUserHttpIntegrationTest、PostgresSchemaIntegrationTest、DeploymentBoundaryTest、InitialAdminBootstrapTest 分别覆盖认证、账号管理、RLS、生产配置边界和初始化；执行条件与命令见[开发验证规范](../testing/guide.md#专项入口)，目标环境另按部署手册核验。
 
 | 类型 | 证据状态 | 限制与处理 |
 |---|---|---|

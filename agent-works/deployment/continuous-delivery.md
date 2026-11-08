@@ -20,12 +20,7 @@ flowchart LR
 
 push 与 pull_request 触发 ubuntu-latest 作业，checkout 全历史用于 secret 扫描，Node 按 .nvmrc、Java21，安装 PostgreSQL16 与隔离 Chromium。依次 npm --prefix web ci、npm run check、check:performance、check:security、check:e2e。
 
-| 关卡 | 覆盖 | 不覆盖 |
-|---|---|---|
-| check | 前端类型/lint/unit/OpenAPI漂移/build、Maven verify、临时PG HTTP/schema/RLS | 生产容器、手机 |
-| check:performance | 代表性数据量的查询、导出、清理 | 目标主机并发容量 |
-| check:security | 工作区/Git历史高置信secret、npm/Maven依赖OSV | 容器OS包和宿主漏洞 |
-| check:e2e | 受控临时库及独立 Chromium 关键路径 | 手机系统安装/CA信任、全部视觉状态 |
+各检查的覆盖与未覆盖项见[工程检查](../testing/guide.md#工程检查)；目标容器、宿主、手机及真实恢复仍由部署验收核对。
 
 CI YAML 存在只证明配置，不等于某次远端作业成功。每次发布保存对应提交的实际执行结果。
 
@@ -41,9 +36,7 @@ npm run release -- deploy --all
 npm run release -- status intranet-main
 ```
 
-`scripts/release.sh` 是持续更新操作入口。`deploy/scripts/apply-release.sh` 是随候选上传的目标端更新器。它与[首次环境初始化入口](environment-bootstrap.md)共用目标字段解析器，但生命周期互不替代；具体实例写入被Git忽略的 `.local/deploy-targets/<目标>.env`。`--all` 从同目录 `targets.list` 读取顺序，串行执行，首个失败即停止。解析器只接受白名单字段和字面 `KEY=value`，不会 `source` 配置，也不会把运行secret输出到计划或日志。
-
-持续更新只消费目标配置中的SSH身份/known_hosts、发布根、服务器环境文件、CA公钥、HTTPS健康地址、备份service/状态文件和Compose覆盖文件。首次初始化还消费绑定地址、允许网段及本机TLS材料来源路径；密码和生产变量不进入目标文件，叶私钥正文只在受控本机文件和目标机存在，CA私钥不上传。仓库示例不是可直接部署的真实实例。
+`scripts/release.sh` 调用随候选上传的 `deploy/scripts/apply-release.sh`。目标文件、严格字面解析、秘密边界与 `--all` 顺序统一见[部署目标配置](../../deploy/targets/README.md)，计划和日志不输出运行 secret。持续更新消费 SSH/known_hosts、发布根、服务器环境文件、CA 公钥、HTTPS 健康地址、备份 service/状态文件和 Compose 覆盖；绑定地址、允许网段与本机 TLS 来源由[首次初始化](environment-bootstrap.md)消费，两个入口不互相替代。
 
 ## 发布候选构建
 
@@ -55,7 +48,7 @@ npm run release -- build
 
 入口拒绝未提交改动，并依次执行 `check`、`check:performance`、`check:security`、`check:e2e` 和 `build:release`。随后生成白名单 `source.tar`、`web-dist.tar.gz`、manifest、构建记录、目标端更新器及 `SHA256SUMS`，保存到 `.local/releases/<完整提交>/`。相同提交仅在全部摘要重新校验通过后复用；不存在跳过门禁开关。manifest 与源码同一提交，不把 `.local` 入库。
 
-经用户明确批准的单次风险例外可由 `MY_BILL_SECURITY_EXCEPTION_FILE` 指向私有JSON审批记录；字段为 `commit/target/host/dependency/approvedAt/expiresAt/reason`，公告使用单个 `id` 或非空且不重复的 `ids` 数组（二者互斥）。记录绑定完整候选HEAD、精确依赖及公告和已获批实例，最长7天，无记录默认严格拦截；其他公告及后续提交不适用。构建记录保存 `securityStatus=accepted-candidate-risk` 和审批摘要，部署重新检查审批与目标，不能记为零漏洞通过。当前白名单仅含 `spring-webmvc:6.2.19` 的 `GHSA-pc63-qcmh-9cmg` 与 `GHSA-j9f9-w8pj-32f8`；历史授权见[内网日志应用记录](cases/intranet-single-host/logging-management.md)，每次候选仍须取得当前授权，不提供任意漏洞忽略能力。
+经用户明确批准的单次风险例外可由 `MY_BILL_SECURITY_EXCEPTION_FILE` 指向私有JSON审批记录；字段为 `commit/target/host/dependency/approvedAt/expiresAt/reason`，公告使用单个 `id` 或非空且不重复的 `ids` 数组（二者互斥）。记录绑定完整候选HEAD、精确依赖及公告和已获批实例，最长7天，无记录默认严格拦截；其他公告及后续提交不适用。构建记录保存 `securityStatus=accepted-candidate-risk` 和审批摘要，部署重新检查审批与目标，不能记为零漏洞通过。当前白名单仅含 `spring-webmvc:6.2.19` 的 `GHSA-pc63-qcmh-9cmg` 与 `GHSA-j9f9-w8pj-32f8`；每次候选仍须取得对应授权，不提供任意漏洞忽略能力。
 
 审批JSON仅在获批候选构建及部署期间临时保留，默认放系统临时目录并使用私有权限；全部相关操作结束或审批失效后清理，授权依据与发布结果保存在部署案例。日常安全检查生成的 `.local/security` 依赖清单属于可再生扫描输入，不作为过程文档归档。
 
@@ -79,11 +72,11 @@ npm run release -- build
 
 ## 发布职责与失败处理
 
-开发负责候选、契约/迁移兼容性、测试与摘要；运维负责主机、秘密、入口、备份和实例执行；验收负责真实 HTTPS、角色/租户、PWA、恢复与告警。没有完整证据不得把计划状态更新为完成。
+开发负责候选、契约/迁移兼容性、测试与摘要；运维负责主机、秘密、入口、备份和实例执行；验收负责真实 HTTPS、角色/租户、PWA、恢复与告警。按候选记录实际通过与未验证范围。
 
 失败按最早关卡停止：检查失败不出候选；校验失败不解包；备份失败不停服务；迁移失败不启动新 app；健康失败不放入口。停止服务后但迁移尚未开始的失败会尝试恢复旧 app/proxy；迁移一旦尝试，不自动回切应用或数据库，保持入口状态并按 schema 兼容性、错误证据和恢复手册人工判断。不要通过跳过测试、关闭TLS/CSRF/RLS或删除数据库“修复发布”。
 
-验证记录必须区分本地检查、远端CI、镜像扫描和部署验收，并关联同一候选。历史命令结果见[验收记录](../initial-development/pre-release-test-report.md)，目标环境结果见[案例](cases/README.md)；没有执行的关卡保持未验证。
+验证记录必须区分本地检查、远端CI、镜像扫描和部署验收，并关联同一候选。工程检查口径见[开发验证规范](../testing/guide.md)，目标环境结果见[案例](README.md#部署案例)；没有执行的关卡保持未验证。
 
 系统包补丁通过重新构建镜像落地，但容器 OS 包扫描与风险审批仍是独立安全门禁：`check:security` 只覆盖依赖与secret，不应被描述为容器扫描。常规持续更新构建 app/migrate/proxy，不替换数据库镜像；数据库补丁发布仍按专项流程构建 `db app migrate proxy`、执行OS复扫、隔离恢复和备份，并保留旧镜像及同一数据库卷。不能在运行容器内临时 apt upgrade，也不能仅凭构建成功宣称漏洞已清零；禁止 `down -v`。
 

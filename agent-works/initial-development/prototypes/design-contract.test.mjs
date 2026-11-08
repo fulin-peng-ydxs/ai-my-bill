@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
-import { css, htmlFiles, readProjectFile, readPrototype } from "./contract-test.helpers.mjs";
+import { css, htmlFiles, readPrototype } from "./contract-test.helpers.mjs";
 
-const design = readProjectFile("DESIGN.md");
+// 归档检查以本目录的原型契约为基线，不随当前 DESIGN.md 的文案或组件登记变化。
 const expenseEntry = readPrototype("expense-entry.html");
 const billDetails = readPrototype("bill-details.html");
 const reports = readPrototype("reports.html");
@@ -79,15 +79,6 @@ for (const theme of [lightThemeCss, darkThemeCss]) {
 assert(!/gradient\s*\(/i.test(css), "工具型页面不得使用装饰性渐变");
 assert(!/font-weight:\s*500\b/.test(css), "不得使用不稳定的 500 字重");
 
-for (const fragment of ["fontSize: 17px", "收入强调色 `#FF3B30`", "支出强调色 `#34C759`", "44×44px", "WCAG AA"]) {
-  assert(design.includes(fragment), `DESIGN.md 缺少稳定契约：${fragment}`);
-}
-assert(design.includes('business-contract.test.mjs'), 'DESIGN.md 必须登记业务闭环契约测试');
-
-assert(design.includes("`FormSection`"), "DESIGN.md 必须登记长表单分组组件");
-for (const component of ["`GlobalLedgerSearch`", "`AppliedFilterBar`", "`SegmentedControl`", "`SettingsDisclosureList`", "`DailyEntryPicker`", "`LedgerContextActions`", "`IncrementalLedgerList`"]) {
-  assert(design.includes(component), `DESIGN.md 必须登记交互层级组件：${component}`);
-}
 assert(css.includes(".form-section + .form-section"), "长表单分组必须共享留白与分隔线样式");
 assert(css.includes(".segmented-control"), "少量互斥视图必须共享分段控件样式");
 assert(css.includes(".setting-row.disclosure::after"), "设置入口必须共享披露指示样式");
@@ -138,7 +129,6 @@ assert.equal((billDetails.match(/data-type-tag/g) ?? []).length, 7, "所有静�
 assert(prototypeJs.includes('list.dataset.typeScope = filters.type'), "明细类型标签必须消费当前已应用页签");
 assert(/\[data-type-scope="expense"\][\s\S]*?\[data-type-scope="income"\][\s\S]*?\[data-type-tag\]\s*\{\s*display:\s*none;/s.test(css), "支出和收入单一页签必须隐藏重复类型标签");
 assert(/\.item-title \[data-type-tag\]\s*\{[^}]*border:\s*1px solid var\(--border-strong\)[^}]*background:\s*var\(--surface-2\)/s.test(css), "其他明细页签的类型必须使用统一描边标签");
-assert(design.includes("LedgerContextActions"), "DESIGN 必须登记账单上下文共享动作");
 assert(!css.includes(".balance-summary .balance-total { grid-column"), "结余卡片不得固定跨列并制造空位");
 assert(prototypeJs.includes("normalizeDailyTemplateKey") && prototypeJs.includes("normalize('NFKC')"), "日常模板必须复用名称规范化规则");
 assert(prototypeJs.includes("createDailyTemplateFromSourceRow") && prototypeJs.includes("upsertDailyTemplate"), "从明细加入日常必须复用模板领域逻辑");

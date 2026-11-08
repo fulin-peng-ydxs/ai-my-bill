@@ -2,7 +2,7 @@
 
 ## 范围与事实源
 
-面向数据库与后端开发，覆盖 PostgreSQL、MyBatis XML、Flyway 和数据库角色。2026-09-28 按 db/migration、deploy/postgres 和配置核对，预期版本 `012`。表结构以迁移文件为准，不从实体猜表，也不维护第二份可执行 DDL。
+面向数据库与后端开发，覆盖 PostgreSQL、MyBatis XML、Flyway 和数据库角色。当前 db/migration、deploy/postgres 和应用配置的预期版本为 `012`。表结构以迁移文件为准，不从实体猜表，也不维护第二份可执行 DDL。
 
 | 数据组 | 代表表 | 所有权与消费者 |
 |---|---|---|
@@ -15,7 +15,15 @@
 
 ## SQL 分层与角色
 
-运行期 SQL 只能位于 `server/src/main/resources/mapper/**/*.xml`，Java 使用 Mapper 方法；MybatisOperations 封装公共行读取，不开放 Spring JDBC/JPA。数据库结构及授权 SQL 分别位于 `db/migration` 与 `deploy/postgres/001_roles.sql`，不混入运行 Mapper。
+| 源码/数据 | 执行者与用途 |
+|---|---|
+| `server/src/main/resources/mapper/**/*.xml` | MyBatis 运行 SQL，Java 通过 Mapper 调用；MybatisOperations 封装公共行读取，不开放 Spring JDBC/JPA |
+| `server/src/main/resources/db/migration/V*.sql` | Flyway 按版本改变表、索引、约束与 RLS；不是每次请求执行的 SQL |
+| `deploy/postgres/001_roles.sql` | provision 收敛数据库角色及授权，不混入运行 Mapper |
+| `server/src/main/resources/db/rollback/U*.sql` | 受控测试/评估材料，不自动生产降级；删表/字段须独立决策和备份 |
+| PostgreSQL 数据卷 | 实际账目；容器可重建，删卷后迁移只能恢复结构及明确的 seed，不能恢复业务数据 |
+
+修改查询通常不新增迁移；新增字段或索引需要新版本迁移。
 
 | 角色 | 用途 | 生命周期/禁止事项 |
 |---|---|---|
@@ -30,22 +38,15 @@ V007 对租户表 FORCE ROW LEVEL SECURITY；V010 增加商品合并表策略。
 
 空库 → 角色 provision 收敛权限 → Flyway V001–V012 按序校验/执行 → 退出迁移进程 → prod SchemaVersionGuard 只读确认 `012` → app 接受流量。开发默认内嵌 Flyway 使用独立迁移账号，生产 application-prod.yml 关闭内嵌 Flyway。
 
-新增 schema 变更增加新的 V 文件并同步 expected-version、Mapper/实体/契约和集成测试，已部署迁移不得修改校验和。`db/rollback/U*.sql` 是受控测试/评估材料，不能当成生产自动降级。`deploy/postgres/rollback` 的删角色脚本只适用于确认无对象与会话的空环境；生产优先 forward-fix。
+新增 schema 版本同步 expected-version、Mapper/实体/契约和集成测试，已部署迁移不得修改校验和。`deploy/postgres/rollback` 的删角色脚本只适用于确认无对象与会话的空环境；生产优先 forward-fix。
 
 失败时先记录 Flyway 版本/校验错误、比对源码和实际 schema；不直接 repair 或删历史记录绕过。旧开发库与当前 V012 校验和存在差异时可另建验证空库，保留原库后单独分析，不能为启动演示清空用户数据。
-
-## 迁移文件、运行SQL和数据文件的区别
-
-- `db/migration/V*.sql`描述数据库结构随版本如何变化。例如增加表、索引、约束或RLS策略，由Flyway执行并记录已执行版本。它们不是每次业务请求运行的SQL。
-- `mapper/**/*.xml`是业务运行语句，例如保存支出或聚合报表，通过MyBatis方法参数执行。修改查询通常不需要新的迁移；新增索引/字段则需要。
-- `db/rollback/U*.sql`用于评估或受控测试回退，不由当前生产应用自动执行。删字段/删表可能丢数据，需要独立决策和备份。
-- PostgreSQL卷中的文件是真实数据，与上述SQL源码不同。删除数据库容器但保留卷可以重建连接；删除卷不能靠“重新执行迁移”恢复账目，迁移只恢复结构及其明确包含的初始化内容。
 
 数据库事务保证一组修改同时成功或回滚；RLS上下文必须在该事务内设置才不会在连接池中跨请求残留。文件系统不属于数据库事务，所以导出/注销要额外采用临时文件、原子移动与补偿；不能仅加@Transactional就认为文件和数据库同时回滚。
 
 ## seed 与恢复演练数据
 
-生产默认项由 `V006__confirmed_default_seed.sql` 按稳定键幂等写入；不把原型演示字典或恢复样本作为生产 seed。本阶段未新增 migration，schema仍为012，角色/RLS授权没有因恢复演练扩权。
+生产默认项由 `V006__confirmed_default_seed.sql` 按稳定键幂等写入；不把原型演示字典或恢复样本作为生产 seed。恢复演练不扩展生产角色或 RLS 授权。
 
 `server/src/test/resources/recovery/recovery-business-fixture.sql` 是三租户、各10000条支出和导出任务的合成样本，仅由隔离演练消费。它要求专用库名、空账目和显式会话确认，公开测试密码不得用于真实账号；退出销毁临时库，不提供生产执行或回滚入口。
 
@@ -53,7 +54,7 @@ V007 对租户表 FORCE ROW LEVEL SECURITY；V010 增加商品合并表策略。
 
 V005 等迁移维护查询和生命周期索引；列表限制分页，导出用游标，清理分批。修改 JOIN/过滤/排序要检查同租户谓词、索引计划及锁范围。数据库变更影响业务、任务和恢复，不能只验证 Java 编译。
 
-`npm run check:database` 在 mktemp 一次性集群先跑 HTTP 集成，再重建 schema 跑迁移/RLS/任务/回滚；不连接开发库，不依赖 Docker/Testcontainers。`check:performance` 使用同类隔离集群，规模和历史结果见 [性能验收](../initial-development/performance-test.md)。
+数据库验证在一次性集群先跑 HTTP 集成，再重建 schema 跑迁移/RLS/任务/回滚，不依赖 Docker/Testcontainers；命令与当前性能样本见[开发验证规范](../testing/guide.md)。
 
 ## 风险与恢复边界
 

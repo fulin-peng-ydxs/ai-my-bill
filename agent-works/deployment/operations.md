@@ -4,12 +4,7 @@
 
 `npm run ops -- ...` 面向已经完成首次初始化的目标，封装日常状态、健康、启停、日志、备份、异机复制、密钥托管和隔离恢复演练。它不替代 `environment` 的宿主/首次建设，也不替代 `release` 的代码与schema更新。
 
-| 层次 | 位置 | 内容 |
-|---|---|---|
-| 通用入口 | `scripts/operations.sh` | 目标解析、确认、SSH、异机复制与本地校验 |
-| 目标执行器 | `deploy/scripts/operate-service.sh` | Compose、systemd、HTTPS和隔离恢复动作 |
-| 具体目标 | `.local/deploy-targets/<目标>.env` | 主机、路径、CA、备份服务及异机落点 |
-| 实例证据 | `deployment/cases/*.md` | 实际执行时间、归档日期、结果与遗留风险 |
+`scripts/operations.sh` 负责目标解析、确认、SSH、异机复制与本地校验；`deploy/scripts/operate-service.sh` 执行目标端 Compose、systemd、HTTPS 和隔离恢复动作。机器取值见[部署目标配置](../../deploy/targets/README.md)，结果见[部署案例](README.md#部署案例)。
 
 目标执行器的只读动作以完整 `bash -c` 传输，避免 Docker Compose 消费SSH标准输入；会改变服务或启动演练的动作先上传到目标 `/tmp`，执行后无论成功失败均尝试清理。所有SSH连接沿用严格 `known_hosts` 和批处理认证。
 
@@ -37,9 +32,9 @@ npm run ops -- logs-export intranet-main --service app --since 2h
 
 服务可选 `app/proxy/db/provision/migrate/bootstrap-admin/system`；跟随只支持一个目标的一个服务，Ctrl+C 仅退出查询；follow使用SSH远端PTY绑定查询生命周期，连接退出会结束远端查看进程。traceId 仅按所查询输出匹配，未找到会提示可能超过保留窗口，不意味着请求不存在。一次性 `--rm` 容器删除后不能通过当前日志查询恢复；它们的过程输出须在发布/初始化流程保存。
 
-`logs-export` 默认每服务最多 10000 行，gzip 保存到本机 `.local/logs/operations/<目标>/diagnostic.*.log.gz`，目录 0700、文件 0600；失败删除本次临时文件。归档保留期/容量沿用目标 BILL_LOG_ARCHIVE_DAYS/TOTAL_MB（默认14天/500MB），启动导出前后清理；活动导出限制100MB。导出是当前保留窗口的诊断材料，不是连续历史档案；仅运维人员持有和分享。
+`logs-export` 默认每服务最多 10000 行，gzip 保存到本机 `.local/logs/operations/<目标>/diagnostic.*.log.gz`，目录 0700、文件 0600；失败删除本次临时文件。保留期/容量沿用[日志配置](../architecture/environment-configuration.md#日志配置)中的 BILL_LOG_ARCHIVE_DAYS/TOTAL_MB，导出前后清理，活动导出限制100MB。导出只含当前保留窗口的诊断材料，仅运维人员持有和分享。
 
-Java 生产日志为 ECS JSON，含版本及服务信息；请求摘要使用路由模板，异常消息与 suppressed 内容不输出。Caddy 访问日志写 stdout，经 JSON 过滤去掉 URI（含查询）、请求/响应头、客户端IP 和 TLS 客户端信息，保留方法、状态、耗时及服务端 traceId；健康访问跳过。浏览器 Console 没有远程采集。
+Java 日志格式、脱敏及采集边界见日志配置。Caddy 访问日志写 stdout，经 JSON 过滤去掉 URI（含查询）、请求/响应头、客户端 IP 和 TLS 客户端信息，保留方法、状态、耗时及服务端 traceId；健康访问跳过。
 
 ## 发布快照与历史诊断
 
@@ -69,7 +64,7 @@ npm run ops -- backup-key-status intranet-main
 
 `backup` 先触发目标systemd备份服务并要求状态为 `SUCCEEDED`，随后自动拉取最新的CMS加密日归档和服务器生成的SHA-256文件；本地在临时目录重新校验后才移入目标专属目录。指定历史日期可执行 `backup-pull <目标> YYYY-MM-DD`。同名完整副本先与服务器最新摘要比较，一致才复核复用；同日服务器归档更新时，先下载并校验新副本，再把旧副本保留到 `history/<日期>/<旧SHA256>/` 后更新daily。不完整或历史冲突文件拒绝覆盖；拉取期间服务器摘要变化会停止并保留旧副本，也不自动删除异机历史副本。
 
-异机目录由目标字段 `BILL_OFFSITE_BACKUP_DIRECTORY` 指定；旧目标留空时默认 `.local/offsite-backups/<目标>`。默认目录只是被Git忽略的本机落点，不自动等于组织级灾备；运维必须把它纳入独立磁盘、对象存储或备份平台的访问控制、容量、保留和恢复制度。
+异机落点由 `BILL_OFFSITE_BACKUP_DIRECTORY` 指定，默认值和路径限制见部署目标配置。运维须将该落点纳入独立磁盘、对象存储或备份平台的访问控制、容量、保留和恢复制度，本机默认目录不自动等于组织级灾备。
 
 加密归档在整机丢失后只有配套私钥可用。`backup-key-status` 只检查服务器私钥权限并输出公钥证书指纹。首次环境建立后由获授权运维显式执行：
 
@@ -77,7 +72,7 @@ npm run ops -- backup-key-status intranet-main
 npm run ops -- backup-key-pull intranet-main
 ```
 
-该动作通过已校验SSH一次性复制证书和解密私钥到 `BILL_OFFSITE_KEY_DIRECTORY`（旧目标默认 `.local/backup-keys/<目标>`），校验公私钥匹配、权限设为0600，并拒绝覆盖既有目录。这个目录是转存暂存点，不应与唯一归档副本共址；应继续进入组织密钥库或离线保管介质，登记指纹和恢复责任人。脚本不会上传密钥到第三方服务，也不会把密钥写入Git、日志或目标配置正文。
+该动作通过已校验 SSH 一次性复制证书和解密私钥到 `BILL_OFFSITE_KEY_DIRECTORY`，校验匹配、设为0600并拒绝覆盖既有目录。此处是转存暂存点，须与唯一归档副本分开，继续进入组织密钥库或离线介质，登记指纹和恢复责任人；脚本不向第三方上传密钥，也不写入 Git、日志或目标配置正文。
 
 在全新替代主机需要使用托管材料时，可执行 `backup-key-restore <目标>`。入口先在本地复核公私钥匹配，并用最新已校验异机归档完成一次流式解密/目录校验，再经严格SSH上传；只有目标 `/etc/my-bill/backup-encryption.key/.crt` 均不存在时才安装，绝不轮换或覆盖已有恢复密钥。该动作需要显式确认，执行后用 `backup-key-status` 对照原登记指纹。
 
@@ -88,7 +83,7 @@ npm run ops -- recovery-drill intranet-main 2026-10-02
 npm run ops -- offsite-recovery-drill intranet-main 2026-10-02
 ```
 
-该动作调用现有 `verify-backup-restore.sh`，在无宿主端口、无网络的临时 PostgreSQL 中验证checksum、解密、导入和重新导出；只清理本轮临时资源，不连接生产数据库。它需要服务器仍可访问归档和解密私钥，因此不能替代“用异机归档+托管私钥重建新主机”的灾难恢复演练。
+`recovery-drill` 要求服务器归档和解密私钥仍可用，调用 `verify-backup-restore.sh` 在无网络、无宿主端口的临时 PG 验证，不连接生产库，仅清理本轮资源。覆盖和资源上限见[隔离恢复验证](backup-recovery.md#隔离恢复验证能证明什么)；该动作不证明整机丢失后的新主机重建。
 
 `offsite-recovery-drill` 从 `BILL_OFFSITE_BACKUP_DIRECTORY` 重新校验指定归档，上传到目标专用0700暂存目录，使用目标已恢复/已存在的解密材料执行同一隔离恢复，随后清理暂存文件。它覆盖“服务器本地副本不可依赖、从异机副本重新进入恢复链路”的关键一段；仍不恢复线上导出卷、不切换生产入口。
 

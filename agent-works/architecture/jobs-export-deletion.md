@@ -2,7 +2,7 @@
 
 ## 范围与组成
 
-面向后端与运维，覆盖 job、ledger 导出/清理和 account 注销；2026-09-28 静态核对。任务协调在单体内运行，数据库是执行状态事实源，文件位于独立导出目录。
+面向后端与运维，覆盖 job、ledger 导出/清理和 account 注销。任务协调在单体内运行，数据库是执行状态事实源，文件位于独立导出目录。
 
 ```mermaid
 flowchart LR
@@ -64,10 +64,10 @@ ExpiredLedgerPurgeJob 按租户与到期分钟合并调度，每批最多 100 �
 
 ## 验证与风险
 
-JobCoordinatorTest、PersonalExportJobTest、ExportFileStoreTest、ExportHttpIntegrationTest、AccountDeletionHttpIntegrationTest 和 PostgresSchemaIntegrationTest 覆盖协调、文件、HTTP、补偿与 RLS；由 check:server/check:database 按类型执行。性能数据见 [性能记录](../initial-development/performance-test.md)。
+JobCoordinatorTest、PersonalExportJobTest、ExportFileStoreTest、ExportHttpIntegrationTest、AccountDeletionHttpIntegrationTest 和 PostgresSchemaIntegrationTest 覆盖协调、文件、HTTP、补偿与 RLS；检查选择与恢复、性能入口见[开发验证规范](../testing/guide.md)。
 
 | 类型 | 证据状态 | 限制与处理 |
 |---|---|---|
-| 恢复合规 | 已实现并有界验证 | 离线审计保全/恢复库指纹门禁/幂等重放复用注销服务；目标机三万条合成账目与文件演练通过，隔离入口切换及恢复后HTTP业务已验证；真实生产入口未切换，其他规模不作承诺 |
+| 恢复合规 | 已实现并有界验证 | 离线审计保全、恢复库指纹门禁、幂等重放复用注销服务；隔离演练不等于真实生产入口切换，具体样本、耗时与证据见[部署案例](../deployment/README.md#部署案例) |
 | 文件容量 | 已确认 | 导出卷和备份占用随数据增长，需容量告警；不能只看数据库大小 |
 | 备份一致性 | 已确认实现边界 | 当前先 dump 后复制导出，无跨资源快照；业务恢复须核对缺失/过期文件，维护窗口暂停写入与任务 |

@@ -2,7 +2,7 @@
 
 ## 范围与结论
 
-面向开发与运维，描述当前单仓库 Vue PWA、Spring Boot 模块化单体和 PostgreSQL 的组成。运行环境见 [部署案例](../deployment/cases/intranet-single-host/README.md)，初始阶段记录见 [归档计划](../initial-development/plan.md)，不据此判断后续任务进度或新版本验收。不将架构存在等同于完成上线验收。
+面向开发与运维，描述单仓库 Vue PWA、Spring Boot 模块化单体和 PostgreSQL 的组成、依赖及共享契约。实际运行环境见[部署案例](../deployment/README.md#部署案例)。
 
 ```mermaid
 flowchart LR
@@ -40,14 +40,12 @@ flowchart LR
 
 ## 开发接入与验证
 
-新增功能先查相同领域服务、共享组件和既有 SQL。接口变更同步 OpenAPI → 生成类型 → API 封装 → 调用者与契约测试。SQL 变更区分运行 Mapper 与 schema 迁移，不在 Java 内嵌 SQL。
-
-入口命令与环境前提见根目录 [README](../../README.md)。`npm run check` 组合前端检查/构建、Maven verify 和隔离数据库集成；结构约束由 ModuleBoundaryTest、PersistenceSourceBoundaryTest、HttpContractTest 和前端页面登记契约测试覆盖。浏览器与手机验收需独立记录设备、版本、场景及结果，架构说明不能代替实测。
+复用及工程硬约束见 [AGENTS](../../AGENTS.md#工程与业务硬约束)，接口/SQL 变更维护与检查见[开发验证规范](../testing/guide.md#变更维护与验证)。ModuleBoundaryTest、PersistenceSourceBoundaryTest、HttpContractTest 和前端页面登记契约测试分别覆盖模块、持久化、HTTP 及页面关系。
 
 ## 风险与限制
 
 | 类型 | 当前事实 | 影响与处理 |
 |---|---|---|
 | 已知限制 | 一期单机 Compose，无高可用切换 | 主机故障影响服务；恢复能力按部署方案与案例分别评价 |
-| 验收边界 | 手机 PWA 含专项由用户实机确认，恢复入口切换有隔离演练证据；未切换真实生产入口 | 本次内网 T29 已关闭，具体证据与风险例外见验收报告 |
+| 验收边界 | 工程检查不能证明终端 PWA、真实恢复切换或新实例通过 | 按候选及实例分别核验，证据与例外见部署案例 |
 | 实现边界 | 管理概况读取宿主只读状态文件 | 已接入成功/失败/运行与新鲜度判定；仅本机告警，见部署案例 |

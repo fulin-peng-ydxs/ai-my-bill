@@ -1,23 +1,36 @@
-# 文档目录与事实源
+# 项目文档索引
 
-根 README 面向使用和开发入门，AGENTS 是 AI 协作规则，CLAUDE 仅引用 AGENTS。初始开发资料集中归档，当前技术事实、部署方案及实例信息分别维护，不能互相替代。
+| 入口 | 用途 |
+|---|---|
+| [README](../README.md) | 安装、开发启动、账号初始化与常用操作 |
+| [AGENTS](../AGENTS.md) | 项目协作、工程约束与文档维护要求 |
+| [DESIGN](../DESIGN.md) | 视觉、交互、组件及响应式契约、页面登记 |
+| [OpenAPI](../contracts/openapi.yaml) | API 机器契约与生成类型来源 |
+| [开发验证规范](testing/guide.md) | 检查选择、变更维护、模拟器/真机复测与证据要求 |
+| [部署方案](deployment/README.md) | 宿主准备、初始化、持续发布、运维与恢复 |
 
-| 位置 | 职责 | 何时更新 |
+## 技术架构
+
+代码与配置是机制依据，实际环境状态见[部署案例](deployment/README.md#部署案例)。
+
+| 专题 | 回答的问题 | 主要代码边界 |
 |---|---|---|
-| [initial-development/](initial-development/README.md) | 初始需求、计划、原型、截图及历史验收 | 不追加后续任务，仅按明确要求纠正归档内容 |
-| [architecture/](architecture/README.md) | 当前技术实现、数据/权限、环境变量 | 相应实现或配置改变时；不累积阶段流水 |
-| [deployment/](deployment/README.md) | 可复用部署架构、操作、构建和恢复 | 部署能力或操作约定改变时 |
-| [deployment/cases/](deployment/cases/README.md) | 每个实例的当前总览及已有操作记录 | 同步环境稳定事实；过程记录仅在用户明确要求时写入 |
-| [deployment/logging-management/](deployment/logging-management/README.md) | 已有统一日志专项计划、过程与发布验证 | 仅在用户明确要求维护该专项材料时更新 |
-| [DESIGN.md](../DESIGN.md) | 页面登记、组件、视觉与响应式契约 | 页面/组件/设计变更时 |
-| [contracts/openapi.yaml](../contracts/openapi.yaml) | API机器契约 | 接口改变时，同步生成类型与测试 |
-| [deploy/README.md](../deploy/README.md) | 部署实现目录的导航 | 部署入口变更时，不重复方案与案例 |
+| [总体架构与契约](architecture/architecture-decisions.md) | 运行单元、依赖方向与共享契约 | web、server、contracts |
+| [前端与 PWA](architecture/frontend-pwa.md) | 路由与状态复用、资源生命周期、草稿及 PWA 构建与更新 | web/src |
+| [后端与业务模块](architecture/backend-domains.md) | 字典、账目、报表、管理之间如何协作 | server 的领域包 |
+| [认证与租户隔离](architecture/auth-tenant.md) | 身份、CSRF、角色、RLS 如何形成闭环 | auth、SecurityConfig、V007 |
+| [数据库与迁移](architecture/database-migrations.md) | 表归属、数据库角色、版本升级与回退 | db、mapper、persistence |
+| [任务、导出与注销](architecture/jobs-export-deletion.md) | 异步任务、文件与数据库如何协同 | job、ledger、account |
+| [环境与配置加载](architecture/environment-configuration.md) | 变量加载、优先级、密钥边界与生效方式 | scripts、application*.yml、Compose |
+| [部署架构](deployment/architecture.md) | 交付、运行单元与资源边界 | deploy、Dockerfile |
 
-## 文档放置与维护规则
+## 历史归档
 
-- 过程文档的写入条件以 [AGENTS](../AGENTS.md#代码与文档定位) 为准；未明确要求时，需求、计划、验收和自审结果不自动落盘，验证结果在回复中说明。明确要求编写时，归入所属模块的本次改动目录，不续写初始开发归档。
-- 当前架构沿用 architecture，部署资料沿用 deployment，不另建同主题平行目录。实例在 deployment/cases 下按稳定环境名维护当前摘要和入口；长期文档不追加无关任务流水。
-- 不将需求计划写进架构，也不在 AGENTS/CLAUDE 保存一次性主机信息。
-- 同一事实只在责任文档完整描述，其它文档用链接。配置字段与加载顺序在环境架构，具体值在实例；规范路径若被脚本硬编码则在方案中明确。
-- 文档与实现矛盾时回查源码和用户已确认需求，修正漂移；已确认需求不能因代码暂未实现而删掉，保留未完成状态。
-- 测试和实例证据注明时间、提交及范围。历史通过不等于新版本通过，命令存在不等于执行成功，未验证明确标注。
+阶段材料标记 `归档状态：已归档` 后停止日常同步，只有用户明确要求修订或解除归档时才更新。归档不取消仍有效的业务要求，不把未完成项改成已通过，也不删除历史证据。后续任务按 [AGENTS](../AGENTS.md#代码与文档定位) 决定是否产档及保存位置。
+
+| 资料 | 保存内容 |
+|---|---|
+| [初始开发资料](initial-development/README.md) | 一期需求与上游闭环、计划、原型、截图和历史验收 |
+| [统一日志专项](deployment/logging-management/README.md) | 已有实施计划、过程和发布安全验证 |
+
+实例历史操作从各案例总览进入，按记录时点及对应版本读取；历史通过不代表当前版本或另一环境通过。秘密只保留受控位置引用，不复制到文档。

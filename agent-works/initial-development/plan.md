@@ -1,5 +1,7 @@
 # 个人账单 PWA 开发计划
 
+归档状态：已归档
+
 ## 1. 需求来源与目标
 
 - 需求文档：`agent-works/initial-development/requirement.md`。
@@ -85,7 +87,7 @@
 
 ## 4. 技术方案
 
-本节及 §5、§8 保留已批准的实施方案与任务输入，用于解释实施依赖；当前实现机制和配置消费链以[技术架构](../architecture/README.md)、[环境架构](../architecture/environment-configuration.md)为准，页面契约以 [DESIGN](../../DESIGN.md) 为准。后续改动在责任文档维护稳定细则，本计划只同步受影响任务、依赖及状态。
+本节及 §5、§8 保留已批准的实施方案与任务输入，用于解释实施依赖；当前实现机制和配置消费链以[技术架构](../README.md#技术架构)、[环境架构](../architecture/environment-configuration.md)为准，页面契约以 [DESIGN](../../DESIGN.md) 为准。后续改动在责任文档维护稳定细则，本计划只同步受影响任务、依赖及状态。
 
 ### 4.1 工程结构与模块边界
 
@@ -1066,7 +1068,7 @@ SQL 约束：所有脚本必须有总体、对象/字段、执行前置、影响
 | `deploy/scripts/verify-recovery-tool.sh`、`verify-recovery-http.py` | 目标机隔离数据/文件/入口业务演练 | 随机临时secret、无公开端口、不覆盖线上库，结束清理 |
 | `server/src/test/resources/recovery/recovery-business-fixture.sql` | 合成样本，只在空账目专用临时库且显式标记时执行 | 不是生产seed；公开测试账号仅在销毁式演练使用，临时容器销毁即清理 |
 
-本阶段未新增migration、默认seed、数据库角色授权、菜单或业务API；schema保持012。稳定配置与启动参数见[环境架构](../architecture/environment-configuration.md)，部署工具入口见[deploy/README.md](../../deploy/README.md)。
+本阶段未新增migration、默认seed、数据库角色授权、菜单或业务API；schema保持012。稳定配置与启动参数见[环境架构](../architecture/environment-configuration.md)，部署工具入口见[deploy/README.md](../deployment/README.md#部署实现)。
 
 ## 9. 测试与验证计划
 

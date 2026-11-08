@@ -2,7 +2,7 @@
 
 ## 范围与调用关系
 
-面向后端开发，说明 server/src/main/java/com/mybill 的业务职责。2026-09-28 静态核对源码；认证、数据和异步细节分别交由专题文档。Spring Boot 单体内按领域组织 Controller、Service、Repository、Mapper，Mapper XML 执行参数化 SQL。
+面向后端开发，说明 server/src/main/java/com/mybill 的业务职责。认证、数据和异步机制分别见对应专题。Spring Boot 单体内按领域组织 Controller、Service、Repository、Mapper，Mapper XML 执行参数化 SQL。
 
 ```mermaid
 flowchart TD
@@ -65,10 +65,10 @@ ReportService 解析 BusinessDateRange，统一筛选与金额口径，在租户
 
 ## 验证与风险
 
-后端单元/架构测试由 `npm run check:server` 执行；真实数据库业务入口由 `npm run check:database` 在一次性集群中执行（也是全量 check 的一部分）。Expense/Income/Adjustment/Lifecycle/Report/AdminUser 等 HttpIntegrationTest 覆盖相关链路；具体执行结果见验收记录，不将默认跳过数据库测试算为通过。
+Expense/Income/Adjustment/Lifecycle/Report/AdminUser 等 HttpIntegrationTest 覆盖相关链路；后端与隔离数据库检查按[开发验证规范](../testing/guide.md#工程检查)执行。
 
 | 类型 | 证据状态 | 风险与处理 |
 |---|---|---|
 | 运维集成 | 已确认 | 运行概况读取宿主只读状态文件，覆盖未配置、成功、运行、失败、超时和不可用；不挂载归档或密钥 |
-| 性能边界 | 已确认 | 报表同步查询受数据量和索引影响，变更聚合需按 performance-test.md 的规模复核 |
+| 性能边界 | 已确认 | 报表同步查询受数据量和索引影响，变更聚合按[性能专项入口](../testing/guide.md#专项入口)复核当前样本与索引 |
 | 权限回归 | 已确认约束 | ADMIN 与 USER 互斥业务边界，新路由须补角色拒绝与跨租户负例 |

@@ -8,15 +8,7 @@
 
 ## 抽象层与具体实例
 
-| 层次 | 位置 | 内容 |
-|---|---|---|
-| 通用流程 | `scripts/environment.sh`、`deploy/scripts/bootstrap-environment.sh` | 交互配置、构建、传输、初始化、续跑、验证与收尾 |
-| 宿主模式 | `deploy/host-profiles/*.env` | 是否允许修改、Docker/Compose最低版本，不含机器信息 |
-| 部署模式 | `deploy/profiles/*.env` | 内网/公网入口类型和实现状态，不含机器信息 |
-| 字段契约 | `deploy/targets/example.env` | SSH、路径、入口、TLS来源等允许字段 |
-| 具体实例 | `.local/deploy-targets/<目标>.env` | 某台机器的实际取值；被Git忽略，不写入通用方案 |
-
-同一入口可接受一个、多个或 `--all` 目标。多目标按给定顺序串行执行，首个失败即停止；每个目标有独立状态和凭据输出，不共享服务器secret或CA私钥。
+`scripts/environment.sh` 负责交互配置、构建和传输，`deploy/scripts/bootstrap-environment.sh` 负责目标端初始化、续跑与收尾。宿主/部署 profile 和执行器见[部署实现](README.md#部署实现)，实际取值、字面解析及多目标顺序见[部署目标配置](../../deploy/targets/README.md)。每个目标保留独立状态和凭据输出，不共享服务器 secret 或 CA 私钥。
 
 当前systemd和secret实现固定使用 `/opt/my-bill`、`/etc/my-bill` 与 `/var/lib/my-bill/operations`；向导会显示并校验这些固定路径。这里的抽象是把机器取值移出通用流程，不承诺任意修改实现内部路径。
 
@@ -26,10 +18,11 @@
 
 ```bash
 npm run environment -- configure intranet-main
-npm run environment -- inspect intranet-main
-npm run environment -- host-plan intranet-main
-npm run environment -- host-apply intranet-main
-npm run environment -- host-verify intranet-main
+```
+
+随后按[宿主操作主路径](host-preparation.md#操作主路径)完成 inspect、host-plan/apply/verify，再检查项目初始化计划和准入：
+
+```bash
 npm run environment -- plan intranet-main
 npm run environment -- preflight intranet-main
 ```
@@ -58,15 +51,12 @@ npm run environment -- finalize intranet-main
 
 当前只实现 `intranet-single-host`。`public-direct` 与 `public-behind-edge` 已作为模式契约预留，但入口会明确拒绝执行，避免把内网Caddy配置伪装成公网安全方案。完整分层、门禁和迁移边界见[公网部署演进方案](public-deployment.md)。
 
-公网直连至少要先落地：域名/DNS、80/443入口、ACME和持久化Caddy状态、客户端真实IP策略、管理入口限制、异机备份与外部告警。边缘/CDN前置模式还必须确定供应商、可信代理CIDR、源站认证和边缘到源站TLS。完成这些设计后应新增对应Compose覆盖、预检、验收和profile实现，再复用同一个环境入口；具体域名、云资源和主机仍只放实例配置/案例，不写回通用脚本。
-
 ## 安全与失败边界
 
-- 目标配置按白名单 `KEY=value` 字面解析，不执行shell表达式。
 - SSH固定启用主机密钥严格校验；没有经可信渠道确认的 `known_hosts` 不继续。
 - 归档先校验SHA-256和越界路径；已有运行配置、TLS、release或初始化状态不匹配即停止。
 - 空环境初始化不等于灾难恢复；已有数据环境不得使用 `bootstrap` 重新接管或清空。
-- 宿主脚本与初始化脚本仅完成本地语法、配置和负向验证；未在新的真实服务器执行本轮宿主安装或初始化，不能把“脚本存在”记作环境部署成功。
+- 宿主准备和空环境自动初始化已有本地语法、配置与负向检查记录，尚无新服务器安装及初始化成功的实机证据。`host-verify` 不能替代初始化、终端与业务验收，目标结果见[部署案例](README.md#部署案例)。
 
 ## 初始化过程日志
 

@@ -1,5 +1,7 @@
 # T26 性能、容量与可观测性基线
 
+归档状态：已归档
+
 ## 1. 结论与边界
 
 本地代表性数据基线通过，未发现需要新增索引或改变第一期业务范围的问题。候选、明细与分类报表均通过真实会话进入 Spring Security、应用服务、MyBatis-Plus/Mapper XML 和 RLS，另用与 Mapper 等价的 SQL 留存 `EXPLAIN ANALYZE`；明细索引探针和到期清理候选分别命中 `idx_ledger_active_cursor`、`idx_ledger_purge_due`。51,000 行个人数据导出通过 MyBatis 游标以 200 行 fetch size 写入空输出流，没有在 Java 中构造全量集合；到期清理始终保持每批最多 100 行。

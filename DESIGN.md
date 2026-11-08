@@ -16,14 +16,7 @@ sources:
 
 > 本文是“我的账单”前端视觉、交互、响应式、组件复用和页面设计约束的长期事实源。实际代码和自动化测试是机器事实源，并与本文同步维护。
 
-事实源边界：
-
-- 业务与页面范围：[初始需求闭环](agent-works/initial-development/requirement-closure.md)及用户后续确认；仅在用户明确要求时编写后续需求文档。
-- 当前设计契约：本文件；颜色取值只在 §2 定义，文字与间距只在 §3 定义，圆角只在 §6 定义，组件只在 §4 定义。front matter 及提示示例只提供入口，不重复维护数值。
-- 实现机制：[前端与 PWA 架构](agent-works/architecture/frontend-pwa.md)说明路由、状态、资源生命周期、草稿存储及 PWA 构建与更新；界面规则在本文件维护，架构文档通过引用承接。
-- 初始原型：`agent-works/initial-development/prototypes/`，仅供历史需求与结构查阅，后续页面变更不回写初始原型，不能覆盖用户当前确认或本文件。
-- 代码事实源：主题 token 为 `web/src/styles/tokens.css`，页面登记为 `web/src/app/pageRegistry.ts`，路由为 `web/src/router/index.ts`，登记契约测试为 `web/src/app/pageRegistry.spec.ts`。前端技术基线为 Vue 3 + Vite + TypeScript + Pinia + Vue Router。
-- 本文件维护稳定规则、组件关系和页面索引；临时开发步骤、一次性迁移说明和历史流水不进入本文。
+实现入口：[主题 token](web/src/styles/tokens.css)、[页面登记](web/src/app/pageRegistry.ts)、[路由](web/src/router/index.ts)。实现机制见[前端与 PWA 架构](agent-works/architecture/frontend-pwa.md)；变更维护、工程检查和终端复测见[开发验证规范](agent-works/testing/guide.md)。
 
 ## 1. Visual Theme & Atmosphere
 
@@ -193,6 +186,7 @@ Key Characteristics：
 
 ### 4.2 核心目标组件清单
 
+<!-- component-registry:start -->
 | 组件 | 目标职责 | 使用规则 |
 | --- | --- | --- |
 | `AppShell` | 登录后应用外壳、主题、导航和安全区 | 手机底部导航与桌面管理侧栏共享 token，不共享不合适的结构 |
@@ -258,6 +252,9 @@ Key Characteristics：
 | `AppTransition` / `AppOverlayContent` | 普通显隐预设与弹层退场内容保留 | 使用 §4.7 的统一效果；不复制 DOM、不持久化快照、不接管业务状态 |
 | `AppToast` | 短暂动作反馈和撤销 | 在顶部安全区内居中显示，有原生弹层时进入当前顶层且不抢焦点，父子层切换时反馈仍可见；成功提示约 5 秒后自动关闭；鼠标悬停、操作聚焦及撤销进行中暂停，后续通知重新计时，离页清理旧提示；错误保留手动关闭，失败若影响区域可用性，还必须保留页内错误态 |
 | `PwaInstallPrompt` | 登录页与“我的”的安装能力引导 | 复用同一检测状态源；只有浏览器提供安装事件时显示真实安装动作，否则显示分平台步骤或已安装状态 |
+<!-- component-registry:end -->
+
+已纳入门禁的核心组件登记由 [designContract.spec.ts](web/src/app/designContract.spec.ts) 校验；组件新增或退役时同步适用的登记与契约检查。
 
 共享组件消费关系按页面维护，不按开发阶段堆叠记录：
 
@@ -327,7 +324,7 @@ Key Characteristics：
 
 焦点视觉统一由 `web/src/styles/focus.css` 承接，尺寸和颜色消费 `tokens.css` 的 focus token；组件仅可通过 `--focus-ring-offset` 调整避免裁切所需的轮廓位置，不另写同类焦点规则。实际输入方式由 `inputModality` 统一区分；候选交接、弹层返回及软键盘恢复分别复用 ComboboxField/AnchoredDropdown/useActiveCombobox、AppDialog/AppDrawer/useDialogController 和 useKeyboardViewport/PageWorkspace，不创建页面私有焦点管理器。
 
-验证覆盖点击与键盘导航切换、原生选择打开/点选/取消、候选浏览→搜索→关闭/切字段、弹层初始与返回焦点，以及焦点与选中同时存在的状态；涉及手机输入时补完整键盘和独立窗口原生操作，证据要求见 README 页面复测。
+焦点变化按[焦点与动效验证](agent-works/testing/guide.md#焦点与动效)复测。
 
 ### 4.4 四态反馈
 
@@ -404,7 +401,7 @@ Key Characteristics：
 - 同一次导航只保留一个主要内容过渡；不在其内部同时播放图表和状态块入场。金额直接显示准确值，不滚动计数；原生输入、日期选择和惯性滚动保持系统行为。
 - 快速连续操作以最新状态为准，反向弹层从当前视觉位置续接；不得排队、锁住导航或增加请求等待。关闭结束事件缺失仍须有有界收尾；停用、卸载与账号切换立即释放本实例的动画和顶层资源。
 - 系统减少动态效果偏好必须实时生效，CSS、脚本和图表共同取消位移、缩放与插值，仍完成关闭及焦点收尾。401/403、退出和销毁不得为了退场保留受保护结果。
-- 性能与终端验收遵循 README 页面复测入口，检查快速开关、嵌套返回、草稿/滚动保留、候选交接、软键盘和减少动态效果；不能用静态截图或 CSS 属性推断真实设备帧率。
+- 动效变化按[焦点与动效验证](agent-works/testing/guide.md#焦点与动效)复测。
 
 ## 5. Layout Principles
 
@@ -500,25 +497,13 @@ Key Characteristics：
 - 禁止用 emoji、Unicode 字符代替正式交互图标。
 - 禁止原型批注伪装成线上业务组件。
 
-### 7.3 维护闭环
+### 7.3 页面合规判定
 
-设计相关变更至少检查：
-
-| 变更 | 同步维护 | 验证 |
-| --- | --- | --- |
-| 新页面 | 路由、页面登记、导航、权限、四态 | 关键视口、权限、键盘与返回链路 |
-| 新主题 token | 明暗 token、PWA theme-color、图表主题 | 对比度、首屏防闪、两种模式截图 |
-| 新复用组件 | 组件清单、至少一个真实消费页 | 组件状态、键盘、触摸和构建 |
-| 新用户偏好 | 默认值、合法值、服务端落点、本地 fallback、真实消费 | 登录前后、跨设备、重置和非法值 |
-| 新业务模板 | 稳定 ID、租户边界、业务唯一键、字段白名单、来源与失效回退 | 同键更新、跨租户、回填复验、移除和来源删除 |
-| 新图表 | 色板、口径、下钻、空态和主题 | 小屏、夜晚、键盘与数据更新 |
-| 新管理表格 | 列策略、滚动、操作承载和窄屏降级 | 1366/1440/1920 和长文本 |
-
-实际页面判定：
+新增和修改页面同步页面登记、组件清单及相关契约；按[变更维护与验证](agent-works/testing/guide.md#变更维护与验证)选择检查。实际呈现必须满足：
 
 - 同排控件按 §3 对比最终计算样式与对齐；共享组件检查受影响消费者，包括新增、编辑抽屉及隐藏后返回的使用点。使用同一 class、声明 token 或通过类型/Lint/单测，不等于实际外观合规。
 - 信息增多不能破坏组件契约：关联短字段、长名称与展开补充项仍应保持所属任务层级；多项筛选条件不得被工具入口挤成窄列或造成横向溢出；短抽屉与低可见高度下，搜索、完整候选行及动作仍须可达；卡片底边不得包裹固定操作或在按钮与导航之间制造窄框。尺寸与行为以组件契约为准，不为所有内容强制相同行数。
-- 明确违反上述字号、形态、对齐或组件交互契约，以及出现裁切、遮挡、无法滚动时，必须修复并复测，不能归为可选打磨。终端、当前版本与实际操作证据按 [README 页面复测](README.md#页面复测方式与选择) 执行；用户明确豁免或工具受限的项仍标为未验证，不推断通过。
+- 明确违反上述字号、形态、对齐或组件交互契约，以及出现裁切、遮挡、无法滚动时，必须修复并复测，不能归为可选打磨。终端、当前版本与实际操作证据按 [页面复测](agent-works/testing/guide.md#页面复测方式与选择) 执行；用户明确豁免或工具受限的项仍标为未验证，不推断通过。
 
 ## 8. Responsive Behavior
 
@@ -536,7 +521,7 @@ Key Characteristics：
 
 关键验证视口：
 
-以下视口用于布局初筛，按改动选择相关视口；断点变化检查边界两侧。复测方式、操作清单与证据边界统一见 [README 页面复测](README.md#页面复测方式与选择)，模拟器默认复测、真机触发及发布验收条件见 [AGENTS](AGENTS.md#页面改动的复测选择)。
+以下视口用于布局初筛，按改动选择相关视口；断点变化检查边界两侧。复测方式、设备选择与证据边界见[开发验证规范](agent-works/testing/guide.md#页面复测方式与选择)。
 
 | 视口 | 核心规则 |
 | --- | --- |
@@ -561,36 +546,7 @@ Key Characteristics：
 - 横竖屏切换、浏览器工具栏收缩和虚拟键盘弹出不得丢失草稿或遮挡保存入口。
 - `prefers-reduced-motion` 下关闭装饰性位移、图表插值和大面积淡入，只保留必要状态变化。
 
-初始原型的历史结构检查（不能作为当前页面验收）：
-
-`node agent-works/initial-development/prototypes/design-contract.test.mjs`
-
-`node agent-works/initial-development/prototypes/responsive-contract.test.mjs`
-
-`node agent-works/initial-development/prototypes/business-contract.test.mjs`
-
-## 9. Agent Prompt Guide
-
-### Color Reference
-
-颜色角色、取值及业务语义统一见 §2；实现消费 `web/src/styles/tokens.css` 的语义 token，不在提示、页面或组件中复制明暗取值。
-
-### Example Component Prompts
-
-- “创建手机端快速记账页，使用 `quick-entry` 原型，消费统一表单、商品选择和任务分组，突出主金额输入，保存栏位于底部导航上方，覆盖草稿恢复与四态。”
-- “创建收支报表页，使用 `dashboard` 原型，先写收入、原始支出、冲减、净支出和结余口径及下钻关系，再选择图表；同时验证 390px 和夜晚模式。”
-- “创建管理员用户列表，使用 `admin` 原型和统一数据表格，主表占据剩余空间，1366px 下保留状态、最近活跃和操作列。”
-
-### Iteration Guide
-
-1. 读取本文件、对应需求和同类组件。
-2. 明确页面原型、唯一主任务、滚动归属、四态和权限。
-3. 按 [§4.1](#41-组件复用与事实源) 查找并消费已有共享单元；达到第二次出现条件时抽取复用，同时迁移已有消费点。
-4. 只使用语义 token，同时实现白天、夜晚和首屏主题恢复。
-5. 按风险完成工程检查，依 AGENTS 与 README 复测实际页面；按本节视口和明暗主题检查，记录结果与未覆盖项。构建按项目验证规则选择，不能代替页面验收。
-6. 从第三方视角复核设计、需求、代码、页面登记和测试是否同步。
-
-### Page Registry Index
+## 9. Page Registry Index
 
 该表是当前已确认页面范围的轻量索引。正式代码使用类型化轻量页面注册表维护 `pageKey`、路径、角色、导航归属、页面原型和必备状态；契约测试保证它与路由及本表双向一致。它只承担静态页面事实和校验，不发展为运行时可配置布局平台。代码实现后，路由与权限事实由代码维护；新增或删除页面必须同步本表。
 
@@ -610,7 +566,7 @@ Key Characteristics：
 | `admin-audit-logs` | 操作日志 | `admin` | 按管理员、动作、对象、结果和时间只读检索脱敏审计记录 | `AppDataTable` / `AppDrawer` / `AppStateBlock` / `AppPagination` |
 <!-- page-registry:end -->
 
-## 10. Known Gaps
+## 10. 页面与安装边界
 
 ### 稳定实现与交互边界
 
@@ -631,5 +587,5 @@ Key Characteristics：
 
 - 正式名称为“我的账单”；安装图标使用Action Blue背景和白色票据符号，SVG为源，提供192/512 PNG、maskable512及Apple180。
 - 安装能力使用Manifest、Service Worker、浏览器安装事件和分平台手动引导；检测、拒绝、不支持、已安装状态由共享状态源管理，网页使用不依赖安装。
-- 不以图标齐全代替启动、独立窗口或平台状态栏验收。发布到新环境时验证目标设备证书信任、安装、离线与更新；当前环境事实维护于[部署案例](agent-works/deployment/cases/README.md)，[历史验收](agent-works/initial-development/test-report.md)不续写后续任务。验证结果默认在回复中说明，过程文档写入条件见 AGENTS。
+- 不以图标齐全代替启动、独立窗口或平台状态栏验收。发布到新环境时验证目标设备证书信任、安装、离线与更新；当前环境事实维护于[部署案例](agent-works/deployment/README.md#部署案例)，验收证据要求见开发验证规范。
 - 当前不提供原生 IPA/APK、离线记账或新版提示按钮；展示入口必须与实际能力一致，缓存与更新机制见[前端与 PWA 架构](agent-works/architecture/frontend-pwa.md#安装资产与更新机制)。

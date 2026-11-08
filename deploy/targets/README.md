@@ -15,11 +15,11 @@
 | `BILL_HOST_TIMEZONE` | IANA时区，当前向导写 `Asia/Shanghai` | systemd timer和宿主时间基线 |
 | `BILL_HOST_FIREWALL_MODE` | 当前仅 `external` | 明确防火墙由组织/云平台管理，脚本不接管全局规则 |
 
-宿主准备要求root SSH，不隐式调用sudo。`managed-linux`不会升级已经可用的Docker，也不会自动删除冲突软件包；完整边界见[宿主环境准备](../../agent-works/deployment/host-preparation.md)。
+旧目标缺少宿主字段时依次使用 `existing-linux/preconfigured/Asia/Shanghai/external`，保证不会因入口升级修改既有主机。宿主准备要求root SSH，不隐式调用sudo。`managed-linux`不会升级已经可用的Docker，也不会自动删除冲突软件包；完整边界见[宿主环境准备](../../agent-works/deployment/host-preparation.md)。
 
 `BILL_BACKUP_SERVICE` 与 `BILL_BACKUP_STATUS_FILE` 在首次初始化时由环境入口建立并验证；持续更新只调用并核对。当前只有 `intranet-single-host` 可执行；公网profile保留字段契约但会被入口拒绝。
 
-`BILL_OFFSITE_BACKUP_DIRECTORY` 和 `BILL_OFFSITE_KEY_DIRECTORY` 必须是构建/运维端绝对路径，不是服务器路径。前者保存已加密归档，后者仅作为一次性解密材料转存点；两者不应共址。旧目标缺失字段时，`ops` 分别使用仓库下被忽略的 `.local/offsite-backups/<目标>` 与 `.local/backup-keys/<目标>`，但这不自动满足组织级异机灾备或密钥托管要求。
+`BILL_OFFSITE_BACKUP_DIRECTORY` 和 `BILL_OFFSITE_KEY_DIRECTORY` 必须是构建/运维端安全绝对路径，不能取根目录、顶层目录或用户主目录，不是服务器路径。前者保存已加密归档，后者仅作为一次性解密材料转存点；两者必须使用不同路径，并按备份制度分开保管。旧目标缺失字段时，`ops` 分别使用仓库下被忽略的 `.local/offsite-backups/<目标>` 与 `.local/backup-keys/<目标>`，但这不自动满足组织级异机灾备或密钥托管要求。
 
 需要 `--all` 时，创建 `.local/deploy-targets/targets.list`，每行一个目标 ID，顺序就是更新顺序。多目标串行执行；任一目标失败后停止，不继续扩大影响面。
 
