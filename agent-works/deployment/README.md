@@ -19,7 +19,7 @@
 
 操作手册中的 `/opt/my-bill`、`/etc/my-bill`、`/var/backups/my-bill` 为现有脚本约定路径，不是任意占位符。IP、SSH 身份、存储容量、版本摘要和验收结果只能从目标案例取得。需要改路径/项目名时，必须同步脚本与 systemd，不能仅修改文档或 env。
 
-宿主准备、首次初始化与持续更新都按“通用执行器 + profile + 具体目标”分层，共用严格目标解析器。`scripts/environment.sh` 准备宿主并建设空环境，`scripts/release.sh` 更新已有环境；具体机器放在本机 `.local/deploy-targets`，不进入Git。
+宿主准备、首次初始化与持续更新都按“通用执行器 + profile + 具体目标”分层，共用严格目标解析器。`scripts/environment.sh` 准备宿主并建设空环境，`scripts/release.sh` 更新已有环境；具体机器放在本机 `.local/web/deploy-targets`，不进入Git。
 
 证书入门先看[签发端与信任链](architecture.md#证书信任链与签发端职责)，新内网部署按[首次签发流程](runbook.md#32-在另一套独立内网首次部署)，客户端安装见[README](../../README.md#手机安装与使用)。实际终端和恢复验证按候选、环境分别核验，结果见案例。
 
@@ -36,7 +36,7 @@
 | host-profiles/、scripts/prepare-host.sh、scripts/preflight-host.sh | 宿主变更策略、准备与首次只读准入 |
 | scripts/bootstrap-environment.sh | 初始化、状态续跑、验证与初始密码收尾 |
 | profiles/ | 部署模式契约；内网已实现，公网预留但拒绝执行 |
-| [targets/](../../deploy/targets/README.md) | 通用目标字段；具体机器只在 `.local/deploy-targets` |
+| [targets/](../../deploy/targets/README.md) | 通用目标字段；具体机器只在 `.local/web/deploy-targets` |
 | scripts/run-*.sh、postgres/ | 应用、迁移、角色与管理员初始化入口 |
 | tls/internal-ca.sh、tls/activate-certificate.sh | CA/叶证书签发；目标端校验、加载与失败回退 |
 | scripts/backup-local.sh、scripts/verify-backup-restore.sh | 加密备份与基础隔离数据库恢复 |

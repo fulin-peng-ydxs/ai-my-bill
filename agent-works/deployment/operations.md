@@ -32,7 +32,7 @@ npm run ops -- logs-export intranet-main --service app --since 2h
 
 服务可选 `app/proxy/db/provision/migrate/bootstrap-admin/system`；跟随只支持一个目标的一个服务，Ctrl+C 仅退出查询；follow使用SSH远端PTY绑定查询生命周期，连接退出会结束远端查看进程。traceId 仅按所查询输出匹配，未找到会提示可能超过保留窗口，不意味着请求不存在。一次性 `--rm` 容器删除后不能通过当前日志查询恢复；它们的过程输出须在发布/初始化流程保存。
 
-`logs-export` 默认每服务最多 10000 行，gzip 保存到本机 `.local/logs/operations/<目标>/diagnostic.*.log.gz`，目录 0700、文件 0600；失败删除本次临时文件。保留期/容量沿用[日志配置](../architecture/environment-configuration.md#日志配置)中的 BILL_LOG_ARCHIVE_DAYS/TOTAL_MB，导出前后清理，活动导出限制100MB。导出只含当前保留窗口的诊断材料，仅运维人员持有和分享。
+`logs-export` 默认每服务最多 10000 行，gzip 保存到本机 `.local/web/logs/operations/<目标>/diagnostic.*.log.gz`，目录 0700、文件 0600；失败删除本次临时文件。保留期/容量沿用[日志配置](../architecture/environment-configuration.md#日志配置)中的 BILL_LOG_ARCHIVE_DAYS/TOTAL_MB，导出前后清理，活动导出限制100MB。导出只含当前保留窗口的诊断材料，仅运维人员持有和分享。
 
 Java 日志格式、脱敏及采集边界见日志配置。Caddy 访问日志写 stdout，经 JSON 过滤去掉 URI（含查询）、请求/响应头、客户端 IP 和 TLS 客户端信息，保留方法、状态、耗时及服务端 traceId；健康访问跳过。
 

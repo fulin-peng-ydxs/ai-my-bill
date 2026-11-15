@@ -7,7 +7,7 @@ import java.nio.file.Path;
 import java.time.Duration;
 
 @ConfigurationProperties("my-bill.export")
-record ExportProperties(@DefaultValue(".local/exports") Path directory,
+record ExportProperties(@DefaultValue(".local/web/exports") Path directory,
                         @DefaultValue("PT24H") Duration retention) {
     ExportProperties {
         if (directory == null) throw new IllegalArgumentException("export directory is required");

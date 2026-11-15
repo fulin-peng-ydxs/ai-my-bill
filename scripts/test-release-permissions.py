@@ -23,7 +23,7 @@ with tempfile.TemporaryDirectory(prefix='my-bill-release-permissions-') as direc
     for path in (root / 'web/dist').rglob('*'):
         assert path.stat().st_mode & 0o777 == (0o755 if path.is_dir() else 0o644), path
     assert (root / 'web/dist').stat().st_mode & 0o777 == 0o755
-    manifest = root / '.local/release-candidate' / ('a'*40) / 'manifest.txt'
+    manifest = root / '.local/web/release-candidate' / ('a'*40) / 'manifest.txt'
     assert manifest.stat().st_mode & 0o077 == 0
     assert (root / 'web/dist/index.html').read_text() == 'public-page'
     assert 'assets/app.js' in manifest.read_text()

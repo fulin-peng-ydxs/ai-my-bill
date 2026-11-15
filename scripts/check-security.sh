@@ -39,7 +39,7 @@ if [[ -n "${historical_sensitive_files}" ]]; then
   exit 1
 fi
 
-security_cache="${PROJECT_ROOT}/.local/security"
+security_cache="${PROJECT_ROOT}/.local/web/security"
 mkdir -p "${security_cache}"
 ./mvnw -B -q -pl server dependency:list \
   -DincludeScope=test \

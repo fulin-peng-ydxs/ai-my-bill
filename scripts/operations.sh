@@ -3,7 +3,7 @@ set -euo pipefail
 umask 077
 
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-TARGET_DIRECTORY="${MY_BILL_DEPLOY_TARGET_DIRECTORY:-${PROJECT_ROOT}/.local/deploy-targets}"
+TARGET_DIRECTORY="${MY_BILL_DEPLOY_TARGET_DIRECTORY:-${PROJECT_ROOT}/.local/web/deploy-targets}"
 TARGET_LIST="${TARGET_DIRECTORY}/targets.list"
 
 fail() { echo "错误：$*" >&2; exit 1; }
@@ -35,8 +35,8 @@ confirm() {
   [[ "${answer}" == y || "${answer}" == Y || "${answer}" == yes || "${answer}" == YES ]]
 }
 
-local_backup_directory() { printf '%s\n' "${BILL_OFFSITE_BACKUP_DIRECTORY:-${PROJECT_ROOT}/.local/offsite-backups/${BILL_TARGET_ID}}"; }
-local_key_directory() { printf '%s\n' "${BILL_OFFSITE_KEY_DIRECTORY:-${PROJECT_ROOT}/.local/backup-keys/${BILL_TARGET_ID}}"; }
+local_backup_directory() { printf '%s\n' "${BILL_OFFSITE_BACKUP_DIRECTORY:-${PROJECT_ROOT}/.local/web/offsite-backups/${BILL_TARGET_ID}}"; }
+local_key_directory() { printf '%s\n' "${BILL_OFFSITE_KEY_DIRECTORY:-${PROJECT_ROOT}/.local/web/backup-keys/${BILL_TARGET_ID}}"; }
 validate_local_storage_root() {
   local path="$1"
   [[ "${path}" == /* && "${path}" != / && "${path}" != "${HOME}" && "$(dirname "${path}")" != / ]] || fail "本机落点必须是非顶层、非用户主目录的绝对路径"
@@ -275,7 +275,7 @@ log_operation() {
   [[ "${action}" != logs-export || "${#SELECTED_TARGETS[@]}" -eq 1 ]] || fail "日志导出只支持一个目标"
   for target in "${SELECTED_TARGETS[@]}"; do
     if [[ "${action}" == logs-export ]]; then
-      root="${PROJECT_ROOT}/.local/logs/operations/${target}"
+      root="${PROJECT_ROOT}/.local/web/logs/operations/${target}"
       validate_local_storage_root "${root}"; ensure_private_directory "${root}"
       load_target "${target}"
       source "${PROJECT_ROOT}/deploy/scripts/log-archive.sh"

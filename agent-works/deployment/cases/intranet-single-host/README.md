@@ -13,7 +13,7 @@
 
 ## 当前发布追溯与维护边界
 
-- 发布由现有 `npm run release -- deploy intranet-main` 完成。源码快照在本机分支 `codex/intranet-release-20261019`，未推送；制品及实机日志在 `.local/releases/d13d92617dceafc511690d871c9593359b612a86/`，其中 `deployments/intranet-main.properties` 保存服务器版本元数据。运行env原值私有保存在 `/etc/my-bill/production.env.before-20261019T030315Z-d13d92617dce`，迁移后的回退仍须按手册判断。
+- 发布由现有 `npm run release -- deploy intranet-main` 完成。源码快照在本机分支 `codex/intranet-release-20261019`，未推送；制品及实机日志在 `.local/web/releases/d13d92617dceafc511690d871c9593359b612a86/`，其中 `deployments/intranet-main.properties` 保存服务器版本元数据。运行env原值私有保存在 `/etc/my-bill/production.env.before-20261019T030315Z-d13d92617dce`，迁移后的回退仍须按手册判断。
 - 本次批准仅覆盖该候选、intranet-main/10.100.101.104、`Maven:org.springframework:spring-webmvc:6.2.19` 的 `GHSA-j9f9-w8pj-32f8` 和 `GHSA-pc63-qcmh-9cmg`。审批文件绑定候选、有效期24小时并在发布后清理，构建记录标记 `accepted-candidate-risk`；后续候选不可沿用。当前未发现官方公告的SSE视图片段或XsltView触发配置，不能据此宣称漏洞修复。公告见[Spring SSE](https://spring.io/security/cve-2026-47890/)与[Spring XSLT](https://spring.io/security/cve-2026-47884/)。
 - 维护前备份完成于2026-10-19 11:03:52（Asia/Shanghai）。本机运维入口已修复同日旧副本误复用，按服务器最新摘要拉取并保留旧副本到history；该收尾修改属于本机工具，不改变已发布业务版本。异机副本及历史保留规则见[统一运维入口](../../operations.md#备份异机副本和密钥)。
 - 本次依赖构建复用了与锁文件逐项版本一致的本机依赖；全新npm安装未完成，不能算作全新环境安装验收。远端CI未运行，实测门禁均为本机执行。

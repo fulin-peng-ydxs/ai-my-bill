@@ -29,6 +29,8 @@
 
 开发临时产物遵循全局协作规则。`.local` 中的数据库、凭据、证书、备份、部署证据及仍在使用的配置/制品按各自生命周期保留。
 
+本地运行资料按端隔离：现有 Web 端使用 `.local/web/`，后续离线 iOS App 使用 `.local/ios/`；配置、数据库、日志、测试凭据和制品不得跨端共用。相对工作目录产生的 `.local` 同样按端分层；整个 `.local` 继续由 Git 忽略。
+
 ## 工程与业务硬约束
 
 - Node.js24 LTS、Vue3、Vite、TypeScript、Pinia、Vue Router；Java21 LTS、Spring Boot模块化单体、MyBatis-Plus、Maven Wrapper。工具链具体版本以仓库配置为准。

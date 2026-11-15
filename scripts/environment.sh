@@ -2,9 +2,9 @@
 set -euo pipefail
 
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-TARGET_DIRECTORY="${MY_BILL_DEPLOY_TARGET_DIRECTORY:-${PROJECT_ROOT}/.local/deploy-targets}"
+TARGET_DIRECTORY="${MY_BILL_DEPLOY_TARGET_DIRECTORY:-${PROJECT_ROOT}/.local/web/deploy-targets}"
 TARGET_LIST="${TARGET_DIRECTORY}/targets.list"
-RELEASE_DIRECTORY="${PROJECT_ROOT}/.local/releases"
+RELEASE_DIRECTORY="${PROJECT_ROOT}/.local/web/releases"
 SENSITIVE_TEMP_FILES=()
 
 cleanup_sensitive_temps() {
@@ -32,7 +32,7 @@ usage() {
   npm run environment -- status <目标...|--all>
   npm run environment -- finalize <目标...|--all> [--yes]
 
-configure 是交互式目标配置向导；其他命令读取 .local/deploy-targets/<目标>.env。
+configure 是交互式目标配置向导；其他命令读取 .local/web/deploy-targets/<目标>.env。
 host-apply 从可SSH的受支持Linux开始安装缺失宿主组件；不会安装操作系统、创建云资源或修改外部网络。
 bootstrap 在宿主验证通过后初始化全新项目环境。
 EOF
@@ -226,9 +226,9 @@ EOF
   ca_file="$(prompt_value '服务器CA公钥路径（当前实现固定）' '/etc/my-bill/ca.crt')"
   [[ "${remote_root}" == /opt/my-bill && "${env_file}" == /etc/my-bill/production.env && "${ca_file}" == /etc/my-bill/ca.crt ]] || fail "当前初始化实现只支持向导显示的固定服务器路径"
   health_url="$(prompt_value 'HTTPS健康地址' "https://${bind_ip}:${https_port}/api/v1/health")"
-  admin_output="$(prompt_value '本机初始管理员凭据输出文件' "${PROJECT_ROOT}/.local/deployment/${target_id}-initial-admin.json")"
-  offsite_backup="$(prompt_value '异机加密备份目录' "${PROJECT_ROOT}/.local/offsite-backups/${target_id}")"
-  offsite_key="$(prompt_value '备份解密材料暂存目录（应继续转存组织密钥库）' "${PROJECT_ROOT}/.local/backup-keys/${target_id}")"
+  admin_output="$(prompt_value '本机初始管理员凭据输出文件' "${PROJECT_ROOT}/.local/web/deployment/${target_id}-initial-admin.json")"
+  offsite_backup="$(prompt_value '异机加密备份目录' "${PROJECT_ROOT}/.local/web/offsite-backups/${target_id}")"
+  offsite_key="$(prompt_value '备份解密材料暂存目录（应继续转存组织密钥库）' "${PROJECT_ROOT}/.local/web/backup-keys/${target_id}")"
   validate_absolute_path BILL_OFFSITE_BACKUP_DIRECTORY "${offsite_backup}"
   validate_absolute_path BILL_OFFSITE_KEY_DIRECTORY "${offsite_key}"
   [[ "${offsite_backup}" != / && "${offsite_backup}" != "${HOME}" && "$(dirname "${offsite_backup}")" != / && "${offsite_key}" != / && "${offsite_key}" != "${HOME}" && "$(dirname "${offsite_key}")" != / ]] || fail "异机落点不能是顶层目录或用户主目录"
@@ -248,7 +248,7 @@ EOF
       ;;
     2)
       generate_tls=true
-      pki_root="$(prompt_value '本机PKI保管目录' "${PROJECT_ROOT}/.local/pki/${target_id}")"
+      pki_root="$(prompt_value '本机PKI保管目录' "${PROJECT_ROOT}/.local/web/pki/${target_id}")"
       [[ ! -e "${pki_root}" ]] || fail "PKI目录已存在，拒绝覆盖：${pki_root}"
       leaf_root="${pki_root}/issued-${bind_ip}"
       cert_source="${leaf_root}/server.crt"

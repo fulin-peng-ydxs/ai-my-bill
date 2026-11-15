@@ -71,7 +71,7 @@ print('app | unrelated')
                      ('--service', 'app;touch /tmp/unsafe'), ('--trace-id', '$(touch /tmp/unsafe)'), ('--follow',)]:
             invoke('logs', 'fixture', *args, failure=True)
         invoke('logs-export', 'fixture', '--service', 'app', '--since', '2h')
-        exports = list((root / '.local/logs/operations/fixture').glob('*.gz'))
+        exports = list((root / '.local/web/logs/operations/fixture').glob('*.gz'))
         assert len(exports) == 1 and 'fixture-event' in gzip.open(exports[0], 'rt').read()
         assert exports[0].stat().st_mode & 0o077 == 0
         archive = root / 'logs'; archive.mkdir(mode=0o700)
@@ -84,8 +84,8 @@ print('app | unrelated')
         invoke('logs', 'fixture', '--archive', 'latest', '--service', 'app', failure=True)
         env['FAIL_DOCKER'] = '1'
         invoke('logs-export', 'fixture', failure=True)
-        assert not list((root / '.local/logs/operations/fixture').glob('.diagnostic.*'))
-        assert len(list((root / '.local/logs/operations/fixture').glob('*.gz'))) == 1
+        assert not list((root / '.local/web/logs/operations/fixture').glob('.diagnostic.*'))
+        assert len(list((root / '.local/web/logs/operations/fixture').glob('*.gz'))) == 1
         print('PASS: SSH/remote log filters, follow, bootstrap overlay, rejected input, private export and failure cleanup')
 
 

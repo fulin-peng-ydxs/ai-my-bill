@@ -31,7 +31,7 @@ ssh -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
 
 正常运维优先复用 `scripts/` 或 `deploy/scripts/` 的已有入口。重复的有序操作、远端状态变更或需要幂等、回退、清理和多目标处理的流程，应集中到对应脚本，避免在文档维护平行命令。单条只读诊断、标准工具短查询及一次性事故取证可留在文档，说明身份、工作目录、成功条件和副作用。
 
-脚本至少做到参数白名单、失败非零、危险动作确认、秘密不回显、仅清理自身资源，并把通用逻辑与 `.local/deploy-targets` 具体机器分开。README只给稳定入口；本文的底层长命令用于解释实现或异常处置，不是要求运维日常复制。当前正常路径分别为 `npm run environment`（宿主与首次建设）、`npm run release`（代码/schema更新）和 `npm run ops`（日常运维、备份与恢复演练）。
+脚本至少做到参数白名单、失败非零、危险动作确认、秘密不回显、仅清理自身资源，并把通用逻辑与 `.local/web/deploy-targets` 具体机器分开。README只给稳定入口；本文的底层长命令用于解释实现或异常处置，不是要求运维日常复制。当前正常路径分别为 `npm run environment`（宿主与首次建设）、`npm run release`（代码/schema更新）和 `npm run ops`（日常运维、备份与恢复演练）。
 
 ## 1. 构建与交付
 
@@ -40,11 +40,11 @@ ssh -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
 源码交付用白名单，macOS 禁附加元数据。下面在候选根目录执行，BILL_COMMIT 应等于 HEAD；dist 必须来自该候选：
 
 ```bash
-mkdir -p .local/delivery
-git archive --format=tar "$BILL_COMMIT" .dockerignore .mvn mvnw pom.xml server deploy scripts > .local/delivery/source.tar
-COPYFILE_DISABLE=1 tar --no-xattrs -czf .local/delivery/web-dist.tar.gz web/dist
-(cd .local/delivery && shasum -a 256 source.tar web-dist.tar.gz > SHA256SUMS)
-scp -i "$BILL_SSH_KEY" -o StrictHostKeyChecking=yes .local/delivery/source.tar .local/delivery/web-dist.tar.gz .local/delivery/SHA256SUMS "root@$BILL_HOST:/opt/my-bill/"
+mkdir -p .local/web/delivery
+git archive --format=tar "$BILL_COMMIT" .dockerignore .mvn mvnw pom.xml server deploy scripts > .local/web/delivery/source.tar
+COPYFILE_DISABLE=1 tar --no-xattrs -czf .local/web/delivery/web-dist.tar.gz web/dist
+(cd .local/web/delivery && shasum -a 256 source.tar web-dist.tar.gz > SHA256SUMS)
+scp -i "$BILL_SSH_KEY" -o StrictHostKeyChecking=yes .local/web/delivery/source.tar .local/web/delivery/web-dist.tar.gz .local/web/delivery/SHA256SUMS "root@$BILL_HOST:/opt/my-bill/"
 ```
 
 上传前先在目标执行 `install -d -m 0750 /opt/my-bill`；上传后在该目录用 `sha256sum -c SHA256SUMS` 校验。摘要使用纯文件名，核验工作目录必须是这两个归档的所在目录。首次空目录解包：

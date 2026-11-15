@@ -5,7 +5,7 @@
 
 configure_dev_database() {
   : "${PROJECT_ROOT:?PROJECT_ROOT must be set before loading dev database configuration}"
-  DEV_DB_LOCAL_DIR="${PROJECT_ROOT}/.local"
+  DEV_DB_LOCAL_DIR="${PROJECT_ROOT}/.local/web"
   DEV_DB_DATA_DIR="${DEV_DB_LOCAL_DIR}/postgres"
   DEV_DB_LOG_FILE="${MY_BILL_LOCAL_LOG_ROOT:-${DEV_DB_LOCAL_DIR}/logs}/postgres"
   # SQL/error DETAIL can contain ledger values even when the application logs are sanitized.

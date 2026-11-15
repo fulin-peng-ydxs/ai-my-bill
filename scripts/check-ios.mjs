@@ -9,8 +9,8 @@ const useSimulator = process.argv.includes('--simulator')
 if (process.argv.slice(2).some((arg) => arg !== '--simulator')) throw new Error('仅支持 --simulator 参数')
 const targetLabel = useSimulator ? '模拟器' : '真机'
 const root = resolve(import.meta.dirname, '..')
-const accountsDir = resolve(root, '.local/real-device-test')
-const localDir = useSimulator ? resolve(root, '.local/simulator-test') : accountsDir
+const accountsDir = resolve(root, '.local/web/real-device-test')
+const localDir = useSimulator ? resolve(root, '.local/web/simulator-test') : accountsDir
 const config = await readFile(resolve(localDir, 'config.json'), 'utf8')
   .then(JSON.parse)
   .catch((error) => {
@@ -34,9 +34,9 @@ const privateIp = localHost && /^(?:127\.\d+\.\d+\.\d+|10\.\d+\.\d+\.\d+|192\.16
 const localAddress = privateIp || localHost === 'localhost' || localHost?.endsWith('.local')
 const allowedUrl = useSimulator ? /^http:\/\/[^/]+:\d+$/ : /^http:\/\/[^/]+:5174$/
 if (!baseUrl || !allowedUrl.test(baseUrl) || !localAddress || parsedUrl.username || parsedUrl.password) {
-  throw new Error(`请在 ${useSimulator ? '.local/simulator-test' : '.local/real-device-test'}/config.json 设置本地 HTTP 地址及端口，或使用 MY_BILL_IOS_BASE_URL；真机入口固定为 5174`)
+  throw new Error(`请在 ${useSimulator ? '.local/web/simulator-test' : '.local/web/real-device-test'}/config.json 设置本地 HTTP 地址及端口，或使用 MY_BILL_IOS_BASE_URL；真机入口固定为 5174`)
 }
-if (useSimulator && !config.deviceUDID) throw new Error('请在 .local/simulator-test/config.json 设置 iPhone 模拟器的 deviceUDID')
+if (useSimulator && !config.deviceUDID) throw new Error('请在 .local/web/simulator-test/config.json 设置 iPhone 模拟器的 deviceUDID')
 if (!['admin', 'pengfulin'].includes(account)) {
   throw new Error('MY_BILL_IOS_ACCOUNT 仅支持 admin 或 pengfulin')
 }

@@ -46,11 +46,11 @@ npm run release -- status intranet-main
 npm run release -- build
 ```
 
-入口拒绝未提交改动，并依次执行 `check`、`check:performance`、`check:security`、`check:e2e` 和 `build:release`。随后生成白名单 `source.tar`、`web-dist.tar.gz`、manifest、构建记录、目标端更新器及 `SHA256SUMS`，保存到 `.local/releases/<完整提交>/`。相同提交仅在全部摘要重新校验通过后复用；不存在跳过门禁开关。manifest 与源码同一提交，不把 `.local` 入库。
+入口拒绝未提交改动，并依次执行 `check`、`check:performance`、`check:security`、`check:e2e` 和 `build:release`。随后生成白名单 `source.tar`、`web-dist.tar.gz`、manifest、构建记录、目标端更新器及 `SHA256SUMS`，保存到 `.local/web/releases/<完整提交>/`。相同提交仅在全部摘要重新校验通过后复用；不存在跳过门禁开关。manifest 与源码同一提交，不把 `.local` 入库。
 
 经用户明确批准的单次风险例外可由 `MY_BILL_SECURITY_EXCEPTION_FILE` 指向私有JSON审批记录；字段为 `commit/target/host/dependency/approvedAt/expiresAt/reason`，公告使用单个 `id` 或非空且不重复的 `ids` 数组（二者互斥）。记录绑定完整候选HEAD、精确依赖及公告和已获批实例，最长7天，无记录默认严格拦截；其他公告及后续提交不适用。构建记录保存 `securityStatus=accepted-candidate-risk` 和审批摘要，部署重新检查审批与目标，不能记为零漏洞通过。当前白名单仅含 `spring-webmvc:6.2.19` 的 `GHSA-pc63-qcmh-9cmg` 与 `GHSA-j9f9-w8pj-32f8`；每次候选仍须取得对应授权，不提供任意漏洞忽略能力。
 
-审批JSON仅在获批候选构建及部署期间临时保留，默认放系统临时目录并使用私有权限；全部相关操作结束或审批失效后清理，授权依据与发布结果保存在部署案例。日常安全检查生成的 `.local/security` 依赖清单属于可再生扫描输入，不作为过程文档归档。
+审批JSON仅在获批候选构建及部署期间临时保留，默认放系统临时目录并使用私有权限；全部相关操作结束或审批失效后清理，授权依据与发布结果保存在部署案例。日常安全检查生成的 `.local/web/security` 依赖清单属于可再生扫描输入，不作为过程文档归档。
 
 发布诊断和候选元数据采用私有权限；公开静态资源在候选构建后固定为目录0755、文件0644，保证代理UID10001可读，不因诊断日志的私有umask变成0600。
 

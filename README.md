@@ -28,9 +28,9 @@
 
 | 进程 | 做什么 | 默认入口/数据 | 日志在哪里 |
 |---|---|---|---|
-| PostgreSQL | 保存本地账号、账目、字典、任务等数据 | 127.0.0.1:54329；库 my_bill_dev；数据目录 .local/postgres | .local/logs/postgres/postgres.*.log；复用已有进程时沿用其日志 |
-| Spring Boot 后端 | 登录鉴权、业务校验、数据库读写、后台任务 | http://127.0.0.1:8080/api/v1 | 启动终端及 `.local/logs/backend/application.log`；启动输出见 `launcher.*.log` |
-| Vite 前端开发服务器 | 编译 Vue 页面并热更新；代理浏览器 API 请求 | 本机 http://127.0.0.1:5174；同一局域网设备访问 `http://<本机局域网 IP>:5174` | 同一启动终端及 `.local/logs/frontend/dev.*.log` |
+| PostgreSQL | 保存本地账号、账目、字典、任务等数据 | 127.0.0.1:54329；库 my_bill_dev；数据目录 .local/web/postgres | .local/web/logs/postgres/postgres.*.log；复用已有进程时沿用其日志 |
+| Spring Boot 后端 | 登录鉴权、业务校验、数据库读写、后台任务 | http://127.0.0.1:8080/api/v1 | 启动终端及 `.local/web/logs/backend/application.log`；启动输出见 `launcher.*.log` |
+| Vite 前端开发服务器 | 编译 Vue 页面并热更新；代理浏览器 API 请求 | 本机 http://127.0.0.1:5174；同一局域网设备访问 `http://<本机局域网 IP>:5174` | 同一启动终端及 `.local/web/logs/frontend/dev.*.log` |
 
 本地总启动和独立后端/前端启动均保存日志；日志为私有诊断材料，应用启动前的失败先查 `launcher.*.log`。轮转、容量、权限及生产日志配置见[环境架构](agent-works/architecture/environment-configuration.md#日志配置)。
 
@@ -121,7 +121,7 @@ npm run dev
 脚本依次完成：
 
 1. 校验工具链、数据库主机/端口/库名；开发数据库只允许本机。
-2. 没有 `.local/postgres` 时初始化本项目集群；数据库端口没有服务时启动它。端口已有 PG 时，检查它的数据目录确实属于本项目才复用。
+2. 没有 `.local/web/postgres` 时初始化本项目集群；数据库端口没有服务时启动它。端口已有 PG 时，检查它的数据目录确实属于本项目才复用。
 3. 创建开发库和独立的迁移/应用角色；Flyway 迁移角色负责建表，应用角色负责业务读写。
 4. 通过后端启动器执行 `./mvnw -q -pl server spring-boot:run`，通过前端启动器执行 `npm --prefix web run dev`；两者保存本地日志，前端监听默认值来自 Vite 配置。**这些步骤已由总脚本执行，不要再重复启动同端口进程。**
 5. 后端通过 Flyway 校验/升级开发库，成功后接受 API 请求。任一前后端进程退出，总脚本关闭它启动的其他进程。
@@ -134,7 +134,7 @@ curl --fail http://127.0.0.1:8080/api/v1/health
 
 看到 `status: UP`，并能打开 http://127.0.0.1:5174/login，表示基础服务就绪。Vite 端口冲突可能顺延，实际地址以终端输出为准；不要把“前端 ready”当成后端已启动。
 
-按 Ctrl+C 停止开发环境：脚本停止自己启动的前后端及 PG，保留运行前就存在的 PG，不删除数据库。终端的中断退出码不代表数据库已删除；不要为了重新启动删除 `.local/postgres`。
+按 Ctrl+C 停止开发环境：脚本停止自己启动的前后端及 PG，保留运行前就存在的 PG，不删除数据库。终端的中断退出码不代表数据库已删除；不要为了重新启动删除 `.local/web/postgres`。
 
 ### 4. 首次如何获得可登录账号
 
@@ -148,13 +148,13 @@ source scripts/toolchain.sh
 resolve_java
 umask 077
 # 目录已存在时停止，避免覆盖之前交付的凭据。
-mkdir .local/dev-bootstrap
-openssl rand -base64 32 > .local/dev-bootstrap/password
-openssl rand -base64 32 > .local/dev-bootstrap/pepper
+mkdir .local/web/dev-bootstrap
+openssl rand -base64 32 > .local/web/dev-bootstrap/password
+openssl rand -base64 32 > .local/web/dev-bootstrap/pepper
 MY_BILL_DB_NAME=my_bill_dev \
-MY_BILL_AUTH_RATE_LIMIT_PEPPER_FILE="$PWD/.local/dev-bootstrap/pepper" \
+MY_BILL_AUTH_RATE_LIMIT_PEPPER_FILE="$PWD/.local/web/dev-bootstrap/pepper" \
 MY_BILL_BOOTSTRAP_USERNAME=admin \
-MY_BILL_BOOTSTRAP_PASSWORD_FILE="$PWD/.local/dev-bootstrap/password" \
+MY_BILL_BOOTSTRAP_PASSWORD_FILE="$PWD/.local/web/dev-bootstrap/password" \
 ./mvnw -q -pl server spring-boot:run \
   -Dspring-boot.run.arguments="--bootstrap-admin --server.address=127.0.0.1 --server.port=0"
 exit
@@ -162,18 +162,18 @@ exit
 
 若开发服务使用了自定义库名/PG端口，在该终端同步 MY_BILL_DB_NAME、MY_BILL_DB_PORT；不能只改前端地址。该命令使用本地 trust 连接和已经迁移好的库，临时启动仅监听本机随机端口的初始化进程。初始化入口复用prod配置，因此需提供专用pepper文件；这些前缀变量只影响此次初始化，不会改变已运行开发后端的配置。创建 admin 后自行退出，不取代正在运行的后端。账号库非空则拒绝，不会重置已有账号。
 
-在本地编辑器打开 `.local/dev-bootstrap/password` 获取临时密码（不要提交或贴到日志），访问登录页登录 admin，24 小时内完成首次改密；随后从管理页创建普通用户，用普通账号进入“记一笔”。改密成功后删除本地临时密码文件。服务器的首管理员流程另见[部署初始化](agent-works/deployment/runbook.md#4-镜像迁移和首管理员)，不能复用开发凭据。
+在本地编辑器打开 `.local/web/dev-bootstrap/password` 获取临时密码（不要提交或贴到日志），访问登录页登录 admin，24 小时内完成首次改密；随后从管理页创建普通用户，用普通账号进入“记一笔”。改密成功后删除本地临时密码文件。服务器的首管理员流程另见[部署初始化](agent-works/deployment/runbook.md#4-镜像迁移和首管理员)，不能复用开发凭据。
 
 ### 5. 更换端口或开发库
 
-开发入口自动读取可选的 `.local/dev.env`。首次需要保存本地配置时，在项目根目录执行以下命令；已有文件不会被覆盖：
+开发入口自动读取可选的 `.local/web/dev.env`。首次需要保存本地配置时，在项目根目录执行以下命令；已有文件不会被覆盖：
 
 ```bash
-mkdir -p .local
-(umask 077; set -o noclobber; cat .env.example > .local/dev.env)
+mkdir -p .local/web
+(umask 077; set -o noclobber; cat .env.example > .local/web/dev.env)
 ```
 
-在编辑器中修改 `.local/dev.env`，然后重启对应服务。文件被 Git 忽略；不存在时使用默认值。只写单行 `KEY=value`（键限 `MY_BILL_*` 和 `JAVA_HOME`），不执行命令或展开变量；根 `.env` 不加载，格式错误会在启动前拒绝且不显示值。
+在编辑器中修改 `.local/web/dev.env`，然后重启对应服务。文件被 Git 忽略；不存在时使用默认值。只写单行 `KEY=value`（键限 `MY_BILL_*` 和 `JAVA_HOME`），不执行命令或展开变量；根 `.env` 不加载，格式错误会在启动前拒绝且不显示值。
 
 开发入口共用该文件，已导出的 Shell 变量优先；修改后端端口时 Vite 代理读取同一变量。生产发布、构建及隔离检查不加载它。完整加载器、空值处理、消费者与生效规则见[配置架构](agent-works/architecture/environment-configuration.md#范围与加载模型)。
 
@@ -204,7 +204,7 @@ npm run dev
 npm run dev:frontend
 ```
 
-该命令只起 Vite，不建库、不起 Java，默认监听 `0.0.0.0:5174` 并保存本地日志。若 Java 用非默认端口，在 `.local/dev.env` 设置 MY_BILL_SERVER_PORT，或调用前传相同变量。与总启动命令二选一，避免重复占端口；Ctrl+C 只停止该前端。
+该命令只起 Vite，不建库、不起 Java，默认监听 `0.0.0.0:5174` 并保存本地日志。若 Java 用非默认端口，在 `.local/web/dev.env` 设置 MY_BILL_SERVER_PORT，或调用前传相同变量。与总启动命令二选一，避免重复占端口；Ctrl+C 只停止该前端。
 
 需要限制监听范围时，任选一种覆盖方式：
 
@@ -213,11 +213,11 @@ MY_BILL_WEB_HOST=127.0.0.1 npm run dev:frontend
 npm run dev:frontend -- --host 127.0.0.1
 ```
 
-直接执行 `bash scripts/run-frontend.sh dev` 或 `npm --prefix web run dev` 也默认监听所有 IPv4 地址；直接运行 web 包不会经过本地日志启动器，且需自行满足 Node 工具链要求。本地预览已有构建时，执行 `bash scripts/run-frontend.sh preview`，监听规则相同，默认端口为 4173；指定端口使用 `bash scripts/run-frontend.sh preview -- --port 15174`。`MY_BILL_WEB_PORT` 仅控制 dev 端口。Vite 的 Local / Network 输出是实际访问地址，端口占用可能顺延；`0.0.0.0` 是绑定地址，手机使用本机局域网 IP 访问。修改 `.local/dev.env` 或 host 环境变量后重启对应前端进程，根 `.env` 不会自动提供此配置。
+直接执行 `bash scripts/run-frontend.sh dev` 或 `npm --prefix web run dev` 也默认监听所有 IPv4 地址；直接运行 web 包不会经过本地日志启动器，且需自行满足 Node 工具链要求。本地预览已有构建时，执行 `bash scripts/run-frontend.sh preview`，监听规则相同，默认端口为 4173；指定端口使用 `bash scripts/run-frontend.sh preview -- --port 15174`。`MY_BILL_WEB_PORT` 仅控制 dev 端口。Vite 的 Local / Network 输出是实际访问地址，端口占用可能顺延；`0.0.0.0` 是绑定地址，手机使用本机局域网 IP 访问。修改 `.local/web/dev.env` 或 host 环境变量后重启对应前端进程，根 `.env` 不会自动提供此配置。
 
 ### 分开启动数据库、后端和前端
 
-需要在IDE中只重启Java，或希望前后端使用不同终端时，可以使用三个独立入口。三个入口自动读取同一份 `.local/dev.env`；若在 shell 临时覆盖数据库名、数据库端口或后端端口，须在相关终端保持一致。IDE 直接启动 Java 和直接执行 Maven 不经过这些入口，需要显式提供相同的环境变量。默认配置可直接执行：
+需要在IDE中只重启Java，或希望前后端使用不同终端时，可以使用三个独立入口。三个入口自动读取同一份 `.local/web/dev.env`；若在 shell 临时覆盖数据库名、数据库端口或后端端口，须在相关终端保持一致。IDE 直接启动 Java 和直接执行 Maven 不经过这些入口，需要显式提供相同的环境变量。默认配置可直接执行：
 
 ```bash
 # 终端1：初始化并后台启动本项目的本地数据库；重复执行安全复用同一集群。
@@ -237,7 +237,7 @@ npm run dev:frontend
 npm run dev:db -- stop
 ```
 
-数据库管理脚本只操作 `.local/postgres`，停止不会删除数据；若配置端口被其他PostgreSQL集群占用会拒绝操作。`dev:backend` 不会隐式启动或停止数据库，数据库未就绪时后端会启动失败。仍推荐日常完整联调使用 `npm run dev`，它会在退出时停止本次启动的前后端，以及本次新启动的数据库；运行前已经存在的本项目数据库会保留。
+数据库管理脚本只操作 `.local/web/postgres`，停止不会删除数据；若配置端口被其他PostgreSQL集群占用会拒绝操作。`dev:backend` 不会隐式启动或停止数据库，数据库未就绪时后端会启动失败。仍推荐日常完整联调使用 `npm run dev`，它会在退出时停止本次启动的前后端，以及本次新启动的数据库；运行前已经存在的本项目数据库会保留。
 
 ### 后端断点调试
 
@@ -339,7 +339,7 @@ npm run release -- deploy intranet-main
 npm run release -- status intranet-main
 ```
 
-`build` 执行门禁并生成 `.local/releases/<提交>/` 的不可变候选；`deploy` 校验候选后在维护窗口备份、迁移、切换并核验 HTTPS 与前端摘要。多目标串行，首个失败即停止；迁移已尝试后不自动回滚数据库。普通更新不替换数据库镜像，数据库补丁须单独维护。完整制品、风险例外及失败处理见[持续构建与发布](agent-works/deployment/continuous-delivery.md)，目标字段见[部署目标配置](deploy/targets/README.md)。
+`build` 执行门禁并生成 `.local/web/releases/<提交>/` 的不可变候选；`deploy` 校验候选后在维护窗口备份、迁移、切换并核验 HTTPS 与前端摘要。多目标串行，首个失败即停止；迁移已尝试后不自动回滚数据库。普通更新不替换数据库镜像，数据库补丁须单独维护。完整制品、风险例外及失败处理见[持续构建与发布](agent-works/deployment/continuous-delivery.md)，目标字段见[部署目标配置](deploy/targets/README.md)。
 
 ### 日常运维、备份和恢复演练
 

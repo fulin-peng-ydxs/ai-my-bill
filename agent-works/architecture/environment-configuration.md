@@ -2,13 +2,15 @@
 
 ## 范围与加载模型
 
-本文说明环境变量从哪里读取、如何进入进程、何时生效，以及密钥如何分发和轮换。开发使用 Shell 变量、可选的 `.local/dev.env` 与 application.yml，部署使用 Compose 配置和 secret 文件；用户偏好另存业务数据库，不属于基础设施配置。
+本地运行资料按端分层：Web 端使用 `.local/web/`，离线 iOS App 预留 `.local/ios/`。下述 Web 开发、测试和部署工具默认使用 Web 子目录，开发配置不回退读取根 `.local` 或 iOS 配置；支持显式路径的环境变量保留原有覆盖规则。相对路径仍以所属进程工作目录解析；例如 Maven 启动的后端导出默认在 `server/.local/web/exports`。Git 忽略所有层级的 `.local`。
 
-部署目标文件 `.local/deploy-targets/<目标>.env` 仅供运维端入口消费，不进入 Compose 或应用容器；它指向目标机 `/etc/my-bill/production.env`，不替代其中的运行变量与 secret。字段、解析格式和旧目标默认行为见[部署目标配置](../../deploy/targets/README.md)，宿主与初始化流程见[部署导航](../deployment/README.md)。
+本文说明环境变量从哪里读取、如何进入进程、何时生效，以及密钥如何分发和轮换。开发使用 Shell 变量、可选的 `.local/web/dev.env` 与 application.yml，部署使用 Compose 配置和 secret 文件；用户偏好另存业务数据库，不属于基础设施配置。
+
+部署目标文件 `.local/web/deploy-targets/<目标>.env` 仅供运维端入口消费，不进入 Compose 或应用容器；它指向目标机 `/etc/my-bill/production.env`，不替代其中的运行变量与 secret。字段、解析格式和旧目标默认行为见[部署目标配置](../../deploy/targets/README.md)，宿主与初始化流程见[部署导航](../deployment/README.md)。
 
 ```mermaid
 flowchart TD
-  Local[可选 .local/dev.env] --> Loader[共享开发配置加载器]
+  Local[可选 .local/web/dev.env] --> Loader[共享开发配置加载器]
   Shell[Shell 已导出的变量：优先] --> Loader
   Loader --> Dev[总启动及数据库/后端/前端独立入口]
   Dev --> Vite[Vite process.env]
@@ -22,8 +24,8 @@ flowchart TD
 
 | 来源 | 谁加载 | 生效与优先级 |
 |---|---|---|
-| 根 .env.example | 无，纯模板 | 复制到 .local/dev.env 后由开发入口读取；根 .env 不加载 |
-| .local/dev.env | scripts/lib/dev-environment.mjs；Shell 桥接 dev-environment.sh、web 包 dev-vite.mjs | 仅启动开发服务/本地预览时补充缺失变量；已导出的 shell 变量（含空值）优先，工具显式命令参数再覆盖；修改后重启 |
+| 根 .env.example | 无，纯模板 | 复制到 .local/web/dev.env 后由开发入口读取；根 .env 不加载 |
+| .local/web/dev.env | scripts/lib/dev-environment.mjs；Shell 桥接 dev-environment.sh、web 包 dev-vite.mjs | 仅启动开发服务/本地预览时补充缺失变量；已导出的 shell 变量（含空值）优先，工具显式命令参数再覆盖；修改后重启 |
 | Shell 环境 | dev.sh、工具链、Vite process.env、Spring | 启动时读取；脚本默认值仅在变量缺失/空值时回退，具体以代码为准 |
 | application.yml | Spring Boot | 非生产默认、占位符与配置结构；标准 Spring 属性覆盖仍存在，不应手工注入绕过安全配置 |
 | application-prod.yml | run-app 强制 prod | 关闭内嵌 Flyway、开启 schema 012 校验、Secure Cookie、文件 pepper；并非任意 Spring 覆盖均有代码硬拦截 |
@@ -54,7 +56,7 @@ flowchart TD
 
 | 改动 | 需要的动作 | 原因 |
 |---|---|---|
-| 开发 Shell 变量或 .local/dev.env | 停止并重新启动对应进程 | 已启动进程不会读取另一个终端的新环境或更新后的文件 |
+| 开发 Shell 变量或 .local/web/dev.env | 停止并重新启动对应进程 | 已启动进程不会读取另一个终端的新环境或更新后的文件 |
 | Compose env/挂载参数 | config校验后重新创建受影响容器 | restart复用原容器配置，不重新装配environment |
 | 数据库密码文件 | 先协调数据库角色密码，再替换文件并重建消费者 | 文件内容和数据库实际密码必须一致；现有连接池可能暂时掩盖不一致 |
 | TLS叶证书 | 校验新文件、替换、Caddy reload并从客户端核验 | 文件更新不代表进程已经加载 |
@@ -87,11 +89,11 @@ flowchart TD
 
 工具链 Node 精确匹配 .nvmrc 的 24.11.1，npm 声明 11.6.2；不是随意用当前 shell Node。工具脚本会查已安装版本，不自动下载。Python 用于验证/备份辅助，未作为独立业务服务。
 
-`npm run dev` 由同一父进程管理数据库、后端和前端；`npm run dev:db -- start|status|stop`、`npm run dev:backend`、`npm run dev:frontend` 用于分终端调试。数据库入口与总启动脚本复用 `scripts/lib/dev-database.sh` 中的配置校验、集群归属核对和角色准备逻辑；独立后端/前端不会替开发者隐式管理数据库。分开启动时，共用 `.local/dev.env` 中的 MY_BILL_DB_* 与 MY_BILL_SERVER_PORT；若 shell 显式覆盖，相关终端仍须保持一致。IDE/Maven 直接启动不经过开发加载器，需自行提供相同环境。`dev:frontend` 保留 npm 参数分隔符，将用户追加的 Vite 参数原样传入 web 包；直接运行 web 包的 dev/preview 也使用同一 host 配置，但不经过日志启动器。preview 默认端口 4173，可用 `--port` 覆盖，不消费仅用于 dev 的 MY_BILL_WEB_PORT。
+`npm run dev` 由同一父进程管理数据库、后端和前端；`npm run dev:db -- start|status|stop`、`npm run dev:backend`、`npm run dev:frontend` 用于分终端调试。数据库入口与总启动脚本复用 `scripts/lib/dev-database.sh` 中的配置校验、集群归属核对和角色准备逻辑；独立后端/前端不会替开发者隐式管理数据库。分开启动时，共用 `.local/web/dev.env` 中的 MY_BILL_DB_* 与 MY_BILL_SERVER_PORT；若 shell 显式覆盖，相关终端仍须保持一致。IDE/Maven 直接启动不经过开发加载器，需自行提供相同环境。`dev:frontend` 保留 npm 参数分隔符，将用户追加的 Vite 参数原样传入 web 包；直接运行 web 包的 dev/preview 也使用同一 host 配置，但不经过日志启动器。preview 默认端口 4173，可用 `--port` 覆盖，不消费仅用于 dev 的 MY_BILL_WEB_PORT。
 
 ### iOS 复测配置
 
-`scripts/check-ios.sh` 解析项目 Node，调用共用的 `check-ios.mjs`。`npm run check:ios:simulator` 传入 `--simulator`，读取 `.local/simulator-test/config.json`；`npm run check:ios` 保持真机模式，读取 `.local/real-device-test/config.json`。二者均从 `.local/real-device-test/accounts.md` 读取测试密码，不从环境变量接收密码。操作、权限与证据边界见 [页面复测](../testing/guide.md#页面复测方式与选择)。
+`scripts/check-ios.sh` 解析项目 Node，调用共用的 `check-ios.mjs`。`npm run check:ios:simulator` 传入 `--simulator`，读取 `.local/web/simulator-test/config.json`；`npm run check:ios` 保持真机模式，读取 `.local/web/real-device-test/config.json`。二者均从 `.local/web/real-device-test/accounts.md` 读取测试密码，不从环境变量接收密码。操作、权限与证据边界见 [页面复测](../testing/guide.md#页面复测方式与选择)。
 
 | 配置 | 加载与优先级 | 作用范围 |
 |---|---|---|
@@ -197,7 +199,7 @@ secret 文件模式 0600；app/migrate 使用 UID/GID 10001，文件属主必须
 
 ## 日志配置
 
-本地 PostgreSQL 新启动也由同一输出工具按 postgres.*.log 分片，复用既有数据库时不改变其输出位置；旧 .local/postgres.log 不清理。`dev:db start` 后台运行日志工具，`dev:db stop` 通过 pg_ctl 停止本项目集群。
+本地 PostgreSQL 新启动也由同一输出工具按 postgres.*.log 分片，复用既有数据库时不改变其输出位置；旧 .local/web/postgres.log 不清理。`dev:db start` 后台运行日志工具，`dev:db stop` 通过 pg_ctl 停止本项目集群。
 
 本地启动器使用 `umask 077`；同类服务在同一日志目录只允许一个启动器，避免多进程争用 application.log。启动失败或退出时回收本次子进程。launcher 包含 Maven 和应用控制台输出，用于应用尚未启动的诊断；启动器、Vite 与 PostgreSQL 输出在启动及写入时按下表的天数和容量清理。
 
@@ -206,7 +208,7 @@ secret 文件模式 0600；app/migrate 使用 UID/GID 10001，文件属主必须
 | 配置 | 默认/消费者 | 生效与边界 |
 | --- | --- | --- |
 | MY_BILL_LOG_LEVEL / MY_BILL_APP_LOG_LEVEL | INFO / INFO；Spring Logging | 重启应用生效；临时 DEBUG 优先仅调整业务包，不输出 SQL 参数 |
-| MY_BILL_LOCAL_LOG_ROOT | .local/logs；本地启动器 | 相对仓库或绝对目录；不自动读取根 .env |
+| MY_BILL_LOCAL_LOG_ROOT | .local/web/logs；本地启动器 | 相对仓库或绝对目录；不自动读取根 .env |
 | MY_BILL_LOCAL_LOG_DAYS | 7；启动器 | 整数 1–365；仅清理其命名的归档 |
 | MY_BILL_LOCAL_LOG_FILE_MB / MY_BILL_LOCAL_LOG_TOTAL_MB | 10 / 100；启动器 | 整数 1–100 / 1–2048；单文件不能超过总量 |
 | MY_BILL_APP_LOG_FILE_SIZE / MY_BILL_APP_LOG_HISTORY / MY_BILL_APP_LOG_TOTAL_SIZE | 10MB / 7 / 200MB；Logback | 仅本地文件；本地启动器校验历史1–365天，大小使用正整数KB/MB/GB，单文件≤100MB、总量≤2GB且单文件≤总量；容量优先于历史天数，当前活动文件另计 |

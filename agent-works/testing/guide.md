@@ -81,7 +81,7 @@
 
 Mac 安装与系统兼容的完整 Xcode，用户完成首次启动许可及必要系统授权，安装目标 iOS runtime，并在 Xcode Device Hub（较旧版本为 Simulator）创建 iPhone 模拟器。Xcode 非默认路径时设置 `DEVELOPER_DIR` 指向其 `Contents/Developer`；脚本在全局仅选中 Command Line Tools 时会为本次进程选择 `/Applications/Xcode.app`，不修改全局 `xcode-select`，不自动接受许可或下载 runtime。
 
-凭据复用下节的 `.local/real-device-test/accounts.md`。在 `.local/simulator-test/config.json` 保存 `deviceUDID` 和可选的 `baseUrl`；默认页面地址为 `http://127.0.0.1:5174`，环境变量 `MY_BILL_IOS_BASE_URL` 可覆盖地址。脚本接受本机、私有/共享 IPv4 或 `.local` 主机的 HTTP 地址及明确端口，真机入口固定为 5174；地址校验不证明后端及数据库属于测试环境，执行前仍须核对代理、数据源和测试账号，禁止指向生产。HTTPS 候选及实际部署地址的 PWA 由直接操作检查。配置优先级见[环境架构](../architecture/environment-configuration.md#ios-复测配置)。目录权限为 `700`、配置及账号文件为 `600`。在根目录查看可用设备：
+凭据复用下节的 `.local/web/real-device-test/accounts.md`。在 `.local/web/simulator-test/config.json` 保存 `deviceUDID` 和可选的 `baseUrl`；默认页面地址为 `http://127.0.0.1:5174`，环境变量 `MY_BILL_IOS_BASE_URL` 可覆盖地址。脚本接受本机、私有/共享 IPv4 或 `.local` 主机的 HTTP 地址及明确端口，真机入口固定为 5174；地址校验不证明后端及数据库属于测试环境，执行前仍须核对代理、数据源和测试账号，禁止指向生产。HTTPS 候选及实际部署地址的 PWA 由直接操作检查。配置优先级见[环境架构](../architecture/environment-configuration.md#ios-复测配置)。目录权限为 `700`、配置及账号文件为 `600`。在根目录查看可用设备：
 
 ```bash
 DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcrun simctl list devices available
@@ -110,8 +110,8 @@ MY_BILL_IOS_ACCOUNT=admin npm run check:ios:simulator
 独立窗口使用生产构建；普通 `npm run dev` 不注册生产 SW。已有正确预览可复用，否则先启动本地后端并检查预览端口，再在根目录运行：
 
 ```bash
-MY_BILL_BUILD_ID="simulator-$(date +%s)" bash scripts/run-frontend.sh build -- --outDir ../.local/simulator-test/web-dist
-bash scripts/run-frontend.sh preview -- --outDir ../.local/simulator-test/web-dist --port 15174 --strictPort
+MY_BILL_BUILD_ID="simulator-$(date +%s)" bash scripts/run-frontend.sh build -- --outDir ../.local/web/simulator-test/web-dist
+bash scripts/run-frontend.sh preview -- --outDir ../.local/web/simulator-test/web-dist --port 15174 --strictPort
 ```
 
 预览沿用[开发监听配置](../architecture/environment-configuration.md#开发与工具链变量)，默认监听所有 IPv4 地址；需要仅限本机时显式传 `MY_BILL_WEB_HOST=127.0.0.1`。同源 `/api/v1` 代理到本地后端；模拟器 Safari 打开 `http://127.0.0.1:15174`，通过分享菜单“添加到主屏幕”，从图标启动并确认独立窗口及本次构建。记录对应源码（含未提交变更）和唯一构建标识，通过 Web Inspector 中实际 SW/缓存版本核对；旧页面可能持有旧资源，不能只凭图标或 SW 已接管判定版本。自动结构检查这个地址时使用 `MY_BILL_IOS_BASE_URL=http://127.0.0.1:15174 npm run check:ios:simulator`。localhost 生产预览可用于模拟器 PWA，但不证明真实手机的 HTTPS、证书信任或网络可达。停止预览使用所在终端的 Ctrl+C，仅关闭本次服务；不清空已有 PG、不删除用户安装或草稿。
@@ -120,7 +120,7 @@ bash scripts/run-frontend.sh preview -- --outDir ../.local/simulator-test/web-di
 
 仅在上述真机条件触发或发布前集中验收时执行本节。将 iPhone 解锁连接 Mac，在手机「设置 → App → Safari → 高级」打开「网页检查器」和「远程自动化」。Mac Safari 的开发菜单应看到该 iPhone；首次配对在手机上信任 Mac。保持亮屏及本地前后端运行，确认手机可访问本机前端地址；Mac `safaridriver` 启动独立测试会话。需要启用远程自动化时由用户完成对应系统授权。排查参考 Apple 的[真机检查](https://developer.apple.com/documentation/safari-developer-tools/inspecting-ios)和[远程自动化](https://developer.apple.com/documentation/safari-developer-tools/ios-enabling-webdriver)。
 
-将 `admin` 和 `pengfulin` 的测试密码保存在 `.local/real-device-test/accounts.md`（用户名与密码两列表格）；凭据只从该文件读取，不写入仓库、命令输出或日志。`.local/real-device-test/config.json` 保存手机可访问的 `baseUrl`（`http://<本机地址>:5174`）及可选实体手机 `deviceUDID`；运行前确认地址可达，不沿用历史地址。目录权限 `700`、文件权限 `600`，在根目录执行：
+将 `admin` 和 `pengfulin` 的测试密码保存在 `.local/web/real-device-test/accounts.md`（用户名与密码两列表格）；凭据只从该文件读取，不写入仓库、命令输出或日志。`.local/web/real-device-test/config.json` 保存手机可访问的 `baseUrl`（`http://<本机地址>:5174`）及可选实体手机 `deviceUDID`；运行前确认地址可达，不沿用历史地址。目录权限 `700`、文件权限 `600`，在根目录执行：
 
 ```bash
 npm run check:ios
@@ -139,6 +139,6 @@ MY_BILL_IOS_ACCOUNT=admin npm run check:ios
 
 ## 环境与服务保护
 
-默认开发端口前端5174、后端8080、PG54329；开始验证先检查占用，不终止用户已有进程。开发入口共用可选的 `.local/dev.env`，已导出的 Shell 变量优先；根 `.env` 不加载，生产发布与隔离检查不读取开发文件，详见[环境架构](../architecture/environment-configuration.md)。旧库迁移校验失败不得自动repair或清空，先核对差异，独立验证用临时数据库并仅清理自身资源。
+默认开发端口前端5174、后端8080、PG54329；开始验证先检查占用，不终止用户已有进程。开发入口共用可选的 `.local/web/dev.env`，已导出的 Shell 变量优先；根 `.env` 不加载，生产发布与隔离检查不读取开发文件，详见[环境架构](../architecture/environment-configuration.md)。旧库迁移校验失败不得自动repair或清空，先核对差异，独立验证用临时数据库并仅清理自身资源。
 
 数据库、性能、E2E 和恢复集成使用一次性 PG，不连接开发、生产或其他项目库。安全扫描需网络，容器 OS 扫描另计。实际运行、脚本存在与历史测试通过分别说明；用户实测、工具实测和隔离模拟不能相互替代。部署终端、续期及恢复/注销重放按[部署手册](../deployment/runbook.md#5-验收与观测)验收，不能以基础服务启动代替。

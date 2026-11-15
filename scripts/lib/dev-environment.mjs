@@ -9,16 +9,16 @@ const projectRoot = fileURLToPath(new URL('../../', import.meta.url))
 export function readDevEnvironment(root = projectRoot, environment = process.env) {
   let source
   try {
-    const path = resolve(root, '.local/dev.env')
+    const path = resolve(root, '.local/web/dev.env')
     const stat = statSync(path)
     if (!stat.isFile() || stat.size > 65536) throw new Error('Invalid development env file')
     source = readFileSync(path, 'utf8')
   } catch (error) {
     if (error.code === 'ENOENT') return {}
-    throw new Error('无法读取 .local/dev.env，请检查文件、权限及大小（不超过 64 KiB 的普通文件）。')
+    throw new Error('无法读取 .local/web/dev.env，请检查文件、权限及大小（不超过 64 KiB 的普通文件）。')
   }
   if (Buffer.byteLength(source) > 65536 || source.includes('\0')) {
-    throw new Error('.local/dev.env 超出 64 KiB 或包含无效字符。')
+    throw new Error('.local/web/dev.env 超出 64 KiB 或包含无效字符。')
   }
 
   const values = {}
@@ -27,7 +27,7 @@ export function readDevEnvironment(root = projectRoot, environment = process.env
     const text = line.trim()
     if (!text || text.startsWith('#')) continue
     const match = /^([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$/.exec(text)
-    const fail = () => { throw new Error(`.local/dev.env 第 ${index + 1} 行无效：使用单行 KEY=value，仅支持 MY_BILL_* 和 JAVA_HOME，且键不能重复。`) }
+    const fail = () => { throw new Error(`.local/web/dev.env 第 ${index + 1} 行无效：使用单行 KEY=value，仅支持 MY_BILL_* 和 JAVA_HOME，且键不能重复。`) }
     if (!match) fail()
     const [, name, rawValue] = match
     if ((!name.startsWith('MY_BILL_') && name !== 'JAVA_HOME') || names.has(name)) fail()

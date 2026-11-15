@@ -29,6 +29,6 @@ if [[ -z "${server_jar}" ]]; then
   echo "没有找到服务端发布 jar。" >&2
   exit 1
 fi
-output_directory="${PROJECT_ROOT}/.local/release-candidate/${source_commit}"
+output_directory="${PROJECT_ROOT}/.local/web/release-candidate/${source_commit}"
 mkdir -p "${output_directory}"
 node scripts/release-manifest.mjs "${source_commit}" "${server_jar}" web/dist "${output_directory}/manifest.txt"

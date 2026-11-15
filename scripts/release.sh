@@ -3,9 +3,9 @@ set -euo pipefail
 umask 077
 
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-TARGET_DIRECTORY="${MY_BILL_DEPLOY_TARGET_DIRECTORY:-${PROJECT_ROOT}/.local/deploy-targets}"
+TARGET_DIRECTORY="${MY_BILL_DEPLOY_TARGET_DIRECTORY:-${PROJECT_ROOT}/.local/web/deploy-targets}"
 TARGET_LIST="${TARGET_DIRECTORY}/targets.list"
-RELEASE_DIRECTORY="${PROJECT_ROOT}/.local/releases"
+RELEASE_DIRECTORY="${PROJECT_ROOT}/.local/web/releases"
 
 usage() {
   cat <<'EOF'
@@ -16,7 +16,7 @@ usage() {
   npm run release -- status <目标...|--all>
   npm run release -- targets
 
-目标配置默认位于 .local/deploy-targets/<目标>.env；--all 按 targets.list 顺序执行。
+目标配置默认位于 .local/web/deploy-targets/<目标>.env；--all 按 targets.list 顺序执行。
 EOF
 }
 
@@ -65,7 +65,7 @@ build_release() {
   echo "[5/5] 构建候选并封装交付物"
   npm run build:release -- "${commit}"
 
-  manifest_file="${PROJECT_ROOT}/.local/release-candidate/${commit}/manifest.txt"
+  manifest_file="${PROJECT_ROOT}/.local/web/release-candidate/${commit}/manifest.txt"
   [[ -f "${manifest_file}" ]] || fail "候选 manifest 不存在：${manifest_file}"
   mkdir -p "${RELEASE_DIRECTORY}"
   staging="$(mktemp -d "${RELEASE_DIRECTORY}/.${commit}.staging.XXXXXX")"

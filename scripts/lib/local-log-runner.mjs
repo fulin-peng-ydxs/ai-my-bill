@@ -31,7 +31,7 @@ if (kind === 'backend') {
   }
 }
 process.umask(0o077)
-const directory = resolve(process.env.MY_BILL_LOCAL_LOG_ROOT ?? '.local/logs', kind)
+const directory = resolve(process.env.MY_BILL_LOCAL_LOG_ROOT ?? '.local/web/logs', kind)
 mkdirSync(directory, { recursive: true, mode: 0o700 })
 if (lstatSync(directory).isSymbolicLink()) throw new Error('Log directory must not be a symlink')
 // A shared application.log must have only one writer; reject concurrent local launches before spawning.

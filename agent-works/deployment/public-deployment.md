@@ -4,7 +4,7 @@
 
 公网部署目前**不可执行、未验证**。仓库只保留 `public-direct` 与 `public-behind-edge` 两个能力契约，`IMPLEMENTED=0`，环境向导和初始化入口会明确拒绝；不能把内网IP、内部CA或 `0.0.0.0/0` 来源配置直接暴露到互联网。
 
-这份文档定义后续实现必须满足的抽象边界和落地清单，不登记任何尚不存在的域名、云主机或供应商。真实域名、主机、DNS记录、边缘服务、证书、端口、密钥托管和验收结果仍只进入 `.local/deploy-targets/<目标>.env` 与 `agent-works/deployment/cases/<环境>/README.md`。
+这份文档定义后续实现必须满足的抽象边界和落地清单，不登记任何尚不存在的域名、云主机或供应商。真实域名、主机、DNS记录、边缘服务、证书、端口、密钥托管和验收结果仍只进入 `.local/web/deploy-targets/<目标>.env` 与 `agent-works/deployment/cases/<环境>/README.md`。
 
 ## 两种部署模式
 

@@ -11,26 +11,36 @@ const projectRoot = fileURLToPath(new URL('../../', import.meta.url))
 function fixture(t, source) {
   const root = mkdtempSync(join(tmpdir(), 'my-bill-dev-env-'))
   t.after(() => rmSync(root, { recursive: true, force: true }))
-  mkdirSync(join(root, '.local'))
-  if (source !== undefined) writeFileSync(join(root, '.local/dev.env'), source)
+  mkdirSync(join(root, '.local/web'), { recursive: true })
+  if (source !== undefined) writeFileSync(join(root, '.local/web/dev.env'), source)
   return root
 }
 
 test('缺失文件不创建，已有 shell 值（含空值）优先，配置不展开命令', t => {
   const root = fixture(t)
   assert.deepEqual(readDevEnvironment(root, {}), {})
-  assert.equal(existsSync(join(root, '.local/dev.env')), false)
-  writeFileSync(join(root, '.local/dev.env'), '# comment\r\nMY_BILL_WEB_HOST=0.0.0.0\r\nMY_BILL_SERVER_PORT=18080\nMY_BILL_DB_APP_PASSWORD="$(touch never-run) $HOME # value"\nJAVA_HOME="/test jdk"\n')
+  assert.equal(existsSync(join(root, '.local/web/dev.env')), false)
+  writeFileSync(join(root, '.local/web/dev.env'), '# comment\r\nMY_BILL_WEB_HOST=0.0.0.0\r\nMY_BILL_SERVER_PORT=18080\nMY_BILL_DB_APP_PASSWORD="$(touch never-run) $HOME # value"\nJAVA_HOME="/test jdk"\n')
   assert.deepEqual(readDevEnvironment(root, { MY_BILL_WEB_HOST: '', MY_BILL_SERVER_PORT: '28080' }), {
     MY_BILL_DB_APP_PASSWORD: '$(touch never-run) $HOME # value', JAVA_HOME: '/test jdk',
   })
   assert.equal(existsSync(join(root, 'never-run')), false)
 })
 
+test('Web 开发配置只读取自己的命名空间，不读取根目录或 iOS 配置', t => {
+  const root = fixture(t)
+  writeFileSync(join(root, '.local/dev.env'), 'MY_BILL_SERVER_PORT=28080\n')
+  mkdirSync(join(root, '.local/ios'))
+  writeFileSync(join(root, '.local/ios/dev.env'), 'MY_BILL_SERVER_PORT=38080\n')
+  assert.deepEqual(readDevEnvironment(root, {}), {})
+  writeFileSync(join(root, '.local/web/dev.env'), 'MY_BILL_SERVER_PORT=18080\n')
+  assert.deepEqual(readDevEnvironment(root, {}), { MY_BILL_SERVER_PORT: '18080' })
+})
+
 test('拒绝错误格式、重复键及非项目变量，错误不泄露配置值', t => {
   const root = fixture(t)
   for (const source of ['MY_BILL_TOKEN="sensitive', 'invalid sensitive', 'PATH=sensitive', 'MY_BILL_TOKEN=a\nMY_BILL_TOKEN=sensitive', 'MY_BILL_TOKEN=sensitive\0', `MY_BILL_TOKEN=${'s'.repeat(65536)}`]) {
-    writeFileSync(join(root, '.local/dev.env'), source)
+    writeFileSync(join(root, '.local/web/dev.env'), source)
     assert.throws(() => readDevEnvironment(root, {}), error => !error.message.includes('sensitive'))
   }
 })
@@ -44,7 +54,7 @@ test('Bash 桥接保持引号、换行和命令字面值，解析失败不导出
   assert.equal(result.status, 0, result.stderr)
   assert.equal(JSON.parse(result.stdout), "line\nquote' $(touch never-run)")
   assert.equal(existsSync(join(root, 'never-run')), false)
-  writeFileSync(join(root, '.local/dev.env'), 'MY_BILL_TOKEN=first\nPATH=sensitive\n')
+  writeFileSync(join(root, '.local/web/dev.env'), 'MY_BILL_TOKEN=first\nPATH=sensitive\n')
   const failure = spawnSync('bash', ['-c', code, 'test', root], { encoding: 'utf8' })
   assert.notEqual(failure.status, 0)
   assert.equal(failure.stdout, '')

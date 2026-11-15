@@ -128,7 +128,7 @@ if [[ "${MY_BILL_DATABASE_TEST_SUITE:-regression}" == "e2e" ]]; then
     MY_BILL_EXPORT_DIRECTORY="${TEST_ROOT}/exports" MY_BILL_JOB_POLL_DELAY_MS=60000 \
     java -jar "${server_jar}" >"${TEST_ROOT}/server.log" 2>&1 &
   SERVER_PID=$!
-  # 隔离测试直接调用 Vite，避开开发入口对 .local/dev.env 的加载。
+  # 隔离测试直接调用 Vite，避开开发入口对 .local/web/dev.env 的加载。
   MY_BILL_SERVER_PORT="${server_port}" node web/node_modules/vite/bin/vite.js preview web --host 127.0.0.1 --port "${web_port}" \
     >"${TEST_ROOT}/web.log" 2>&1 &
   WEB_PID=$!
