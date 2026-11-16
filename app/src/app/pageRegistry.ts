@@ -1,10 +1,13 @@
-export const pageStates = ['ready','loading','empty','error'] as const
+export const pageStates = ['ready', 'loading', 'empty', 'error'] as const
 export type PageState = typeof pageStates[number]
 export interface PageRegistration {
- readonly pageKey: 'ledger-entry'|'reports'|'bill-details'|'profile-settings'|'personal-dictionaries'|'personal-dictionary-detail'
- readonly title: string; readonly path: string; readonly navigation: 'primary'|'none'
- readonly archetype: 'quick-entry'|'dashboard'|'list'|'settings'; readonly prototype: string
- readonly states: readonly PageState[]
+  readonly pageKey: 'ledger-entry' | 'reports' | 'bill-details' | 'profile-settings' | 'personal-dictionaries' | 'personal-dictionary-detail'
+  readonly title: string
+  readonly path: string
+  readonly navigation: 'primary' | 'none'
+  readonly archetype: 'quick-entry' | 'dashboard' | 'list' | 'settings'
+  readonly prototype: string
+  readonly states: readonly PageState[]
 }
 export const pageRegistry = [
   {

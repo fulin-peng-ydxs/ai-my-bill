@@ -4,11 +4,61 @@ import { nativeSqlite, openIosDatabase } from '../src/infrastructure/database/na
 import { ledgerFiles } from '../src/platform/ledgerFiles'
 import type { Seed } from '../src/data/seed/defaults'
 
-function check(value: unknown, message: string): asserts value { if (!value) throw new Error(message) }
+function check(value: unknown, message: string): asserts value {
+  if (!value) {
+    throw new Error(message)
+  }
+}
 async function rejects(task: () => Promise<unknown>, message: string) {
   let rejected = false
-  try { await task() } catch { rejected = true }
+  try {
+    await task()
+  } catch {
+    rejected = true
+  }
   check(rejected, message)
+}
+
+/** 仅在 test bundle 注入关闭拒绝；恢复后的关闭、重开及数据回读仍调用真实 SQLite。 */
+async function verifyCloseRetry(database: LedgerDatabase, competing: LedgerDatabase, dataset: unknown) {
+  const closeConnection = nativeSqlite.closeConnection
+  const original = await nativeSqlite.retrieveConnection(database.name, false)
+  let failures = 2
+  nativeSqlite.closeConnection = async (name, readonly) => {
+    if (name === database.name && failures > 0) {
+      failures -= 1
+      throw new Error('controlled-close-failure')
+    }
+    return closeConnection(name, readonly)
+  }
+  try {
+    await rejects(() => database.close(), '关闭故障未拒绝')
+    await rejects(() => database.read(async () => null), '关闭失败后仍允许读取')
+    await rejects(() => database.write(async () => null), '关闭失败后仍允许写入')
+    let competingCode: unknown
+    try {
+      await competing.open()
+    } catch (error) {
+      competingCode = (error as { code?: unknown }).code
+    }
+    check(competingCode === 'DATABASE_BUSY', '关闭失败后丢失账本所有权')
+    await rejects(() => database.open(), '持续关闭故障未拒绝重开')
+    check(failures === 0, '重开未先重试关闭')
+    check(await nativeSqlite.retrieveConnection(database.name, false) === original, '关闭失败后覆盖原生连接')
+    await database.close()
+    check(!(await nativeSqlite.isConnection(database.name, false)).result, '重试关闭后注册表仍有连接')
+    await database.open()
+    await database.read(async sql => {
+      check((await sql.query('SELECT dataset_id FROM ledger_meta'))[0].dataset_id === dataset, '重开改变数据集')
+      check((await sql.query("SELECT CAST(amount_cents AS TEXT) AS cents FROM ledger_entry WHERE id='saved'"))[0].cents === '1500', '重开丢失已提交账目')
+    })
+    await database.close()
+    await competing.open()
+    check(await competing.read(async sql => (await sql.query('SELECT dataset_id FROM ledger_meta'))[0].dataset_id) === dataset, '关闭后无法交接原账本')
+    await competing.close()
+  } finally {
+    nativeSqlite.closeConnection = closeConnection
+  }
 }
 
 /** 原生隔离库夹具；直接调用生产生命周期和原生文件能力，不用模拟 SQLite。 */
@@ -61,7 +111,8 @@ export async function lifecycle() {
     }, cancelled.signal), '提交前取消未拒绝')
     check(await old.read(async sql => (await sql.query("SELECT * FROM preference WHERE key='cancelled'")).length) === 0, '取消后残留写入')
     check(await old.write(sql => sql.run("UPDATE dictionary_item SET name='错误覆盖' WHERE id='cash' AND row_version=1")) === 0, '过期版本覆盖用户值')
-    await old.close()
+    await verifyCloseRetry(old, manager('main'), dataset)
+    evidence.push('close-failure-retry-retained-owner')
     evidence.push('atomic-write-idempotency-foreign-key')
 
     let lowSpaceReached = false

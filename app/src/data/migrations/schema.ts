@@ -10,7 +10,8 @@ export function schemaSqlTokens(sql: string): string[] {
 export function assertSchema(actual: readonly SchemaObject[], expected: readonly SchemaObject[]): void {
   const canonical = (objects: readonly SchemaObject[]) => objects.map(o => ({ type: o.type, name: o.name, tableName: o.tableName, sql: schemaSqlTokens(o.sql) }))
     .sort((a, b) => a.type < b.type ? -1 : a.type > b.type ? 1 : a.name < b.name ? -1 : a.name > b.name ? 1 : 0)
-  const received = canonical(actual), contract = canonical(expected)
+  const received = canonical(actual)
+  const contract = canonical(expected)
   if (JSON.stringify(received) !== JSON.stringify(contract)) {
     const index = contract.findIndex((item, i) => JSON.stringify(item) !== JSON.stringify(received[i]))
     throw new LocalError('DATABASE_INCOMPATIBLE', '账本结构、字段或约束与已知版本不一致。', { cause: { actual: received[index < 0 ? contract.length : index], expected: contract[index] } })

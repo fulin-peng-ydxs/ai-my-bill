@@ -1,6 +1,9 @@
 import { LocalError, throwIfCancelled } from '../../domain/localError'
 
-type Job = { start: () => Promise<void>; cancel: () => void }
+type Job = {
+  start: () => Promise<void>
+  cancel: () => void
+}
 
 /** 同一 SQLite 连接的读写/生命周期共用有界队列，避免异步回调混入其他事务。 */
 export class SerialQueue {
@@ -8,7 +11,9 @@ export class SerialQueue {
   private active = false
 
   constructor(private readonly capacity = 32) {
-    if (!Number.isSafeInteger(capacity) || capacity < 1) throw new RangeError('队列容量必须是正整数。')
+    if (!Number.isSafeInteger(capacity) || capacity < 1) {
+      throw new RangeError('队列容量必须是正整数。')
+    }
   }
 
   run<T>(task: () => Promise<T>, signal?: AbortSignal): Promise<T> {
@@ -38,7 +43,9 @@ export class SerialQueue {
         },
         cancel: () => {
           const index = this.pending.indexOf(job)
-          if (index < 0) return
+          if (index < 0) {
+            return
+          }
           this.pending.splice(index, 1)
           signal?.removeEventListener('abort', job.cancel)
           reject(new LocalError('OPERATION_CANCELLED', '操作已取消。'))
@@ -51,9 +58,13 @@ export class SerialQueue {
   }
 
   private startNext(): void {
-    if (this.active) return
+    if (this.active) {
+      return
+    }
     const job = this.pending.shift()
-    if (!job) return
+    if (!job) {
+      return
+    }
     this.active = true
     void job.start()
   }

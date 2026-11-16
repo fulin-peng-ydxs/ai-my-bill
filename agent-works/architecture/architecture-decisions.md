@@ -10,7 +10,7 @@
 
 构建由 [ios-app.sh](../../scripts/ios-app.sh) 调用 app 的 `native:sync`：Vite 将 Vue 编译至 app/dist，Capacitor 将资源复制到原生 App/public，并生成配置和 CapApp-SPM 清单。配置不接受环境变量覆盖远程地址，未配置 `server.url`；WKWebView 从 `capacitor://localhost` 随包入口加载，HTML 的 CSP 将资源连接限制为自身。SwiftPM 清单由 CLI 生成，不维护另一份手工副本。CLI 8.6.2 在 tools 5.9 清单中生成 `.iOS(.v27)`，项目通过 [生成适配](../../scripts/normalize-capacitor-spm.mjs) 将这一已知形态转换为等价的 `.iOS("27.0")`；形态变化时明确失败，升级 CLI 时需重新评估。npm 依赖由 app/package-lock.json 锁定，原生远程依赖由 [Package.resolved](../../app/ios/App/App.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved) 固定，禁止自动漂移。
 
-[nativeConnection](../../app/src/infrastructure/database/nativeConnection.ts) 是最小原生连接边界：只允许 iOS 且必须存在 CapacitorSQLite 插件，拒绝浏览器替代存储。[nativeAdapter](../../app/src/infrastructure/database/nativeAdapter.ts) 只注册 CapacitorSQLite 原生插件并持有有界于实际连接数的注册表，不导入插件的 Web 实现；所有 SQL 操作仍委托锁定插件，打开失败会释放已登记连接并保留错误。插件配置将数据库放在沙盒 `Library/OfflineLedger`，并设置系统备份排除标记；该标记已经由模拟器上的原生测试读取确认。[LedgerDatabase](../../app/src/data/ledgerDatabase.ts) 在这一边界之上管理账本连接、生命周期与事务；页面已消费初始化就绪状态，后续阶段再接入各业务操作。
+[nativeConnection](../../app/src/infrastructure/database/nativeConnection.ts) 是最小原生连接边界：只允许 iOS 且必须存在 CapacitorSQLite 插件，拒绝浏览器替代存储。[nativeAdapter](../../app/src/infrastructure/database/nativeAdapter.ts) 只注册 CapacitorSQLite 原生插件并持有有界于实际连接数的注册表，不导入插件的 Web 实现；所有 SQL 操作仍委托锁定插件。正式账本经 createIosDatabase 创建并接管句柄后再打开，打开失败由同一生命周期释放；原生探针沿用 openIosDatabase 的独立打开/清理入口。插件配置将数据库放在沙盒 `Library/OfflineLedger`，并设置系统备份排除标记；该标记已经由模拟器上的原生测试读取确认。[LedgerDatabase](../../app/src/data/ledgerDatabase.ts) 在这一边界之上管理账本连接、生命周期与事务；页面已消费初始化就绪状态，后续阶段再接入各业务操作。
 
 App 的 API DTO 暂以旧接口类型维持页面编译兼容，`api/http.ts` 不发出 HTTP；未接通的业务调用明确拒绝，不返回假数据。运行期 Pinia 偏好和 useLedgerDraft 仅服务当前页面缓存，主题跟随系统或当前选择，草稿切页保留；它们没有浏览器持久化，统一 SQLite 偏好/草稿在后续接入。账号、管理员和 PWA 入口不进入 App 路由。原 UI 的 PageWorkspace、AppDrawer/AppDialog、CachedPageView、键盘可见视口及未保存作用域继续复用，样式与模板基线由设计契约保护。图表与报表页面按需分包。
 
@@ -19,6 +19,8 @@ App 的 API DTO 暂以旧接口类型维持页面编译兼容，`api/http.ts` �
 精确金额、业务时间和文本纯函数统一位于 app/src/domain；旧 Web 的对应模块仅重导出同一实现，兼容测试验证入口一致，避免保留两份业务规则。金额跨 SQLite 桥只接受规范十进制整数字符串，并校验 64 位整数边界。[SerialQueue](../../app/src/infrastructure/database/serialQueue.ts) 提供默认容量 32 的串行执行能力，排队取消释放名额，运行中的取消由事务安全边界处理；LedgerDatabase 的生命周期、读写和关闭均通过这一队列执行，事务在同一独占操作内提交或回滚。
 
 [账本生命周期](../../app/src/data/ledgerDatabase.ts) 取得同名库的单一所有权后，校验原生外键及 schema/履历，初始化或升级成功且文件策略生效后才接受业务操作。结构链由 [migrations](../../app/src/data/migrations/index.ts) 维护，每份 SQL 的 SHA-256 与执行结果在同一事务提交；各版本同时维护完整结构清单，启动先按旧版本清单校验，再在迁移事务中按目标清单核对。结构检查比较表/索引/触发器的类型、归属和 SQL 词法单元，覆盖列类型、CHECK、外键及唯一性；只忽略语法外空白与注释，不忽略字符串内容或词边界。当前尚无正式发布的历史数据库版本，兼容测试使用受控旧版夹具。未知高版本、断档、历史摘要不符或不能解释的元信息缺失均拒绝，不删库重建。基础表承载元信息、字典标识、偏好、幂等结果及带定点金额/历史渠道快照的收支共同记录，类型专有字段和规则按相应功能追加迁移。
+
+关闭失败时账本停止读写，保留连接引用与同名库所有权；只有原生关闭成功才释放两者。调用方可再次 close，或调用 open 先重试遗留连接的关闭；清理失败时不创建同名新连接。打开/校验与清理同时失败会保留两个原因，原生打开前已接管的句柄同样适用这组恢复规则。
 
 [默认清单](../../app/src/data/seed/defaults.ts) 只对确认的新数据集写入，与 datasetId、schemaVersion、seedVersion 和初始化标记共同提交。现有清单采用已确认的八项收入分类；已有账本不随安装包 seed 变化更新，空字典也不补种。偏好以 JSON 原值保存，区分缺失与 false、0、空值。新数据集执行结构/必需数据迁移后，初始偏好由当前 seed 显式覆盖同键迁移缺省值；此覆盖仅存在于新装事务。存量升级不执行 seed，缺失字段只由相应迁移补齐，已有用户值继续保持。数据层 executeOnce 将业务写入和操作结果共同提交，相同操作名/ID/摘要回传已有结果，摘要不同拒绝；调用者仍须提供规范化业务输入摘要及领域校验。
 

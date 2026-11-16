@@ -13,8 +13,12 @@ export const useBootstrapStore = defineStore('bootstrap', {
   }),
   actions: {
     initialize(): Promise<void> {
-      if (this.status === 'ready') return Promise.resolve()
-      if (opening) return opening
+      if (this.status === 'ready') {
+        return Promise.resolve()
+      }
+      if (opening) {
+        return opening
+      }
       this.status = 'loading'
       this.error = undefined
       database ??= new LedgerDatabase()

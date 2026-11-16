@@ -123,7 +123,9 @@ final class NativeSqliteTests: XCTestCase {
         var evidence = try XCTUnwrap(result as? [String: Any])
         evidence["hostResidentBytesBefore"] = beforeBytes
         evidence["hostResidentBytesAfter"] = try residentBytes()
-        XCTAssertEqual((evidence["checks"] as? [String])?.count, 4)
+        let checks = try XCTUnwrap(evidence["checks"] as? [String])
+        XCTAssertEqual(checks.count, 5)
+        XCTAssertTrue(checks.contains("close-failure-retry-retained-owner"))
         let prefix = try XCTUnwrap(evidence["databasePrefix"] as? String)
         try verifySnapshots(prefix: prefix, minimum: 2, cleanup: true)
         print("LEDGER_LIFECYCLE_EVIDENCE " + String(decoding: try JSONSerialization.data(withJSONObject: evidence, options: [.sortedKeys]), as: UTF8.self))

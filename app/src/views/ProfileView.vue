@@ -32,30 +32,78 @@ const drawerOpen = ref(false)
 const activeSetting = ref('appearance')
 const resetOpen = ref(false)
 const resetError = ref<RequestError>()
-const toastOpen = ref(false), toastMessage = ref(''), toastKind = ref<'success'|'error'>('success')
+const toastOpen = ref(false)
+const toastMessage = ref('')
+const toastKind = ref<'success' | 'error'>('success')
 const fullExportRequest = { scope: 'ALL_DATA' as const }
 const fundingRequest = useLatestRequest<Awaited<ReturnType<typeof listDictionaryCandidates>>>()
 const fundingOptions = computed(() => fundingRequest.data.value?.items ?? [])
 const fundingLoading = computed(() => fundingRequest.status.value === 'loading')
 const fundingError = fundingRequest.error
-async function loadFundingChannels() { await fundingRequest.execute(signal => listDictionaryCandidates('funding-channel', '', signal)) }
-watch(drawerOpen, value => { if (value && activeSetting.value === 'funding') void loadFundingChannels() })
+async function loadFundingChannels() {
+  await fundingRequest.execute(signal => listDictionaryCandidates('funding-channel', '', signal))
+}
+watch(drawerOpen, value => {
+  if (value && activeSetting.value === 'funding') {
+    void loadFundingChannels()
+  }
+})
 const settingItems = computed<SettingsDisclosureItem[]>(() => [
- { key: 'funding', label: '默认资金渠道', value: fundingOptions.value.find(i => i.id === preferencesStore.values.defaultFundingChannelId)?.name ?? '未设置' },
- { key: 'ledgerRange', label: '明细默认范围', value: preferenceLabel(ledgerRangeOptions, preferencesStore.values.ledgerDefaultRange) },
- { key: 'reportRange', label: '报表默认范围', value: preferenceLabel(reportRangeOptions, preferencesStore.values.reportDefaultRange) },
- { key: 'appearance', label: '外观', value: themeModeLabel(theme.mode) },
+  {
+    key: 'funding',
+    label: '默认资金渠道',
+    value: fundingOptions.value.find(i => i.id === preferencesStore.values.defaultFundingChannelId)?.name ?? '未设置',
+  },
+  {
+    key: 'ledgerRange',
+    label: '明细默认范围',
+    value: preferenceLabel(ledgerRangeOptions, preferencesStore.values.ledgerDefaultRange),
+  },
+  {
+    key: 'reportRange',
+    label: '报表默认范围',
+    value: preferenceLabel(reportRangeOptions, preferencesStore.values.reportDefaultRange),
+  },
+  { key: 'appearance', label: '外观', value: themeModeLabel(theme.mode) },
 ])
-const activeField = computed(() => ({ funding: 'defaultFundingChannelId', ledgerRange: 'ledgerDefaultRange', reportRange: 'reportDefaultRange', appearance: 'themeMode' })[activeSetting.value] as PreferenceField|undefined)
+const activeField = computed(() => ({
+  funding: 'defaultFundingChannelId',
+  ledgerRange: 'ledgerDefaultRange',
+  reportRange: 'reportDefaultRange',
+  appearance: 'themeMode',
+})[activeSetting.value] as PreferenceField | undefined)
 const drawerTitle = computed(() => settingItems.value.find(i => i.key === activeSetting.value)?.label ?? '')
 const drawerDescription = computed(() => activeSetting.value === 'funding' ? '支出显示为支付方式，收入显示为收款方式。' : undefined)
-function openSetting(key: string) { activeSetting.value = key; drawerOpen.value = true }
-function updatePreference(value: Partial<PreferenceRequest>) { void preferencesStore.update(value) }
-function selectDefaultFunding(item: { id: string }) { updatePreference({ defaultFundingChannelId: item.id }) }
-async function retryPreferences() { if (activeField.value) await preferencesStore.retry(activeField.value) }
-async function retryActive() { await retryPreferences() }
-async function confirmReset() { try { await resetPreferences() } catch(error) { resetError.value = normalizeRequestError(error) } }
-function showExportNotice(message: string, kind: 'success'|'error') { toastMessage.value = message; toastKind.value = kind; toastOpen.value = true }
+function openSetting(key: string) {
+  activeSetting.value = key
+  drawerOpen.value = true
+}
+function updatePreference(value: Partial<PreferenceRequest>) {
+  void preferencesStore.update(value)
+}
+function selectDefaultFunding(item: { id: string }) {
+  updatePreference({ defaultFundingChannelId: item.id })
+}
+async function retryPreferences() {
+  if (activeField.value) {
+    await preferencesStore.retry(activeField.value)
+  }
+}
+async function retryActive() {
+  await retryPreferences()
+}
+async function confirmReset() {
+  try {
+    await resetPreferences()
+  } catch (error) {
+    resetError.value = normalizeRequestError(error)
+  }
+}
+function showExportNotice(message: string, kind: 'success' | 'error') {
+  toastMessage.value = message
+  toastKind.value = kind
+  toastOpen.value = true
+}
 </script>
 
 <template>

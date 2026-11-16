@@ -47,7 +47,16 @@ function bodyFields(body?: ApiErrorBody): Record<string, string[]> {
 
 /** 把本地操作和兼容 DTO 错误统一为页面可安全展示的信息，保留原因链。 */
 export function normalizeRequestError(error: unknown): RequestError {
-  if (error instanceof LocalError) return { kind: 'unavailable', message: error.message, fieldErrors: Object.fromEntries(error.fieldErrors.map(item => [item.field, [item.message]])), traceId: error.traceId, retryable: error.retryable, cause: error }
+  if (error instanceof LocalError) {
+    return {
+      kind: 'unavailable',
+      message: error.message,
+      fieldErrors: Object.fromEntries(error.fieldErrors.map(item => [item.field, [item.message]])),
+      traceId: error.traceId,
+      retryable: error.retryable,
+      cause: error,
+    }
+  }
   if (error instanceof Error && error.name === 'AbortError') {
     return { kind: 'canceled', message: '请求已取消。', fieldErrors: {}, retryable: false, cause: error }
   }

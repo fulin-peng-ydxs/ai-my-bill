@@ -26,6 +26,8 @@ App 检查的实现入口为 [ios-app.sh](../../scripts/ios-app.sh)，需先按 
 
 App 设计门禁由 [designContract.spec.ts](../../app/src/app/designContract.spec.ts) 经 check:app 同一入口执行：Vue/TypeScript 解析真实导入和模板消费，核对九个核心组件登记、个人页面的唯一角色/路径及实际路由，拒绝私有颜色、注释假导入、缺登记与重复角色反例。21 个关键共享组件模板及三份全局样式的 SHA 基线来自准备提交 6419b93；未作为检查目标的业务消费者仍须按改动复核。四态及初始化重试由组件/状态测试覆盖，不用它们证明原生呈现。
 
+[关闭重试回归](../../app/src/data/ledgerDatabase.spec.ts) 经 check:app 执行，在原生桥边界注入失败，覆盖关闭后禁止读写、保留所有权、重复关闭、直接重开及打开/校验与关闭同时失败的原因链；它不模拟真实 SQL 持久化。check:ios-app:simulator 的 lifecycleProbe 在真实原生库上补充注入关闭拒绝，恢复后调用真实关闭/重开，核对数据集、已提交金额和同名账本交接；故障包装仅存在于 test bundle，finally 恢复，不进入生产入口。
+
 原生 [shellProbe](../../app/native-tests/shellProbe.ts) 在实际 WKWebView 中检查四导航、原图标、切页草稿、主题及抽屉焦点返回。业务尚未接通时，嵌套放弃/取消使用 test bundle 内共享组件夹具，验证父子层与未保存作用域，不冒充账目编辑链路。探针不进入生产资源。日常页面还须在独立小/默认/大 iPhone 模拟器，从 App 图标直接操作导航、表单、完整软键盘、原生选择器、明暗主题、横屏与减少动态效果；记录原页面操作和各自边界，不将脚本派发事件当成触摸验证。未接通功能应显示明确不可用而非假成功。
 
 资源门禁使用锁定的 TypeScript 解析器检查 JS/MJS/CJS 及内联脚本，拒绝已知 IndexedDB、Web Storage、WebSQL、WASM 的直接标识符、别名来源与静态括号访问；合法注释及文案不作为调用。该静态检查不证明所有动态间接访问不可达，正式数据入口仍须通过原生集成验证。正反例通过同一门禁入口执行。
