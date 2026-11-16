@@ -75,8 +75,23 @@ if [[ "${MODE}" == ios-build ]]; then
 else
   SIMULATOR_ID="$(xcrun simctl create '我的账单离线原生测试' com.apple.CoreSimulator.SimDeviceType.iPhone-14-Pro-Max com.apple.CoreSimulator.SimRuntime.iOS-27-0)"
   printf '%s\n' "${SIMULATOR_ID}" > "${RUN_DIRECTORY}/simulator.udid"
+  # 测试 bundle 在注入探针或启动 UI 操作前校验本轮设备归属；生产 App 不读取清单。
+  node -e 'require("node:fs").writeFileSync(process.argv[1], JSON.stringify({simulatorId: process.argv[2], runId: crypto.randomUUID(), appId: "com.mybill.offline"}), {mode: 0o600})' "${RUN_DIRECTORY}/test-context.json" "${SIMULATOR_ID}"
+  XCODE_COMMON_ARGUMENTS+=("MYBILL_TEST_CONTEXT_FILE=${RUN_DIRECTORY}/test-context.json")
+  XCODE_ARGUMENTS=("${XCODE_COMMON_ARGUMENTS[@]}" -scheme App)
   xcrun simctl boot "${SIMULATOR_ID}"
   xcrun simctl bootstatus "${SIMULATOR_ID}" -b > "${RUN_DIRECTORY}/boot.log" 2>&1
+  # 先完成首次运行时/正式账本初始化，再由 XCTest 重新启动宿主，分离环境准备和测试。
+  # 这不是冷启动性能验收；readyWebView 的 20 秒和单用例 60 秒预算保持不变。
+  if ! xcodebuild build-for-testing "${XCODE_ARGUMENTS[@]}" -destination "platform=iOS Simulator,id=${SIMULATOR_ID}" > "${RUN_DIRECTORY}/prepare-build.log" 2>&1; then
+    tail -60 "${RUN_DIRECTORY}/prepare-build.log" >&2
+    exit 1
+  fi
+  xcrun simctl install "${SIMULATOR_ID}" .local/ios/DerivedData/Build/Products/Debug-iphonesimulator/App.app
+  xcrun simctl launch "${SIMULATOR_ID}" com.mybill.offline > "${RUN_DIRECTORY}/prepare-launch.log"
+  PREPARE_CONTAINER="$(xcrun simctl get_app_container "${SIMULATOR_ID}" com.mybill.offline data)"
+  python3 scripts/fixtures/dictionary-touch.py wait-initialized "${PREPARE_CONTAINER}" "${SIMULATOR_ID}" "${RUN_DIRECTORY}/unused-receipt.json" > "${RUN_DIRECTORY}/prepare-host.log" 2>&1
+  xcrun simctl terminate "${SIMULATOR_ID}" com.mybill.offline
   if [[ "${MODE}" == ios-touch ]]; then
     # 正式生命周期先创建空账本；夹具仅写本轮模拟器、进程关闭后的文件，不启用 T6 保存。
     if ! xcodebuild test "${XCODE_ARGUMENTS[@]}" -destination "platform=iOS Simulator,id=${SIMULATOR_ID}" -parallel-testing-enabled NO -test-timeouts-enabled YES -maximum-test-execution-time-allowance 60 -only-testing:NativeTests/NativeSqliteTests/testBundledEntryAndNativeSqliteBridge -resultBundlePath "${RUN_DIRECTORY}/touch-initialize.xcresult" > "${RUN_DIRECTORY}/touch-initialize.log" 2>&1; then
@@ -94,9 +109,31 @@ else
       fi
     }
     stop_owned_app "${RUN_DIRECTORY}/touch-stop.log"
+    # 在本轮空模拟器上证明两个直接测试入口没有清单时会拒绝，且不会写入业务数据。
+    assert_unowned_rejected() {
+      local scheme="$1" configuration="$2" test_case="$3" label="$4"
+      local rejection_status=0
+      local unowned_arguments=() argument
+      for argument in "${XCODE_COMMON_ARGUMENTS[@]}"; do
+        if [[ "${argument}" != MYBILL_TEST_CONTEXT_FILE=* ]]; then unowned_arguments+=("${argument}"); fi
+      done
+      xcodebuild test "${unowned_arguments[@]}" -scheme "${scheme}" -configuration "${configuration}" -destination "platform=iOS Simulator,id=${SIMULATOR_ID}" -parallel-testing-enabled NO -test-timeouts-enabled YES -maximum-test-execution-time-allowance 60 MYBILL_TEST_CONTEXT_FILE= -only-testing:"${test_case}" -resultBundlePath "${RUN_DIRECTORY}/touch-reject-${label}.xcresult" > "${RUN_DIRECTORY}/touch-reject-${label}.log" 2>&1 || rejection_status=$?
+      if [[ "${rejection_status}" != 65 ]] || ! grep -Fq 'Error Domain=OwnedSimulatorTestContext Code=1' "${RUN_DIRECTORY}/touch-reject-${label}.log" || ! grep -Eq "Test Case .*${test_case##*/}.*failed" "${RUN_DIRECTORY}/touch-reject-${label}.log"; then
+        tail -60 "${RUN_DIRECTORY}/touch-reject-${label}.log" >&2
+        echo '缺少隔离清单的测试未按守卫预期拒绝。' >&2
+        return 1
+      fi
+      stop_owned_app "${RUN_DIRECTORY}/touch-reject-${label}-stop.log"
+      local container
+      container="$(xcrun simctl get_app_container "${SIMULATOR_ID}" com.mybill.offline data)"
+      python3 scripts/fixtures/dictionary-touch.py check-empty "${container}" "${SIMULATOR_ID}" "${RUN_DIRECTORY}/unused-receipt.json"
+      printf '%s -> owned-context-missing -> xcodebuild=%s -> businessRowsUnchanged\n' "${label}" "${rejection_status}" >> "${RUN_DIRECTORY}/touch-guard-receipts.log"
+    }
+    assert_unowned_rejected App Debug NativeTests/NativeSqliteTests/testOfflineDictionaryPages hosted
+    assert_unowned_rejected DictionaryTouch Release DictionaryUITests/DictionaryTouchTests/test01CreateProduct ui
     APP_CONTAINER="$(xcrun simctl get_app_container "${SIMULATOR_ID}" com.mybill.offline data)"
     python3 scripts/fixtures/dictionary-touch.py prepare "${APP_CONTAINER}" "${SIMULATOR_ID}" "${RUN_DIRECTORY}/touch-fixture.json"
-    if ! xcodebuild test "${XCODE_COMMON_ARGUMENTS[@]}" -scheme DictionaryTouch -configuration Release -destination "platform=iOS Simulator,id=${SIMULATOR_ID}" -parallel-testing-enabled NO -test-timeouts-enabled YES -maximum-test-execution-time-allowance 60 -resultBundlePath "${RUN_DIRECTORY}/touch.xcresult" > "${RUN_DIRECTORY}/touch.log" 2>&1; then
+    if ! xcodebuild test "${XCODE_COMMON_ARGUMENTS[@]}" -scheme DictionaryTouch -configuration Release -destination "platform=iOS Simulator,id=${SIMULATOR_ID}" -parallel-testing-enabled NO -test-timeouts-enabled YES -maximum-test-execution-time-allowance 60 -skip-testing:DictionaryUITests/DictionaryTouchTests/test11ProductLastPage -skip-testing:DictionaryUITests/DictionaryTouchTests/test12MergeLastPageProduct -skip-testing:DictionaryUITests/DictionaryTouchTests/test13UnitLastPage -skip-testing:DictionaryUITests/DictionaryTouchTests/test14DisableLastPageUnit -resultBundlePath "${RUN_DIRECTORY}/touch.xcresult" > "${RUN_DIRECTORY}/touch.log" 2>&1; then
       tail -80 "${RUN_DIRECTORY}/touch.log" >&2
       exit 1
     fi
@@ -104,8 +141,16 @@ else
     stop_owned_app "${RUN_DIRECTORY}/touch-final-stop.log"
     APP_CONTAINER="$(xcrun simctl get_app_container "${SIMULATOR_ID}" com.mybill.offline data)"
     python3 scripts/fixtures/dictionary-touch.py check "${APP_CONTAINER}" "${SIMULATOR_ID}" "${RUN_DIRECTORY}/touch-fixture.json" | tee "${RUN_DIRECTORY}/touch-readback.log"
+    python3 scripts/fixtures/dictionary-touch.py prepare-paging "${APP_CONTAINER}" "${SIMULATOR_ID}" "${RUN_DIRECTORY}/touch-fixture.json"
+    if ! xcodebuild test "${XCODE_COMMON_ARGUMENTS[@]}" -scheme DictionaryTouch -configuration Release -destination "platform=iOS Simulator,id=${SIMULATOR_ID}" -parallel-testing-enabled NO -test-timeouts-enabled YES -maximum-test-execution-time-allowance 60 -only-testing:DictionaryUITests/DictionaryTouchTests/test11ProductLastPage -only-testing:DictionaryUITests/DictionaryTouchTests/test12MergeLastPageProduct -only-testing:DictionaryUITests/DictionaryTouchTests/test13UnitLastPage -only-testing:DictionaryUITests/DictionaryTouchTests/test14DisableLastPageUnit -resultBundlePath "${RUN_DIRECTORY}/touch-paging.xcresult" > "${RUN_DIRECTORY}/touch-paging.log" 2>&1; then
+      tail -80 "${RUN_DIRECTORY}/touch-paging.log" >&2
+      exit 1
+    fi
+    stop_owned_app "${RUN_DIRECTORY}/touch-paging-stop.log"
+    APP_CONTAINER="$(xcrun simctl get_app_container "${SIMULATOR_ID}" com.mybill.offline data)"
+    python3 scripts/fixtures/dictionary-touch.py check-paging "${APP_CONTAINER}" "${SIMULATOR_ID}" "${RUN_DIRECTORY}/touch-fixture.json" | tee "${RUN_DIRECTORY}/touch-paging-readback.log"
     node scripts/verify-ios-resources.mjs .local/ios/DerivedData/Build/Products/Release-iphonesimulator/App.app
-    sed -n '/DICTIONARY_TOUCH_/p; /Executed .* tests\{0,1\}, with/p; /\*\* TEST SUCCEEDED \*\*/p' "${RUN_DIRECTORY}/touch.log"
+    sed -n '/DICTIONARY_TOUCH_/p; /Executed .* tests\{0,1\}, with/p; /\*\* TEST SUCCEEDED \*\*/p' "${RUN_DIRECTORY}/touch.log" "${RUN_DIRECTORY}/touch-paging.log"
     exit 0
   fi
   if ! xcodebuild test "${XCODE_ARGUMENTS[@]}" -destination "platform=iOS Simulator,id=${SIMULATOR_ID}" -parallel-testing-enabled NO -test-timeouts-enabled YES -maximum-test-execution-time-allowance 60 -skip-testing:NativeTests/NativeSqliteTests/testPrepareProcessInterruption -skip-testing:NativeTests/NativeSqliteTests/testRecoverProcessInterruption -resultBundlePath "${RUN_DIRECTORY}/native.xcresult" > "${RUN_DIRECTORY}/test.log" 2>&1; then

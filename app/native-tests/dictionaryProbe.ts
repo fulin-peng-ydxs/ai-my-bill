@@ -4,7 +4,7 @@ import { migrations, type Migration } from '../src/data/migrations'
 import type { Seed } from '../src/data/seed/defaults'
 import {
   dictionaryTypes, dictionaryCrudScenario, dictionaryValidationScenario, dictionarySortScenario,
-  dictionaryReferencesScenario, dictionaryMergeScenario, dictionaryTemplateScenario,
+  dictionaryReferencesScenario, dictionaryMergeScenario, dictionaryTemplateScenario, dictionaryTemplateTieScenario,
 } from '../test-support/dictionaryScenarios'
 import { dictionaryUpgradeScenario } from '../test-support/dictionaryUpgradeScenario'
 
@@ -30,7 +30,7 @@ export async function dictionaries() {
     }
     await crud.close()
     checks.push('eight-dictionary-crud-candidates-and-history')
-    const scenarios = [dictionaryValidationScenario, dictionarySortScenario, dictionaryReferencesScenario, dictionaryMergeScenario]
+    const scenarios = [dictionaryValidationScenario, dictionarySortScenario, dictionaryReferencesScenario, dictionaryMergeScenario, dictionaryTemplateTieScenario]
     for (let index = 0; index < scenarios.length; index += 1) {
       const database = manager(`case${index}`)
       await database.open()

@@ -7,7 +7,13 @@
       </BuildActionEntry>
     </BuildActionEntries>
   </BuildAction>
-  <TestAction buildConfiguration="Release" selectedDebuggerIdentifier="Xcode.DebuggerFoundation.Debugger.LLDB" selectedLauncherIdentifier="Xcode.IDEFoundation.Launcher.LLDB" shouldUseLaunchSchemeArgsEnv="NO">
+  <TestAction buildConfiguration="Release" selectedDebuggerIdentifier="" selectedLauncherIdentifier="Xcode.IDEFoundation.Launcher.PosixSpawn" shouldUseLaunchSchemeArgsEnv="NO">
+    <MacroExpansion>
+      <BuildableReference BuildableIdentifier="primary" BlueprintIdentifier="504EC3031FED79650016851F" BuildableName="App.app" BlueprintName="App" ReferencedContainer="container:App.xcodeproj"/>
+    </MacroExpansion>
+    <EnvironmentVariables>
+      <EnvironmentVariable key="MYBILL_TEST_CONTEXT_FILE" value="$(MYBILL_TEST_CONTEXT_FILE)" isEnabled="YES"/>
+    </EnvironmentVariables>
     <Testables>
       <TestableReference skipped="NO" parallelizable="NO">
         <BuildableReference BuildableIdentifier="primary" BlueprintIdentifier="C50000000000000000000001" BuildableName="DictionaryUITests.xctest" BlueprintName="DictionaryUITests" ReferencedContainer="container:App.xcodeproj"/>

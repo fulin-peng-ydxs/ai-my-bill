@@ -637,15 +637,23 @@
 
   已完成本地 DictionaryService/ProductService、appDatabase 共享所有者、提交后通知及安全错误边界；八类字典 API 和商品候选均调用原生 SQLite，不发 HTTP。原页面模板、样式、导航与组件保持；候选每次展开有界重读，停用项只经 ID 回显，不追加为新录入候选。商品合并保留目标已有默认/最近值，模板按原最近使用规则收敛；账目只迁移引用并递增版本，历史名称/金额保持。
 
-  来源为 codex/offline-ios-app 的 7bb915f1b0282f1accbd3acccb3f3930aedd91c2 加本轮未提交变更。check:app 通过 12 个文件共 53 项测试及 2 项资源门禁。完整 check:ios-app:simulator 已在 .local/ios/tmp/ai-agent/native-XaCEuv 完成：6 项 XCTest 通过，9 组字典/合并/升级场景通过；snapshot-ready、migration-recorded、upgrade-committed 的实际进程中断均返回预期 65，三组恢复分别通过，整轮退出 0。未签名真机架构 Release 构建通过（native-pwh4ZB/build.log），模拟器 Release 构建与资源检查通过（t5-yyJV0E/simulator-release.log）；当前 Vite 全部资源与 Release App/public 逐字节一致，主资源 index-BeH1JkdN.js / index-DfVAVKlw.css。此处不证明真机性能或最终安装交付。
+  T5 首版已提交并推送至 codex/offline-ios-app 的 63e500059c7d79966ae317e0f66cf73cebd6fc26（实现基线 7bb915f1b0282f1accbd3acccb3f3930aedd91c2）。首版 check:app 通过 12 个文件共 53 项测试及 2 项资源门禁。完整 check:ios-app:simulator 已在 .local/ios/tmp/ai-agent/native-XaCEuv 完成：6 项 XCTest 通过，9 组字典/合并/升级场景通过；snapshot-ready、migration-recorded、upgrade-committed 的实际进程中断均返回预期 65，三组恢复分别通过，整轮退出 0。未签名真机架构 Release 构建通过（native-pwh4ZB/build.log），模拟器 Release 构建与资源检查通过（t5-yyJV0E/simulator-release.log）；首版 Vite 全部资源与 Release App/public 逐字节一致，主资源 index-BeH1JkdN.js / index-DfVAVKlw.css。此处不证明真机性能或最终安装交付。
 
   页面直接操作先在独立 iPhone 14 Pro Max / iOS 27.0 模拟器“我的账单 T5 离线字典验收”核验原入口，并通过原新增弹窗保存“测试苹果”。Mac 锁定及 Device Hub 输入转发问题期间未将未保存改名计作通过；用户随后明确授权改用 XCUITest。
 
   check:ios-app:touch 最终在 .local/ios/tmp/ai-agent/native-drymw8 整轮退出 0：正式初始化 1 项 XCTest、Release 外部 runner 的 11 项原生触摸用例全部通过，涵盖八类入口、商品新增/系统全选改名、分类/单位/资金渠道新增、停用/恢复后的原记账页候选、原生商品选择器、合并预览 1 条账目/1 项模板、取消后重开、确认后列表收敛及结束进程再启动后的候选。随后确认 App 进程已结束，受限夹具只读 SQLite 核对稳定 ID、商品状态/去向、账目行版本 2、历史金额 1543 分及“历史苹果”快照不变、原模板 ID 归入目标、合并事件和幂等回执各 1；quick_check 与 foreign_key_check 通过。实际 Release App 的资源门禁再次通过。原生触摸不注入 JS、不替换业务 API；hosted DOM 事件场景与触摸证据分别记录，不冒充无障碍或真机性能验证。
 
-  保留必要失败证据：t5-yyJV0E 的早期探针夹具/等待错误、native-Zejsda 的注入前入口超时、native-Hw7Rjp 的过早操作均未判通过；native-mrLdAu、native-SAhxe8、native-L7SPGd、native-6oqjCc、native-ZXaGcA 的触摸定位、空截图区域、光标位置及抽屉遮挡问题经测试侧修正。native-neC0dJ 为 10 项触摸通过、1 项重启后节点定位失败，截图显示记账页；native-VkG8AH 的 11 项触摸通过，但 XCTest 自动结束 App 后，重复终止被误判为脚本失败。最终通过以 native-drymw8 为准；初始化与最终回读复用严格停止守卫，只接受明确“无可终止进程”，其他错误继续阻断。超时预算和性能指标未上调。
+  保留必要失败证据：t5-yyJV0E 的早期探针夹具/等待错误、native-Zejsda 的注入前入口超时、native-Hw7Rjp 的过早操作均未判通过；native-mrLdAu、native-SAhxe8、native-L7SPGd、native-6oqjCc、native-ZXaGcA 的触摸定位、空截图区域、光标位置及抽屉遮挡问题经测试侧修正。native-neC0dJ 为 10 项触摸通过、1 项重启后节点定位失败，截图显示记账页；native-VkG8AH 的 11 项触摸通过，但 XCTest 自动结束 App 后，重复终止被误判为脚本失败。首版触摸通过以 native-drymw8 为准；初始化与最终回读复用严格停止守卫，只接受明确“无可终止进程”，其他错误继续阻断。超时预算和性能指标未上调。
 
-  V5-T1—T3、V5-B1/B2 全部通过，T5 完成。原页面模板/样式与 T4 基线逐字一致，v1 迁移和原指引保持不变；本轮没有使用真机、启动旧 Web/PG 或进入 T6。专用手动模拟器及各命令新建的测试设备已清理，保留以上必要日志、xcresult 和截图供复核，最终交付稳定且不再引用后可回收；没有操作用户既有模拟器。
+  2026-11-17 基于 63e5000 完成本轮三项复查修复：①合并、启停或改名导致末页失效时，同一可取消请求最多补读一次有效末页；仅在 useLatestRequest 接纳当前代次结果后同步页码，保留搜索及状态筛选。②模板时间完全相同时，按原 Java UUID.compareTo 的有符号高/低 64 位顺序选内容，仍保留目标模板 ID。③hosted 与 UI 测试共用设备归属守卫，两个测试 target 仅支持模拟器；缺失/不匹配清单在探针注入及 UI 操作前拒绝，生产 App 不编译守卫、不读取清单。
+
+  回归新增三项真实页面组件测试，覆盖末页收敛、补读失败后重试，以及旧补读晚于新搜索翻页返回时不得覆盖新结果/页码；四种 UUID 时间相同取舍样本由 Node SQLite 与原生 SQLite 共用。check:app 基线检查通过 13 个文件共 57 项测试及 2 项资源门禁，类型、构建、同步均通过；完整 check:ios-app:simulator 在 .local/ios/tmp/ai-agent/native-G4qiiu 退出 0：7 项 XCTest、10 组字典场景、隔离守卫的有效/无效上下文检查通过；snapshot-ready、migration-recorded、upgrade-committed 三次实际终止均收到预期 65，恢复用例分别通过。
+
+  check:ios-app:touch 在 .local/ios/tmp/ai-agent/native-fOxoD9 整轮退出 0：初始化桥检查通过；hosted/UI 两个无清单入口分别以明确守卫错误及预期 65 拒绝，只读确认业务数据未写入；原 11 项 Release 触摸和新增 4 项末页触摸全部通过。商品合并后保留 PageProduct 搜索、管理列表回到有效页；启用筛选下停用末页唯一单位后保留 PageUnit 搜索及启用状态，显示其余 20 项。两轮 SQLite 回读、quick_check、foreign_key_check 均通过，历史金额 1543 分、名称快照与账目行版本保持预期；最终截图已核对。未签名真机架构 Release 构建和资源门禁通过，证据 native-zpIDXK/build.log；当前随包主资源 index-CA4oZgFo.js / index-DfVAVKlw.css 与构建产物一致。
+
+  本轮必要失败证据保留：native-5S8qSK 发现 scheme 的测试清单环境未传入，修正 TestAction 独立环境及 MacroExpansion 后隔离守卫通过；native-i19FHn、native-ns52MM、native-c9GaXX 的首项入口等待失败未计通过。脚本分离首次环境初始化，自动 TestAction 改为不挂载调试器，日常 Run 调试不变；原 20 秒入口等待、60 秒单用例预算和真机性能标准均未上调。native-QRk0LE 原 11 项和商品末页通过，但单位状态定位误点同名文案；限定 WebKit 暴露的原生 Switch 后在 native-fOxoD9 全量复验通过。早期问题复现及本轮命令汇总日志位于 .local/ios/tmp/ai-agent/t5-review-s4Znao，旧复现不作为新通过证据。
+
+  V5-T1—T3、V5-B1/B2 复验通过，T5 已完成；T6 未开始。原页面模板/样式与 63e5000 逐字一致，v1/v2 SQL、结构清单及原指引保持不变；本轮没有使用真机或启动旧 Web/PG。各命令新建的测试设备已清理，未操作用户既有模拟器；必要日志、xcresult 和截图保留供复核，最终交付稳定且不再引用后可回收。
 
 ### T6：支出收入录入与编辑
 
@@ -1461,16 +1469,16 @@
 
 | 检查点 / 关联差异 | 执行入口、命令与用例范围 | 预期结果与通过条件 | AI验证结果 / 证据 / 后续处理 |
 | --- | --- | --- | --- |
-| V5-T1 | 拟入口：unit、database；八类字典新增/改名/启停/排序、NFKC 重名、父子约束及 seed 重跑 | 唯一键及两级分类成立；旧快照不随改名变化；升级不覆盖用户配置；失败无部分排序 | 通过：check:app 53 项测试及原生 NativeTests/testOfflineDictionaryGovernance；八类 CRUD、规范化、分页、层级、候选更新时间顺序、排序故障整体回滚、引用/历史快照保护。原生 9 组场景证据在 .local/ios/tmp/ai-agent/native-XaCEuv/test.log。 |
-| V5-T2 | 拟入口：database；商品合并影响模板/引用/最近值，注入中途失败和同键冲突 | 事务失败完整回滚；成功目标引用与模板键一致、来源可解释；不破坏历史金额 | 通过：共享 dictionaryMergeScenario/dictionaryTemplateScenario 在 Node SQLite 与 iOS 原生 SQLite 执行；预览无写入、模板源独有/目标较新/键冲突、合并末尾故障完整回滚、重复/并发回执、关闭重开、链式合并及目标最近值保护均通过。 |
+| V5-T1 | 拟入口：unit、database；八类字典新增/改名/启停/排序、NFKC 重名、父子约束及 seed 重跑 | 唯一键及两级分类成立；旧快照不随改名变化；升级不覆盖用户配置；失败无部分排序 | 通过：check:app 57 项测试及 native-G4qiiu 的原生字典/守卫回归；八类 CRUD、规范化、分页、层级、候选更新时间顺序、排序回滚、引用/历史快照保护均通过。三项真实组件回归验证末页收敛、补读失败重试及新查询翻页后旧响应隔离；两个无清单入口拒绝且业务行未增加见 native-fOxoD9/touch-guard-receipts.log。 |
+| V5-T2 | 拟入口：database；商品合并影响模板/引用/最近值，注入中途失败和同键冲突 | 事务失败完整回滚；成功目标引用与模板键一致、来源可解释；不破坏历史金额 | 通过：共享 dictionaryMergeScenario/dictionaryTemplateScenario 在 Node SQLite 与 iOS 原生 SQLite 执行；预览无写入、模板源独有/目标较新/键冲突、同时间 UUID 有符号高低位四种取舍且保留目标 ID、合并末尾故障完整回滚、重复/并发回执、关闭重开、链式合并及目标最近值保护均通过。 |
 | V5-T3 | 拟入口：unit、database；按 S3 的“现金→零钱”样本比较已有账本应用新 seed 与独立新账本；另用受控必需数据迁移注入同名/稳定键冲突及重跑 | 已有名称、排序、停用/删除、自定义项、历史引用和快照保留，新账本使用新清单；必需迁移只按已定义映射处理，冲突拒绝后无覆盖/半补项；重跑不产生重复项 | 通过：共享 dictionaryUpgradeScenario 经真实 v1→v2 与受控 v3 必需数据迁移执行；现金→零钱、排序 77、停用/删除、自定义项、历史快照、false/0/空值及 seed 版本保持；新装使用 B，名称/稳定键冲突拒绝两次且无半项，成功迁移只执行一次、降版拒绝；原生快照排除标记回读通过。 |
 
 #### 业务验证点（真实系统交互）
 
 | 检查点 / 关联差异 | 角色、操作路径与输入 | 逐步预期与最终业务结果 | AI验证结果 / 证据 / 后续处理 |
 | --- | --- | --- | --- |
-| V5-B1 | 本机账本持有人；我的 → 选项管理，新建商品“测试苹果”、分类、单位“斤”和资金渠道；改名、停用后回记一笔，再恢复 | 原字典入口与交互保留，新候选与启停一致，历史账目名称保持保存快照；引用项不能被直接物理删除；八类入口均可操作 | 通过：native-drymw8/touch.log 的 Release XCUITest 核验八类入口、商品新增/改名、分类/单位/资金渠道新增及启停后的候选刷新；系统全选后先核对输入，再核对抽屉标题及关闭后的列表。touch-readback.log 核验名称、状态及历史快照；此前手动“测试苹果”新增和原生 DOM 重名保留输入证据保留。 |
-| V5-B2 | 本机账本持有人；在独立验收账本准备两个商品及合成历史引用，经“我的 → 选项管理 → 商品 → 管理源商品 → 合并到其他商品”查看影响数量，先取消再重新确认合并 | 取消无变化；成功只形成一个保留归属，历史解释和候选同步，失败可重试；存量模板引用由 V5-T2 回读，模板 UI 留在 V7 验证 | 通过：native-drymw8 的原生触摸预览、取消/重开、确认合并、重启后的新候选均通过；终止 App 后只读真实 SQLite 核验账目目标/行版本、原模板 ID、历史金额/名称快照、来源去向、事件及幂等回执。故障回滚/重试和模板冲突由 V5-T2 的共享 Node/原生场景通过，模板 UI 仍留 V7。 |
+| V5-B1 | 本机账本持有人；我的 → 选项管理，新建商品“测试苹果”、分类、单位“斤”和资金渠道；改名、停用后回记一笔，再恢复 | 原字典入口与交互保留，新候选与启停一致，历史账目名称保持保存快照；引用项不能被直接物理删除；八类入口均可操作 | 通过：native-fOxoD9/touch.log 的 Release XCUITest 复验八类入口、商品新增/改名、分类/单位/资金渠道新增及启停后的候选刷新；系统全选后先核对输入，再核对抽屉标题及关闭后的列表。touch-readback.log 核验名称、状态及历史快照；新增 touch-paging.log 及 touch-paging-readback.log 验证启用筛选末页停用后的列表恢复、搜索/状态保留与持久化；此前手动新增和 DOM 重名保留输入证据保留。 |
+| V5-B2 | 本机账本持有人；在独立验收账本准备两个商品及合成历史引用，经“我的 → 选项管理 → 商品 → 管理源商品 → 合并到其他商品”查看影响数量，先取消再重新确认合并 | 取消无变化；成功只形成一个保留归属，历史解释和候选同步，失败可重试；存量模板引用由 V5-T2 回读，模板 UI 留在 V7 验证 | 通过：native-fOxoD9 的原生触摸预览、取消/重开、确认合并、重启后的新候选及搜索末页唯一商品合并后的列表回退均通过；终止 App 后只读真实 SQLite 核验账目目标/行版本、原模板 ID、历史金额/名称快照、来源去向、事件及幂等回执。故障回滚/重试和模板冲突由 V5-T2 的共享 Node/原生场景通过，模板 UI 仍留 V7。 |
 
 ### V6：支出收入保存、编辑与重启
 
@@ -1881,6 +1889,6 @@ D04 已排除旧 Web 导入，C7 与 V13 不适用。新 App 自身备份仍按 
 
 ### 交付结果与后续
 
-阶段 0、阶段 1 已完成；阶段 2 的 T5 已完成：17 项任务中，T1—T5 完成、T13 跳过，其余 11 项任务未开始。68 项 V 检查点中，17 项通过、48 项待验证、3 项不适用；V5-T1/T2/T3 与 V5-B1/B2 全部通过。正式记账业务、容量性能、最终签名交付及远端 CI 均未验收。准备基线 main 已推送至 6419b93，原前置指引保持逐字保存；具体检查点以 V 表实际证据为准。
+阶段 0、阶段 1 已完成；阶段 2 的 T5 已完成：17 项任务中，T1—T5 完成、T13 跳过，其余 11 项任务未开始。68 项 V 检查点中，17 项通过、48 项待验证、3 项不适用；V5-T1/T2/T3 与 V5-B1/B2 含本轮三项复查修复及新增回归全部通过。正式记账业务、容量性能、最终签名交付及远端 CI 均未验收。准备基线 main 已推送至 6419b93，原前置指引保持逐字保存；具体检查点以 V 表实际证据为准。
 
-本轮仅推进 T5，T6 未开始。保持原页面布局和交互及日常 Web/PG 服务停止，不使用真机；工程检查和模拟器结果不替代后续真机容量/签名交付。实施改动未自动提交或推送。
+本轮仅推进 T5，T6 未开始。保持原页面布局和交互及日常 Web/PG 服务停止，不使用真机；工程检查和模拟器结果不替代后续真机容量/签名交付。提交与推送状态以当前分支 Git 历史及上游为准。

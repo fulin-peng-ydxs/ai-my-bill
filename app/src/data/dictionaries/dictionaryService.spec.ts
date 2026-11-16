@@ -16,7 +16,7 @@ import { dictionaryUpgradeScenario } from '../../../test-support/dictionaryUpgra
 import { LedgerDatabase } from '../ledgerDatabase'
 import {
   dictionaryCrudScenario, dictionaryTypes, dictionaryValidationScenario,
-  dictionarySortScenario, dictionaryReferencesScenario, dictionaryMergeScenario, dictionaryTemplateScenario,
+  dictionarySortScenario, dictionaryReferencesScenario, dictionaryMergeScenario, dictionaryTemplateScenario, dictionaryTemplateTieScenario,
 } from '../../../test-support/dictionaryScenarios'
 
 let database: LedgerDatabase
@@ -45,6 +45,9 @@ describe('T5 本地字典 SQLite 闭环', () => {
   })
   it.each(['source-only', 'target-newer', 'rename-conflict'] as const)('模板边界 %s', async variant => {
     await dictionaryTemplateScenario(database, variant)
+  })
+  it('同时间模板按 Java 有符号 UUID 比较，保留目标 ID 与正确内容', async () => {
+    await dictionaryTemplateTieScenario(database)
   })
   it('v1 升级保护用户配置，新 seed 只用于新账本，必需迁移冲突拒绝且可重跑', async () => {
     await dictionaryUpgradeScenario((suffix, chain, seed) => new LedgerDatabase(`upgrade_${counter}_${suffix}`, chain, seed))

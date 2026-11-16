@@ -31,11 +31,17 @@ App 设计门禁由 [designContract.spec.ts](../../app/src/app/designContract.sp
 
 原生 [shellProbe](../../app/native-tests/shellProbe.ts) 在实际 WKWebView 中检查四导航、原图标、切页草稿、主题及抽屉焦点返回。业务尚未接通时，嵌套放弃/取消使用 test bundle 内共享组件夹具，验证父子层与未保存作用域，不冒充账目编辑链路。探针不进入生产资源。日常页面还须在独立小/默认/大 iPhone 模拟器，从 App 图标直接操作导航、表单、完整软键盘、原生选择器、明暗主题、横屏与减少动态效果；记录原页面操作和各自边界，不将脚本派发事件当成触摸验证。未接通功能应显示明确不可用而非假成功。
 
-[字典场景](../../app/test-support/dictionaryScenarios.ts)与[升级场景](../../app/test-support/dictionaryUpgradeScenario.ts)由 Node SQLite 测试及原生 dictionaryProbe 共用，覆盖八类字典、规范化唯一键、两级分类、有界分页、排序故障回滚、类型/引用保护、历史快照、模板冲突、合并幂等及 v1→v2 升级。Node 测试只在原生桥边界换成临时文件 SQLite，不证明 iOS 文件策略，也不进入生产包；原生测试经正式生命周期核验相同 SQL/事务及快照。seed A/B 样本核对用户改名/停用/排序、删除项及 false/0/空值不被新版清单覆盖，并验证必需数据迁移冲突的拒绝、回滚与重试。
+[字典场景](../../app/test-support/dictionaryScenarios.ts)与[升级场景](../../app/test-support/dictionaryUpgradeScenario.ts)由 Node SQLite 测试及原生 dictionaryProbe 共用，覆盖八类字典、规范化唯一键、两级分类、有界分页、排序故障回滚、类型/引用保护、历史快照、模板冲突（含相同时间下 UUID 有符号高/低位的取舍）、合并幂等及 v1→v2 升级。Node 测试只在原生桥边界换成临时文件 SQLite，不证明 iOS 文件策略，也不进入生产包；原生测试经正式生命周期核验相同 SQL/事务及快照。seed A/B 样本核对用户改名/停用/排序、删除项及 false/0/空值不被新版清单覆盖，并验证必需数据迁移冲突的拒绝、回滚与重试。
+
+[字典详情组件回归](../../app/src/views/me/dictionaries/DictionaryDetailView.spec.ts)挂载正式页面，在 API 边界控制响应顺序，检查末页收敛、补读失败后的重试，以及旧补读晚于新搜索翻页返回时不覆盖新结果或页码；它不替代原生 SQLite 与触摸验证。
 
 [dictionaryUiProbe](../../app/native-tests/dictionaryUiProbe.ts)驱动正式页面与原生 API，核验八类入口、新增/重名保留输入/改名/停用/恢复、预览取消不写入及确认合并。历史账目和模板仅在隔离测试沙盒经原生连接准备，合并后直接读回金额和快照；不启用尚未接通的账目保存、明细或模板 UI。派发事件证据还须配合模拟器图标启动后的实际触摸、键盘和页面核验。
 
-[原生触摸用例](../../app/ios/App/UITests/DictionaryTouchTests.swift)由独立 DictionaryTouch scheme 执行，使用 XCUITest 的 tap/typeText/原生选择器操作 Release App，不注入 JavaScript、不替换业务 API。与 hosted XCTest 的 DOM 事件场景分别记录，不将两者混称为真实触摸。check:ios-app:touch 先验证正式初始化并结束宿主，再用[受限夹具](../../scripts/fixtures/dictionary-touch.py)准备本轮空模拟器账本的历史引用；夹具拒绝已有自定义数据，不清空、不连接真机。UI 用例顺序共用本轮交互会话，各用例保留截图，最后验证重启；脚本结束 App 后回读稳定 ID、引用、模板、行版本、金额、名称快照、事件和幂等回执，执行完整性及外键检查；用例按操作链路拆分并保留原 60 秒执行预算配置，不上调超时；节点未就绪时可用本机 Vision OCR 定位截图文字，再由 XCUITest 坐标触摸，不将 OCR 通过作为无障碍验收。此流程只证明开发模拟器的页面链路，不代替目标真机性能和最终交付。
+NativeTests 与 DictionaryUITests 只支持 simulator SDK，并由共享 [OwnedSimulatorTestContext](../../app/ios/App/NativeTests/OwnedSimulatorTestContext.swift) 在注入探针或启动 UI 操作前核对本轮设备；物理设备测试编译直接拒绝。生产 App 不编译守卫、不读取清单。清单来源及传递见[环境架构](../architecture/environment-configuration.md#离线-app-原生测试配置)，不手工绕过 Xcode 直接测试的拒绝。原生守卫用例覆盖平台、缺失/不匹配设备、路径、App ID、大小及无效内容；touch 脚本另在本轮空模拟器对两个入口去掉清单，要求具体用例以隔离守卫错误失败、xcodebuild 返回 65，再只读确认业务行未增加。普通测试失败返回 65 不能充当该负例成功。
+
+脚本先构建、安装并等待专用模拟器正式账本完成初始化，结束宿主后再执行测试，以分离首次运行时准备；准备有界等待不属于冷启动性能测量，也不改变原生入口 20 秒等待和单用例 60 秒预算。自动回归的 TestAction 不挂载调试器，日常 Run 调试设置保持；正式性能验收仍按目标真机 Release 规则执行。
+
+[原生触摸用例](../../app/ios/App/UITests/DictionaryTouchTests.swift)由独立 DictionaryTouch scheme 执行，使用 XCUITest 的 tap/typeText/原生选择器操作 Release App，不注入 JavaScript、不替换业务 API。与 hosted XCTest 的 DOM 事件场景分别记录，不将两者混称为真实触摸。check:ios-app:touch 先验证正式初始化并结束宿主，再用[受限夹具](../../scripts/fixtures/dictionary-touch.py)准备本轮空模拟器账本的历史引用；夹具拒绝已有自定义数据，不清空、不连接真机。原有 11 项 UI 用例顺序共用本轮交互会话，各用例保留截图，最后验证重启；回读后追加 21 项商品/单位夹具，以另 4 项用例验证搜索末页合并、启用筛选末页停用后的有效页回退及条件保留，再只读核验结果。脚本结束 App 后回读稳定 ID、引用、模板、行版本、金额、名称快照、事件和幂等回执，执行完整性及外键检查；用例按操作链路拆分并保留原 60 秒执行预算配置，不上调超时；节点未就绪时可用本机 Vision OCR 定位截图文字，再由 XCUITest 坐标触摸，不将 OCR 通过作为无障碍验收。此流程只证明开发模拟器的页面链路，不代替目标真机性能和最终交付。
 
 资源门禁使用锁定的 TypeScript 解析器检查 JS/MJS/CJS 及内联脚本，拒绝已知 IndexedDB、Web Storage、WebSQL、WASM 的直接标识符、别名来源与静态括号访问；合法注释及文案不作为调用。该静态检查不证明所有动态间接访问不可达，正式数据入口仍须通过原生集成验证。正反例通过同一门禁入口执行。
 

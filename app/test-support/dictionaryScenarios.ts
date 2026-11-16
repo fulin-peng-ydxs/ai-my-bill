@@ -292,3 +292,31 @@ export async function dictionaryTemplateScenario(database: LedgerDatabase, varia
     '商品候选带出停用默认/最近引用')
   return `template-${variant}`
 }
+
+/** 与原 Java UUID.compareTo 的有符号高/低 64 位顺序对齐，覆盖同毫秒模板的确定性取舍。 */
+export async function dictionaryTemplateTieScenario(database: LedgerDatabase) {
+  const cases = [
+    ['80000000-0000-0000-0000-000000000001', '70000000-0000-0000-0000-000000000001', false],
+    ['70000001-0000-0000-0000-000000000001', '80000001-0000-0000-0000-000000000001', true],
+    ['00000002-0000-0000-8000-000000000001', '00000002-0000-0000-7000-000000000001', false],
+    ['00000003-0000-0000-0000-000000000001', '00000003-0000-0000-0000-000000000002', false],
+  ] as const
+  for (const [sourceId, targetId, sourceNewer] of cases) {
+    const context = await createMergeContext(database, '同时间模板')
+    const stamp = '2026-11-15T01:00:00.000Z'
+    await database.write(async sql => {
+      const source = await insertTemplate(sql, context, context.source.id, context.source.name, stamp, '1543')
+      const target = await insertTemplate(sql, context, context.target.id, context.target.name, stamp, '999')
+      await sql.run('UPDATE daily_entry_template SET id=? WHERE id=?', [sourceId, source])
+      await sql.run('UPDATE daily_entry_template SET id=? WHERE id=?', [targetId, target])
+    })
+    await new ProductService(database).merge(context.source.id, context.target.id)
+    const row = await database.read(async sql => (await sql.query(
+      'SELECT id,product_id,CAST(amount_cents AS TEXT) AS cents FROM daily_entry_template WHERE product_id=?', [context.target.id],
+    ))[0])
+    check(row.id === targetId && row.cents === (sourceNewer ? '1543' : '999'), '同时间模板未沿用 Java UUID 取舍或目标 ID 丢失')
+    check(await database.read(async sql => (await sql.query('SELECT id FROM daily_entry_template WHERE id=?', [sourceId])).length) === 0,
+      '同时间模板未收敛来源')
+  }
+  return 'template-tie-java-signed-uuid-order'
+}

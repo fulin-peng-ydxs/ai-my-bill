@@ -20,6 +20,8 @@
 		A10000000000000000000002 /* NativeTests/NativeSqliteTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000003 /* NativeTests/NativeSqliteTests.swift */; };
 		A10000000000000000000004 /* sqlite-probe.js in Resources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000005 /* sqlite-probe.js */; };
 		C50000000000000000000002 /* DictionaryTouchTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C50000000000000000000003; };
+		D60000000000000000000001 /* OwnedSimulatorTestContext.swift in NativeTests Sources */ = {isa = PBXBuildFile; fileRef = D60000000000000000000003; };
+		D60000000000000000000002 /* OwnedSimulatorTestContext.swift in UITests Sources */ = {isa = PBXBuildFile; fileRef = D60000000000000000000003; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -57,6 +59,7 @@
 		A10000000000000000000006 /* NativeTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = NativeTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		C50000000000000000000003 /* DictionaryTouchTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UITests/DictionaryTouchTests.swift; sourceTree = SOURCE_ROOT; };
 		C50000000000000000000006 /* DictionaryUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = DictionaryUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		D60000000000000000000003 /* OwnedSimulatorTestContext.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeTests/OwnedSimulatorTestContext.swift; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -92,6 +95,7 @@
 				504EC3061FED79650016851F /* App */,
 				504EC3051FED79650016851F /* Products */,
 				A10000000000000000000003 /* NativeTests/NativeSqliteTests.swift */,
+				D60000000000000000000003 /* OwnedSimulatorTestContext.swift */,
 				C50000000000000000000003 /* DictionaryTouchTests.swift */,
 				A10000000000000000000005 /* sqlite-probe.js */,
 			);
@@ -273,6 +277,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				A10000000000000000000002 /* NativeTests/NativeSqliteTests.swift in Sources */,
+				D60000000000000000000001 /* OwnedSimulatorTestContext.swift in NativeTests Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -281,6 +286,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				C50000000000000000000002 /* DictionaryTouchTests.swift in Sources */,
+				D60000000000000000000002 /* OwnedSimulatorTestContext.swift in UITests Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -494,7 +500,8 @@
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.mybill.offline.NativeTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
-				SDKROOT = iphoneos;
+				SDKROOT = iphonesimulator;
+				SUPPORTED_PLATFORMS = iphonesimulator;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = 1;
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/App.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/App";
@@ -515,7 +522,8 @@
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.mybill.offline.NativeTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
-				SDKROOT = iphoneos;
+				SDKROOT = iphonesimulator;
+				SUPPORTED_PLATFORMS = iphonesimulator;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = 1;
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/App.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/App";
@@ -535,7 +543,8 @@
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.mybill.offline.DictionaryUITests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
-				SDKROOT = iphoneos;
+				SDKROOT = iphonesimulator;
+				SUPPORTED_PLATFORMS = iphonesimulator;
 				SWIFT_VERSION = 5.0;
 				TEST_TARGET_NAME = App;
 				SUPPORTS_MACCATALYST = NO;
@@ -556,7 +565,8 @@
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.mybill.offline.DictionaryUITests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
-				SDKROOT = iphoneos;
+				SDKROOT = iphonesimulator;
+				SUPPORTED_PLATFORMS = iphonesimulator;
 				SWIFT_VERSION = 5.0;
 				TEST_TARGET_NAME = App;
 				SUPPORTS_MACCATALYST = NO;

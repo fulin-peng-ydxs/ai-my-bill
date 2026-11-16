@@ -6,6 +6,35 @@ import WebKit
 /// Hosted XCTest 驱动实际 App 的 WKWebView；不使用浏览器数据库或 Mock。
 @MainActor
 final class NativeSqliteTests: XCTestCase {
+    override func setUpWithError() throws {
+        try OwnedSimulatorTestContext.requireOwnedSimulator()
+    }
+
+    func testRejectUnownedTestContexts() throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("test-context-" + UUID().uuidString)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: false)
+        addTeardownBlock { try FileManager.default.removeItem(at: folder) }
+        let file = folder.appendingPathComponent("context.json")
+        let device = UUID().uuidString
+        let good = ["simulatorId": device, "runId": UUID().uuidString, "appId": "com.mybill.offline"]
+        try JSONSerialization.data(withJSONObject: good).write(to: file)
+        let env = ["SIMULATOR_UDID": device, "MYBILL_TEST_CONTEXT_FILE": file.path]
+        XCTAssertNoThrow(try OwnedSimulatorTestContext.validate(environment: env, simulator: true))
+        XCTAssertThrowsError(try OwnedSimulatorTestContext.validate(environment: env, simulator: false))
+        XCTAssertThrowsError(try OwnedSimulatorTestContext.validate(environment: [:], simulator: true))
+        XCTAssertThrowsError(try OwnedSimulatorTestContext.validate(environment: ["SIMULATOR_UDID": UUID().uuidString, "MYBILL_TEST_CONTEXT_FILE": file.path], simulator: true))
+        XCTAssertThrowsError(try OwnedSimulatorTestContext.validate(environment: ["SIMULATOR_UDID": device, "MYBILL_TEST_CONTEXT_FILE": file.path + ".missing"], simulator: true))
+        var wrong = good
+        wrong["appId"] = "other.app"
+        try JSONSerialization.data(withJSONObject: wrong).write(to: file)
+        XCTAssertThrowsError(try OwnedSimulatorTestContext.validate(environment: env, simulator: true))
+        try Data("{}".utf8).write(to: file)
+        XCTAssertThrowsError(try OwnedSimulatorTestContext.validate(environment: env, simulator: true))
+        try Data(repeating: 32, count: 4097).write(to: file)
+        XCTAssertThrowsError(try OwnedSimulatorTestContext.validate(environment: env, simulator: true))
+        print("OWNED_SIMULATOR_GUARD_NEGATIVES_VERIFIED")
+    }
+
     private func findWebView(in view: UIView) -> WKWebView? {
         if let webView = view as? WKWebView { return webView }
         return view.subviews.lazy.compactMap { self.findWebView(in: $0) }.first
@@ -138,7 +167,7 @@ final class NativeSqliteTests: XCTestCase {
         let result = try await webView.callAsyncJavaScript("return await MyBillNativeProbe.dictionaries()", arguments: [:], in: nil, contentWorld: .page)
         let evidence = try XCTUnwrap(result as? [String: Any])
         XCTAssertEqual(evidence["schemaVersion"] as? Int, 2)
-        XCTAssertEqual((evidence["checks"] as? [String])?.count, 9)
+        XCTAssertEqual((evidence["checks"] as? [String])?.count, 10)
         let prefix = try XCTUnwrap(evidence["databasePrefix"] as? String)
         try verifySnapshots(prefix: prefix, minimum: 5, cleanup: true)
         print("OFFLINE_DICTIONARY_EVIDENCE " + String(decoding: try JSONSerialization.data(withJSONObject: evidence, options: [.sortedKeys]), as: UTF8.self))

@@ -89,14 +89,27 @@ const editorDescription = computed(() => definition.value?.hierarchical && edito
   ? '可留空创建一级分类，或选择一级分类创建二级分类。'
   : '名称会用于之后的新记录，历史账目中的名称快照保持不变。')
 
+// 仅对当前代次已接纳的结果同步页码；旧请求或取消不能把新筛选拉回上一页。
+watch(data, (page) => {
+  if (page && page.page !== pageIndex.value) {
+    pageIndex.value = page.page
+    scrollPageTo(0)
+  }
+}, { flush: 'sync' })
+
 async function load(intent: 'replace' | 'refresh' = 'replace'): Promise<void> {
   if (!definition.value) return
-  await execute(
-    (signal) => listDictionaryItems(
-      definition.value!.type, appliedQuery.value, statusFilter.value, signal, pageIndex.value, DICTIONARY_PAGE_SIZE,
-    ),
-    { intent, isEmpty: (page) => page.items.length === 0 },
-  )
+  const type = definition.value.type
+  const query = appliedQuery.value
+  const selectedStatus = statusFilter.value
+  const requestedPage = pageIndex.value
+  await execute(async (signal) => {
+    const readPage = (page: number) => listDictionaryItems(type, query, selectedStatus, signal, page, DICTIONARY_PAGE_SIZE)
+    const page = await readPage(requestedPage)
+    const lastPage = Math.max(0, Math.ceil(page.total / DICTIONARY_PAGE_SIZE) - 1)
+    // 合并、启停和改名可能使当前末页消失；同一请求内至多补读一次，避免假空态闪现。
+    return page.page > lastPage ? readPage(lastPage) : page
+  }, { intent, isEmpty: (page) => page.items.length === 0 })
 }
 
 function turnPage(page: number): void {

@@ -142,7 +142,26 @@ export class ProductService {
   private newer(source: Template, target: Template): boolean {
     const used = Date.parse(source.last_used_at) - Date.parse(target.last_used_at)
     const updated = Date.parse(source.updated_at) - Date.parse(target.updated_at)
-    return used !== 0 ? used > 0 : updated !== 0 ? updated > 0 : source.id > target.id
+    if (used !== 0) return used > 0
+    if (updated !== 0) return updated > 0
+    return this.compareUuid(source.id, target.id) > 0
+  }
+
+  /** 原 Java UUID.compareTo 依次比较两个有符号 long；字符串顺序在最高位为 1 时相反。 */
+  private compareUuid(left: string, right: string): number {
+    const parts = (id: string) => {
+      if (!/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(id)) {
+        throw new LocalError('DATABASE_INCOMPATIBLE', '日常模板标识不合法，请使用兼容版本或备份恢复。')
+      }
+      const hex = id.replaceAll('-', '')
+      return [BigInt.asIntN(64, BigInt('0x' + hex.slice(0, 16))), BigInt.asIntN(64, BigInt('0x' + hex.slice(16)))]
+    }
+    const a = parts(left)
+    const b = parts(right)
+    for (let index = 0; index < 2; index += 1) {
+      if (a[index] !== b[index]) return a[index] > b[index] ? 1 : -1
+    }
+    return 0
   }
 
   private async updateTemplate(sql: SqlSession, id: string, target: Product, now: string, payload?: Template): Promise<void> {

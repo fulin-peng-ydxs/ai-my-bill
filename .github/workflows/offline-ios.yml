@@ -79,6 +79,7 @@ jobs:
             .local/ios/tmp/ai-agent/native-*/interruption-*-receipt.txt
             .local/ios/tmp/ai-agent/native-*/recovery-*.log
             .local/ios/tmp/ai-agent/native-*/touch*.log
+            .local/ios/tmp/ai-agent/native-*/prepare*.log
             .local/ios/tmp/ai-agent/native-*/*.xcresult
           retention-days: 7
           if-no-files-found: error

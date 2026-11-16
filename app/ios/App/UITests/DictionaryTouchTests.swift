@@ -5,9 +5,12 @@ import Vision
 @MainActor
 final class DictionaryTouchTests: XCTestCase {
     private let app = XCUIApplication(bundleIdentifier: "com.mybill.offline")
+    private var sandboxAccepted = false
 
     override func setUpWithError() throws {
         continueAfterFailure = false
+        try OwnedSimulatorTestContext.requireOwnedSimulator()
+        sandboxAccepted = true
         executionTimeAllowance = 60
         if app.state != .runningForeground {
             app.launch()
@@ -17,6 +20,7 @@ final class DictionaryTouchTests: XCTestCase {
     }
 
     override func tearDownWithError() throws {
+        guard sandboxAccepted else { return }
         let screenshot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
         screenshot.name = name
         screenshot.lifetime = .keepAlways
@@ -172,24 +176,24 @@ final class DictionaryTouchTests: XCTestCase {
         print("DICTIONARY_TOUCH_DISABLED_RESTORED_CANDIDATES")
     }
 
-    private func previewMerge() {
-        tap("管理触摸合并源")
+    private func previewMerge(source: String = "触摸合并源", target: String = "触摸合并目标", entries: String = "1 条", templates: String = "1 项") {
+        tap("管理" + source)
         tap("合并到其他商品")
         tap("请选择")
         let wheel = app.pickerWheels.firstMatch
         if wheel.waitForExistence(timeout: 2) {
-            wheel.adjust(toPickerWheelValue: "触摸合并目标")
+            wheel.adjust(toPickerWheelValue: target)
             if app.buttons["Done"].isHittable {
                 app.buttons["Done"].tap()
             } else {
                 tap("完成")
             }
         } else {
-            tap("触摸合并目标")
+            tap(target)
         }
         tap("预览合并影响")
-        appears("1 条")
-        appears("1 项")
+        appears(entries)
+        appears(templates)
         tap("继续合并")
         appears("确认合并商品？")
     }
@@ -223,4 +227,63 @@ final class DictionaryTouchTests: XCTestCase {
         XCTAssertFalse(matching("触摸合并源").firstMatch.exists)
         print("DICTIONARY_TOUCH_MERGE_CANCEL_CONFIRMED_RELAUNCHED")
     }
+
+    private func searchAndGoToLastPage(kind: String, prefix: String) {
+        openKind(kind)
+        let field = app.searchFields.matching(NSPredicate(format: "label == %@", "搜索" + kind)).firstMatch
+        XCTAssertTrue(field.waitForExistence(timeout: 10))
+        field.tap()
+        field.typeText(prefix)
+        if app.keyboards.firstMatch.exists {
+            let done = app.buttons.matching(NSPredicate(format: "label IN %@", ["Done", "完成"])).firstMatch
+            XCTAssertTrue(done.waitForExistence(timeout: 3), "原生搜索键盘缺少完成按钮")
+            done.tap()
+            disappears(app.keyboards.firstMatch)
+        }
+        if kind == "单位" {
+            // WebKit 将 HTML radio 暴露为 Switch；不能点到列表里同名的状态文案。
+            let activeFilter = app.switches.matching(NSPredicate(format: "label == '启用'")).firstMatch
+            XCTAssertTrue(activeFilter.waitForExistence(timeout: 10))
+            activeFilter.tap()
+        }
+        appears("管理" + prefix + "00")
+        for _ in 0..<8 {
+            if matching("下一页").allElementsBoundByIndex.contains(where: { $0.isHittable }) { break }
+            app.swipeUp()
+        }
+        tap("下一页")
+        appears("管理" + prefix + "20")
+    }
+
+    func test11ProductLastPage() {
+        searchAndGoToLastPage(kind: "商品", prefix: "PageProduct")
+    }
+
+    func test12MergeLastPageProduct() {
+        previewMerge(source: "PageProduct20", target: "PageProduct00", entries: "0 条", templates: "0 项")
+        tap("确认合并")
+        appears("管理PageProduct00")
+        XCTAssertFalse(matching("管理PageProduct20").firstMatch.exists)
+        XCTAssertFalse(matching("没有匹配项").firstMatch.exists)
+        XCTAssertEqual(app.searchFields.firstMatch.value as? String, "PageProduct")
+        print("DICTIONARY_TOUCH_LAST_PAGE_MERGE_RECOVERED")
+    }
+
+    func test13UnitLastPage() {
+        searchAndGoToLastPage(kind: "单位", prefix: "PageUnit")
+    }
+
+    func test14DisableLastPageUnit() {
+        tap("管理PageUnit20")
+        tap("停用")
+        appears("停用PageUnit20？")
+        tap("停用")
+        disappears(matching("停用PageUnit20？").firstMatch)
+        appears("管理PageUnit00")
+        XCTAssertFalse(matching("管理PageUnit20").firstMatch.exists)
+        XCTAssertFalse(matching("没有匹配项").firstMatch.exists)
+        XCTAssertEqual(app.searchFields.firstMatch.value as? String, "PageUnit")
+        print("DICTIONARY_TOUCH_LAST_PAGE_DISABLE_RECOVERED")
+    }
+
 }

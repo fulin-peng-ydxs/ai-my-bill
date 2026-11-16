@@ -91,6 +91,10 @@ flowchart TD
 
 `npm run dev` 由同一父进程管理数据库、后端和前端；`npm run dev:db -- start|status|stop`、`npm run dev:backend`、`npm run dev:frontend` 用于分终端调试。数据库入口与总启动脚本复用 `scripts/lib/dev-database.sh` 中的配置校验、集群归属核对和角色准备逻辑；独立后端/前端不会替开发者隐式管理数据库。分开启动时，共用 `.local/web/dev.env` 中的 MY_BILL_DB_* 与 MY_BILL_SERVER_PORT；若 shell 显式覆盖，相关终端仍须保持一致。IDE/Maven 直接启动不经过开发加载器，需自行提供相同环境。`dev:frontend` 保留 npm 参数分隔符，将用户追加的 Vite 参数原样传入 web 包；直接运行 web 包的 dev/preview 也使用同一 host 配置，但不经过日志启动器。preview 默认端口 4173，可用 `--port` 覆盖，不消费仅用于 dev 的 MY_BILL_WEB_PORT。
 
+### 离线 App 原生测试配置
+
+`scripts/ios-app.sh` 在 `.local/ios/tmp/ai-agent/native-*` 以权限 600 创建本轮 `test-context.json`，包含新建模拟器 UUID、随机 runId 与固定 App ID。`MYBILL_TEST_CONTEXT_FILE` 是脚本传给 xcodebuild 的绝对路径构建设置，经两个 scheme 的 TestAction 环境传入测试进程；守卫将清单 UUID 与系统 `SIMULATOR_UDID` 比较，并限制清单大小及结构。它不进入 Run/Archive 环境或正式 App 资源，也不读取 `.local/web`。缺少、不匹配、损坏或非模拟器环境拒绝测试；不能为日常 Xcode 测试复用旧清单。脚本对缺少清单的 hosted/UI 入口执行预期失败及业务数据未写入的负例，运行方式见[开发验证规范](../testing/guide.md#工程检查)。
+
 ### iOS 复测配置
 
 `scripts/check-ios.sh` 解析项目 Node，调用共用的 `check-ios.mjs`。`npm run check:ios:simulator` 传入 `--simulator`，读取 `.local/web/simulator-test/config.json`；`npm run check:ios` 保持真机模式，读取 `.local/web/real-device-test/config.json`。二者均从 `.local/web/real-device-test/accounts.md` 读取测试密码，不从环境变量接收密码。操作、权限与证据边界见 [页面复测](../testing/guide.md#页面复测方式与选择)。

@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """仅用于独立模拟器的 UI 夹具准备/回读；从不清空已有账本，不提供生产入口。"""
 import json
+import time
+from contextlib import closing
 import sqlite3
 import sys
 import unicodedata
@@ -12,13 +14,57 @@ uuid.UUID(simulator_id)
 folder = Path(container).resolve()
 assert f'/CoreSimulator/Devices/{simulator_id}/data/Containers/Data/Application/' in str(folder)
 database = folder / 'Library/OfflineLedger/ledgerSQLite.db'
+if mode == 'wait-initialized':
+    # 仅准备本轮模拟器环境，读回正式初始化提交；不写库，也不计入冷启动性能。
+    for attempt in range(120):
+        if database.is_file():
+            try:
+                with closing(sqlite3.connect(f'file:{database}?mode=ro', uri=True)) as probe:
+                    if probe.execute('SELECT initialized FROM ledger_meta WHERE singleton=1').fetchone() == (1,):
+                        print('ISOLATED_NATIVE_HOST_INITIALIZED')
+                        sys.exit(0)
+            except sqlite3.Error:
+                # 建表/迁移尚未提交时继续有界等待；到期仍失败，不能当作空账本放行。
+                pass
+        time.sleep(0.5)
+    raise RuntimeError('本轮模拟器的正式账本未在准备预算内初始化')
 assert database.is_file()
-connection = sqlite3.connect(f'file:{database}?mode={"rw" if mode == "prepare" else "ro"}', uri=True)
+connection = sqlite3.connect(f'file:{database}?mode={"rw" if mode in ("prepare", "prepare-paging") else "ro"}', uri=True)
 connection.row_factory = sqlite3.Row
 connection.execute('PRAGMA foreign_keys=ON')
 receipt_path = Path(receipt_file)
 try:
-    if mode == 'prepare':
+    if mode == 'check-empty':
+        assert connection.execute('SELECT count(*) FROM dictionary_item').fetchone()[0] == 8
+        for table in ['ledger_entry', 'daily_entry_template', 'product_merge_event']:
+            assert connection.execute(f'SELECT count(*) FROM {table}').fetchone()[0] == 0
+        print('DICTIONARY_TOUCH_UNOWNED_REJECTION_NO_WRITES')
+    elif mode == 'prepare-paging':
+        ids = json.loads(receipt_path.read_text())
+        assert connection.execute('SELECT count(*) FROM product_merge_event').fetchone()[0] == 1
+        assert connection.execute("SELECT count(*) FROM dictionary_item WHERE name LIKE 'PageProduct%' OR name LIKE 'PageUnit%'").fetchone()[0] == 0
+        ids['paging'] = {}
+        with connection:
+            for kind, prefix in [('PRODUCT', 'PageProduct'), ('UNIT', 'PageUnit')]:
+                for index in range(21):
+                    key = prefix + f'{index:02}'
+                    item_id = str(uuid.uuid4())
+                    ids['paging'][key] = item_id
+                    connection.execute("INSERT INTO dictionary_item(id,kind,name,normalized_name,status,sort_order) VALUES(?,?,?,?,'ACTIVE',?)",
+                                       (item_id, kind, key, key.lower(), index * 10))
+        receipt_path.write_text(json.dumps(ids, ensure_ascii=False, indent=2))
+        print('DICTIONARY_TOUCH_PAGING_FIXTURE_PREPARED')
+    elif mode == 'check-paging':
+        ids = json.loads(receipt_path.read_text())
+        assert connection.execute("SELECT count(*) FROM dictionary_item d JOIN product_details p ON p.product_id=d.id WHERE d.name LIKE 'PageProduct%' AND p.merged_into_id IS NULL").fetchone()[0] == 20
+        assert connection.execute("SELECT count(*) FROM dictionary_item WHERE name LIKE 'PageUnit%' AND status='ACTIVE'").fetchone()[0] == 20
+        assert connection.execute('SELECT merged_into_id FROM product_details WHERE product_id=?', (ids['paging']['PageProduct20'],)).fetchone()[0] == ids['paging']['PageProduct00']
+        assert connection.execute('SELECT status FROM dictionary_item WHERE id=?', (ids['paging']['PageUnit20'],)).fetchone()[0] == 'INACTIVE'
+        assert connection.execute('SELECT count(*) FROM product_merge_event').fetchone()[0] == 2
+        entry = connection.execute('SELECT product_id,product_name_snapshot,CAST(amount_cents AS TEXT),row_version FROM ledger_entry WHERE id=?', (ids['entry'],)).fetchone()
+        assert tuple(entry) == (ids['target'], '历史苹果', '1543', 2)
+        print('DICTIONARY_TOUCH_PAGING_SQLITE_VERIFIED products=20 activeUnits=20 historyUnchanged=true')
+    elif mode == 'prepare':
         # 只允许正式初始化后的空账本；不删除或复用用户/其他测试数据。
         assert connection.execute('SELECT count(*) FROM dictionary_item').fetchone()[0] == 8
         for table in ['ledger_entry', 'daily_entry_template', 'product_merge_event']:
@@ -64,7 +110,7 @@ try:
         assert row("SELECT count(*) AS n FROM idempotency_result WHERE operation='product.merge'")['n'] == 1
         print('DICTIONARY_TOUCH_SQLITE_VERIFIED history=1543 snapshot=历史苹果 template=retained events=1')
     else:
-        raise ValueError('mode must be prepare or check')
+        raise ValueError('unknown fixture mode')
     assert connection.execute('PRAGMA quick_check').fetchone()[0] == 'ok'
     assert not connection.execute('PRAGMA foreign_key_check').fetchall()
 finally:
