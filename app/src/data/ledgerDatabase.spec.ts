@@ -22,7 +22,7 @@ import { migrations, sha256 } from './migrations'
 const nativeConnections = new Set<string>()
 const managers: LedgerDatabase[] = []
 let nextName = 0
-let digest: string
+let history: { version: number; digest: string }[]
 let files: LedgerFiles
 
 function manager(name = `close_retry_${++nextName}`) {
@@ -33,7 +33,7 @@ function manager(name = `close_retry_${++nextName}`) {
 
 beforeEach(async () => {
   vi.resetAllMocks()
-  digest = await sha256(migrations[0].sql)
+  history = await Promise.all(migrations.map(async migration => ({ version: migration.version, digest: await sha256(migration.sql) })))
   bridge.createConnection.mockImplementation(async ({ database }: { database: string }) => {
     if (nativeConnections.has(database)) {
       throw new Error('Connection already exists')
@@ -51,13 +51,13 @@ beforeEach(async () => {
       return { values: [{ name: 'ledger_meta' }] }
     }
     if (statement.startsWith('SELECT * FROM ledger_meta')) {
-      return { values: [{ initialized: 1, schema_version: 1, dataset_id: 'controlled-dataset', seed_version: 1 }] }
+      return { values: [{ initialized: 1, schema_version: migrations.length, dataset_id: 'controlled-dataset', seed_version: 1 }] }
     }
     if (statement.startsWith('SELECT version,digest FROM migration_history')) {
-      return { values: [{ version: 1, digest }] }
+      return { values: history }
     }
     if (statement.startsWith('SELECT type,name,tbl_name')) {
-      return { values: migrations[0].schema }
+      return { values: migrations.at(-1)!.schema }
     }
     if (statement === 'PRAGMA quick_check') {
       return { values: [{ quick_check: 'ok' }] }

@@ -1,6 +1,6 @@
 # 我的账单
 
-项目正在改为仅供 iPhone 安装的离线 iOS App。`app/` 已具备 Vue 3 + Capacitor 原生骨架及 SQLite 初始化、升级、事务基础；个人页面和共享外壳已沿原布局迁入，并接入真实账本初始化；完整记账业务尚未接通。
+项目正在改为仅供 iPhone 安装的离线 iOS App。`app/` 已具备 Vue 3 + Capacitor 原生骨架及 SQLite 初始化、升级、事务基础；个人页面和共享外壳已沿原布局迁入，八类字典维护、录入候选和商品合并已接入原生 SQLite；完整记账业务尚未接通。
 
 旧 Web PWA、服务端及部署源码仍保留用于对照，日常本地服务保持停止。旧 Web 提供个人收支、字典、模板、调整、报表与导出，管理员管理账号和默认项；实际环境资料见[内网案例](agent-works/deployment/cases/intranet-single-host/README.md)。下方原有 Web 使用说明不作为离线 App 开发的启动前提。
 
@@ -13,13 +13,14 @@ npm --prefix app ci --ignore-scripts
 npm run check:app
 npm run build:ios-app
 npm run check:ios-app:simulator
+npm run check:ios-app:touch
 ```
 
 依赖由 app/package-lock.json 固定；命令来源为 [package.json](package.json) 与 [ios-app.sh](scripts/ios-app.sh)，各检查的条件和判据见[开发验证规范](agent-works/testing/guide.md#工程检查)。`check:app` 运行领域、队列、初始化状态、组件四态及设计契约测试、类型检查、随包资源构建和资源门禁；`build:ios-app` 编译未签名的真机架构 Release；模拟器入口运行实际 WKWebView → SQLite 桥测试，并删除本轮创建的模拟器。成功时构建/资源检查或 XCTest 报告通过；本地执行已通过，远端 Actions 尚未运行。
 
 每轮原生证据位于 .local/ios/tmp/ai-agent/native-*，构建失败先查其中 build.log/test.log；诊断结束后可删除对应轮次目录。增量构建与依赖缓存在 .local/ios/DerivedData、.local/ios/SourcePackages。脚本只为本次命令选择完整 Xcode，不修改全局 xcode-select；非默认安装位置可设置 DEVELOPER_DIR。不要把凭据、真实账本或 Web 本地配置复制到这些测试目录。
 
-需要签名时在 Xcode 打开 [App.xcodeproj](app/ios/App/App.xcodeproj)，为 App target 选择自己的 Team。已用 Personal Team 完成骨架 Release 的签名安装，并在 iPhone 14 Pro Max / iOS 27.0.1 通过飞行模式、无 Wi-Fi、进程结束后的图标冷启动验证。上述自动构建入口仍生成未签名产物，不能直接安装到手机；正式业务、完整升级与性能尚未验收。当前可以调试四个原页面入口、主题及缓存草稿，未接通的业务会提示暂不支持；草稿和偏好尚不跨重启保存，不能作为已完成的记账 App 使用。原生装配机制见[总体架构](agent-works/architecture/architecture-decisions.md#离线-ios-原生入口)。
+需要签名时在 Xcode 打开 [App.xcodeproj](app/ios/App/App.xcodeproj)，为 App target 选择自己的 Team。已用 Personal Team 完成骨架 Release 的签名安装，并在 iPhone 14 Pro Max / iOS 27.0.1 通过飞行模式、无 Wi-Fi、进程结束后的图标冷启动验证。上述自动构建入口仍生成未签名产物，不能直接安装到手机；正式业务、完整升级与性能尚未验收。当前可以调试四个原页面入口、主题、缓存草稿，以及“我的 → 选项管理”中的八类字典与商品合并；这些字典修改跨重启保留，默认清单只写入新账本。支出/收入保存等未接通业务会提示暂不支持；草稿和偏好尚不跨重启保存，不能作为已完成的记账 App 使用。原生装配机制见[总体架构](agent-works/architecture/architecture-decisions.md#离线-ios-原生入口)。
 
 ## 手机安装与使用
 

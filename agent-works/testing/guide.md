@@ -6,9 +6,10 @@
 
 | 命令（根目录） | 何时使用 | 做什么 |
 |---|---|---|
-| npm run check:app | 离线 App 入口、依赖或资源变更 | Node 24：领域、队列、初始化状态、组件四态及设计契约测试、类型检查、Vite 构建、Capacitor sync、生成 SPM 兼容适配及资源门禁正反例；不启动 Web/PG |
+| npm run check:app | 离线 App 入口、依赖或资源变更 | Node 24：领域、队列、初始化状态、字典/合并 SQL、组件四态及设计契约测试、类型检查、Vite 构建、Capacitor sync、生成 SPM 兼容适配及资源门禁正反例；不启动 Web/PG |
 | npm run build:ios-app | 原生工程/依赖或安装候选资源变更 | Xcode 27 / iOS 27 SDK：未签名真机架构 Release 编译与产物资源检查；不证明签名/可安装 |
-| npm run check:ios-app:simulator | 原生 SQLite 桥、外壳及导航变更 | Xcode 27 / iOS 27.0 runtime：独立 iPhone 14 Pro Max 模拟器，hosted XCTest 验随包入口、原生事务/精度/聚合溢出拒绝、正式初始化/升级/seed 保护、进程中断重开及排除系统备份；清理本轮设备 |
+| npm run check:ios-app:simulator | 原生 SQLite 桥、外壳及导航变更 | Xcode 27 / iOS 27.0 runtime：独立 iPhone 14 Pro Max 模拟器，hosted XCTest 验随包入口、原生事务/精度/聚合溢出拒绝、正式初始化/升级/seed 保护、八类字典和合并/模板事务、原页面操作、进程中断重开及排除系统备份；清理本轮设备 |
+| npm run check:ios-app:touch | 字典页面的原生触摸、键盘、选择器及缓存候选变更 | 独立 iPhone 14 Pro Max 模拟器；正式生命周期初始化后准备空账本专用合成引用，外部 XCUITest 对 Release App 触摸新增/改名/启停/合并及重启，再回读 SQLite；清理本轮设备 |
 | npm run check | 需要完整工程基线时 | 开发配置加载器、部署工具检查、前端检查/构建、Maven verify、临时PG集成 |
 | bash scripts/run-frontend.sh check | 前端完整验证 | 类型、lint、Vitest、OpenAPI漂移和生产构建 |
 | npm run check:server | 后端改动 | Java编译/单元/架构测试；默认跳过需独立数据库的用例 |
@@ -22,13 +23,19 @@
 
 常规局部修改选择最低充分检查，不默认每次全跑；纯文档通常检查差异、引用与事实。检查以实际执行及退出状态判断，数据库测试被跳过不能记为通过。构建产物 web/dist 用于发布，server/target 下 JAR 用于打包，不手工编辑。
 
-App 检查的实现入口为 [ios-app.sh](../../scripts/ios-app.sh)，需先按 [README](../../README.md#离线-ios-app-开发入口) 安装 app 锁定依赖。以上三个 App 入口已经在本机 Node24.11.1 / npm11.6.2、Xcode27.0 / SDK27.0 执行通过；原生探针只有受控实验数据，不能证明正式记账、完整升级/恢复、容量或真机行为。金额、时间及文本实现统一位于 app/src/domain；旧 Web 对应模块仅重导出，兼容回归无需启动旧服务。模拟器入口通过 test bundle 调用正式 LedgerDatabase.open→upgrade，在保护快照完成、迁移 SQL/履历已写但事务未提交、升级事务已提交三个阶段分别挂起；脚本动态定位本轮沙盒，观察到匹配阶段信号后仅终止本 App。每次故障步骤须返回预期 65，恢复 XCTest 必须核对已提交基线、版本/结构/履历及重试结果，并回读保护快照排除标记。另外通过原生文件守卫用例验证完整头中 magic 清零的非热 journal 可保留（包括其余头字段仍有值的情况），热 journal、短头和非空 WAL 拒绝复制；正式中断重试用例必须能重新生成快照。原始 SQLite 事务探针不能代替这组正式流程验证；模拟器不验证实体文件保护等级。
+App 检查的实现入口为 [ios-app.sh](../../scripts/ios-app.sh)，需先按 [README](../../README.md#离线-ios-app-开发入口) 安装 app 锁定依赖。common、ios-build、ios-smoke、ios-touch 四个入口已经在本机 Node24.11.1 / npm11.6.2、Xcode27.0 / SDK27.0 执行通过；原生探针只有受控实验数据，不能证明正式记账、完整升级/恢复、容量或真机行为。金额、时间及文本实现统一位于 app/src/domain；旧 Web 对应模块仅重导出，兼容回归无需启动旧服务。模拟器入口通过 test bundle 调用正式 LedgerDatabase.open→upgrade，在保护快照完成、迁移 SQL/履历已写但事务未提交、升级事务已提交三个阶段分别挂起；脚本动态定位本轮沙盒，观察到匹配阶段信号后仅终止本 App。每次故障步骤须返回预期 65，恢复 XCTest 必须核对已提交基线、版本/结构/履历及重试结果，并回读保护快照排除标记。另外通过原生文件守卫用例验证完整头中 magic 清零的非热 journal 可保留（包括其余头字段仍有值的情况），热 journal、短头和非空 WAL 拒绝复制；正式中断重试用例必须能重新生成快照。原始 SQLite 事务探针不能代替这组正式流程验证；模拟器不验证实体文件保护等级。
 
 App 设计门禁由 [designContract.spec.ts](../../app/src/app/designContract.spec.ts) 经 check:app 同一入口执行：Vue/TypeScript 解析真实导入和模板消费，核对九个核心组件登记、个人页面的唯一角色/路径及实际路由，拒绝私有颜色、注释假导入、缺登记与重复角色反例。21 个关键共享组件模板及三份全局样式的 SHA 基线来自准备提交 6419b93；未作为检查目标的业务消费者仍须按改动复核。四态及初始化重试由组件/状态测试覆盖，不用它们证明原生呈现。
 
 [关闭重试回归](../../app/src/data/ledgerDatabase.spec.ts) 经 check:app 执行，在原生桥边界注入失败，覆盖关闭后禁止读写、保留所有权、重复关闭、直接重开及打开/校验与关闭同时失败的原因链；它不模拟真实 SQL 持久化。check:ios-app:simulator 的 lifecycleProbe 在真实原生库上补充注入关闭拒绝，恢复后调用真实关闭/重开，核对数据集、已提交金额和同名账本交接；故障包装仅存在于 test bundle，finally 恢复，不进入生产入口。
 
 原生 [shellProbe](../../app/native-tests/shellProbe.ts) 在实际 WKWebView 中检查四导航、原图标、切页草稿、主题及抽屉焦点返回。业务尚未接通时，嵌套放弃/取消使用 test bundle 内共享组件夹具，验证父子层与未保存作用域，不冒充账目编辑链路。探针不进入生产资源。日常页面还须在独立小/默认/大 iPhone 模拟器，从 App 图标直接操作导航、表单、完整软键盘、原生选择器、明暗主题、横屏与减少动态效果；记录原页面操作和各自边界，不将脚本派发事件当成触摸验证。未接通功能应显示明确不可用而非假成功。
+
+[字典场景](../../app/test-support/dictionaryScenarios.ts)与[升级场景](../../app/test-support/dictionaryUpgradeScenario.ts)由 Node SQLite 测试及原生 dictionaryProbe 共用，覆盖八类字典、规范化唯一键、两级分类、有界分页、排序故障回滚、类型/引用保护、历史快照、模板冲突、合并幂等及 v1→v2 升级。Node 测试只在原生桥边界换成临时文件 SQLite，不证明 iOS 文件策略，也不进入生产包；原生测试经正式生命周期核验相同 SQL/事务及快照。seed A/B 样本核对用户改名/停用/排序、删除项及 false/0/空值不被新版清单覆盖，并验证必需数据迁移冲突的拒绝、回滚与重试。
+
+[dictionaryUiProbe](../../app/native-tests/dictionaryUiProbe.ts)驱动正式页面与原生 API，核验八类入口、新增/重名保留输入/改名/停用/恢复、预览取消不写入及确认合并。历史账目和模板仅在隔离测试沙盒经原生连接准备，合并后直接读回金额和快照；不启用尚未接通的账目保存、明细或模板 UI。派发事件证据还须配合模拟器图标启动后的实际触摸、键盘和页面核验。
+
+[原生触摸用例](../../app/ios/App/UITests/DictionaryTouchTests.swift)由独立 DictionaryTouch scheme 执行，使用 XCUITest 的 tap/typeText/原生选择器操作 Release App，不注入 JavaScript、不替换业务 API。与 hosted XCTest 的 DOM 事件场景分别记录，不将两者混称为真实触摸。check:ios-app:touch 先验证正式初始化并结束宿主，再用[受限夹具](../../scripts/fixtures/dictionary-touch.py)准备本轮空模拟器账本的历史引用；夹具拒绝已有自定义数据，不清空、不连接真机。UI 用例顺序共用本轮交互会话，各用例保留截图，最后验证重启；脚本结束 App 后回读稳定 ID、引用、模板、行版本、金额、名称快照、事件和幂等回执，执行完整性及外键检查；用例按操作链路拆分并保留原 60 秒执行预算配置，不上调超时；节点未就绪时可用本机 Vision OCR 定位截图文字，再由 XCUITest 坐标触摸，不将 OCR 通过作为无障碍验收。此流程只证明开发模拟器的页面链路，不代替目标真机性能和最终交付。
 
 资源门禁使用锁定的 TypeScript 解析器检查 JS/MJS/CJS 及内联脚本，拒绝已知 IndexedDB、Web Storage、WebSQL、WASM 的直接标识符、别名来源与静态括号访问；合法注释及文案不作为调用。该静态检查不证明所有动态间接访问不可达，正式数据入口仍须通过原生集成验证。正反例通过同一门禁入口执行。
 

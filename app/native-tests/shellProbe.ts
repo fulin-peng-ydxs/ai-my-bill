@@ -5,28 +5,7 @@ import AppDialog from '../src/components/AppDialog.vue'
 import UnsavedChangesDialog from '../src/components/UnsavedChangesDialog.vue'
 import { registerUnsavedChanges, requestDiscardChanges } from '../src/composables/unsavedChanges'
 
-function requireValue(condition: unknown, message: string): asserts condition {
-  if (!condition) throw new Error(message)
-}
-async function waitFor(condition: () => boolean, message: string) {
-  for (let i = 0; i < 100; i++) {
-    if (condition()) return
-    await new Promise(resolve => setTimeout(resolve, 40))
-  }
-  throw new Error(message)
-}
-function click(selector: string) {
-  const target = document.querySelector<HTMLElement>(selector)
-  requireValue(target, `未找到控件 ${selector}`)
-  target.click()
-  return target
-}
-function type(selector: string, value: string) {
-  const target = document.querySelector<HTMLInputElement>(selector)
-  requireValue(target, `未找到输入 ${selector}`)
-  target.value = value
-  target.dispatchEvent(new Event('input', { bubbles: true }))
-}
+import { requireValue, waitFor, click, type } from './domHarness'
 
 /** 只在 XCTest test bundle 中：验证真实路由/缓存/原生 dialog，不替代触摸及软键盘实测。 */
 export async function shell() {

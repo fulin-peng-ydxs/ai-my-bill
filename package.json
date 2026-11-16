@@ -22,6 +22,7 @@
     "check:app": "bash scripts/ios-app.sh common",
     "build:ios-app": "bash scripts/ios-app.sh ios-build",
     "check:ios-app:simulator": "bash scripts/ios-app.sh ios-smoke",
+    "check:ios-app:touch": "bash scripts/ios-app.sh ios-touch",
     "check:performance": "bash scripts/test-performance.sh",
     "check:security": "bash scripts/check-security.sh",
     "check:deployment": "bash scripts/test-deployment-tooling.sh",

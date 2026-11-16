@@ -4,6 +4,9 @@ import { nativeSqlite, openIosDatabase } from '../src/infrastructure/database/na
 import { ledgerFiles } from '../src/platform/ledgerFiles'
 import type { Seed } from '../src/data/seed/defaults'
 
+// 历史受控结构链固定从 v1 起步，不随当前正式迁移数量漂移。
+const baseline = [migrations[0]]
+
 function check(value: unknown, message: string): asserts value {
   if (!value) {
     throw new Error(message)
@@ -72,8 +75,8 @@ export async function lifecycle() {
   const schema2 = [...migrations[0].schema, { type: 'index', name: 'preference_value', tableName: 'preference', sql: 'CREATE INDEX preference_value ON preference(value)' }]
   const next = { version: 2, schema: schema2, sql: "CREATE INDEX preference_value ON preference(value); INSERT INTO preference(key,value) SELECT 'new_field','false' WHERE NOT EXISTS(SELECT 1 FROM preference WHERE key='new_field');" }
   const third = { version: 3, schema: [...schema2, { type: 'index', name: 'dictionary_parent', tableName: 'dictionary_item', sql: 'CREATE INDEX dictionary_parent ON dictionary_item(parent_id)' }], sql: "CREATE INDEX dictionary_parent ON dictionary_item(parent_id);" }
-  const chain = [...migrations, next, third]
-  function manager(suffix: string, version = migrations, seed = seedA, files = ledgerFiles) {
+  const chain = [...baseline, next, third]
+  function manager(suffix: string, version = baseline, seed = seedA, files = ledgerFiles) {
     const name = `${prefix}_${suffix}`
     if (!names.includes(name)) names.push(name)
     const db = new LedgerDatabase(name, version, seed, files)
@@ -119,7 +122,7 @@ export async function lifecycle() {
     const low = manager('main', chain, seedB, { protect: options => ledgerFiles.protect(options), snapshot: async () => { lowSpaceReached = true; throw new Error('controlled-low-space') } })
     await rejects(() => low.open(), '低空间未拒绝')
     check(lowSpaceReached, '未触发低空间文件失败边界')
-    const failed = manager('main', [...migrations, { version: 2, schema: schema2, sql: "CREATE TABLE should_rollback(id TEXT); INSERT INTO missing_table VALUES(1);" }], seedB)
+    const failed = manager('main', [...baseline, { version: 2, schema: schema2, sql: "CREATE TABLE should_rollback(id TEXT); INSERT INTO missing_table VALUES(1);" }], seedB)
     await rejects(() => failed.open(), '迁移故障未拒绝')
     const reopen = manager('main')
     await reopen.open()
@@ -156,7 +159,7 @@ export async function lifecycle() {
     check(await fresh.read(async sql => (await sql.query("SELECT value FROM preference WHERE key='new_field'"))[0].value) === 'true', '新装未采用新版 seed 偏好')
     check(state.preferences.some(p => p.key === 'new_field' && p.value === 'false'), '存量迁移缺省值被 seed 覆盖')
     await fresh.close()
-    const step = manager('step', [...migrations, next])
+    const step = manager('step', [...baseline, next])
     await step.open()
     await step.close()
     const stepUpgraded = manager('step', chain, seedB)
@@ -169,7 +172,7 @@ export async function lifecycle() {
     evidence.push('fresh-upgrade-equivalence-newer-gap-digest-rejection')
 
     const interruptedSeed: Seed = { ...seedA, items: [...seedA.items, seedA.items[0]] }
-    await rejects(() => manager('init', migrations, interruptedSeed).open(), '初始化中断未拒绝')
+    await rejects(() => manager('init', baseline, interruptedSeed).open(), '初始化中断未拒绝')
     const init = manager('init')
     await init.open()
     check(await init.read(async sql => (await sql.query('SELECT * FROM dictionary_item')).length) === 1, '初始化重试有半成品')
@@ -208,8 +211,9 @@ export async function lifecycle() {
 }
 
 // 三个中断点均消费正式 open→upgrade 流程，观察器只存在于 test bundle 的调用方。
-const crashMigration = { version: 2, sql: 'CREATE TABLE interrupted_migration(id TEXT PRIMARY KEY) STRICT;',
-  schema: [...migrations[0].schema, { type: 'table', name: 'interrupted_migration', tableName: 'interrupted_migration', sql: 'CREATE TABLE interrupted_migration(id TEXT PRIMARY KEY) STRICT' }] }
+const crashVersion = migrations.length + 1
+const crashMigration = { version: crashVersion, sql: 'CREATE TABLE interrupted_migration(id TEXT PRIMARY KEY) STRICT;',
+  schema: [...migrations.at(-1)!.schema, { type: 'table', name: 'interrupted_migration', tableName: 'interrupted_migration', sql: 'CREATE TABLE interrupted_migration(id TEXT PRIMARY KEY) STRICT' }] }
 const crashChain = [...migrations, crashMigration]
 const crashStages: readonly LifecycleStage[] = ['snapshot-ready', 'migration-recorded', 'upgrade-committed']
 function crashName(stage: LifecycleStage) { return `probe_crash_${stage.replaceAll('-', '_')}` }
@@ -225,7 +229,7 @@ export async function prepareCrash(stage: LifecycleStage) {
   let failed!: (error: unknown) => void
   const signal = new Promise<void>((resolve, reject) => { reached = resolve; failed = reject })
   const upgrading = new LedgerDatabase(name, crashChain, undefined, undefined, async (current, version) => {
-    if (current === stage && (current === 'snapshot-ready' || version === 2)) {
+    if (current === stage && (current === 'snapshot-ready' || version === crashVersion)) {
       reached()
       await new Promise<void>(() => {})
     }
@@ -246,14 +250,14 @@ export async function recoverCrash(stage: LifecycleStage) {
       check((await sql.query("SELECT value FROM preference WHERE key='crash_baseline'"))[0]?.value === '12345', '已提交基线丢失')
       const committed = stage === 'upgrade-committed'
       check((await sql.query("SELECT name FROM sqlite_master WHERE name='interrupted_migration'")).length === Number(committed), '中断后的结构状态错误')
-      check((await sql.query('SELECT * FROM migration_history')).length === (committed ? 2 : 1), '中断后的迁移履历错误')
-      check((await sql.query('SELECT schema_version FROM ledger_meta'))[0].schema_version === (committed ? 2 : 1), '中断后的版本错误')
+      check((await sql.query('SELECT * FROM migration_history')).length === (committed ? crashVersion : migrations.length), '中断后的迁移履历错误')
+      check((await sql.query('SELECT schema_version FROM ledger_meta'))[0].schema_version === (committed ? crashVersion : migrations.length), '中断后的版本错误')
     })
     await db.close()
     const retry = new LedgerDatabase(name, crashChain)
     try {
       await retry.open()
-      check(await retry.read(async sql => (await sql.query('SELECT * FROM migration_history')).length) === 2, '重试未完成升级或重复履历')
+      check(await retry.read(async sql => (await sql.query('SELECT * FROM migration_history')).length) === crashVersion, '重试未完成升级或重复履历')
     } finally { await retry.close() }
   } finally {
     await db.close()

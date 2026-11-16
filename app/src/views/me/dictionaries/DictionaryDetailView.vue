@@ -133,14 +133,9 @@ async function loadParentOptions(): Promise<void> {
   parentOptionsError.value = undefined
   activeRoots.value = []
   try {
-    let rootPage = 0
-    let rootTotal = 0
-    do {
-      const page = await listDictionaryItems(definition.value.type, '', 'ACTIVE', undefined, rootPage, 100, { rootsOnly: true })
-      activeRoots.value.push(...page.items.filter((item) => !item.parentId))
-      rootTotal = page.total
-      rootPage += 1
-    } while (rootPage * 100 < rootTotal)
+    // 预载首批候选，更多一级分类沿用原搜索入口，不把整库读入选择控件。
+    const page = await listDictionaryItems(definition.value.type, '', 'ACTIVE', undefined, 0, 100, { rootsOnly: true })
+    activeRoots.value = page.items
     parentOptionsStatus.value = 'ready'
   } catch (cause) {
     parentOptionsStatus.value = 'error'

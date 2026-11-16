@@ -49,7 +49,10 @@ function bodyFields(body?: ApiErrorBody): Record<string, string[]> {
 export function normalizeRequestError(error: unknown): RequestError {
   if (error instanceof LocalError) {
     return {
-      kind: 'unavailable',
+      kind: error.code === 'OPERATION_CANCELLED' ? 'canceled'
+        : error.code === 'VALIDATION_FAILED' || error.code === 'PRODUCT_MERGE_TARGET_INVALID' ? 'validation'
+          : error.code.endsWith('_CONFLICT') || error.code === 'ACTIVE_CHILDREN_EXIST' || error.code === 'PARENT_CATEGORY_INACTIVE' ? 'conflict'
+            : 'unavailable',
       message: error.message,
       fieldErrors: Object.fromEntries(error.fieldErrors.map(item => [item.field, [item.message]])),
       traceId: error.traceId,

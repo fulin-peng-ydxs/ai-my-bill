@@ -29,7 +29,5 @@ export function dictionaryDefinition(type: unknown): DictionaryDefinition | unde
   return dictionaryDefinitions.find((item) => item.type === type)
 }
 
-/** 与服务端唯一键规则一致，用于在提交前识别等价字典名称。 */
-export function normalizeDictionaryName(value: string): string {
-  return value.normalize('NFKC').trim().replace(/[\p{Z}\s]+/gu, ' ').toLowerCase()
-}
+/** 页面与本地唯一键共用原 Java 语义，避免两套空白/Unicode 判断。 */
+export { normalizedDictionaryName as normalizeDictionaryName } from './text'

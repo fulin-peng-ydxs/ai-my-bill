@@ -7,8 +7,8 @@ resolve_node
 cd "${PROJECT_ROOT}"
 
 MODE="${1:-common}"
-if [[ $# -gt 1 || ! "${MODE}" =~ ^(common|ios-build|ios-smoke)$ ]]; then
-  echo '用法：bash scripts/ios-app.sh [common|ios-build|ios-smoke]' >&2
+if [[ $# -gt 1 || ! "${MODE}" =~ ^(common|ios-build|ios-smoke|ios-touch)$ ]]; then
+  echo '用法：bash scripts/ios-app.sh [common|ios-build|ios-smoke|ios-touch]' >&2
   exit 2
 fi
 
@@ -61,9 +61,10 @@ trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
-XCODE_ARGUMENTS=(-project app/ios/App/App.xcodeproj -scheme App
+XCODE_COMMON_ARGUMENTS=(-project app/ios/App/App.xcodeproj
   -derivedDataPath .local/ios/DerivedData -clonedSourcePackagesDirPath .local/ios/SourcePackages
   -disableAutomaticPackageResolution CODE_SIGNING_ALLOWED=NO)
+XCODE_ARGUMENTS=("${XCODE_COMMON_ARGUMENTS[@]}" -scheme App)
 if [[ "${MODE}" == ios-build ]]; then
   # 这只证明真机架构 Release 编译；没有签名，不能声称可在真机安装。
   if ! xcodebuild build "${XCODE_ARGUMENTS[@]}" -configuration Release -destination 'generic/platform=iOS' > "${RUN_DIRECTORY}/build.log" 2>&1; then
@@ -76,6 +77,37 @@ else
   printf '%s\n' "${SIMULATOR_ID}" > "${RUN_DIRECTORY}/simulator.udid"
   xcrun simctl boot "${SIMULATOR_ID}"
   xcrun simctl bootstatus "${SIMULATOR_ID}" -b > "${RUN_DIRECTORY}/boot.log" 2>&1
+  if [[ "${MODE}" == ios-touch ]]; then
+    # 正式生命周期先创建空账本；夹具仅写本轮模拟器、进程关闭后的文件，不启用 T6 保存。
+    if ! xcodebuild test "${XCODE_ARGUMENTS[@]}" -destination "platform=iOS Simulator,id=${SIMULATOR_ID}" -parallel-testing-enabled NO -test-timeouts-enabled YES -maximum-test-execution-time-allowance 60 -only-testing:NativeTests/NativeSqliteTests/testBundledEntryAndNativeSqliteBridge -resultBundlePath "${RUN_DIRECTORY}/touch-initialize.xcresult" > "${RUN_DIRECTORY}/touch-initialize.log" 2>&1; then
+      tail -60 "${RUN_DIRECTORY}/touch-initialize.log" >&2
+      exit 1
+    fi
+    stop_owned_app() {
+      local stop_log="$1"
+      local termination_status=0
+      xcrun simctl terminate "${SIMULATOR_ID}" com.mybill.offline > "${stop_log}" 2>&1 || termination_status=$?
+      # XCTest 可能已结束宿主；只接受明确的 ESRCH/无可终止进程，其他失败仍阻断回读。
+      if [[ "${termination_status}" != 0 ]] && { [[ "${termination_status}" != 3 ]] || ! grep -Fq 'found nothing to terminate' "${stop_log}"; }; then
+        cat "${stop_log}" >&2
+        return "${termination_status}"
+      fi
+    }
+    stop_owned_app "${RUN_DIRECTORY}/touch-stop.log"
+    APP_CONTAINER="$(xcrun simctl get_app_container "${SIMULATOR_ID}" com.mybill.offline data)"
+    python3 scripts/fixtures/dictionary-touch.py prepare "${APP_CONTAINER}" "${SIMULATOR_ID}" "${RUN_DIRECTORY}/touch-fixture.json"
+    if ! xcodebuild test "${XCODE_COMMON_ARGUMENTS[@]}" -scheme DictionaryTouch -configuration Release -destination "platform=iOS Simulator,id=${SIMULATOR_ID}" -parallel-testing-enabled NO -test-timeouts-enabled YES -maximum-test-execution-time-allowance 60 -resultBundlePath "${RUN_DIRECTORY}/touch.xcresult" > "${RUN_DIRECTORY}/touch.log" 2>&1; then
+      tail -80 "${RUN_DIRECTORY}/touch.log" >&2
+      exit 1
+    fi
+    # UI 用例共用一个交互会话，最后验证一次重新启动；结束 App 后才回读文件。
+    stop_owned_app "${RUN_DIRECTORY}/touch-final-stop.log"
+    APP_CONTAINER="$(xcrun simctl get_app_container "${SIMULATOR_ID}" com.mybill.offline data)"
+    python3 scripts/fixtures/dictionary-touch.py check "${APP_CONTAINER}" "${SIMULATOR_ID}" "${RUN_DIRECTORY}/touch-fixture.json" | tee "${RUN_DIRECTORY}/touch-readback.log"
+    node scripts/verify-ios-resources.mjs .local/ios/DerivedData/Build/Products/Release-iphonesimulator/App.app
+    sed -n '/DICTIONARY_TOUCH_/p; /Executed .* tests\{0,1\}, with/p; /\*\* TEST SUCCEEDED \*\*/p' "${RUN_DIRECTORY}/touch.log"
+    exit 0
+  fi
   if ! xcodebuild test "${XCODE_ARGUMENTS[@]}" -destination "platform=iOS Simulator,id=${SIMULATOR_ID}" -parallel-testing-enabled NO -test-timeouts-enabled YES -maximum-test-execution-time-allowance 60 -skip-testing:NativeTests/NativeSqliteTests/testPrepareProcessInterruption -skip-testing:NativeTests/NativeSqliteTests/testRecoverProcessInterruption -resultBundlePath "${RUN_DIRECTORY}/native.xcresult" > "${RUN_DIRECTORY}/test.log" 2>&1; then
     tail -60 "${RUN_DIRECTORY}/test.log" >&2
     exit 1
@@ -117,5 +149,5 @@ else
     sed -n '/LEDGER_PROCESS_INTERRUPTION_RECOVERED/p' "${RUN_DIRECTORY}/recovery-${CRASH_PHASE}.log"
   done
   # 输出固定探针结果，不打印数据库内容或真实设备信息。
-  sed -n '/NATIVE_SQLITE_EVIDENCE/p; /LEDGER_LIFECYCLE_EVIDENCE/p; /Executed .* tests\{0,1\}, with/p; /\*\* TEST SUCCEEDED \*\*/p' "${RUN_DIRECTORY}/test.log"
+  sed -n '/NATIVE_SQLITE_EVIDENCE/p; /LEDGER_LIFECYCLE_EVIDENCE/p; /IPHONE_SHELL_EVIDENCE/p; /OFFLINE_DICTIONARY_EVIDENCE/p; /OFFLINE_DICTIONARY_UI_EVIDENCE/p; /Executed .* tests\{0,1\}, with/p; /\*\* TEST SUCCEEDED \*\*/p' "${RUN_DIRECTORY}/test.log"
 fi

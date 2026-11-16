@@ -14,7 +14,7 @@
 | 位置 | 职责/修改边界 |
 |---|---|
 | app/src、app/ios | 离线 iPhone 入口、原生 SQLite 连接与 Xcode 工程；页面外壳已迁入，完整本地业务仍分阶段接入，机制见总体架构 |
-| app/native-tests、app/ios/App/NativeTests | 仅供 hosted XCTest 的原生桥探针；不进入生产入口及 Release 资源 |
+| app/native-tests、app/test-support、app/ios/App/NativeTests、app/ios/App/UITests | Node SQLite 辅助、共享数据场景、hosted XCTest 探针及外部 XCUITest；测试资源不进入生产 App |
 | web/src | 页面、组件、组合函数、领域工具、API与Pinia；先查同类实现，复用共享能力 |
 | server/src/main/java/com/mybill | 领域Controller/应用服务/Repository/Mapper；跨领域写入经应用服务或明确只读查询接口 |
 | server/src/main/resources/mapper | 运行期SQL唯一位置；Java通过Mapper调用 |

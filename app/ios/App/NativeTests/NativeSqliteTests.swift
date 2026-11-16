@@ -131,6 +131,31 @@ final class NativeSqliteTests: XCTestCase {
         print("LEDGER_LIFECYCLE_EVIDENCE " + String(decoding: try JSONSerialization.data(withJSONObject: evidence, options: [.sortedKeys]), as: UTF8.self))
     }
 
+    func testOfflineDictionaryGovernance() async throws {
+        let webView = try await readyWebView()
+        let script = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "sqlite-probe", withExtension: "js"))
+        _ = try await webView.evaluateJavaScript(String(contentsOf: script, encoding: .utf8) + ";void 0;")
+        let result = try await webView.callAsyncJavaScript("return await MyBillNativeProbe.dictionaries()", arguments: [:], in: nil, contentWorld: .page)
+        let evidence = try XCTUnwrap(result as? [String: Any])
+        XCTAssertEqual(evidence["schemaVersion"] as? Int, 2)
+        XCTAssertEqual((evidence["checks"] as? [String])?.count, 9)
+        let prefix = try XCTUnwrap(evidence["databasePrefix"] as? String)
+        try verifySnapshots(prefix: prefix, minimum: 5, cleanup: true)
+        print("OFFLINE_DICTIONARY_EVIDENCE " + String(decoding: try JSONSerialization.data(withJSONObject: evidence, options: [.sortedKeys]), as: UTF8.self))
+    }
+
+    func testOfflineDictionaryPages() async throws {
+        let webView = try await readyWebView()
+        let script = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "sqlite-probe", withExtension: "js"))
+        _ = try await webView.evaluateJavaScript(String(contentsOf: script, encoding: .utf8) + ";void 0;")
+        let result = try await webView.callAsyncJavaScript("return await MyBillNativeProbe.dictionaryUi()", arguments: [:], in: nil, contentWorld: .page)
+        let evidence = try XCTUnwrap(result as? [String: Any])
+        XCTAssertEqual(evidence["dictionaries"] as? Int, 8)
+        XCTAssertEqual(evidence["mergeHistoryAndTemplate"] as? Bool, true)
+        XCTAssertEqual(evidence["cancelWithoutWrite"] as? Bool, true)
+        print("OFFLINE_DICTIONARY_UI_EVIDENCE " + String(decoding: try JSONSerialization.data(withJSONObject: evidence, options: [.sortedKeys]), as: UTF8.self))
+    }
+
     private func verifySnapshots(prefix: String, minimum: Int, cleanup: Bool) throws {
         let library = try XCTUnwrap(FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask).first)
         let root = library.appendingPathComponent("OfflineLedger/Snapshots", isDirectory: true)

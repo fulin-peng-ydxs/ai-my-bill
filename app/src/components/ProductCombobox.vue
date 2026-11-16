@@ -55,7 +55,8 @@ function focus(searching: boolean): void {
   if (!listOpen.value) interactionVersion++
   browsing.value = !searching
   listOpen.value = true
-  if (searchedQuery.value !== searchTerm.value || !request.data.value) void search(searchTerm.value)
+  // 缓存页面可能经历字典停用/改名/合并；每次展开重读有界候选，不改变当前选择或草稿。
+  void search(searchTerm.value)
 }
 
 function changeQuery(value: string): void {

@@ -107,3 +107,6 @@ export async function run() {
 
 export { lifecycle, prepareCrash, recoverCrash } from './lifecycleProbe'
 export { shell } from './shellProbe'
+
+export { dictionaries } from './dictionaryProbe'
+export { dictionaryUi } from './dictionaryUiProbe'

@@ -47,7 +47,7 @@ const searchTerm = computed(() => browsing.value ? '' : query.value)
 const normalizedQuery = computed(() => normalizeDictionaryName(searchTerm.value))
 const candidates = computed(() => {
   const source = searchedQuery.value === searchTerm.value && request.data.value ? request.data.value : props.items
-  const choices = resolvedItem.value && !source.some((item) => item.id === resolvedItem.value?.id)
+  const choices = props.loadItems && resolvedItem.value && !source.some((item) => item.id === resolvedItem.value?.id)
     ? [...source, resolvedItem.value] : source
   return choices.filter((item) => normalizeDictionaryName(item.name).includes(normalizedQuery.value))
 })
@@ -109,11 +109,8 @@ function focus(searching: boolean): void {
   if (!open.value) interactionVersion++
   browsing.value = !searching
   open.value = true
-  // 失败后重新展开必须重查，不能让预载候选绕过失败状态。
-  if (request.status.value === 'error'
-    || ((searchTerm.value || !props.items.length) && (searchedQuery.value !== searchTerm.value || !request.data.value))) {
-    void search(searchTerm.value)
-  }
+  // 新填报候选始终重读，已选停用项只用于名称回显，不追加进启用候选。
+  void search(searchTerm.value)
 }
 
 function change(value: string): void {

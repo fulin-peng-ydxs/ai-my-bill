@@ -6,6 +6,7 @@ on:
       - 'app/**'
       - 'DESIGN.md'
       - 'scripts/ios-app.sh'
+      - 'scripts/fixtures/dictionary-touch.py'
       - 'scripts/normalize-capacitor-spm.mjs'
       - 'scripts/verify-ios-resources.mjs'
       - 'scripts/ios-storage-policy.mjs'
@@ -19,6 +20,7 @@ on:
       - 'app/**'
       - 'DESIGN.md'
       - 'scripts/ios-app.sh'
+      - 'scripts/fixtures/dictionary-touch.py'
       - 'scripts/normalize-capacitor-spm.mjs'
       - 'scripts/verify-ios-resources.mjs'
       - 'scripts/ios-storage-policy.mjs'
@@ -65,6 +67,7 @@ jobs:
       - run: npm --prefix app ci --ignore-scripts
       - run: npm run build:ios-app
       - run: npm run check:ios-app:simulator
+      - run: npm run check:ios-app:touch
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -75,6 +78,7 @@ jobs:
             .local/ios/tmp/ai-agent/native-*/interruption-*.log
             .local/ios/tmp/ai-agent/native-*/interruption-*-receipt.txt
             .local/ios/tmp/ai-agent/native-*/recovery-*.log
+            .local/ios/tmp/ai-agent/native-*/touch*.log
             .local/ios/tmp/ai-agent/native-*/*.xcresult
           retention-days: 7
           if-no-files-found: error
