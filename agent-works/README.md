@@ -2,13 +2,14 @@
 
 | 入口 | 用途 |
 |---|---|
-| [README](../README.md) | 安装、开发启动、账号初始化与常用操作 |
+| [README](../README.md) | 当前 iOS 骨架入口及保留的 Web 使用说明 |
 | [AGENTS](../AGENTS.md) | 项目协作、工程约束与文档维护要求 |
 | [DESIGN](../DESIGN.md) | 视觉、交互、组件及响应式契约、页面登记 |
 | [OpenAPI](../contracts/openapi.yaml) | API 机器契约与生成类型来源 |
 | [开发验证规范](testing/guide.md) | 检查选择、变更维护、模拟器/真机复测与证据要求 |
 | [部署方案](deployment/README.md) | 宿主准备、初始化、持续发布、运维与恢复 |
 | [离线 iOS App 前置开发技术指引](offline-ios-app/pre-development-technical-guide.md) | 保存迁移评估与总体方案原文；技术路线、旧数据迁移与签名方式仍按原文保留待决状态 |
+| [离线 iOS App 开发计划](offline-ios-app/plan.md) | 7 个阶段、17 项任务及逐项验收；集中维护改造决策和实施边界 |
 
 ## 技术架构
 
@@ -16,7 +17,7 @@
 
 | 专题 | 回答的问题 | 主要代码边界 |
 |---|---|---|
-| [总体架构与契约](architecture/architecture-decisions.md) | 运行单元、依赖方向与共享契约 | web、server、contracts |
+| [总体架构与契约](architecture/architecture-decisions.md) | iOS 随包入口、原生连接及旧 Web 运行单元与契约 | app、web、server、contracts |
 | [前端与 PWA](architecture/frontend-pwa.md) | 路由与状态复用、资源生命周期、草稿及 PWA 构建与更新 | web/src |
 | [后端与业务模块](architecture/backend-domains.md) | 字典、账目、报表、管理之间如何协作 | server 的领域包 |
 | [认证与租户隔离](architecture/auth-tenant.md) | 身份、CSRF、角色、RLS 如何形成闭环 | auth、SecurityConfig、V007 |

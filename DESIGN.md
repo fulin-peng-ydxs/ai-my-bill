@@ -1,7 +1,7 @@
 ---
 version: alpha
 name: 我的账单
-description: 面向中国大陆个人用户的手机优先账单 PWA，以快速录入、清晰核对和可追溯报表为核心，采用近白画布、纯白工具卡、柔和炭灰夜间表面、系统字体和单一 Action Blue 交互色。
+description: 面向中国大陆个人用户的 iPhone 离线账单 App（保留旧 PWA 对照），以快速录入、清晰核对和可追溯报表为核心，采用近白画布、纯白工具卡、柔和炭灰夜间表面、系统字体和单一 Action Blue 交互色。
 sources:
   colors: section-2
   typography: section-3
@@ -9,14 +9,18 @@ sources:
   rounded: section-6
   components: section-4
   layout: section-5
-  tokens: web/src/styles/tokens.css
+  tokens: app/src/styles/tokens.css
 ---
 
 # 我的账单 Design System
 
 > 本文是“我的账单”前端视觉、交互、响应式、组件复用和页面设计约束的长期事实源。实际代码和自动化测试是机器事实源，并与本文同步维护。
 
-实现入口：[主题 token](web/src/styles/tokens.css)、[页面登记](web/src/app/pageRegistry.ts)、[路由](web/src/router/index.ts)。实现机制见[前端与 PWA 架构](agent-works/architecture/frontend-pwa.md)；变更维护、工程检查和终端复测见[开发验证规范](agent-works/testing/guide.md)。
+实现入口：[App 主题 token](app/src/styles/tokens.css)、[页面登记](app/src/app/pageRegistry.ts)、[路由](app/src/router/index.ts)。原生机制见[总体架构](agent-works/architecture/architecture-decisions.md#离线-ios-原生入口)；工程检查和终端复测见[开发验证规范](agent-works/testing/guide.md)。旧 Web/PWA 入口仍保留于 web/src，待退役前继续适用本文明确属于 Web 的规则。
+
+适用范围：离线 App 仅支持 iPhone、iOS 27.0 起，使用随包 WKWebView；沿用原页面布局、导航、组件、交互和主题，不重新设计。登录、角色、管理端、PWA 安装及跨设备同步规则只适用于保留的旧 Web，不进入 App。共享组件登记仍由下文统一维护；App 的个人页面登记只包含六个个人页面，不含 login 或 admin。
+
+当前实现：个人页面及共享外壳已迁入 App，先经真实 SQLite 初始化才挂载业务页；字典、记账保存、报表及导出等本地服务尚待接入。未接通的操作明确显示不可用，不能以空结果或成功提示替代。主题及草稿当前仅在运行期/缓存页保留，重启恢复尚未实现；最终由统一 SQLite 偏好与草稿承接，不建立浏览器存储。
 
 ## 1. Visual Theme & Atmosphere
 
@@ -44,8 +48,8 @@ Key Characteristics：
 
 - 默认 `system`，跟随操作系统。
 - 用户可在“我的”中明确选择跟随系统、白天或夜晚。
-- 登录用户的选择写入服务端个人偏好，跨设备恢复；本地仅用于首屏安全缓存和离线回退。
-- 未登录的登录页也消费同一主题 token。
+- App 的主题由同一运行期 theme store 管理，首屏先按系统主题初始化；SQLite 偏好接入后再恢复用户选择。旧 Web 登录用户的选择仍写入服务端个人偏好，跨设备恢复，本地只作首屏缓存和离线回退。
+- 旧 Web 未登录的登录页也消费同一主题 token；App 不含登录页。
 - 应在首屏渲染业务 UI 前恢复安全缓存或系统主题，禁止先闪现错误模式再切换。
 - PWA 的 `theme-color`、状态栏、表单控件、图表 Canvas 和弹层遮罩必须同步主题。
 
@@ -135,7 +139,7 @@ Key Characteristics：
 | 趋势固定读数 | `13px / 600 / 20px` | 所选时段的当期与累计金额；读数说明采用同字级、400 字重 |
 | 对比结果说明 | `14px / 600 / 20px` | 环比/同比的变化百分比、金额及不可计算原因；数字与同句说明保持同字级 |
 
-数字实现入口为 `web/src/styles/tokens.css` 的共享数字角色规则：普通编辑消费 `--font-number-input-*`，主金额消费 `--font-amount-input-*`，摘要与排行消费 `--font-amount-summary-*`，列表及 KPI 主数值消费 `--font-data-size/line`，辅助、趋势读数与对比说明分别消费 `--font-number-caption/readout/comparison-*`。摘要 token 在手机断点统一切换，不借用正文 token 或在组件、媒体查询中重复定义字号。新增同角色消费者接入现有共享规则，局部样式只承接布局、对齐与语义色。
+数字实现入口为 `app/src/styles/tokens.css` 的共享数字角色规则：普通编辑消费 `--font-number-input-*`，主金额消费 `--font-amount-input-*`，摘要与排行消费 `--font-amount-summary-*`，列表及 KPI 主数值消费 `--font-data-size/line`，辅助、趋势读数与对比说明分别消费 `--font-number-caption/readout/comparison-*`。摘要 token 在手机断点统一切换，不借用正文 token 或在组件、媒体查询中重复定义字号。新增同角色消费者接入现有共享规则，局部样式只承接布局、对齐与语义色。
 
 `MoneyValue` 负责精确格式化、语义色和等宽数字字体，字号继承所在角色；嵌入刚保存摘要的金额显式消费摘要角色，不跟随标题字号。图表数字标签与数值坐标轴通过 `useReportChart.numberLabelStyle()` 读取辅助数字 token，不在各图表写死字号。日期、页码、正文中的数量等嵌入文字的数字继承所在正文、标签、辅助说明或编辑控件的字级，不因含数字而套用数据强调层级。
 
@@ -254,7 +258,7 @@ Key Characteristics：
 | `PwaInstallPrompt` | 登录页与“我的”的安装能力引导 | 复用同一检测状态源；只有浏览器提供安装事件时显示真实安装动作，否则显示分平台步骤或已安装状态 |
 <!-- component-registry:end -->
 
-已纳入门禁的核心组件登记由 [designContract.spec.ts](web/src/app/designContract.spec.ts) 校验；组件新增或退役时同步适用的登记与契约检查。
+App 的 [designContract.spec.ts](app/src/app/designContract.spec.ts) 检查九个核心组件的真实导入/渲染与本表登记、全部 App SFC 样式块的私有色声明、个人页面与路由登记，并保护 21 个原共享组件模板和三份全局样式基线。它不替代运行时可达性、焦点及呈现验证。旧 Web 的 [原检查](web/src/app/designContract.spec.ts) 在退役前保留；新增或退役时同步适用登记与检查。
 
 共享组件消费关系按页面维护，不按开发阶段堆叠记录：
 
@@ -322,7 +326,7 @@ Key Characteristics：
 | 弹窗与抽屉 | 打开后初始焦点优先落到可用取消/关闭按钮；无取消的短说明落到确认按钮；编辑字段默认不自动聚焦 | 关闭完成后恢复仍有效的原入口；子层返回父层入口，隐藏/失效页面不恢复旧焦点 |
 | 非交互正文/表格滚动区 | 保留键盘滚动入口，不画整块蓝框；内部操作控件按其角色反馈 | 进入内部控件后由内部控件承接焦点反馈 |
 
-焦点视觉统一由 `web/src/styles/focus.css` 承接，尺寸和颜色消费 `tokens.css` 的 focus token；组件仅可通过 `--focus-ring-offset` 调整避免裁切所需的轮廓位置，不另写同类焦点规则。实际输入方式由 `inputModality` 统一区分；候选交接、弹层返回及软键盘恢复分别复用 ComboboxField/AnchoredDropdown/useActiveCombobox、AppDialog/AppDrawer/useDialogController 和 useKeyboardViewport/PageWorkspace，不创建页面私有焦点管理器。
+App 焦点视觉统一由 `app/src/styles/focus.css` 承接，尺寸和颜色消费 `tokens.css` 的 focus token；组件仅可通过 `--focus-ring-offset` 调整避免裁切所需的轮廓位置，不另写同类焦点规则。实际输入方式由 `inputModality` 统一区分；候选交接、弹层返回及软键盘恢复分别复用 ComboboxField/AnchoredDropdown/useActiveCombobox、AppDialog/AppDrawer/useDialogController 和 useKeyboardViewport/PageWorkspace，不创建页面私有焦点管理器。
 
 焦点变化按[焦点与动效验证](agent-works/testing/guide.md#焦点与动效)复测。
 
@@ -383,7 +387,7 @@ Key Characteristics：
 
 ### 4.7 统一动效
 
-动效数值的唯一事实源为 `web/src/styles/tokens.css` 的 `--motion-*`；效果由 `motion.css`、`AppTransition` 和对应共享 composable 承接。页面不得维护私有时长、缓动或弹层动画。进入减速、退出短促、选中位置平滑移动，不使用弹簧、弹跳、晃动或逐项延迟。
+App 动效数值的唯一事实源为 `app/src/styles/tokens.css`（旧 Web 使用其保留副本） 的 `--motion-*`；效果由 `motion.css`、`AppTransition` 和对应共享 composable 承接。页面不得维护私有时长、缓动或弹层动画。进入减速、退出短促、选中位置平滑移动，不使用弹簧、弹跳、晃动或逐项延迟。
 
 | 场景 | 统一行为与消费入口 |
 |---|---|
@@ -422,9 +426,9 @@ Key Characteristics：
 - “清除筛选”仅在有效条件偏离重置基线时出现；默认日期标签不单独触发清除动作，空态按当前条件提供可执行下一步。
 - 技术机制、异步保存实现和键盘快捷键不作为手机常驻长说明；触摸与鼠标提示按输入设备显示。
 
-- 普通用户登录后默认进入“记一笔”。
+- App 数据库初始化就绪后默认进入“记一笔”；旧 Web 普通用户登录后进入同页。
 - 底部导航固定四项，底部包含安全区；认证外壳限于动态视口，页头和筛选不参与正文滚动，滚动条只出现在正文边界内；我的、字典索引等无筛选页面同样固定标题，只滚动正文。滚动记忆、明细返回和报表下钻统一读写活动页正文，不读写窗口位置。
-- 同账号内切换已访问的登记页面，保留填写、展开、筛选与滚动状态，不直接卸载；支出/收入切换也保留各自表单。隐藏页的候选必须关闭，原生 dialog 退出顶层，导出轮询和图表观察器暂停；返回刷新可变数据，同条件网络/服务异常保留已有结果并提示过期；替换条件失败显示区域错误，401/403 清除旧结果并显示认证/权限状态。登录不缓存，退出/换账号清除页面缓存；密码输入离页清空。
+- App 同数据集内（旧 Web 同账号内）切换已访问的登记页面，保留填写、展开、筛选与滚动状态，不直接卸载；支出/收入切换也保留各自表单。隐藏页的候选必须关闭，原生 dialog 退出顶层，导出轮询和图表观察器暂停；返回刷新可变数据，同条件网络/服务异常保留已有结果并提示过期；替换条件失败显示区域错误，401/403 清除旧结果并显示认证/权限状态。登录不缓存，退出/换账号清除页面缓存；密码输入离页清空。
 - 首次进入页面从顶部开始；普通导航返回保留该页最新离开位置。报表下钻的返回位置只用于对应路由返回，数据刷新不得反复套用旧 URL 位置并覆盖之后的用户滚动。
 - 底部导航固定于视口，外壳按其含安全区的实际占用高度避让。新增保存动作位于 PageWorkspace 的正文滚动区外，参与 flex 布局并保持在导航上方；正文自动收缩，展开补充信息仍可完整滚到末尾，不使用覆盖定位、测高占位或重复底部留白。动作区域本身透明且无边框，主次按钮有明确底板/边框并与票据内部文字对齐。编辑及调整保存栏进入抽屉正文外的独立动作区，底部固定且不覆盖正文。筛选抽屉在手机键盘期间隐藏底部取消/应用栏；填报保存动作回到表单自然流，收起后恢复动作区，并结束 iOS 遗留的输入焦点，纠正外层平移和正文越界滚动，不重置有效正文位置。
 - 编辑控件聚焦且 visualViewport 相对布局视口实际收缩时隐藏手机底部导航，保存栏转为表单自然流、可滚动到达，避免导航和粘性保存栏挤占候选区域。键盘期间外壳跟随可见视口高度与顶部平移，聚焦字段仅在所属正文内滚动到可见范围，避免 iOS 再次顶起整页；键盘收起动画结束后恢复；页面缩放不误判为键盘。
@@ -548,7 +552,7 @@ Key Characteristics：
 
 ## 9. Page Registry Index
 
-该表是当前已确认页面范围的轻量索引。正式代码使用类型化轻量页面注册表维护 `pageKey`、路径、角色、导航归属、页面原型和必备状态；契约测试保证它与路由及本表双向一致。它只承担静态页面事实和校验，不发展为运行时可配置布局平台。代码实现后，路由与权限事实由代码维护；新增或删除页面必须同步本表。
+该表是已确认页面范围的轻量索引；login/admin 及 PwaInstallPrompt 仅属旧 Web，App 个人页面采用其余六项并移除账号/安装操作，业务服务实现状态见文首。正式代码使用类型化轻量页面注册表维护 `pageKey`、路径、角色、导航归属、页面原型和必备状态；契约测试保证它与路由及本表双向一致。它只承担静态页面事实和校验，不发展为运行时可配置布局平台。代码实现后，路由与权限事实由代码维护；新增或删除页面必须同步本表。
 
 <!-- page-registry:start -->
 | pageKey | 页面 | 原型 | 主任务 | 主要组件 |
@@ -571,7 +575,7 @@ Key Characteristics：
 ### 稳定实现与交互边界
 
 - 前端使用Vue3、Vite、TypeScript、Pinia、Vue Router、ECharts和Lucide Vue Next；不以通用UI框架覆盖设计契约。
-- 首次会话校验在角色未知时使用中性 loading，确认完成前不挂载账号页面或管理数据；普通用户访问管理地址时在原地址显示 permission 状态且不挂载管理页面。
+- 旧 Web 首次会话校验在角色未知时使用中性 loading，确认完成前不挂载账号页面或管理数据；普通用户访问管理地址时在原地址显示 permission 状态且不挂载管理页面。
 - 个人字典在“我的”只保留一个入口，索引展示八类真实数量；商品合并通过目标搜索、影响预览和危险确认完成。
 - 默认字典从管理导航独立进入并明确修改只作用于后续新增用户。
 - 收支页在各视口使用票据式表单，主金额前置，页头依次提供日常支出/收入文字入口和选项管理图标按钮，分类摘要与补充信息错误自动展开，新增页独立底部动作区承接主保存和带边框的连续保存动作，候选、失败、校验、金额计算反馈、模板抽屉与撤销均在原上下文反馈；明细页在手机和桌面使用相同的信息顺序、日期分组和上下文动作，短按查看/编辑，低频操作由查看/编辑中的“更多操作”、长按、右键或 `Shift+F10` 打开统一面板；回收站只出现恢复和永久清理动作，行级反馈、剩余天数、即时撤销及关联调整影响均在原上下文表达。
@@ -583,9 +587,16 @@ Key Characteristics：
 - P6-F3 备份卡片消费宿主只读状态，区分成功、失败、执行中、超时、未配置和不可读，并展示最近成功时间；不以旧成功掩盖当前失败。
 - Toast 位于顶部安全区内，有原生弹层时进入当前顶层，沿用 AppToast 契约，不使用装饰阴影。
 
-### 品牌与PWA约束
+### iPhone 安装与页面状态
+
+- App 通过 Xcode 签名安装，不显示 PWA 安装、网站地址或登录/账号操作入口。数据库初始化 loading/error 沿用 AppStateBlock；失败不挂载业务页、不清空账本，可重试错误提供重试，不兼容版本只提示升级。
+- 主导航仍为“记一笔、报表、明细、我的”，保留原图标、顺序和入口；字典从原“选项管理”进入。App 缓存由 datasetId 隔离，隐藏页关闭候选/原生弹层并暂停轮询和图表观察器；返回保留草稿与滚动，子层放弃只处理指定作用域。
+- 小/默认/大 iPhone 及横屏沿用现有断点；安全区只分配一次，完整软键盘下输入、正文滚动与保存动作必须可达。实际操作使用独立模拟器；最终真机性能和安装验收另行执行。
+- 检查入口及证明边界见[开发验证规范](agent-works/testing/guide.md#工程检查)。设计门禁由 check:app 执行，原生导航/缓存/焦点/嵌套关闭由 check:ios-app:simulator 执行；原生触摸、键盘及实际布局还须直接操作验证。
+
+### 旧 Web 品牌与PWA约束
 
 - 正式名称为“我的账单”；安装图标使用Action Blue背景和白色票据符号，SVG为源，提供192/512 PNG、maskable512及Apple180。
 - 安装能力使用Manifest、Service Worker、浏览器安装事件和分平台手动引导；检测、拒绝、不支持、已安装状态由共享状态源管理，网页使用不依赖安装。
 - 不以图标齐全代替启动、独立窗口或平台状态栏验收。发布到新环境时验证目标设备证书信任、安装、离线与更新；当前环境事实维护于[部署案例](agent-works/deployment/README.md#部署案例)，验收证据要求见开发验证规范。
-- 当前不提供原生 IPA/APK、离线记账或新版提示按钮；展示入口必须与实际能力一致，缓存与更新机制见[前端与 PWA 架构](agent-works/architecture/frontend-pwa.md#安装资产与更新机制)。
+- 旧 Web 不提供原生 IPA/APK、离线记账或新版提示按钮；展示入口必须与实际能力一致，缓存与更新机制见[前端与 PWA 架构](agent-works/architecture/frontend-pwa.md#安装资产与更新机制)。

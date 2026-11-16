@@ -1,0 +1,11 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "strict": true,
+    "types": ["node", "vite/client"],
+    "noEmit": true
+  },
+  "include": ["capacitor.config.ts", "vite.config.ts", "vitest.config.ts", "native-tests/vite.config.ts"]
+}

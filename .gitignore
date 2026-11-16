@@ -39,6 +39,15 @@ web/dist/
 web/.vite/
 web/*.tsbuildinfo
 web/coverage/
+app/node_modules/
+app/dist/
+app/.native-test/
+app/coverage/
+app/ios/App/App/public/
+app/ios/App/App/capacitor.config.json
+app/ios/App/CapApp-SPM/
+app/ios/**/xcuserdata/
+app/ios/**/*.xcuserstate
 # 根目录孤立 node_modules（在错误 cwd 下跑前端命令产生的缓存残留，正常前端依赖在 frontend/ 下）
 /node_modules/
 

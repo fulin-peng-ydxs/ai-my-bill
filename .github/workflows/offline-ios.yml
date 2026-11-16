@@ -1,0 +1,80 @@
+name: offline-ios
+
+on:
+  push:
+    paths:
+      - 'app/**'
+      - 'DESIGN.md'
+      - 'scripts/ios-app.sh'
+      - 'scripts/normalize-capacitor-spm.mjs'
+      - 'scripts/verify-ios-resources.mjs'
+      - 'scripts/ios-storage-policy.mjs'
+      - 'scripts/tests/ios-resources.test.mjs'
+      - 'scripts/toolchain.sh'
+      - '.nvmrc'
+      - 'package.json'
+      - '.github/workflows/offline-ios.yml'
+  pull_request:
+    paths:
+      - 'app/**'
+      - 'DESIGN.md'
+      - 'scripts/ios-app.sh'
+      - 'scripts/normalize-capacitor-spm.mjs'
+      - 'scripts/verify-ios-resources.mjs'
+      - 'scripts/ios-storage-policy.mjs'
+      - 'scripts/tests/ios-resources.test.mjs'
+      - 'scripts/toolchain.sh'
+      - '.nvmrc'
+      - 'package.json'
+      - '.github/workflows/offline-ios.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: offline-ios-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  app-common:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - run: npm --prefix app ci --ignore-scripts
+      - run: npm run check:app
+
+  native-simulator:
+    needs: app-common
+    # 官方 Xcode 27 preview 镜像；实际 SDK/runtime 不符时脚本失败，不能降级通过。
+    runs-on: xcode-27
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - run: npm --prefix app ci --ignore-scripts
+      - run: npm run build:ios-app
+      - run: npm run check:ios-app:simulator
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: offline-ios-native-${{ github.sha }}
+          path: |
+            .local/ios/tmp/ai-agent/native-*/build.log
+            .local/ios/tmp/ai-agent/native-*/test.log
+            .local/ios/tmp/ai-agent/native-*/interruption-*.log
+            .local/ios/tmp/ai-agent/native-*/interruption-*-receipt.txt
+            .local/ios/tmp/ai-agent/native-*/recovery-*.log
+            .local/ios/tmp/ai-agent/native-*/*.xcresult
+          retention-days: 7
+          if-no-files-found: error

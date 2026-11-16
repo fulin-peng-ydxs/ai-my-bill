@@ -6,6 +6,9 @@
 
 | 命令（根目录） | 何时使用 | 做什么 |
 |---|---|---|
+| npm run check:app | 离线 App 入口、依赖或资源变更 | Node 24：领域、队列、初始化状态、组件四态及设计契约测试、类型检查、Vite 构建、Capacitor sync、生成 SPM 兼容适配及资源门禁正反例；不启动 Web/PG |
+| npm run build:ios-app | 原生工程/依赖或安装候选资源变更 | Xcode 27 / iOS 27 SDK：未签名真机架构 Release 编译与产物资源检查；不证明签名/可安装 |
+| npm run check:ios-app:simulator | 原生 SQLite 桥、外壳及导航变更 | Xcode 27 / iOS 27.0 runtime：独立 iPhone 14 Pro Max 模拟器，hosted XCTest 验随包入口、原生事务/精度/聚合溢出拒绝、正式初始化/升级/seed 保护、进程中断重开及排除系统备份；清理本轮设备 |
 | npm run check | 需要完整工程基线时 | 开发配置加载器、部署工具检查、前端检查/构建、Maven verify、临时PG集成 |
 | bash scripts/run-frontend.sh check | 前端完整验证 | 类型、lint、Vitest、OpenAPI漂移和生产构建 |
 | npm run check:server | 后端改动 | Java编译/单元/架构测试；默认跳过需独立数据库的用例 |
@@ -18,6 +21,20 @@
 | npm run check:deployment | 部署脚本、profile或目标字段变更 | Shell语法、严格字面解析和部署配置负例 |
 
 常规局部修改选择最低充分检查，不默认每次全跑；纯文档通常检查差异、引用与事实。检查以实际执行及退出状态判断，数据库测试被跳过不能记为通过。构建产物 web/dist 用于发布，server/target 下 JAR 用于打包，不手工编辑。
+
+App 检查的实现入口为 [ios-app.sh](../../scripts/ios-app.sh)，需先按 [README](../../README.md#离线-ios-app-开发入口) 安装 app 锁定依赖。以上三个 App 入口已经在本机 Node24.11.1 / npm11.6.2、Xcode27.0 / SDK27.0 执行通过；原生探针只有受控实验数据，不能证明正式记账、完整升级/恢复、容量或真机行为。金额、时间及文本实现统一位于 app/src/domain；旧 Web 对应模块仅重导出，兼容回归无需启动旧服务。模拟器入口通过 test bundle 调用正式 LedgerDatabase.open→upgrade，在保护快照完成、迁移 SQL/履历已写但事务未提交、升级事务已提交三个阶段分别挂起；脚本动态定位本轮沙盒，观察到匹配阶段信号后仅终止本 App。每次故障步骤须返回预期 65，恢复 XCTest 必须核对已提交基线、版本/结构/履历及重试结果，并回读保护快照排除标记。另外通过原生文件守卫用例验证完整头中 magic 清零的非热 journal 可保留（包括其余头字段仍有值的情况），热 journal、短头和非空 WAL 拒绝复制；正式中断重试用例必须能重新生成快照。原始 SQLite 事务探针不能代替这组正式流程验证；模拟器不验证实体文件保护等级。
+
+App 设计门禁由 [designContract.spec.ts](../../app/src/app/designContract.spec.ts) 经 check:app 同一入口执行：Vue/TypeScript 解析真实导入和模板消费，核对九个核心组件登记、个人页面的唯一角色/路径及实际路由，拒绝私有颜色、注释假导入、缺登记与重复角色反例。21 个关键共享组件模板及三份全局样式的 SHA 基线来自准备提交 6419b93；未作为检查目标的业务消费者仍须按改动复核。四态及初始化重试由组件/状态测试覆盖，不用它们证明原生呈现。
+
+原生 [shellProbe](../../app/native-tests/shellProbe.ts) 在实际 WKWebView 中检查四导航、原图标、切页草稿、主题及抽屉焦点返回。业务尚未接通时，嵌套放弃/取消使用 test bundle 内共享组件夹具，验证父子层与未保存作用域，不冒充账目编辑链路。探针不进入生产资源。日常页面还须在独立小/默认/大 iPhone 模拟器，从 App 图标直接操作导航、表单、完整软键盘、原生选择器、明暗主题、横屏与减少动态效果；记录原页面操作和各自边界，不将脚本派发事件当成触摸验证。未接通功能应显示明确不可用而非假成功。
+
+资源门禁使用锁定的 TypeScript 解析器检查 JS/MJS/CJS 及内联脚本，拒绝已知 IndexedDB、Web Storage、WebSQL、WASM 的直接标识符、别名来源与静态括号访问；合法注释及文案不作为调用。该静态检查不证明所有动态间接访问不可达，正式数据入口仍须通过原生集成验证。正反例通过同一门禁入口执行。
+
+每轮 build.log/test.log、interruption-阶段/recovery-阶段 日志、阶段回执及 xcresult 位于 .local/ios/tmp/ai-agent/native-*；失败不冒充成功，模拟器清理失败也返回失败。原生缓存与产物留在 .local/ios，不复用 .local/web。既有 check:ios 与 check:ios:simulator 仍是旧 Web/Safari 路径，不应用来代替这组原生测试。
+
+离线 App 日常调试与回归优先使用独立的 iPhone 模拟器，真实原生 SQLite 桥测试仍在 iOS 模拟器内执行。真机仅用于模拟器无法覆盖的必要问题及最终候选验收；必要提前验证须说明覆盖缺口。D07 的设备/Release/采样与硬指标保持不变，模拟器观测不替代最终真机结果。T14 先完成执行器与模拟器开发验证，真机容量及辅助功能/硬件复核集中在 T17，未执行前保留待验证。
+
+App 的最小 [Actions 工作流](../../.github/workflows/offline-ios.yml) 已定义自动触发和调用同一脚本，但尚无远端运行证据。真实 iPhone 的签名安装、飞行模式冷启动及 Release 性能另验；当前骨架已在指定真机完成签名安装与图标离线冷启动，正式业务及 Release 容量性能尚未验收。模拟器、小样本耗时或 common 绿色不能替代这些条件，当前也未实现完整性能交付门禁。
 
 ## 变更维护与验证
 

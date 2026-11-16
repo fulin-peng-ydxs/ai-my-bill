@@ -13,6 +13,8 @@
 
 | 位置 | 职责/修改边界 |
 |---|---|
+| app/src、app/ios | 离线 iPhone 入口、原生 SQLite 连接与 Xcode 工程；页面外壳已迁入，完整本地业务仍分阶段接入，机制见总体架构 |
+| app/native-tests、app/ios/App/NativeTests | 仅供 hosted XCTest 的原生桥探针；不进入生产入口及 Release 资源 |
 | web/src | 页面、组件、组合函数、领域工具、API与Pinia；先查同类实现，复用共享能力 |
 | server/src/main/java/com/mybill | 领域Controller/应用服务/Repository/Mapper；跨领域写入经应用服务或明确只读查询接口 |
 | server/src/main/resources/mapper | 运行期SQL唯一位置；Java通过Mapper调用 |
@@ -21,7 +23,7 @@
 | contracts | OpenAPI事实源；web/src/api/generated为生成物，修改契约后重新生成，不手改 |
 | scripts、deploy | 本地工具链/验证/候选构建与部署实现 |
 | agent-works | architecture放当前技术事实，testing放验证规范，deployment放通用方案及cases实例；历史资料由文档索引定位 |
-| .local、node_modules、web/dist、server/target | 本机私密数据、依赖和构建产物；不提交，不为验证清空已有数据 |
+| .local、node_modules、app/dist、app/.native-test、app/ios/App/CapApp-SPM、web/dist、server/target | 本机私密数据、依赖和生成产物；不提交，不为验证清空已有数据；SPM 生成适配通过脚本维护，Package.resolved 提交锁定 |
 
 文档默认目录沿用通用协作规则；本模块复用现有目录。新增同类架构先更新已有专题，禁止建立第二份变量表或把服务器信息写回通用方案。
 
@@ -34,9 +36,10 @@
 ## 工程与业务硬约束
 
 - Node.js24 LTS、Vue3、Vite、TypeScript、Pinia、Vue Router；Java21 LTS、Spring Boot模块化单体、MyBatis-Plus、Maven Wrapper。工具链具体版本以仓库配置为准。
+- App 使用 Capacitor 与原生 SQLite，仅声明 iPhone、最低 iOS 27.0；随包运行，不配置远程入口，不用 Web/WASM/IndexedDB 替代原生账本。迁移保持原有页面布局、导航、组件与交互，围绕同一界面做必要 iPhone 适配。
 - 一期不引入Redis、消息队列、微服务、地图服务、账户余额或转账能力。新增技术方案/不明确业务规则先形成可评估选项；已有用户授权不重复索取。
-- 生产运行SQL只在Mapper XML；禁止Spring JDBC、JPA或Java内嵌SQL。schema/授权变更走现有migration/provision文件，说明用途、时机、影响及回退边界，不修改已部署migration校验和。
-- 浏览器只访问同源 `/api/v1`；身份/租户来自服务端认证上下文。新增API同步角色守卫与拒绝测试，ADMIN不能读取个人账目；租户事务、RLS、复合归属不可省略。
+- 旧服务端生产运行SQL只在Mapper XML；禁止Spring JDBC、JPA或Java内嵌SQL。schema/授权变更走现有migration/provision文件，说明用途、时机、影响及回退边界，不修改已部署migration校验和。
+- 旧 Web 浏览器只访问同源 `/api/v1`；身份/租户来自服务端认证上下文。新增API同步角色守卫与拒绝测试，ADMIN不能读取个人账目；租户事务、RLS、复合归属不可省略。App 原生路径不依赖这组联网服务，不为验证恢复已停止的日常 Web/PG。
 - 金额/数量用十进制精确类型，禁止二进制浮点处理业务金额；业务时间统一Asia/Shanghai。
 - API错误包含code、message、fieldErrors、traceId、retryable；不得返回堆栈、凭据或租户标识。接口变更同步OpenAPI、生成类型及调用者。
 - 新增或修改页面同步检查DESIGN的页面登记、组件清单与响应式契约；不得复制共享状态、交互、样式。PWA不得缓存个人API/下载或伪造离线提交。
@@ -45,6 +48,8 @@
 ## 开发与验证
 
 运行、工具链及首次账号入口见 [README](README.md)。所有改动按[开发验证规范](agent-works/testing/guide.md)选择适用检查、维护项与完成证据；页面开发前还须读取 DESIGN 的响应式契约。该规范统一维护模拟器/真机选择、直接操作、服务保护和未验证处理，不以工程检查替代页面或部署验收。
+
+离线 App 日常调试、页面与原生数据库回归优先使用独立 iPhone 模拟器；真机仅用于模拟器无法覆盖的必要问题及最终安装/性能/交付验收，提前使用须说明具体缺口。模拟器结果不得替代已约定的真机 Release 指标。
 
 ## 部署、敏感数据与完成标准
 

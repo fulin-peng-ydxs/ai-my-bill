@@ -1,4 +1,2 @@
-/** 与后端 String.codePointCount 保持一致，按 Unicode 码点而非 UTF-16 单元计数。 */
-export function unicodeCodePointLength(value: string): number {
-  return Array.from(value).length
-}
+// 过渡期消费 App 的同一纯领域实现；旧页面行为保持，Web 退役时删除此入口。
+export * from '../../../app/src/domain/text'
