@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """仅用于独立模拟器的 UI 夹具准备/回读；从不清空已有账本，不提供生产入口。"""
 import json
+import re
 import time
 from contextlib import closing
 import sqlite3
@@ -29,12 +30,54 @@ if mode == 'wait-initialized':
         time.sleep(0.5)
     raise RuntimeError('本轮模拟器的正式账本未在准备预算内初始化')
 assert database.is_file()
+# debug 数据仅由已校验会话中的全新 App 初始化；复用同一夹具，不开放任意 SQL 或路径。
+debug_match = re.fullmatch(r'debug-(check-)?(\d|1[0-4])', mode)
+debug_case = int(debug_match[2]) if debug_match else None
+debug_check = bool(debug_match and debug_match[1])
+if debug_match:
+    mode = 'debug-check' if debug_check else 'prepare'
 connection = sqlite3.connect(f'file:{database}?mode={"rw" if mode in ("prepare", "prepare-paging") else "ro"}', uri=True)
+def add_paging_items(connection, ids):
+    """完整和局部触摸共用相同末页数据，始终拒绝覆盖既有同名样本。"""
+    assert connection.execute("SELECT count(*) FROM dictionary_item WHERE name LIKE 'PageProduct%' OR name LIKE 'PageUnit%'").fetchone()[0] == 0
+    ids['paging'] = {}
+    for kind, prefix in [('PRODUCT', 'PageProduct'), ('UNIT', 'PageUnit')]:
+        for index in range(21):
+            key = prefix + f'{index:02}'
+            item_id = str(uuid.uuid4())
+            ids['paging'][key] = item_id
+            connection.execute("INSERT INTO dictionary_item(id,kind,name,normalized_name,status,sort_order) VALUES(?,?,?,?,'ACTIVE',?)", (item_id, kind, key, key.lower(), index * 10))
+
 connection.row_factory = sqlite3.Row
 connection.execute('PRAGMA foreign_keys=ON')
 receipt_path = Path(receipt_file)
 try:
-    if mode == 'check-empty':
+    if mode == 'debug-check':
+        ids = json.loads(receipt_path.read_text())
+        def one(sql, values=()):
+            return connection.execute(sql, values).fetchone()[0]
+        if debug_case in [1, 2, 3, 4, 5]:
+            expected = {1: 'Touch Created', 2: 'Touch Renamed', 3: 'Touch Category', 4: 'Touch Unit', 5: 'Touch Funding'}[debug_case]
+            assert one('SELECT count(*) FROM dictionary_item WHERE name=?', (expected,)) == 1
+            if debug_case == 2:
+                assert one("SELECT count(*) FROM dictionary_item WHERE name='Touch Created'") == 0
+        if debug_case in [6, 7]:
+            assert one('SELECT status FROM dictionary_item WHERE id=?', (ids['maintenance'],)) == ('INACTIVE' if debug_case == 6 else 'ACTIVE')
+        merged_history = debug_case in [9, 10]
+        expected_product = ids['target'] if merged_history else ids['source']
+        entry = connection.execute('SELECT product_id,product_name_snapshot,CAST(amount_cents AS TEXT),row_version FROM ledger_entry WHERE id=?', (ids['entry'],)).fetchone()
+        assert tuple(entry) == (expected_product, '历史苹果', '1543', 2 if merged_history else 1)
+        template = connection.execute('SELECT product_id,CAST(amount_cents AS TEXT) FROM daily_entry_template WHERE id=?', (ids['template'],)).fetchone()
+        assert tuple(template) == (expected_product, '1543')
+        assert one('SELECT count(*) FROM product_merge_event') == (1 if merged_history or debug_case == 12 else 0)
+        if debug_case == 12:
+            assert one('SELECT merged_into_id FROM product_details WHERE product_id=?', (ids['paging']['PageProduct20'],)) == ids['paging']['PageProduct00']
+            assert one("SELECT count(*) FROM dictionary_item d JOIN product_details p ON p.product_id=d.id WHERE d.name LIKE 'PageProduct%' AND p.merged_into_id IS NULL") == 20
+        if debug_case == 14:
+            assert one('SELECT status FROM dictionary_item WHERE id=?', (ids['paging']['PageUnit20'],)) == 'INACTIVE'
+            assert one("SELECT count(*) FROM dictionary_item WHERE name LIKE 'PageUnit%' AND status='ACTIVE'") == 20
+        print('DICTIONARY_DEBUG_SQLITE_VERIFIED case=' + str(debug_case))
+    elif mode == 'check-empty':
         assert connection.execute('SELECT count(*) FROM dictionary_item').fetchone()[0] == 8
         for table in ['ledger_entry', 'daily_entry_template', 'product_merge_event']:
             assert connection.execute(f'SELECT count(*) FROM {table}').fetchone()[0] == 0
@@ -42,16 +85,8 @@ try:
     elif mode == 'prepare-paging':
         ids = json.loads(receipt_path.read_text())
         assert connection.execute('SELECT count(*) FROM product_merge_event').fetchone()[0] == 1
-        assert connection.execute("SELECT count(*) FROM dictionary_item WHERE name LIKE 'PageProduct%' OR name LIKE 'PageUnit%'").fetchone()[0] == 0
-        ids['paging'] = {}
         with connection:
-            for kind, prefix in [('PRODUCT', 'PageProduct'), ('UNIT', 'PageUnit')]:
-                for index in range(21):
-                    key = prefix + f'{index:02}'
-                    item_id = str(uuid.uuid4())
-                    ids['paging'][key] = item_id
-                    connection.execute("INSERT INTO dictionary_item(id,kind,name,normalized_name,status,sort_order) VALUES(?,?,?,?,'ACTIVE',?)",
-                                       (item_id, kind, key, key.lower(), index * 10))
+            add_paging_items(connection, ids)
         receipt_path.write_text(json.dumps(ids, ensure_ascii=False, indent=2))
         print('DICTIONARY_TOUCH_PAGING_FIXTURE_PREPARED')
     elif mode == 'check-paging':
@@ -86,6 +121,14 @@ try:
                 VALUES(?,'EXPENSE','触摸合并源','触摸合并源',?,'触摸合并源',?,'触摸分类',?,'触摸单位',123456,1250,1543,?,'触摸资金',
                 '2026-11-15T01:00:00.000Z','2026-11-15T01:00:00.000Z','2026-11-15T01:00:00.000Z')""",
                                (ids['template'], ids['source'], ids['category'], ids['unit'], ids['funding']))
+        if debug_case is not None:
+            with connection:
+                if debug_case == 2:
+                    connection.execute("INSERT INTO dictionary_item(id,kind,name,normalized_name,status,sort_order) VALUES(?,'PRODUCT','Touch Created','touch created','ACTIVE',20)", (str(uuid.uuid4()),))
+                if debug_case == 7:
+                    connection.execute("UPDATE dictionary_item SET status='INACTIVE' WHERE id=?", (ids['maintenance'],))
+                if debug_case in [11, 12, 13, 14]:
+                    add_paging_items(connection, ids)
         receipt_path.write_text(json.dumps(ids, ensure_ascii=False, indent=2))
         print('DICTIONARY_TOUCH_FIXTURE_PREPARED')
     elif mode == 'check':

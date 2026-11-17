@@ -72,6 +72,17 @@ final class DictionaryTouchTests: XCTestCase {
         }
     }
 
+    private func tapVisibleText(_ label: String) {
+        var box: CGRect?
+        // HTML select 的提示值未必是 AX label；从当前画面定位，再执行原生触摸。
+        let ready = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            box = self.visualText(label)
+            return box != nil
+        }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 10), .completed, "画面未显示 \(label)")
+        if let box { app.coordinate(withNormalizedOffset: CGVector(dx: box.midX, dy: 1 - box.midY)).tap() }
+    }
+
     private func appears(_ label: String, timeout: TimeInterval = 10) {
         let ready = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
             self.matching(label).firstMatch.exists || self.visualText(label) != nil
@@ -82,6 +93,12 @@ final class DictionaryTouchTests: XCTestCase {
     private func disappears(_ element: XCUIElement) {
         let gone = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: element)
         XCTAssertEqual(XCTWaiter.wait(for: [gone], timeout: 10), .completed)
+    }
+
+    private func expectValue(_ field: XCUIElement, _ value: String) {
+        // WKWebView 的 AX 值可短暂落后于已完成的原生输入；等精确值，不重放输入或改写页面。
+        let ready = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", value), object: field)
+        XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 3), .completed, "输入值未就绪：\(value)")
     }
 
     private func openIndex() {
@@ -96,6 +113,20 @@ final class DictionaryTouchTests: XCTestCase {
             appears(label)
         }
         tap("关闭")
+    }
+
+    /// 独立搜索场景先建立原生键盘会话；取消原编辑弹窗，不新增或修改业务数据。
+    /// 完整套件已有新增输入步骤，不选中此局部准备方法。
+    func test00DebugKeyboardReady() {
+        openKind("单位")
+        tap("新增")
+        let field = nameField()
+        field.tap()
+        field.typeText("Debug Ready")
+        expectValue(field, "Debug Ready")
+        tap("取消")
+        disappears(field)
+        print("DEBUG_NATIVE_KEYBOARD_READY")
     }
 
     private func openKind(_ label: String) {
@@ -137,7 +168,7 @@ final class DictionaryTouchTests: XCTestCase {
         XCTAssertTrue(selectAll.waitForExistence(timeout: 10), "没有显示系统全选菜单")
         selectAll.tap()
         field.typeText("Touch Renamed")
-        XCTAssertEqual(field.value as? String, "Touch Renamed")
+        expectValue(field, "Touch Renamed")
         tap("保存名称")
         appears("Touch Renamed")
         tap("关闭")
@@ -179,7 +210,7 @@ final class DictionaryTouchTests: XCTestCase {
     private func previewMerge(source: String = "触摸合并源", target: String = "触摸合并目标", entries: String = "1 条", templates: String = "1 项") {
         tap("管理" + source)
         tap("合并到其他商品")
-        tap("请选择")
+        tapVisibleText("请选择")
         let wheel = app.pickerWheels.firstMatch
         if wheel.waitForExistence(timeout: 2) {
             wheel.adjust(toPickerWheelValue: target)
@@ -235,9 +266,15 @@ final class DictionaryTouchTests: XCTestCase {
         field.tap()
         field.typeText(prefix)
         if app.keyboards.firstMatch.exists {
-            let done = app.buttons.matching(NSPredicate(format: "label IN %@", ["Done", "完成"])).firstMatch
-            XCTAssertTrue(done.waitForExistence(timeout: 3), "原生搜索键盘缺少完成按钮")
-            done.tap()
+            let buttons = app.buttons.matching(NSPredicate(format: "label IN %@", ["Done", "完成"]))
+            var done: XCUIElement?
+            // WebKit 可保留上一编辑器的同名 AX 节点；必须命中当前可触摸的键盘控件。
+            let ready = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+                done = buttons.allElementsBoundByIndex.last(where: { $0.isHittable })
+                return done != nil
+            }, object: nil)
+            XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 3), .completed, "原生搜索键盘缺少可触摸的完成按钮")
+            done?.tap()
             disappears(app.keyboards.firstMatch)
         }
         if kind == "单位" {

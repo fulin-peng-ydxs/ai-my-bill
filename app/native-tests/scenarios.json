@@ -1,0 +1,4 @@
+[
+  "crud", "validation", "sorting", "references", "merge", "template-tie", "upgrade",
+  "template-source-only", "template-target-newer", "template-rename-conflict"
+]

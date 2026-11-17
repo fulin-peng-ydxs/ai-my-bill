@@ -30,6 +30,7 @@
     "environment": "bash scripts/environment.sh",
     "ops": "bash scripts/operations.sh",
     "release": "bash scripts/release.sh",
-    "contracts:generate": "bash scripts/run-frontend.sh contract:generate"
+    "contracts:generate": "bash scripts/run-frontend.sh contract:generate",
+    "debug:ios-app": "bash scripts/ios-app.sh debug"
   }
 }

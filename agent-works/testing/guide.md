@@ -10,6 +10,7 @@
 | npm run build:ios-app | 原生工程/依赖或安装候选资源变更 | Xcode 27 / iOS 27 SDK：未签名真机架构 Release 编译与产物资源检查；不证明签名/可安装 |
 | npm run check:ios-app:simulator | 原生 SQLite 桥、外壳及导航变更 | Xcode 27 / iOS 27.0 runtime：独立 iPhone 14 Pro Max 模拟器，hosted XCTest 验随包入口、原生事务/精度/聚合溢出拒绝、正式初始化/升级/seed 保护、八类字典和合并/模板事务、原页面操作、进程中断重开及排除系统备份；清理本轮设备 |
 | npm run check:ios-app:touch | 字典页面的原生触摸、键盘、选择器及缓存候选变更 | 独立 iPhone 14 Pro Max 模拟器；正式生命周期初始化后准备空账本专用合成引用，外部 XCUITest 对 Release App 触摸新增/改名/启停/合并及重启，再回读 SQLite；清理本轮设备 |
+| npm run debug:ios-app -- list | 原生单用例或单场景定位 | 列出可选用例/场景；create/run/suspend/close 显式管理本轮独立模拟器，按内容摘要复用构建，结果仅记局部验证 |
 | npm run check | 需要完整工程基线时 | 开发配置加载器、部署工具检查、前端检查/构建、Maven verify、临时PG集成 |
 | bash scripts/run-frontend.sh check | 前端完整验证 | 类型、lint、Vitest、OpenAPI漂移和生产构建 |
 | npm run check:server | 后端改动 | Java编译/单元/架构测试；默认跳过需独立数据库的用例 |
@@ -23,7 +24,7 @@
 
 常规局部修改选择最低充分检查，不默认每次全跑；纯文档通常检查差异、引用与事实。检查以实际执行及退出状态判断，数据库测试被跳过不能记为通过。构建产物 web/dist 用于发布，server/target 下 JAR 用于打包，不手工编辑。
 
-App 检查的实现入口为 [ios-app.sh](../../scripts/ios-app.sh)，需先按 [README](../../README.md#离线-ios-app-开发入口) 安装 app 锁定依赖。common、ios-build、ios-smoke、ios-touch 四个入口已经在本机 Node24.11.1 / npm11.6.2、Xcode27.0 / SDK27.0 执行通过；原生探针只有受控实验数据，不能证明正式记账、完整升级/恢复、容量或真机行为。金额、时间及文本实现统一位于 app/src/domain；旧 Web 对应模块仅重导出，兼容回归无需启动旧服务。模拟器入口通过 test bundle 调用正式 LedgerDatabase.open→upgrade，在保护快照完成、迁移 SQL/履历已写但事务未提交、升级事务已提交三个阶段分别挂起；脚本动态定位本轮沙盒，观察到匹配阶段信号后仅终止本 App。每次故障步骤须返回预期 65，恢复 XCTest 必须核对已提交基线、版本/结构/履历及重试结果，并回读保护快照排除标记。另外通过原生文件守卫用例验证完整头中 magic 清零的非热 journal 可保留（包括其余头字段仍有值的情况），热 journal、短头和非空 WAL 拒绝复制；正式中断重试用例必须能重新生成快照。原始 SQLite 事务探针不能代替这组正式流程验证；模拟器不验证实体文件保护等级。
+App 检查统一从 [ios-app.sh](../../scripts/ios-app.sh) 进入 [命令调度器](../../scripts/ios-app.mjs)，完整检查委托 [完整流程](../../scripts/lib/ios-app-full.sh)，需先按 [README](../../README.md#离线-ios-app-开发入口) 安装 app 锁定依赖。common、ios-build、ios-smoke、ios-touch 四个入口已经在本机 Node24.11.1 / npm11.6.2、Xcode27.0 / SDK27.0 执行通过；原生探针只有受控实验数据，不能证明正式记账、完整升级/恢复、容量或真机行为。金额、时间及文本实现统一位于 app/src/domain；旧 Web 对应模块仅重导出，兼容回归无需启动旧服务。模拟器入口通过 test bundle 调用正式 LedgerDatabase.open→upgrade，在保护快照完成、迁移 SQL/履历已写但事务未提交、升级事务已提交三个阶段分别挂起；脚本动态定位本轮沙盒，观察到匹配阶段信号后仅终止本 App。每次故障步骤须返回预期 65，恢复 XCTest 必须核对已提交基线、版本/结构/履历及重试结果，并回读保护快照排除标记。另外通过原生文件守卫用例验证完整头中 magic 清零的非热 journal 可保留（包括其余头字段仍有值的情况），热 journal、短头和非空 WAL 拒绝复制；正式中断重试用例必须能重新生成快照。原始 SQLite 事务探针不能代替这组正式流程验证；模拟器不验证实体文件保护等级。
 
 App 设计门禁由 [designContract.spec.ts](../../app/src/app/designContract.spec.ts) 经 check:app 同一入口执行：Vue/TypeScript 解析真实导入和模板消费，核对九个核心组件登记、个人页面的唯一角色/路径及实际路由，拒绝私有颜色、注释假导入、缺登记与重复角色反例。21 个关键共享组件模板及三份全局样式的 SHA 基线来自准备提交 6419b93；未作为检查目标的业务消费者仍须按改动复核。四态及初始化重试由组件/状态测试覆盖，不用它们证明原生呈现。
 
@@ -41,13 +42,45 @@ NativeTests 与 DictionaryUITests 只支持 simulator SDK，并由共享 [OwnedS
 
 脚本先构建、安装并等待专用模拟器正式账本完成初始化，结束宿主后再执行测试，以分离首次运行时准备；准备有界等待不属于冷启动性能测量，也不改变原生入口 20 秒等待和单用例 60 秒预算。自动回归的 TestAction 不挂载调试器，日常 Run 调试设置保持；正式性能验收仍按目标真机 Release 规则执行。
 
-[原生触摸用例](../../app/ios/App/UITests/DictionaryTouchTests.swift)由独立 DictionaryTouch scheme 执行，使用 XCUITest 的 tap/typeText/原生选择器操作 Release App，不注入 JavaScript、不替换业务 API。与 hosted XCTest 的 DOM 事件场景分别记录，不将两者混称为真实触摸。check:ios-app:touch 先验证正式初始化并结束宿主，再用[受限夹具](../../scripts/fixtures/dictionary-touch.py)准备本轮空模拟器账本的历史引用；夹具拒绝已有自定义数据，不清空、不连接真机。原有 11 项 UI 用例顺序共用本轮交互会话，各用例保留截图，最后验证重启；回读后追加 21 项商品/单位夹具，以另 4 项用例验证搜索末页合并、启用筛选末页停用后的有效页回退及条件保留，再只读核验结果。脚本结束 App 后回读稳定 ID、引用、模板、行版本、金额、名称快照、事件和幂等回执，执行完整性及外键检查；用例按操作链路拆分并保留原 60 秒执行预算配置，不上调超时；节点未就绪时可用本机 Vision OCR 定位截图文字，再由 XCUITest 坐标触摸，不将 OCR 通过作为无障碍验收。此流程只证明开发模拟器的页面链路，不代替目标真机性能和最终交付。
+[原生触摸用例](../../app/ios/App/UITests/DictionaryTouchTests.swift)由独立 DictionaryTouch scheme 执行，使用 XCUITest 的 tap/typeText/原生选择器操作 Release App，不注入 JavaScript、不替换业务 API。与 hosted XCTest 的 DOM 事件场景分别记录，不将两者混称为真实触摸。check:ios-app:touch 先验证正式初始化并结束宿主，再用[受限夹具](../../scripts/fixtures/dictionary-touch.py)准备本轮空模拟器账本的历史引用；夹具拒绝已有自定义数据，不清空、不连接真机。缺少归属清单的预期拒绝完成后，先重启同一受管模拟器以释放 UI runner 会话，再准备正例夹具；设备 UUID、账本和清单保留。原有 11 项 UI 用例顺序共用本轮交互会话，各用例保留截图，最后验证重启；回读后追加 21 项商品/单位夹具，以另 4 项用例验证搜索末页合并、启用筛选末页停用后的有效页回退及条件保留，再只读核验结果。脚本结束 App 后回读稳定 ID、引用、模板、行版本、金额、名称快照、事件和幂等回执，执行完整性及外键检查；用例按操作链路拆分并保留原 60 秒执行预算配置，不上调超时；改名与局部键盘准备输入后以 3 秒有界等待核对 AX 精确值，不重放输入或改写页面；搜索收键盘只选择当前可触摸的“完成”按钮，并断言键盘消失，拒绝遗留的同名 AX 节点；合并保留商品的“请选择”提示值不依赖 AX label，以截图定位后原生触摸；触摸定位仍可用本机 Vision OCR 定位截图文字，再由 XCUITest 坐标触摸，不将 OCR 通过作为无障碍验收。此流程只证明开发模拟器的页面链路，不代替目标真机性能和最终交付。
 
 资源门禁使用锁定的 TypeScript 解析器检查 JS/MJS/CJS 及内联脚本，拒绝已知 IndexedDB、Web Storage、WebSQL、WASM 的直接标识符、别名来源与静态括号访问；合法注释及文案不作为调用。该静态检查不证明所有动态间接访问不可达，正式数据入口仍须通过原生集成验证。正反例通过同一门禁入口执行。
 
 每轮 build.log/test.log、interruption-阶段/recovery-阶段 日志、阶段回执及 xcresult 位于 .local/ios/tmp/ai-agent/native-*；失败不冒充成功，模拟器清理失败也返回失败。原生缓存与产物留在 .local/ios，不复用 .local/web。既有 check:ios 与 check:ios:simulator 仍是旧 Web/Safari 路径，不应用来代替这组原生测试。
 
 离线 App 日常调试与回归优先使用独立的 iPhone 模拟器，真实原生 SQLite 桥测试仍在 iOS 模拟器内执行。真机仅用于模拟器无法覆盖的必要问题及最终候选验收；必要提前验证须说明覆盖缺口。D07 的设备/Release/采样与硬指标保持不变，模拟器观测不替代最终真机结果。T14 先完成执行器与模拟器开发验证，真机容量及辅助功能/硬件复核集中在 T17，未执行前保留待验证。
+
+### 原生局部调试与完整验收
+
+先在能证明问题的最低层定位，再运行对应原生单用例/场景；局部通过且相关源码稳定后，按影响执行一次完整验收。定位或夹具错误修正后先复跑失败场景及同根因边界；只有新改动、失败或未覆盖风险才重复已通过的完整套件。完整检查不接受单用例或场景过滤，始终重新生成资源、通过正常构建入口并执行原门禁；默认新建独立模拟器，CI 保持这一默认。仅 simulator/touch 两个入口可通过 `-- --session "$IOS_DEBUG_SESSION"` 借用本轮受管设备；它们重新校验归属、只重置该设备的合成 App 数据，按新账本执行完整范围，不消费局部构建或测试结果，结束后关闭设备运行但保留会话。
+
+```bash
+npm run debug:ios-app -- list
+npm run debug:ios-app -- create
+```
+
+create 输出 `SESSION=...` 与本轮模拟器 UUID。将输出的绝对会话路径保存到当前终端变量 `IOS_DEBUG_SESSION`，再执行以下命令；不能填入用户已有设备或其他轮次的 native-* 目录。
+
+```bash
+npm run debug:ios-app -- run --session "$IOS_DEBUG_SESSION" --case NativeTests/NativeSqliteTests/testRejectUnownedTestContexts
+npm run debug:ios-app -- run --session "$IOS_DEBUG_SESSION" --scenario template-tie
+npm run debug:ios-app -- run --session "$IOS_DEBUG_SESSION" --scenario paging-disable
+npm run debug:ios-app -- suspend --session "$IOS_DEBUG_SESSION"
+# 按影响执行完整验收；可借用本轮设备，仍执行全部门禁
+npm run check:ios-app:simulator -- --session "$IOS_DEBUG_SESSION"
+npm run check:ios-app:touch -- --session "$IOS_DEBUG_SESSION"
+# 需要回查时 run 恢复；全部工作结束后清理
+npm run debug:ios-app -- close --session "$IOS_DEBUG_SESSION"
+```
+
+- 单用例使用 list 输出的完整 `target/class/method`。原生普通用例只执行所选一项；三阶段中断的准备/恢复方法不能作为普通单用例启动，仍由完整流程成对控制。
+- 原生字典场景由 [scenarios.json](../../app/native-tests/scenarios.json) 列出，复用同一 dictionaryProbe 与 SQL 场景，只执行指定组；选择保存在已校验测试清单中，不为生产 App 添加参数。`paging-merge`、`paging-disable` 各执行两项业务触摸及一项键盘就绪前置；前置打开原新增弹窗、输入后取消，不保存业务数据。`merge-relaunch` 执行对应两项触摸，`merge-cycle` 连续验证取消、确认和重启三项触摸。选择依赖页面状态的单用例 test10/test12/test14 时，也显式携带 test09/test11/test13 前置；新增/改名用例 test01–test05、搜索用例 test11/test13 及其依赖链都先执行键盘就绪前置。输出与回执列出实际执行项，其余触摸用例通过共用夹具准备必要数据。
+- 会话只绑定 create 新建的 iPhone 14 Pro Max / iOS 27.0。每次运行及关闭前都核对会话真实路径、清单权限、UUID、runtime、型号、名称和可用状态；不接管已有设备，不自动换设备。局部失败保留本轮设备、日志和失败回执，可以修复后在同一会话重试；上次测试执行阶段失败或未写完执行回执时，下一次显式触摸运行先重启同一 UUID 的设备以清除遗留自动化进程，继续复用原构建。局部与完整原生入口都不收集耗时的 sysdiagnose，仍保留日志、截图、xcresult 和原断言；完整验收前可 suspend 关闭本轮设备的运行但保留缓存，需要回查时 run 恢复；本轮全部工作结束必须 close，关闭后再次运行明确拒绝。close 重复执行安全，只删除该会话设备和专用构建缓存，保留必要证据。
+- 原生探针使用随机数据库并自行回收；每次局部触摸运行都卸载该会话模拟器中的测试 App，再安装并经正式初始化产生新账本，复用 [受限夹具](../../scripts/fixtures/dictionary-touch.py) 准备合成数据。此重置仅限本轮专用设备的合成测试数据，不能在会话内输入或导入真实账本；完整入口的夹具仍拒绝覆盖既有数据。结束 App 后只读回验目标写入、历史金额/快照、完整性与外键，不以页面提示代替持久化验证。
+- 首次运行按 Debug/Release 分别 build-for-testing；之后核对源码、探针、工程、依赖锁、工具链及产物内容摘要，一致才使用 test-without-building。原生用例还核对已安装 App 与当前产物的内容摘要，一致时跳过重复安装和首次初始化准备。任何输入变化、产物缺失或内容变化都重新生成与构建；构建或测试期间源码变化不得判为当前版本通过。缓存只省准备工作，不复用旧的测试结果；每次仍执行目标断言、数量及完成信号检查。完整验收可复用已校验的设备，但不消费局部构建或旧测试结果。
+- 完整流程先校验脚本语法，再执行启动时的不可变快照；执行期间脚本变化不破坏当前进程，但本轮不能认定当前脚本通过，需冻结后复验。所有入口共用工作区命令锁，避免同步资源和构建互相覆盖；并发调用明确拒绝。中断转发给本命令的子进程组并释放命令锁。若进程被 SIGKILL 或宿主崩溃导致锁遗留，先核实 `.local/ios/tmp/ai-agent/ios-command.lock/owner.json` 中 PID 已退出且无相应子进程，再移除该锁；禁止清空共享目录或接管其他任务。
+
+每次局部运行在会话的 run-* 下保存独立日志、xcresult、SQLite 回读和 `result.json`，标明 scope=partial、所选/实际用例、源码摘要、缓存命中、状态及耗时；局部绿色不更新完整验收状态。[脚本回归](../../scripts/tests/ios-debug.test.mjs) 经 check:app 执行，覆盖选择/前置、会话与设备拒绝、内容摘要失效、夹具拒绝与回读、命令锁与脚本快照边界；真实原生运行、设备复用及关闭仍需通过 CLI 在独立模拟器验证。新增入口及完整入口变更纳入同一 Actions 触发路径；不放宽原超时、断言或真机 Release 性能要求。
 
 App 的最小 [Actions 工作流](../../.github/workflows/offline-ios.yml) 已定义自动触发和调用同一脚本，但尚无远端运行证据。真实 iPhone 的签名安装、飞行模式冷启动及 Release 性能另验；当前骨架已在指定真机完成签名安装与图标离线冷启动，正式业务及 Release 容量性能尚未验收。模拟器、小样本耗时或 common 绿色不能替代这些条件，当前也未实现完整性能交付门禁。
 

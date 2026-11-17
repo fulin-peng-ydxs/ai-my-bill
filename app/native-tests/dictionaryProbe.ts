@@ -7,9 +7,11 @@ import {
   dictionaryReferencesScenario, dictionaryMergeScenario, dictionaryTemplateScenario, dictionaryTemplateTieScenario,
 } from '../test-support/dictionaryScenarios'
 import { dictionaryUpgradeScenario } from '../test-support/dictionaryUpgradeScenario'
+import scenarioNames from './scenarios.json'
 
 /** 测试包通过正式服务/生产账本生命周期在原生 SQLite 执行，与 Node SQL 场景共享断言。 */
-export async function dictionaries() {
+export async function dictionaries(selected?: string) {
+  if (selected && !scenarioNames.includes(selected)) throw new Error('未知字典调试场景')
   const started = performance.now()
   const prefix = `probe_t5_${crypto.randomUUID().replaceAll('-', '')}`
   const names = new Set<string>()
@@ -23,22 +25,25 @@ export async function dictionaries() {
   }
   const checks: string[] = []
   try {
-    const crud = manager('crud')
-    await crud.open()
-    for (const type of dictionaryTypes) {
-      await dictionaryCrudScenario(crud, type)
+    if (!selected || selected === 'crud') {
+      const crud = manager('crud')
+      await crud.open()
+      for (const type of dictionaryTypes) await dictionaryCrudScenario(crud, type)
+      await crud.close()
+      checks.push('eight-dictionary-crud-candidates-and-history')
     }
-    await crud.close()
-    checks.push('eight-dictionary-crud-candidates-and-history')
-    const scenarios = [dictionaryValidationScenario, dictionarySortScenario, dictionaryReferencesScenario, dictionaryMergeScenario, dictionaryTemplateTieScenario]
-    for (let index = 0; index < scenarios.length; index += 1) {
-      const database = manager(`case${index}`)
+    const scenarios = { validation: dictionaryValidationScenario, sorting: dictionarySortScenario,
+      references: dictionaryReferencesScenario, merge: dictionaryMergeScenario, 'template-tie': dictionaryTemplateTieScenario }
+    for (const [name, scenario] of Object.entries(scenarios)) {
+      if (selected && selected !== name) continue
+      const database = manager(name.replaceAll('-', '_'))
       await database.open()
-      checks.push(await scenarios[index](database))
+      checks.push(await scenario(database))
       await database.close()
     }
-    checks.push(await dictionaryUpgradeScenario(manager))
+    if (!selected || selected === 'upgrade') checks.push(await dictionaryUpgradeScenario(manager))
     for (const variant of ['source-only', 'target-newer', 'rename-conflict'] as const) {
+      if (selected && selected !== `template-${variant}`) continue
       const database = manager(variant.replaceAll('-', '_'))
       await database.open()
       checks.push(await dictionaryTemplateScenario(database, variant))

@@ -1,0 +1,272 @@
+import fs from 'node:fs'
+import path from 'node:path'
+import { randomUUID } from 'node:crypto'
+import { spawn } from 'node:child_process'
+import { fileURLToPath } from 'node:url'
+import { constants } from 'node:os'
+import { APP_ID, RUNTIME, DEVICE_TYPE, nativeCases, uiCases, uiScenarios, selection, readSession, assertDevice, hashPaths, sourceHash } from './lib/ios-debug.mjs'
+
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
+const temporary = path.join(root, '.local/ios/tmp/ai-agent')
+const scenarios = JSON.parse(fs.readFileSync(path.join(root, 'app/native-tests/scenarios.json'), 'utf8'))
+let child
+let interrupted
+let cancellationTimer
+function killGroup(pid, signal) {
+  try { process.kill(-pid, signal) } catch (error) { if (error.code !== 'ESRCH') throw error }
+}
+for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, () => {
+  interrupted = signal
+  if (child) {
+    const pid = child.pid
+    killGroup(pid, signal)
+    clearTimeout(cancellationTimer)
+    cancellationTimer = setTimeout(() => killGroup(pid, 'SIGKILL'), 10_000)
+  }
+})
+
+async function command(program, args, { log, timeout = 300_000, accept = [0], input, inherit = false, env = process.env } = {}) {
+  if (interrupted) throw new Error(`已取消：${interrupted}`)
+  const output = log ? fs.openSync(log, 'wx', 0o600) : undefined
+  let text = ''
+  let timedOut = false
+  let inputError
+  let timer
+  try {
+    const status = await new Promise((resolve, reject) => {
+      child = spawn(program, args, { cwd: root, env, detached: true,
+        stdio: [input === undefined ? 'ignore' : 'pipe', inherit ? 'inherit' : output ?? 'pipe', inherit ? 'inherit' : output ?? 'pipe'] })
+      if (input !== undefined) {
+        child.stdin.on('error', error => { inputError = error })
+        child.stdin.end(input)
+      }
+      if (!log && !inherit) for (const stream of [child.stdout, child.stderr]) stream.on('data', data => {
+        text += data.toString(); if (text.length > 1_048_576) { timedOut = true; killGroup(child.pid, 'SIGKILL') }
+      })
+      timer = setTimeout(() => { timedOut = true; killGroup(child.pid, 'SIGKILL') }, timeout)
+      child.once('error', reject)
+      child.once('close', (code, signal) => resolve(code ?? (128 + (constants.signals[signal] ?? 0))))
+    })
+    // common/touch 可以在已完成门禁后正常提前 exit；仅此类成功退出允许输入端 EPIPE。
+    if (interrupted || timedOut || (inputError && inputError.code !== 'EPIPE') || !accept.includes(status)) {
+      throw new Error(`${program} 未通过（exit=${status}${timedOut ? ', timeout/output-limit' : ''}）${log ? `，日志：${log}` : `：${text.trim()}`}`)
+    }
+    return { status, text }
+  } finally {
+    clearTimeout(timer); clearTimeout(cancellationTimer); child = undefined
+    if (output !== undefined) fs.closeSync(output)
+  }
+}
+const simctl = (...args) => command('xcrun', ['simctl', ...args])
+const writeContext = session => fs.writeFileSync(session.file, JSON.stringify(session.context), { mode: 0o600 })
+const inventory = async () => JSON.parse((await simctl('list', 'devices', '--json')).text)
+
+async function stopApp(id, log) {
+  const { status, text } = await command('xcrun', ['simctl', 'terminate', id, APP_ID], { accept: [0, 3] })
+  fs.writeFileSync(log, text)
+  if (status === 3 && !text.includes('found nothing to terminate')) throw new Error('结束本轮 App 失败，拒绝夹具读写。')
+}
+async function prepareBuild(session, selected, run, toolchain) {
+  const derived = path.join(session.directory, 'DerivedData', selected.configuration)
+  const products = path.join(derived, 'Build/Products')
+  const receiptFile = path.join(session.directory, `build-${selected.configuration}.json`)
+  const fingerprint = sourceHash(root, toolchain)
+  let receipt
+  if (fs.existsSync(receiptFile)) receipt = JSON.parse(fs.readFileSync(receiptFile, 'utf8'))
+  if (receipt?.sourceHash === fingerprint && fs.existsSync(products)
+    && receipt.productHash === hashPaths(products, ['.'])) {
+    console.log('BUILD_CACHE_HIT：源码、工具链和测试产物摘要一致；使用 test-without-building。')
+    return { ...receipt, cacheHit: true, products }
+  }
+  // 失败先使旧凭据失效，未完整生成的产物不能在下次命令里被当作缓存。
+  fs.rmSync(receiptFile, { force: true })
+  console.log('BUILD_CACHE_MISS：生成当前资源及所选测试 target。')
+  await command('npm', ['--prefix', 'app', 'run', 'native:sync'], { log: path.join(run, 'sync.log') })
+  await command('npm', ['--prefix', 'app', 'run', 'probe:bundle'], { log: path.join(run, 'probe.log') })
+  await command('node', ['scripts/verify-ios-resources.mjs'], { log: path.join(run, 'resources.log') })
+  await command('xcodebuild', ['build-for-testing', '-project', 'app/ios/App/App.xcodeproj', '-scheme', selected.scheme,
+    '-configuration', selected.configuration, '-destination', `platform=iOS Simulator,id=${session.context.simulatorId}`,
+    '-derivedDataPath', derived, '-clonedSourcePackagesDirPath', '.local/ios/SourcePackages', '-disableAutomaticPackageResolution',
+    'CODE_SIGNING_ALLOWED=NO', `MYBILL_TEST_CONTEXT_FILE=${session.file}`], { log: path.join(run, 'build.log'), timeout: 900_000 })
+  const plans = fs.readdirSync(products).filter(name => name.endsWith('.xctestrun'))
+  if (plans.length !== 1) throw new Error('未找到唯一的本轮测试运行清单。')
+  receipt = { sourceHash: sourceHash(root, toolchain), productHash: hashPaths(products, ['.']), plan: path.join(products, plans[0]) }
+  if (receipt.sourceHash !== fingerprint) throw new Error('构建期间源码或配置发生变化，拒绝复用或验证混合版本。')
+  fs.writeFileSync(receiptFile, JSON.stringify(receipt))
+  return { ...receipt, cacheHit: false, products }
+}
+
+async function runPartial(session, selected, toolchain, requested) {
+  const device = assertDevice(session.context, await inventory())
+  const previousRuns = fs.readdirSync(session.directory).filter(name => /^run-[A-Za-z0-9]+$/.test(name))
+    .sort((a, b) => fs.statSync(path.join(session.directory, a)).birthtimeMs - fs.statSync(path.join(session.directory, b)).birthtimeMs)
+  const previous = previousRuns.at(-1)
+  const previousResult = previous && path.join(session.directory, previous, 'result.json')
+  const needsRecovery = previousResult && fs.existsSync(path.join(session.directory, previous, 'test.log'))
+    && (!fs.existsSync(previousResult) || JSON.parse(fs.readFileSync(previousResult, 'utf8')).status !== 'passed')
+  const run = fs.mkdtempSync(path.join(session.directory, 'run-'))
+  const started = Date.now()
+  let result = { scope: 'partial', requested, executedCases: selected.cases, configuration: selected.configuration,
+    status: 'failed', simulatorId: device.udid, runId: session.context.runId }
+  console.log(`请求：${requested.kind} ${requested.name}\n实际局部用例：${selected.cases.join(', ')}\n证据：${run}`)
+  try {
+    // 失败的 UI 自动化会话可能在 launchd 中遗留 runner；只重启本轮设备，保留 UUID 和产物。
+    if (needsRecovery && selected.scheme === 'DictionaryTouch' && device.state !== 'Shutdown') {
+      await command('xcrun', ['simctl', 'shutdown', device.udid], { log: path.join(run, 'recover-device.log') })
+      device.state = 'Shutdown'
+      result.recoveredDevice = true
+    }
+    if (device.state !== 'Booted') await simctl('boot', device.udid)
+    await command('xcrun', ['simctl', 'bootstatus', device.udid, '-b'], { log: path.join(run, 'boot.log') })
+    const build = await prepareBuild(session, selected, run, toolchain)
+    result = { ...result, sourceHash: build.sourceHash, cacheHit: build.cacheHit }
+    session.context.scenario = selected.scenario
+    writeContext(session)
+    // 每轮 UI 夹具使用新建的本会话合成账本；只卸载清单绑定设备上的本 App。
+    // 原生领域探针自行使用随机数据库，不需要重置账本。
+    const installed = JSON.parse((await command('plutil', ['-convert', 'json', '-o', '-', '-'],
+      { input: (await simctl('listapps', device.udid)).text })).text)
+    if (selected.scheme === 'DictionaryTouch' && installed[APP_ID]) await simctl('uninstall', device.udid, APP_ID)
+    const app = path.join(build.products, `${selected.configuration}-iphonesimulator/App.app`)
+    let reuseInstallation = false
+    if (selected.scheme === 'App' && installed[APP_ID]) {
+      const bundle = (await simctl('get_app_container', device.udid, APP_ID, 'app')).text.trim()
+      reuseInstallation = hashPaths(bundle, ['.']) === hashPaths(app, ['.'])
+    }
+    if (!reuseInstallation) await simctl('install', device.udid, app)
+    const container = (await simctl('get_app_container', device.udid, APP_ID, 'data')).text.trim()
+    const fixture = path.join(run, 'fixture.json')
+    const initialized = reuseInstallation && fs.existsSync(path.join(container, 'Library/OfflineLedger/ledgerSQLite.db'))
+    result.installationReused = reuseInstallation
+    console.log(reuseInstallation ? 'INSTALL_CACHE_HIT：已安装 App 与当前产物逐字节一致。' : 'INSTALL_CACHE_MISS：安装本轮 App。')
+    if (!initialized) await simctl('launch', device.udid, APP_ID)
+    await command('python3', ['scripts/fixtures/dictionary-touch.py', 'wait-initialized', container, device.udid, fixture], { log: path.join(run, 'initialize.log') })
+    await stopApp(device.udid, path.join(run, 'stop-initialize.log'))
+    if (selected.fixture) await command('python3', ['scripts/fixtures/dictionary-touch.py', 'debug-' + selected.fixture, container, device.udid, fixture], { log: path.join(run, 'fixture.log') })
+    // 与完整入口一致：夹具完成后由 XCUITest 启动并建立 App 自动化会话。
+    const testLog = path.join(run, 'test.log')
+    await command('xcodebuild', ['test-without-building', '-xctestrun', build.plan, '-destination', `platform=iOS Simulator,id=${device.udid}`,
+      '-parallel-testing-enabled', 'NO', '-test-timeouts-enabled', 'YES', '-maximum-test-execution-time-allowance', '60',
+      '-collect-test-diagnostics', 'never',
+      ...selected.cases.map(name => '-only-testing:' + name), '-resultBundlePath', path.join(run, 'test.xcresult')], { log: testLog })
+    const output = fs.readFileSync(testLog, 'utf8')
+    for (const id of selected.cases) if (!output.includes(` ${id.split('/').at(-1)}]' passed`)) throw new Error(`未观察到目标用例通过：${id}`)
+    if (selected.scenario && !output.includes('NATIVE_DICTIONARY_SCENARIO_VERIFIED ' + selected.scenario)) throw new Error('未观察到所选原生场景的完成信号。')
+    if (!output.includes(`Executed ${selected.cases.length} test${selected.cases.length === 1 ? '' : 's'}, with 0 failures`)) throw new Error('实际执行数量不符。')
+    if (sourceHash(root, toolchain) !== build.sourceHash) throw new Error('测试期间源码发生变化，结果不可作为当前版本通过。')
+    await stopApp(device.udid, path.join(run, 'stop-final.log'))
+    if (selected.fixture) await command('python3', ['scripts/fixtures/dictionary-touch.py', 'debug-check-' + selected.fixture,
+      (await simctl('get_app_container', device.udid, APP_ID, 'data')).text.trim(), device.udid, fixture], { log: path.join(run, 'readback.log') })
+    result.status = 'passed'
+    console.log(`局部验证通过（${selected.cases.length} 项，不能替代完整验收）；保留本轮模拟器供下一次调试。`)
+  } catch (error) {
+    result.error = error.message
+    throw error
+  } finally {
+    fs.writeFileSync(path.join(run, 'result.json'), JSON.stringify({ ...result, elapsedMs: Date.now() - started }, null, 2))
+  }
+}
+
+async function main(args) {
+  const full = ['common', 'ios-build', 'ios-smoke', 'ios-touch']
+  if (!args.length) args = ['common']
+  if (args[0] !== 'debug') {
+    const borrowing = ['ios-smoke', 'ios-touch'].includes(args[0]) && args.length === 3 && args[1] === '--session'
+    if (!full.includes(args[0]) || (!borrowing && args.length !== 1)) throw new Error('用法：ios-app.sh common|ios-build|ios-smoke|ios-touch [--session PATH]|debug list|create|run|suspend|close')
+    const session = borrowing ? readSession(temporary, args[2]) : undefined
+    const scriptPath = path.join(root, 'scripts/lib/ios-app-full.sh')
+    const script = fs.readFileSync(scriptPath, 'utf8')
+    // Shell 会逐段读取脚本；用校验后的不可变输入，避免运行中编辑文件造成偏移/解析错误。
+    await command('bash', ['-n'], { input: script })
+    // 设备可借用，验收范围与资源生成不能借用局部结果；子流程再次核对真实设备后才重置 App。
+    await command('bash', ['-s', '--', args[0]], { timeout: 2_400_000, inherit: true, input: script,
+      env: { ...process.env, MYBILL_FULL_SESSION: session?.directory ?? '' } })
+    if (fs.readFileSync(scriptPath, 'utf8') !== script) throw new Error('完整流程脚本在执行期间变化；快照已执行，但不能认定当前脚本通过。')
+    return
+  }
+  if (args[1] === 'list' && args.length === 2) {
+    console.log([...nativeCases.map(x => `--case NativeTests/NativeSqliteTests/${x}`),
+      ...uiCases.map(x => `--case DictionaryUITests/DictionaryTouchTests/${x}`),
+      ...[...scenarios, ...Object.keys(uiScenarios)].map(x => `--scenario ${x}`)].join('\n'))
+    return
+  }
+  if (!['create', 'run', 'suspend', 'close'].includes(args[1])) throw new Error('未知 debug 操作。')
+  if (process.platform !== 'darwin') throw new Error('原生调试需要 macOS。')
+  if (!process.env.DEVELOPER_DIR && (await command('xcode-select', ['-p'])).text.trim() === '/Library/Developer/CommandLineTools'
+    && fs.existsSync('/Applications/Xcode.app')) process.env.DEVELOPER_DIR = '/Applications/Xcode.app/Contents/Developer'
+  const managing = ['suspend', 'close'].includes(args[1])
+  const sdk = managing ? '' : (await command('xcrun', ['--sdk', 'iphoneos', '--show-sdk-version'])).text.trim()
+  if (!managing && !/^27\./.test(sdk)) throw new Error('需要 Xcode / iOS 27 SDK。')
+  if (args[1] === 'create') {
+    if (args.length !== 2) throw new Error('create 不接受已有设备或会话参数。')
+    const directory = fs.mkdtempSync(path.join(temporary, 'ios-debug-'))
+    const runId = randomUUID()
+    const context = { kind: 'ios-debug', schema: 1, state: 'open', runId, appId: APP_ID, name: `我的账单调试-${runId}` }
+    // 创建失败/取消也有归属线索；补偿只允许本命令随机名称与型号完全匹配的设备。
+    const pending = path.join(directory, 'creating.json')
+    fs.writeFileSync(pending, JSON.stringify(context), { mode: 0o600 })
+    try {
+      context.simulatorId = (await simctl('create', context.name, DEVICE_TYPE, RUNTIME)).text.trim()
+      writeContext({ file: path.join(directory, 'test-context.json'), context })
+      fs.unlinkSync(pending)
+    } catch (error) {
+      const signal = interrupted
+      interrupted = undefined
+      try {
+        const devices = Object.values((await inventory()).devices).flat().filter(d => d.name === context.name && d.deviceTypeIdentifier === DEVICE_TYPE)
+        if (devices.length > 1) throw new Error('创建补偿发现归属不唯一，未删除设备')
+        for (const device of devices) await simctl('delete', device.udid)
+      } catch (cleanupError) {
+        throw new Error(`${error.message}；创建补偿失败：${cleanupError.message}，归属清单：${pending}`)
+      } finally { interrupted = signal }
+      throw error
+    }
+    console.log(`SESSION=${directory}\nSIMULATOR=${context.simulatorId}\n结束本轮调试后执行 debug close --session 上述路径。`)
+    return
+  }
+  if (args[2] !== '--session' || !args[3] || (managing ? args.length !== 4 : args.length !== 6 || !['--case', '--scenario'].includes(args[4]))) {
+    throw new Error('用法：debug run --session PATH --case ID|--scenario NAME；debug suspend|close --session PATH')
+  }
+  const selected = args[1] === 'run' ? selection(args[4], args[5], scenarios) : undefined
+  const session = readSession(temporary, args[3], args[1] === 'close')
+  if (args[1] === 'suspend') {
+    const device = assertDevice(session.context, await inventory())
+    if (device.state !== 'Shutdown') await simctl('shutdown', device.udid)
+    console.log('本轮调试设备已关闭运行，保留会话和缓存；run 恢复同一设备，最终 close 清理。')
+    return
+  }
+  if (args[1] === 'close') {
+    if (session.context.state === 'closed') { console.log('会话已关闭。'); return }
+    const devices = await inventory()
+    const exists = Object.values(devices.devices).flat().some(d => d.udid === session.context.simulatorId)
+    if (exists) {
+      const device = assertDevice(session.context, devices)
+      if (device.state !== 'Shutdown') await simctl('shutdown', device.udid)
+      await simctl('delete', device.udid)
+    }
+    session.context.state = 'closed'; delete session.context.scenario; writeContext(session)
+    // 缓存只属于本会话，关闭时回收；日志和 xcresult 按证据生命周期保留。
+    fs.rmSync(path.join(session.directory, 'DerivedData'), { recursive: true, force: true })
+    console.log('本轮调试设备和构建缓存已清理，证据保留。')
+    return
+  }
+  await runPartial(session, selected, sdk + (await command('xcodebuild', ['-version'])).text + process.version,
+    { kind: args[4].slice(2), name: args[5] })
+}
+
+fs.mkdirSync(temporary, { recursive: true })
+const lock = path.join(temporary, 'ios-command.lock')
+let locked = false
+try {
+  try { fs.mkdirSync(lock); locked = true } catch (error) {
+    if (error.code !== 'EEXIST') throw error
+    throw new Error(`已有原生命令或遗留锁：${lock}；先核对其中 owner.json 的进程，不自动接管。`)
+  }
+  fs.writeFileSync(path.join(lock, 'owner.json'), JSON.stringify({ pid: process.pid, startedAt: new Date().toISOString() }), { mode: 0o600 })
+  await main(process.argv.slice(2))
+} catch (error) {
+  console.error(error.message)
+  process.exitCode = interrupted === 'SIGINT' ? 130 : interrupted ? 143 : 1
+} finally {
+  if (locked) fs.rmSync(lock, { recursive: true })
+}

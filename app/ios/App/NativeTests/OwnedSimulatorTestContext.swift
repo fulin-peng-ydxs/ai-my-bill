@@ -11,6 +11,7 @@ enum OwnedSimulatorTestContext {
         let simulatorId: UUID
         let runId: UUID
         let appId: String
+        let scenario: String?
     }
 
     private static var isSimulator: Bool {
@@ -23,6 +24,15 @@ enum OwnedSimulatorTestContext {
 
     static func requireOwnedSimulator() throws {
         try validate(environment: ProcessInfo.processInfo.environment, simulator: isSimulator)
+    }
+
+    /// 可变场景只存于已校验的测试清单，缓存 xctestrun 无需重建或加入生产开关。
+    static func requestedScenario() throws -> String {
+        try requireOwnedSimulator()
+        let path = ProcessInfo.processInfo.environment["MYBILL_TEST_CONTEXT_FILE"]!
+        let manifest = try JSONDecoder().decode(Manifest.self, from: Data(contentsOf: URL(fileURLWithPath: path)))
+        guard let scenario = manifest.scenario, !scenario.isEmpty else { throw refusal("missing-scenario") }
+        return scenario
     }
 
     /// 可注入环境仅供负例验证；在任何 App 操作或页面探针注入之前调用。

@@ -8,8 +8,15 @@
 
 在仓库根目录使用 `.nvmrc` 的 Node 24.11.1 / npm 11.6.2；原生检查还需要完整 Xcode 27、iOS 27 SDK 及 iOS 27.0 simulator runtime。无需启动旧 Web、Spring Boot 或 PostgreSQL。
 
+首次安装锁定依赖：
+
 ```bash
 npm --prefix app ci --ignore-scripts
+```
+
+日常定位先使用 `npm run debug:ios-app -- list`，按[局部调试流程](agent-works/testing/guide.md#原生局部调试与完整验收)选择用例或场景。局部验证通过后，按改动影响选择下列完整检查；三个原生入口已经包含 check:app，无需为同一轮再单独重复运行它。模拟器和触摸完整检查可按规范借用本轮受管会话，仍重建当前资源、重置合成 App 数据并执行全部门禁。
+
+```bash
 npm run check:app
 npm run build:ios-app
 npm run check:ios-app:simulator
@@ -22,7 +29,7 @@ npm run check:ios-app:touch
 
 需要签名时在 Xcode 打开 [App.xcodeproj](app/ios/App/App.xcodeproj)，为 App target 选择自己的 Team。已用 Personal Team 完成骨架 Release 的签名安装，并在 iPhone 14 Pro Max / iOS 27.0.1 通过飞行模式、无 Wi-Fi、进程结束后的图标冷启动验证。上述自动构建入口仍生成未签名产物，不能直接安装到手机；正式业务、完整升级与性能尚未验收。当前可以调试四个原页面入口、主题、缓存草稿，以及“我的 → 选项管理”中的八类字典与商品合并；这些字典修改跨重启保留，默认清单只写入新账本。支出/收入保存等未接通业务会提示暂不支持；草稿和偏好尚不跨重启保存，不能作为已完成的记账 App 使用。原生装配机制见[总体架构](agent-works/architecture/architecture-decisions.md#离线-ios-原生入口)。
 
-原生回归统一从上述根目录命令启动。两个测试 target 仅允许模拟器，测试前校验本轮设备归属清单；直接在 Xcode 执行测试而没有清单会拒绝探针和页面操作。正式 App 的运行、签名与安装不需要测试清单，详见[测试隔离规则](agent-works/testing/guide.md#工程检查)。
+原生回归统一从上述根目录命令启动。局部调试使用 `npm run debug:ios-app -- list` 查看单用例和场景，按[局部调试流程](agent-works/testing/guide.md#原生局部调试与完整验收)创建、复用及关闭本轮独立模拟器；局部通过后再运行完整检查。两个测试 target 仅允许模拟器，测试前校验本轮设备归属清单；直接在 Xcode 执行测试而没有清单会拒绝探针和页面操作。正式 App 的运行、签名与安装不需要测试清单，详见[测试隔离规则](agent-works/testing/guide.md#工程检查)。
 
 ## 手机安装与使用
 
