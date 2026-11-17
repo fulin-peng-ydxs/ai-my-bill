@@ -47,6 +47,7 @@ export function useLedgerDraft(type: Ref<EntryType>, enabled?: Ref<boolean>) {
     const currentEpoch = epoch
     // 最多一笔在途写入 + 一份最新编辑态；慢磁盘时合并中间版本，不积压每次输入快照。
     operation = operation.then(async () => {
+      let latestRetryAvailable = true
       try {
         while (pending && active.value && currentEpoch === epoch && (!submitting || force)) {
           const snapshot = { ...data.value }
@@ -59,11 +60,18 @@ export function useLedgerDraft(type: Ref<EntryType>, enabled?: Ref<boolean>) {
               storageError.value = undefined
             }
           } catch (error) {
-            if (request === revision) {
-              pending = true
+            if (currentEpoch !== epoch || !active.value) {
+              break
             }
-            failure(error, request)
-            break
+            // 新输入的防抖可能已在慢写期间触发；旧失败不能让最新快照静默搁置。
+            // 每轮只额外续写最新快照一次，再失败保留提示，等待下一次正常落盘或重试。
+            const retryLatest = pending && request !== revision && latestRetryAvailable
+            pending = true
+            failure(error, revision)
+            if (!retryLatest) {
+              break
+            }
+            latestRetryAvailable = false
           }
         }
       } finally {

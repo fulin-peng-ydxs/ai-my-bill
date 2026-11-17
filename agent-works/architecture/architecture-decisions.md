@@ -12,7 +12,7 @@
 
 [nativeConnection](../../app/src/infrastructure/database/nativeConnection.ts) 是最小原生连接边界：只允许 iOS 且必须存在 CapacitorSQLite 插件，拒绝浏览器替代存储。[nativeAdapter](../../app/src/infrastructure/database/nativeAdapter.ts) 只注册 CapacitorSQLite 原生插件并持有有界于实际连接数的注册表，不导入插件的 Web 实现；所有 SQL 操作仍委托锁定插件。正式账本经 createIosDatabase 创建并接管句柄后再打开，打开失败由同一生命周期释放；原生探针沿用 openIosDatabase 的独立打开/清理入口。插件配置将数据库放在沙盒 `Library/OfflineLedger`，并设置系统备份排除标记；该标记已经由模拟器上的原生测试读取确认。[LedgerDatabase](../../app/src/data/ledgerDatabase.ts) 在这一边界之上管理账本连接、生命周期与事务；启动和本地业务服务共用 appDatabase 单一所有者；页面不持有连接或执行 SQL。
 
-App 的 API DTO 沿用旧接口类型维持页面兼容；字典 API 与支出商品候选调用本地 DictionaryService/ProductService；收支 API 调用 EntryService，均不经过 HTTP。八类字典的新增、改名、停用/恢复、分页搜索、同级排序、引用保护及商品合并已经接通。其他未接通业务由 `api/http.ts` 明确拒绝，不返回假数据。localOperation 将未知存储错误包装为安全提示，保留内部原因；字典变更通知仅在事务提交后发布。运行期 Pinia 偏好和 useLedgerDraft 仅服务当前页面缓存，主题跟随系统或当前选择，草稿切页保留；它们没有浏览器持久化，统一 SQLite 偏好/草稿在后续接入。账号、管理员和 PWA 入口不进入 App 路由。原 UI 的 PageWorkspace、AppDrawer/AppDialog、CachedPageView、键盘可见视口及未保存作用域继续复用，样式与模板基线由设计契约保护。图表与报表页面按需分包。
+App 的 API DTO 沿用旧接口类型维持页面兼容；字典 API 与支出商品候选调用本地 DictionaryService/ProductService；收支 API 调用 EntryService，均不经过 HTTP。八类字典的新增、改名、停用/恢复、分页搜索、同级排序、引用保护及商品合并已经接通。其他未接通业务由 `api/http.ts` 明确拒绝，不返回假数据。localOperation 将未知存储错误包装为安全提示，保留内部原因；字典变更通知仅在事务提交后发布。运行期 Pinia 偏好和 useLedgerDraft 通过下述 T7 个人状态服务消费原生 SQLite，维持页面缓存与持久化状态；不使用浏览器持久化。账号、管理员和 PWA 入口不进入 App 路由。原 UI 的 PageWorkspace、AppDrawer/AppDialog、CachedPageView、键盘可见视口及未保存作用域继续复用，样式与模板基线由设计契约保护。图表与报表页面按需分包。
 
 `NativeTests` 是 hosted XCTest target，运行于真实 App 进程，通过 WKWebView 注入仅存在于 test bundle 的 [sqliteProbe](../../app/native-tests/sqliteProbe.ts)，再调用同一原生连接入口。探针以随机库名执行绑定、事务提交/回滚、关闭重开与最小升级，定点整数以字符串绑定并 `CAST(... AS TEXT)` 读取，避免桥接到 JavaScript Number 时丢失精度。探针消费 App 的权威金额函数，不调用旧 API，并验证 SQLite 64 位聚合溢出明确失败；实验结束关闭并删除本轮数据库，生产入口不含探针开关。该验证不替代正式迁移器、容量或真机验收。
 
@@ -36,7 +36,7 @@ App 的 API DTO 沿用旧接口类型维持页面兼容；字典 API 与支出�
 
 T7 的 [0005](../../app/src/data/migrations/0005_personal_state.sql) 追加按 datasetId/类型唯一的 ledger_draft，以及收入模板独立名称字段；只为真正缺失的偏好补默认，不重跑 seed。旧模板收入名称由已保存的展示名补齐，不依赖仍存在的来源。DDL、数据与迁移履历仍在原生命周期事务内提交或回滚；v1—v4 及其摘要不改写。
 
-[DraftService / PreferenceService / TemplateService](../../app/src/data/personal/) 在实际队列读写及事务内核对 datasetId；新数据集的迟到恢复和旧任务均拒绝，原始非法/未知版本草稿保留供兼容恢复。双草稿采用 16 KiB/字段白名单、版本及 7 天有效期，允许不完整小数；useLedgerDraft 以 250ms 合并输入，最多一笔在途写入及一份最新编辑态。缓存页停用、页面隐藏及原生 willResignActive 都请求同一落盘入口；原生提供到期必释放的后台完成窗口，不能保证操作系统直接杀进程前尚未送达的最后输入。提交前排空并冻结草稿写入，创建账目时在同一事务消费对应草稿；失败保留输入并允许重试，不把草稿存储失败伪装成账目保存失败。重置偏好不删除草稿、模板或账目。
+[DraftService / PreferenceService / TemplateService](../../app/src/data/personal/) 在实际队列读写及事务内核对 datasetId；新数据集的迟到恢复和旧任务均拒绝，原始非法/未知版本草稿保留供兼容恢复。双草稿采用 16 KiB/字段白名单、版本及 7 天有效期，允许不完整小数；useLedgerDraft 以 250ms 合并输入，最多一笔在途写入及一份最新编辑态。旧快照慢写失败且已有较新输入时，每轮最多立即续写最新快照一次；再次失败保留最新输入和原备份失败提示，等待后续编辑、前后台落盘或重试入口再次提交，不循环重试。清除草稿或切换数据集后，旧失败不触发续写。缓存页停用、页面隐藏及原生 willResignActive 都请求同一落盘入口；原生提供到期必释放的后台完成窗口，不能保证操作系统直接杀进程前尚未送达的最后输入。提交前排空并冻结草稿写入，创建账目时在同一事务消费对应草稿；失败保留输入并允许重试，不把草稿存储失败伪装成账目保存失败。重置偏好不删除草稿、模板或账目。
 
 偏好沿用既有 SQLite 存储键，统一默认、合法值与引用回退；无效值仅消费时回退，不覆盖原值。保存按字段排队、按字段代次接纳响应，失败的乐观输入保持，其他字段成功不会抹掉失败输入；重置失败保持原偏好。main 在首个 Vue 帧前等待 bootstrap 的偏好加载，ThemeModeControl、设置、最近类型、表单默认资金渠道及查询范围消费同一状态源；不使用 localStorage 首屏缓存。
 

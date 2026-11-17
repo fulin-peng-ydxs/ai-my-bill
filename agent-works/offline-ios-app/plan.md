@@ -775,13 +775,15 @@
 
   偏好统一 SQLite 默认、校验、消费、按字段排队/代次确认、错误回退与重置；首次读取失败后，成功响应恢复尚未编辑的旧设置，其他失败输入仍保留。主题在首个 Vue 帧前恢复，设置/原表单/日期范围继续消费同一状态，默认资金渠道摘要回显已加载名称。模板接通原明细与选择器，同类型规范化名称保留 ID 更新，回填仅白名单、当前时间和空备注；失效引用单独提示，改名/合并复用 T5，来源删除后保留模板，移除不改变来源账目。
 
-  最终 App 测试 91/91（ios-check-K4xAVN）、脚本 48/48（ios-check-xLrvQf）通过；common 的工程构建/同步及源资源检查在 native-kCxAVN 通过，后续最终原生构建再次类型检查、同步当前资源并构建探针。最终 testOfflinePersonalState（ios-debug-JoDcdk/run-iKMbWn）真实桥接通过 5 组业务/兼容场景，含 v4→v5 失败回滚、重试和用户值保护；对应最终 Release 资源门禁通过。
+  此前 App 测试 91/91（ios-check-K4xAVN）、脚本 48/48（ios-check-xLrvQf）通过；common 的工程构建/同步及源资源检查在 native-kCxAVN 通过，后续最终原生构建再次类型检查、同步当前资源并构建探针。最终 testOfflinePersonalState（ios-debug-JoDcdk/run-iKMbWn）真实桥接通过 5 组业务/兼容场景，含 v4→v5 失败回滚、重试和用户值保护；对应最终 Release 资源门禁通过。
 
   模板页面按最低充分范围组合验收：test17 同键保存及版本 2 回读在 run-AWthX3 通过；run-XCvkan 中 test17–20 已实际通过，后续收入行定位断言失败，修正后 test21 在 run-YGKXy3 单独通过并回读；test20 的目标移除/其他项保留在 run-wikBBb 通过并回读。原失败记录保留，不将失败整轮写成通过；修正的是短暂提示、列表非空预期及原生可访问名称定位，没有修改页面布局或交互。没有再次重跑前面的模板步骤。
 
   最终 draft-relaunch（run-ugBPIt）的键盘前置及 test22–25 共 5 项通过：两份 77/222 草稿、真实 Home/终止与重启、夜晚主题/本周范围恢复、重置偏好后两份草稿及来源保持；SQLite 回读、截图和用例断言一致。最终原生与该页面回执的源码/执行器摘要一致。原页面模板与样式逐字核对未变；必要构建/测试证据保留于 .local/ios/tmp/ai-agent 上述目录，独立模拟器和专用构建缓存已清理。
 
   关联复核补齐旧 shellProbe 连续切主题时等待真实保存忙碌结束；仅补探针编排，不改业务页面。testOriginalShellNavigationAndOverlays 在补充独立会话 ios-debug-9IeOaY/run-mpdby2 单用例通过，四导航、缓存输入、三主题、关闭焦点及嵌套保护保持。该补充只改变测试探针等待，未重跑已通过的 T7 页面；补充模拟器和专用缓存也已清理。
+
+  本次复查修复慢写失败后最新草稿静默搁置：旧快照失败时每轮最多续写最新快照一次，仍失败保留输入和提示；清除/切换数据集使旧失败失效。支出/收入参数化回归、失败后的恢复及取消边界见 V7-T1。本次仅复验草稿调度、原表单消费与类型/随包构建，不重复原生完整验收；原页面模板、样式和交互不变。
 
   V7-T1/T2/B1/B2 在本轮独立 iPhone 14 Pro Max / iOS 27.0 模拟器范围通过。没有执行完整 ios-smoke / ios-touch，没有使用真机或启动旧 Web/PG；远端 CI 和最终真机 Release 性能/签名交付仍未验收。T8 未开始。
 
@@ -1540,7 +1542,7 @@
 
 | 检查点 / 关联差异 | 执行入口、命令与用例范围 | 预期结果与通过条件 | AI验证结果 / 证据 / 后续处理 |
 | --- | --- | --- | --- |
-| V7-T1 | 实际入口：debug check --check app-tests；personalState、useLedgerDraft、preferences、useTemplateDelivery、entrySubmission 回归及 testOfflinePersonalState | 不互相覆盖；新编辑不被迟到回填重置；已有合法用户偏好不因新缺省值重置；仅真正缺失的新字段采用定义默认；恢复/清空后旧异步写被拒绝，失败反馈准确 | 通过：App 91/91、脚本 48/48；最终原生 run-iKMbWn 5 组场景，含双草稿、格式/过期/超大旧值、读取/写入失败重试不破坏原值、慢写合并、提交消费与失败回滚、迟到恢复/模板投递保护、排队旧数据集拒绝及 v4→v5 仅补缺省。合法用户值和 false/0/空值保留。 |
+| V7-T1 | 实际入口：debug check --check app-tests；personalState、useLedgerDraft、preferences、useTemplateDelivery、entrySubmission 回归及 testOfflinePersonalState | 不互相覆盖；新编辑不被迟到回填重置；已有合法用户偏好不因新缺省值重置；仅真正缺失的新字段采用定义默认；恢复/清空后旧异步写被拒绝，失败反馈准确 | 通过：App 91/91、脚本 48/48；最终原生 run-iKMbWn 5 组场景，含双草稿、格式/过期/超大旧值、读取/写入失败重试不破坏原值、慢写合并、提交消费与失败回滚、迟到恢复/模板投递保护、排队旧数据集拒绝及 v4→v5 仅补缺省。合法用户值和 false/0/空值保留。本次慢写缺陷先由 ios-check-MWd3ab 的新增反例确认失败；修复后 ios-check-xfC46D 的草稿调度 15/15、ios-check-Rk41BA 的原收支表单 5/5 通过，ios-check-pP1oum 类型检查/随包构建/Capacitor 同步通过。新增 8 项覆盖两类草稿的有界续写、连续失败后的最新输入恢复，以及清除/数据集切换的取消保护；未重跑完整 App 测试或原生验收，既有通过范围不扩大。 |
 | V7-T2 | 实际入口：personalState.spec.ts 与原生 testOfflinePersonalState；原模板上下文和 DailyEntryPicker | 模板不复制时间/备注/状态，不自动记账；只回退失效字段并提示；同键不增重复模板 | 通过：最终原生 run-iKMbWn 的模板场景覆盖两类同键保留 ID、白名单/精确量价、改名合并、失效引用回退、来源删除后选择及幂等移除；91 项 App 测试同时通过。 |
 
 #### 业务验证点（真实系统交互）
