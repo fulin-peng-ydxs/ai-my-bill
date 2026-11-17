@@ -18,13 +18,11 @@ if [[ $# -gt 1 || ! "${MODE}" =~ ^(common|ios-build|ios-smoke|ios-touch|ios-reco
 fi
 
 # 内部脚本不能绕过调度器的局部证据和失败锁；在生成资源前拒绝直接执行。
-if [[ "${MODE}" == ios-smoke || "${MODE}" == ios-touch || "${MODE}" == ios-recovery ]]; then
-  if [[ -z "${MYBILL_FULL_ATTEMPT:-}" ]]; then
-    echo '内部完整入口缺少调度许可；先局部验证，再经根目录命令提供 --from。' >&2
-    exit 2
-  fi
-  node scripts/lib/ios-verification.mjs permit "${MODE}" "${MYBILL_FULL_ATTEMPT}"
+if [[ -z "${MYBILL_FULL_ATTEMPT:-}" ]]; then
+  echo '内部入口缺少调度许可；请使用根目录 ios-app.sh 命令。' >&2
+  exit 2
 fi
+node scripts/lib/ios-verification.mjs permit "${MODE}" "${MYBILL_FULL_ATTEMPT}"
 
 mkdir -p .local/ios/tmp/ai-agent .local/ios/SourcePackages
 RUN_DIRECTORY="$(mktemp -d "${PROJECT_ROOT}/.local/ios/tmp/ai-agent/native-XXXXXX")"
@@ -60,9 +58,7 @@ trap 'exit 130' INT
 trap 'exit 143' TERM
 
 phase() {
-  if [[ -n "${MYBILL_FULL_ATTEMPT:-}" ]]; then
-    node scripts/lib/ios-verification.mjs phase "${MODE}" "${MYBILL_FULL_ATTEMPT}" "$@"
-  fi
+  node scripts/lib/ios-verification.mjs phase "${MODE}" "${MYBILL_FULL_ATTEMPT}" "$@"
 }
 run_phase() {
   local stage="$1" coverage="$2" log="$3" report="$4"

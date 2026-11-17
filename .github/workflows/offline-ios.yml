@@ -60,7 +60,18 @@ jobs:
           cache: npm
           cache-dependency-path: app/package-lock.json
       - run: npm --prefix app ci --ignore-scripts
+      # 共享入口对每个构建/检查阶段计时；job 的 10 分钟是外层汇总预算。
       - run: npm run check:app
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: offline-ios-common-${{ github.sha }}
+          path: |
+            .local/ios/tmp/ai-agent/ios-command-*/*.json
+            .local/ios/tmp/ai-agent/native-*/*.log
+            .local/ios/tmp/ai-agent/native-*/*.json
+          retention-days: 7
+          if-no-files-found: warn
 
   native-simulator:
     needs: app-common
@@ -75,6 +86,7 @@ jobs:
           cache: npm
           cache-dependency-path: app/package-lock.json
       - run: npm --prefix app ci --ignore-scripts
+      # ios-build 同样执行构建 10 分钟/检查 5 分钟的阶段预算，失败立即停止。
       - run: npm run build:ios-app
       - id: ios-session
         shell: bash
@@ -113,6 +125,7 @@ jobs:
         with:
           name: offline-ios-native-${{ github.sha }}
           path: |
+            .local/ios/tmp/ai-agent/ios-command-*/*.json
             .local/ios/tmp/ai-agent/ios-verification-state.json
             .local/ios/tmp/ai-agent/ios-full-*/*.json
             .local/ios/tmp/ai-agent/ios-check-*/*.json

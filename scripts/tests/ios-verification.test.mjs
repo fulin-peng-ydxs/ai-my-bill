@@ -6,156 +6,423 @@ import os from 'node:os'
 import { randomUUID } from 'node:crypto'
 import { spawnSync } from 'node:child_process'
 import { selection, APP_ID } from '../lib/ios-debug.mjs'
-import { controlInputs, inputHash, verificationHash, requireEvidence, beginFull, finishFull, requireActiveFull,
-  observeFull, startPhase, finishPhases, recordLocal, readState, needsPhaseRepair, caseKey, failureDetails, readVitest } from '../lib/ios-verification.mjs'
+import {
+  controlInputs,
+  inputHash,
+  verificationHash,
+  requireEvidence,
+  requireEvidenceSet,
+  beginFull,
+  finishFull,
+  requireActiveFull,
+  observeFull,
+  startPhase,
+  finishPhases,
+  recordLocal,
+  readState,
+  needsPhaseRepair,
+  caseKey,
+  scenarioKey,
+  selectedCoverage,
+  failureDetails,
+  readVitest
+} from '../lib/ios-verification.mjs'
 import { checkDefinition } from '../lib/ios-checks.mjs'
-const environment = JSON.stringify({ sdk: '27.0', xcode: 'Xcode 27.0\n', node: process.version, arch: process.arch, host: os.release(), runtime: 'TEST' })
-const ui = name => 'DictionaryUITests/DictionaryTouchTests/' + name
+const environment = JSON.stringify({
+  sdk: '27.0',
+  xcode: 'Xcode 27.0\n',
+  node: process.version,
+  arch: process.arch,
+  host: os.release(),
+  runtime: 'TEST'
+})
+const ui = (name) => 'DictionaryUITests/DictionaryTouchTests/' + name
 const target = ui('test02RenameProduct')
 function project(t) {
   const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'ios-verification-')))
   t.after(() => fs.rmSync(root, { recursive: true, force: true }))
-  const write = (relative, text) => { const file = path.join(root, relative); fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, text); return file }
+  const write = (relative, text) => {
+    const file = path.join(root, relative)
+    fs.mkdirSync(path.dirname(file), { recursive: true })
+    fs.writeFileSync(file, text)
+    return file
+  }
   for (const relative of controlInputs) {
-    const file = path.join(root, relative); fs.mkdirSync(path.dirname(file), { recursive: true })
+    const file = path.join(root, relative)
+    fs.mkdirSync(path.dirname(file), { recursive: true })
     fs.cpSync(new URL('../../' + relative, import.meta.url), file, { recursive: true })
   }
-  for (const name of ['app/src/view.vue','app/src/domain/money.spec.ts','app/native-tests/probe.ts','app/test-support/scenario.ts','app/ios/App/project.pbxproj',
-    'app/package.json','app/package-lock.json','app/capacitor.config.ts','app/vite.config.ts','app/tsconfig.json','app/tsconfig.tools.json','scripts/normalize-capacitor-spm.mjs']) write(name, 'fixture')
-  const scenarios = JSON.parse(fs.readFileSync(new URL('../../app/native-tests/scenarios.json', import.meta.url)))
+  for (const name of [
+    'app/src/view.vue',
+    'app/src/domain/money.spec.ts',
+    'app/native-tests/probe.ts',
+    'app/test-support/scenario.ts',
+    'app/ios/App/project.pbxproj',
+    'app/package.json',
+    'app/package-lock.json',
+    'app/capacitor.config.ts',
+    'app/vite.config.ts',
+    'app/tsconfig.json',
+    'app/tsconfig.tools.json',
+    'scripts/normalize-capacitor-spm.mjs'
+  ])
+    write(name, 'fixture')
+  const scenarios = JSON.parse(
+    fs.readFileSync(new URL('../../app/native-tests/scenarios.json', import.meta.url))
+  )
   write('app/native-tests/scenarios.json', JSON.stringify(scenarios))
-  const base = path.join(root, '.local/ios/tmp/ai-agent'); fs.mkdirSync(base, { recursive: true })
-  const session = fs.mkdtempSync(path.join(base, 'ios-debug-')), runId = randomUUID(), simulatorId = randomUUID()
-  fs.writeFileSync(path.join(session, 'test-context.json'), JSON.stringify({ schema:1,kind:'ios-debug',state:'open',runId,simulatorId,appId:APP_ID,name:`我的账单调试-${runId}` }), { mode:0o600 })
+  const base = path.join(root, '.local/ios/tmp/ai-agent')
+  fs.mkdirSync(base, { recursive: true })
+  const session = fs.mkdtempSync(path.join(base, 'ios-debug-')),
+    runId = randomUUID(),
+    simulatorId = randomUUID()
+  fs.writeFileSync(
+    path.join(session, 'test-context.json'),
+    JSON.stringify({
+      schema: 1,
+      kind: 'ios-debug',
+      state: 'open',
+      runId,
+      simulatorId,
+      appId: APP_ID,
+      name: `我的账单调试-${runId}`
+    }),
+    { mode: 0o600 }
+  )
   function evidence(name = target, overrides = {}) {
-    const kind = name.startsWith('interruption-') ? 'scenario' : 'case'
-    const selected = selection('--' + kind, name, scenarios), run = fs.mkdtempSync(path.join(session, 'run-'))
-    const coverage = selected.recoveryPhases ? selected.recoveryPhases.map(p => 'recovery/' + p) : selected.cases.map(caseKey)
-    const result = { scope:'partial',status:'passed',requested:{kind,name},executedCases:selected.cases,coverage,
-      runId,simulatorId,inputHash:inputHash(root),environment,completedAt:Date.now(),...overrides }
+    const kind = name.startsWith('interruption-') || scenarios.includes(name) ? 'scenario' : 'case'
+    const selected = selection('--' + kind, name, scenarios),
+      run = fs.mkdtempSync(path.join(session, 'run-'))
+    const coverage = selectedCoverage(selected)
+    const result = {
+      scope: 'partial',
+      status: 'passed',
+      requested: { kind, name },
+      executedCases: selected.cases,
+      coverage,
+      runId,
+      simulatorId,
+      inputHash: inputHash(root),
+      environment,
+      completedAt: Date.now(),
+      ...overrides
+    }
     fs.writeFileSync(path.join(run, 'result.json'), JSON.stringify(result))
-    const log = selected.recoveryPhases ? selected.recoveryPhases.map(p => 'LEDGER_PROCESS_INTERRUPTION_RECOVERED ' + p).join('\n')
-      : selected.cases.map(id => `Test Case '-[${id.split('/')[0]}.${id.split('/')[1]} ${id.split('/')[2]}]' passed (0.1 seconds).`).join('\n')
-        + `\nExecuted ${selected.cases.length} test${selected.cases.length === 1 ? '' : 's'}, with 0 failures\n`
+    const log = selected.recoveryPhases
+      ? selected.recoveryPhases.map((p) => 'LEDGER_PROCESS_INTERRUPTION_RECOVERED ' + p).join('\n')
+      : selected.cases
+          .map(
+            (id) =>
+              `Test Case '-[${id.split('/')[0]}.${id.split('/')[1]} ${id.split('/')[2]}]' passed (0.1 seconds).`
+          )
+          .join('\n') +
+        `\nExecuted ${selected.cases.length} test${selected.cases.length === 1 ? '' : 's'}, with 0 failures\n` +
+        (selected.scenario ? 'NATIVE_DICTIONARY_SCENARIO_VERIFIED ' + selected.scenario : '')
     fs.writeFileSync(path.join(run, 'test.log'), log)
     return { run, result }
   }
-  const bin = path.join(root, 'bin'); fs.mkdirSync(bin)
-  const executable = (name, code) => { const file = write('bin/' + name, code); fs.chmodSync(file, 0o755) }
-  const devices = JSON.stringify({devices:{'com.apple.CoreSimulator.SimRuntime.iOS-27-0':[{udid:simulatorId,name:`我的账单调试-${runId}`,isAvailable:true,deviceTypeIdentifier:'com.apple.CoreSimulator.SimDeviceType.iPhone-14-Pro-Max',state:'Shutdown'}]}})
-  executable('xcrun', `#!/bin/sh
+  const bin = path.join(root, 'bin')
+  fs.mkdirSync(bin)
+  const executable = (name, code) => {
+    const file = write('bin/' + name, code)
+    fs.chmodSync(file, 0o755)
+  }
+  const devices = JSON.stringify({
+    devices: {
+      'com.apple.CoreSimulator.SimRuntime.iOS-27-0': [
+        {
+          udid: simulatorId,
+          name: `我的账单调试-${runId}`,
+          isAvailable: true,
+          deviceTypeIdentifier: 'com.apple.CoreSimulator.SimDeviceType.iPhone-14-Pro-Max',
+          state: 'Shutdown'
+        }
+      ]
+    }
+  })
+  executable(
+    'xcrun',
+    `#!/bin/sh
 if [ \"$3\" = \"devices\" ]; then printf '%s\\n' '${devices}'; elif [ \"$1\" = \"simctl\" ]; then printf '%s\\n' '{"runtimes":[{"identifier":"com.apple.CoreSimulator.SimRuntime.iOS-27-0","isAvailable":true,"buildversion":"TEST"}]}'; else printf '27.0\\n'; fi
-`)
+`
+  )
   executable('xcodebuild', '#!/bin/sh\nprintf "Xcode 27.0\\n"\n')
-  executable('npm', `#!${process.execPath}
-const fs=require('node:fs'),path=require('node:path');
-const output=process.argv.find(a=>a.startsWith('--outputFile='));
-if(output && process.argv.includes('--testNamePattern=absent')){fs.writeFileSync(output.slice('--outputFile='.length),JSON.stringify({testResults:[],numTotalTests:0}));process.exit(0)}
-if(output){const failed=fs.existsSync('fail-local');fs.writeFileSync(output.slice('--outputFile='.length),JSON.stringify({testResults:[{name:path.resolve('app/src/domain/money.spec.ts'),assertionResults:[{fullName:'money sum',status:failed?'failed':'passed'}]}]}));process.exit(failed?1:0)}
-process.exit(0)
-`)
-  write('scripts/verify-ios-resources.mjs', "console.log('resources verified')\n")
-  const env = { ...process.env, PATH:bin + path.delimiter + process.env.PATH, CI:'true',MYBILL_FULL_ATTEMPT:'/forged' }
-  const run = args => spawnSync(process.execPath, [path.join(root,'scripts/ios-app.mjs'),...args], {cwd:root,env,encoding:'utf8',timeout:12000})
-  return { root,write,base,session,evidence,run,hash:()=>verificationHash(root,environment),context:()=>({inputHash:inputHash(root),environment}) }
+  executable(
+    'npm',
+    `#!${process.execPath}
+const fs = require('node:fs')
+const path = require('node:path')
+const output = process.argv.find(arg => arg.startsWith('--outputFile='))
+if (output && process.argv.includes('--testNamePattern=absent')) {
+  fs.writeFileSync(output.slice('--outputFile='.length), JSON.stringify({ testResults: [], numTotalTests: 0 }))
+  process.exit(0)
 }
-function clock(t) { let time=100000; t.mock.method(Date,'now',()=>++time) }
+if (output) {
+  const failed = fs.existsSync('fail-local')
+  const assertion = { fullName: 'money sum', status: failed ? 'failed' : 'passed' }
+  const suite = { name: path.resolve('app/src/domain/money.spec.ts'), assertionResults: [assertion] }
+  fs.writeFileSync(output.slice('--outputFile='.length), JSON.stringify({ testResults: [suite] }))
+  process.exit(failed ? 1 : 0)
+}
+process.exit(0)
+`
+  )
+  write('scripts/verify-ios-resources.mjs', "console.log('resources verified')\n")
+  const env = {
+    ...process.env,
+    PATH: bin + path.delimiter + process.env.PATH,
+    CI: 'true',
+    MYBILL_FULL_ATTEMPT: '/forged'
+  }
+  const run = (args) =>
+    spawnSync(process.execPath, [path.join(root, 'scripts/ios-app.mjs'), ...args], {
+      cwd: root,
+      env,
+      encoding: 'utf8',
+      timeout: 12000
+    })
+  return {
+    root,
+    write,
+    base,
+    session,
+    evidence,
+    run,
+    hash: () => verificationHash(root, environment),
+    context: () => ({ inputHash: inputHash(root), environment })
+  }
+}
+function clock(t) {
+  let time = 100000
+  t.mock.method(Date, 'now', () => ++time)
+}
 function finishAttempt(p, hash, proof, failed = true, required = [target]) {
-  const a=beginFull(p.root,'ios-touch',proof,hash,process.pid,p.context())
-  finishFull(p.root,a,failed?new Error('controlled failure'):undefined,failed?required:[])
+  const a = beginFull(p.root, 'ios-touch', proof, hash, process.pid, p.context())
+  finishFull(p.root, a, failed ? new Error('controlled failure') : undefined, failed ? required : [])
   return a
 }
 
-test('当前局部证据校验：失败/旧输入/错误环境/范围/符号链接拒绝，文档变化不作废', t=>{
-  const p=project(t), good=p.evidence(), read=run=>requireEvidence(p.root,run,inputHash(p.root),environment)
-  assert.equal(read(good.run).run,good.run); assert.throws(()=>read(undefined),/--from/)
-  for(const overrides of [{status:'failed'},{inputHash:'old'},{environment:'different'},{coverage:[]},{executedCases:[]},{coverage:[...good.result.coverage,'app-test/other.spec.ts#unrelated']}]) assert.throws(()=>read(p.evidence(target,overrides).run))
-  const link=path.join(p.session,'run-link');fs.symlinkSync(good.run,link);assert.throws(()=>read(link))
-  p.write('README.md','docs');assert.equal(read(good.run).run,good.run)
-  fs.appendFileSync(path.join(p.root,'scripts/fixtures/dictionary-touch.py'),'# changed');assert.throws(()=>read(good.run),/版本不符/)
+test('当前局部证据校验：失败/旧输入/错误环境/范围/符号链接拒绝，文档变化不作废', (t) => {
+  const p = project(t),
+    good = p.evidence(),
+    read = (run) => requireEvidence(p.root, run, inputHash(p.root), environment)
+  assert.equal(read(good.run).run, good.run)
+  assert.throws(() => read(undefined), /--from/)
+  for (const overrides of [
+    { status: 'failed' },
+    { inputHash: 'old' },
+    { environment: 'different' },
+    { coverage: [] },
+    { executedCases: [] },
+    { coverage: [...good.result.coverage, 'app-test/other.spec.ts#unrelated'] }
+  ])
+    assert.throws(() => read(p.evidence(target, overrides).run))
+  const link = path.join(p.session, 'run-link')
+  fs.symlinkSync(good.run, link)
+  assert.throws(() => read(link))
+  p.write('README.md', 'docs')
+  assert.equal(read(good.run).run, good.run)
+  fs.appendFileSync(path.join(p.root, 'scripts/fixtures/dictionary-touch.py'), '# changed')
+  assert.throws(() => read(good.run), /版本不符/)
 })
 
-test('A→B→A 保留 A 的初验/复验次数，已通过 A→B→A 也不重复', t=>{
-  clock(t);const p=project(t),A='a'.repeat(64),B='b'.repeat(64)
-  finishAttempt(p,A,p.evidence());finishAttempt(p,A,p.evidence());assert.throws(()=>finishAttempt(p,A,p.evidence()),/初验及一次复验/)
-  finishAttempt(p,B,p.evidence());assert.throws(()=>finishAttempt(p,A,p.evidence()),/初验及一次复验/)
-  const q=project(t);finishAttempt(q,A,q.evidence(),false);finishAttempt(q,B,q.evidence(),false)
-  assert.throws(()=>finishAttempt(q,A,q.evidence(),false),/拒绝重复/)
+test('A→B→A 保留 A 的初验/复验次数，已通过 A→B→A 也不重复', (t) => {
+  clock(t)
+  const p = project(t),
+    A = 'a'.repeat(64),
+    B = 'b'.repeat(64)
+  finishAttempt(p, A, p.evidence())
+  finishAttempt(p, A, p.evidence())
+  assert.throws(() => finishAttempt(p, A, p.evidence()), /初验及一次复验/)
+  finishAttempt(p, B, p.evidence())
+  assert.throws(() => finishAttempt(p, A, p.evidence()), /初验及一次复验/)
+  const q = project(t)
+  finishAttempt(q, A, q.evidence(), false)
+  finishAttempt(q, B, q.evidence(), false)
+  assert.throws(() => finishAttempt(q, A, q.evidence(), false), /拒绝重复/)
 })
 
-test('v1 历史回执迁移保留其他版本次数及最近失败，不清空旧记录', t=>{
-  clock(t);const p=project(t),A='a'.repeat(64),B='b'.repeat(64)
-  const a=finishAttempt(p,A,p.evidence());finishAttempt(p,A,p.evidence());const b=finishAttempt(p,B,p.evidence())
-  p.write('.local/ios/tmp/ai-agent/ios-verification-state.json',JSON.stringify({schema:1,attempts:{'ios-touch':readState(p.root).attempts['ios-touch']}}))
-  const migrated=readState(p.root);assert.equal(migrated.schema,2);assert.ok(migrated.history.some(v=>v.run===a.run));assert.ok(migrated.history.some(v=>v.run===b.run))
-  assert.throws(()=>finishAttempt(p,A,p.evidence()),/初验及一次复验/)
+test('v1 历史回执迁移保留其他版本次数及最近失败，不清空旧记录', (t) => {
+  clock(t)
+  const p = project(t),
+    A = 'a'.repeat(64),
+    B = 'b'.repeat(64)
+  const a = finishAttempt(p, A, p.evidence())
+  finishAttempt(p, A, p.evidence())
+  const b = finishAttempt(p, B, p.evidence())
+  p.write(
+    '.local/ios/tmp/ai-agent/ios-verification-state.json',
+    JSON.stringify({ schema: 1, attempts: { 'ios-touch': readState(p.root).attempts['ios-touch'] } })
+  )
+  const migrated = readState(p.root)
+  assert.equal(migrated.schema, 2)
+  assert.ok(migrated.history.some((v) => v.run === a.run))
+  assert.ok(migrated.history.some((v) => v.run === b.run))
+  assert.throws(() => finishAttempt(p, A, p.evidence()), /初验及一次复验/)
 })
 
-test('已有成功后，新局部真实失败及相关修复可复验；无故刷绿色、旧/无关证据拒绝', t=>{
-  clock(t);const p=project(t),H=p.hash();finishAttempt(p,H,p.evidence(),false)
-  assert.throws(()=>finishAttempt(p,H,p.evidence(),false),/拒绝重复/)
-  const failure=p.evidence(target,{status:'failed',failure:{required:[caseKey(target)]}})
-  recordLocal(p.root,failure.run,failure.result)
-  assert.throws(()=>finishAttempt(p,H,p.evidence(ui('test07RestoreCandidates')),false),/相关局部/)
-  const repair=p.evidence();const repeated=finishAttempt(p,H,repair,false);assert.ok(repeated.incident.startsWith('local:'))
-  assert.throws(()=>finishAttempt(p,H,p.evidence(),false),/拒绝重复/)
-  const secondFailure=p.evidence(target,{status:'failed',failure:{required:[caseKey(target)]}})
-  recordLocal(p.root,secondFailure.run,secondFailure.result)
-  finishAttempt(p,H,p.evidence(),true)
-  assert.throws(()=>beginFull(p.root,'ios-smoke',p.evidence('NativeTests/NativeSqliteTests/testLedgerLifecycleAndProtection'),H,process.pid,p.context()),/先处理/)
+test('已有成功后，新局部真实失败及相关修复可复验；无故刷绿色、旧/无关证据拒绝', (t) => {
+  clock(t)
+  const p = project(t),
+    H = p.hash()
+  finishAttempt(p, H, p.evidence(), false)
+  assert.throws(() => finishAttempt(p, H, p.evidence(), false), /拒绝重复/)
+  const failure = p.evidence(target, { status: 'failed', failure: { required: [caseKey(target)] } })
+  recordLocal(p.root, failure.run, failure.result)
+  assert.throws(() => finishAttempt(p, H, p.evidence(ui('test07RestoreCandidates')), false), /相关局部/)
+  const repair = p.evidence()
+  const repeated = finishAttempt(p, H, repair, false)
+  assert.ok(repeated.incident.startsWith('local:'))
+  assert.throws(() => finishAttempt(p, H, p.evidence(), false), /拒绝重复/)
+  const secondFailure = p.evidence(target, { status: 'failed', failure: { required: [caseKey(target)] } })
+  recordLocal(p.root, secondFailure.run, secondFailure.result)
+  finishAttempt(p, H, p.evidence(), true)
+  assert.throws(
+    () =>
+      beginFull(
+        p.root,
+        'ios-smoke',
+        p.evidence('NativeTests/NativeSqliteTests/testLedgerLifecycleAndProtection'),
+        H,
+        process.pid,
+        p.context()
+      ),
+    /先处理/
+  )
 })
 
-test('失败锁保留目标，换套件/旧回执拒绝；特殊恢复可用同阶段成对场景解锁', t=>{
-  clock(t);const p=project(t),H=p.hash(),proof=p.evidence();finishAttempt(p,H,proof)
-  assert.throws(()=>finishAttempt(p,H,proof),/相关局部/)
-  assert.throws(()=>beginFull(p.root,'ios-smoke',p.evidence(),H,process.pid,p.context()),/先处理/)
-  const q=project(t),native='NativeTests/NativeSqliteTests/testLedgerLifecycleAndProtection'
-  const a=beginFull(q.root,'ios-smoke',q.evidence(native),H,process.pid,q.context())
-  startPhase(a.run,{stage:'test',coverage:['recovery/migration-recorded'],log:path.join(q.base,'recovery.log')})
-  finishFull(q.root,a,new Error('recover failed'),['NativeTests/NativeSqliteTests/testRecoverProcessInterruption'])
-  assert.throws(()=>beginFull(q.root,'ios-smoke',q.evidence('interruption-snapshot-ready'),H,process.pid,q.context()),/相关局部/)
-  const related=q.evidence('interruption-migration-recorded');requireEvidence(q.root,related.run,inputHash(q.root),environment)
-  assert.equal(beginFull(q.root,'ios-smoke',related,H,process.pid,q.context()).retry,1)
-  assert.throws(()=>selection('--case','NativeTests/NativeSqliteTests/testRecoverProcessInterruption',[]))
+test('失败锁保留目标，换套件/旧回执拒绝；特殊恢复可用同阶段成对场景解锁', (t) => {
+  clock(t)
+  const p = project(t),
+    H = p.hash(),
+    proof = p.evidence()
+  finishAttempt(p, H, proof)
+  assert.throws(() => finishAttempt(p, H, proof), /相关局部/)
+  assert.throws(() => beginFull(p.root, 'ios-smoke', p.evidence(), H, process.pid, p.context()), /先处理/)
+  const q = project(t),
+    native = 'NativeTests/NativeSqliteTests/testLedgerLifecycleAndProtection'
+  const a = beginFull(q.root, 'ios-smoke', q.evidence(native), H, process.pid, q.context())
+  startPhase(a.run, {
+    stage: 'test',
+    coverage: ['recovery/migration-recorded'],
+    log: path.join(q.base, 'recovery.log')
+  })
+  finishFull(q.root, a, new Error('recover failed'), [
+    'NativeTests/NativeSqliteTests/testRecoverProcessInterruption'
+  ])
+  assert.throws(
+    () =>
+      beginFull(q.root, 'ios-smoke', q.evidence('interruption-snapshot-ready'), H, process.pid, q.context()),
+    /相关局部/
+  )
+  const related = q.evidence('interruption-migration-recorded')
+  requireEvidence(q.root, related.run, inputHash(q.root), environment)
+  assert.equal(beginFull(q.root, 'ios-smoke', related, H, process.pid, q.context()).retry, 1)
+  assert.throws(() => selection('--case', 'NativeTests/NativeSqliteTests/testRecoverProcessInterruption', []))
 })
 
-test('构建/安装/启动/单用例分别计时，长构建不误耗启动预算；预期中断失败不误停', t=>{
-  const p=project(t),run=fs.mkdtempSync(path.join(p.base,'ios-full-')),log=p.write('.local/ios/tmp/ai-agent/native-clock/test.log','')
-  let time=1000;t.mock.method(Date,'now',()=>time)
-  const w=observeFull({run,root:p.root,evidenceRoot:p.base},{now:()=>time})
-  startPhase(run,{stage:'build',coverage:['native-build/App/Debug'],log});time+=200000;w.poll()
-  startPhase(run,{stage:'install',coverage:['native-install/App/Debug'],log});time+=100000;w.poll()
-  startPhase(run,{stage:'test',coverage:['native-startup/App/Debug'],log});time+=100000;w.poll()
-  fs.writeFileSync(log,`Test Case '-[DictionaryUITests.DictionaryTouchTests test02RenameProduct]' started.\n`);w.poll();time+=61000;assert.throws(()=>w.poll(),/60 秒/)
-  assert.deepEqual(w.failedCases,[target]);const times=finishPhases(run,new Error('timeout'));assert.equal(times[0].elapsedMs,200000);assert.equal(times[1].elapsedMs,100000)
-  const guard=fs.mkdtempSync(path.join(p.base,'ios-full-'));startPhase(guard,{stage:'test',coverage:['recovery/snapshot-ready'],log,expectedFailure:true})
-  fs.writeFileSync(log,"Test Case '-[NativeTests.NativeSqliteTests testPrepareProcessInterruption]' failed (1 seconds).\n")
-  observeFull({run:guard,evidenceRoot:p.base},{now:()=>time}).poll()
-  time+=121000;assert.throws(()=>observeFull({run:guard,evidenceRoot:p.base},{now:()=>time}).poll(),/中断准备阶段超时/)
+test('构建/安装/启动/单用例分别计时，长构建不误耗启动预算；预期中断失败不误停', (t) => {
+  const p = project(t),
+    run = fs.mkdtempSync(path.join(p.base, 'ios-full-')),
+    log = p.write('.local/ios/tmp/ai-agent/native-clock/test.log', '')
+  let time = 1000
+  t.mock.method(Date, 'now', () => time)
+  const w = observeFull({ run, root: p.root, evidenceRoot: p.base }, { now: () => time })
+  startPhase(run, { stage: 'build', coverage: ['native-build/App/Debug'], log })
+  time += 200000
+  w.poll()
+  startPhase(run, { stage: 'install', coverage: ['native-install/App/Debug'], log })
+  time += 100000
+  w.poll()
+  startPhase(run, { stage: 'test', coverage: ['native-startup/App/Debug'], log })
+  time += 100000
+  w.poll()
+  fs.writeFileSync(
+    log,
+    `Test Case '-[DictionaryUITests.DictionaryTouchTests test02RenameProduct]' started.\n`
+  )
+  w.poll()
+  time += 61000
+  assert.throws(() => w.poll(), /60 秒/)
+  assert.deepEqual(w.failedCases, [target])
+  const times = finishPhases(run, new Error('timeout'))
+  assert.equal(times[0].elapsedMs, 200000)
+  assert.equal(times[1].elapsedMs, 100000)
+  const guard = fs.mkdtempSync(path.join(p.base, 'ios-full-'))
+  startPhase(guard, { stage: 'test', coverage: ['recovery/snapshot-ready'], log, expectedFailure: true })
+  fs.writeFileSync(
+    log,
+    "Test Case '-[NativeTests.NativeSqliteTests testPrepareProcessInterruption]' failed (1 seconds).\n"
+  )
+  observeFull({ run: guard, evidenceRoot: p.base }, { now: () => time }).poll()
+  time += 121000
+  assert.throws(
+    () => observeFull({ run: guard, evidenceRoot: p.base }, { now: () => time }).poll(),
+    /中断准备阶段超时/
+  )
 })
 
-test('各阶段超时与没有进入测试的启动超时明确分类，阶段内日志分块仍识别首败', t=>{
-  const p=project(t);let now=1000;t.mock.method(Date,'now',()=>now)
-  for(const [stage,elapsed]of[['build',600001],['install',120001],['test',180001]]){
-    const run=fs.mkdtempSync(path.join(p.base,'ios-full-')),log=p.write('.local/ios/tmp/ai-agent/native-'+stage+'/test.log','')
-    startPhase(run,{stage,coverage:['native-startup/App/Debug'],log});now+=elapsed
-    assert.throws(()=>observeFull({run,evidenceRoot:p.base},{now:()=>now}).poll(),stage==='test'?/测试启动阶段/:new RegExp(stage+' 阶段超时'))
+test('各阶段超时与没有进入测试的启动超时明确分类，阶段内日志分块仍识别首败', (t) => {
+  const p = project(t)
+  let now = 1000
+  t.mock.method(Date, 'now', () => now)
+  for (const [stage, elapsed] of [
+    ['build', 600001],
+    ['install', 120001],
+    ['test', 180001]
+  ]) {
+    const run = fs.mkdtempSync(path.join(p.base, 'ios-full-')),
+      log = p.write('.local/ios/tmp/ai-agent/native-' + stage + '/test.log', '')
+    startPhase(run, { stage, coverage: ['native-startup/App/Debug'], log })
+    now += elapsed
+    assert.throws(
+      () => observeFull({ run, evidenceRoot: p.base }, { now: () => now }).poll(),
+      stage === 'test' ? /测试启动阶段/ : new RegExp(stage + ' 阶段超时')
+    )
   }
-  const run=fs.mkdtempSync(path.join(p.base,'ios-full-')),log=p.write('.local/ios/tmp/ai-agent/native-split/test.log',"Test Case '-[DictionaryUITests.DictionaryTouchTests test02RenameProduct]' fa")
-  startPhase(run,{stage:'test',coverage:[caseKey(target)],log});const w=observeFull({run,evidenceRoot:p.base});w.poll();fs.appendFileSync(log,'iled (1 seconds).\n');assert.throws(()=>w.poll(),/立即停止/)
+  const run = fs.mkdtempSync(path.join(p.base, 'ios-full-')),
+    log = p.write(
+      '.local/ios/tmp/ai-agent/native-split/test.log',
+      "Test Case '-[DictionaryUITests.DictionaryTouchTests test02RenameProduct]' fa"
+    )
+  startPhase(run, { stage: 'test', coverage: [caseKey(target)], log })
+  const w = observeFull({ run, evidenceRoot: p.base })
+  w.poll()
+  fs.appendFileSync(log, 'iled (1 seconds).\n')
+  assert.throws(() => w.poll(), /立即停止/)
 })
 
-test('Vitest、资源及编译失败保留所属层次，不降级成原生入口绿色；检查命令拒绝任意路径',t=>{
-  const p=project(t),run=fs.mkdtempSync(path.join(p.base,'ios-check-')),report=p.write('.local/ios/tmp/ai-agent/report.json',JSON.stringify({testResults:[{name:path.join(p.root,'app/src/domain/money.spec.ts'),assertionResults:[{fullName:'money sum',status:'failed'}]}]}))
-  startPhase(run,{stage:'check',coverage:['check/app-tests'],report});assert.deepEqual(failureDetails({run,root:p.root}).required,['app-test/src/domain/money.spec.ts#money sum'])
-  assert.throws(()=>checkDefinition(p.root,run,'app-tests',{file:'../private.spec.ts'}));assert.throws(()=>checkDefinition(p.root,run,'resources',{scheme:'App'}))
-  assert.throws(()=>checkDefinition(p.root,run,'native-build',{scheme:'Unknown'}));assert.throws(()=>checkDefinition(p.root,run,'resources',{target:'arbitrary'}))
-  startPhase(run,{stage:'build',coverage:['native-build/DictionaryTouch/Release']});assert.deepEqual(failureDetails({run,root:p.root}).required,['native-build/DictionaryTouch/Release'])
+test('Vitest、资源及编译失败保留所属层次，不降级成原生入口绿色；检查命令拒绝任意路径', (t) => {
+  const p = project(t),
+    run = fs.mkdtempSync(path.join(p.base, 'ios-check-')),
+    report = p.write(
+      '.local/ios/tmp/ai-agent/report.json',
+      JSON.stringify({
+        testResults: [
+          {
+            name: path.join(p.root, 'app/src/domain/money.spec.ts'),
+            assertionResults: [{ fullName: 'money sum', status: 'failed' }]
+          }
+        ]
+      })
+    )
+  startPhase(run, { stage: 'check', coverage: ['check/app-tests'], report })
+  assert.deepEqual(failureDetails({ run, root: p.root }).required, [
+    'app-test/src/domain/money.spec.ts#money sum'
+  ])
+  assert.throws(() => checkDefinition(p.root, run, 'app-tests', { file: '../private.spec.ts' }))
+  assert.throws(() => checkDefinition(p.root, run, 'resources', { scheme: 'App' }))
+  assert.throws(() => checkDefinition(p.root, run, 'native-build', { scheme: 'Unknown' }))
+  assert.throws(() => checkDefinition(p.root, run, 'resources', { target: 'arbitrary' }))
+  startPhase(run, { stage: 'build', coverage: ['native-build/DictionaryTouch/Release'] })
+  assert.deepEqual(failureDetails({ run, root: p.root }).required, ['native-build/DictionaryTouch/Release'])
 })
 
-test('真实 CLI 首败取消、执行清理并拒绝无关证据；最低层局部修复可解锁', {timeout:20000},t=>{
-  const p=project(t)
-  p.write('scripts/lib/ios-app-full.sh',`#!/bin/bash
+test('真实 CLI 首败取消、执行清理并拒绝无关证据；最低层局部修复可解锁', { timeout: 20000 }, (t) => {
+  const p = project(t)
+  p.write(
+    'scripts/lib/ios-app-full.sh',
+    `#!/bin/bash
 set -e
 trap 'echo cleaned > cleanup-receipt; exit 143' TERM INT
 mkdir -p .local/ios/tmp/ai-agent/native-controlled
@@ -164,17 +431,28 @@ node scripts/lib/ios-verification.mjs phase ios-touch "$MYBILL_FULL_ATTEMPT" tes
 printf "Test Case '-[DictionaryUITests.DictionaryTouchTests test02RenameProduct]' failed (0.1 seconds).\\n" > "$LOG"
 sleep 5
 echo SHOULD_NOT_CONTINUE > continued
-`)
-  const proof=p.evidence(),failed=p.run(['ios-touch','--from',proof.run]);assert.equal(failed.status,1,failed.stderr);assert.match(failed.stderr,/立即停止/)
-  assert.ok(fs.existsSync(path.join(p.root,'cleanup-receipt')));assert.equal(fs.existsSync(path.join(p.root,'continued')),false)
-  assert.equal(fs.existsSync(path.join(p.base,'ios-command.lock')),false)
-  assert.equal(p.run(['ios-touch','--from',proof.run]).status,1)
-  const other=p.run(['ios-touch','--from',p.evidence(ui('test07RestoreCandidates')).run]);assert.match(other.stderr,/相关局部/)
+`
+  )
+  const proof = p.evidence(),
+    failed = p.run(['ios-touch', '--from', proof.run])
+  assert.equal(failed.status, 1, failed.stderr)
+  assert.match(failed.stderr, /立即停止/)
+  assert.ok(fs.existsSync(path.join(p.root, 'cleanup-receipt')))
+  assert.equal(fs.existsSync(path.join(p.root, 'continued')), false)
+  assert.equal(fs.existsSync(path.join(p.base, 'ios-command.lock')), false)
+  assert.equal(p.run(['ios-touch', '--from', proof.run]).status, 1)
+  const other = p.run(['ios-touch', '--from', p.evidence(ui('test07RestoreCandidates')).run])
+  assert.match(other.stderr, /相关局部/)
 })
 
-test('真实 CLI 无需 Xcode 的精确 Vitest 局部修复解锁同层失败，新故障可复验但不无限重跑', {timeout:20000},t=>{
-  const p=project(t)
-  p.write('scripts/lib/ios-app-full.sh',`#!/bin/bash
+test(
+  '真实 CLI 无需 Xcode 的精确 Vitest 局部修复解锁同层失败，新故障可复验但不无限重跑',
+  { timeout: 20000 },
+  (t) => {
+    const p = project(t)
+    p.write(
+      'scripts/lib/ios-app-full.sh',
+      `#!/bin/bash
 set -e
 if [[ -f allow-pass ]]; then exit 0; fi
 mkdir -p .local/ios/tmp/ai-agent/native-unit
@@ -183,56 +461,109 @@ REPORT="$PWD/.local/ios/tmp/ai-agent/native-unit/vitest.json"
 node scripts/lib/ios-verification.mjs phase ios-touch "$MYBILL_FULL_ATTEMPT" check check/app-tests "$LOG" "$REPORT"
 node -e 'require("fs").writeFileSync(process.argv[1],JSON.stringify({testResults:[{name:process.cwd()+"/app/src/domain/money.spec.ts",assertionResults:[{fullName:"money sum",status:"failed"}]}]}))' "$REPORT"
 exit 1
-`)
-  const first=p.run(['debug','check','--check','resources']);assert.equal(first.status,0,first.stderr)
-  const from=text=>text.match(/^EVIDENCE=(.+)$/m)[1]
-  const proof=from(first.stdout);const full=p.run(['ios-touch','--from',proof]);assert.equal(full.status,1)
-  const unrelated=p.run(['ios-touch','--from',p.evidence(ui('test00EightOriginalEntries')).run]);assert.match(unrelated.stderr,/app-test.*money sum/)
-  p.write('allow-pass','fixed environment')
-  const local=p.run(['debug','check','--check','app-tests','--file','src/domain/money.spec.ts','--name','money sum']);assert.equal(local.status,0,local.stderr)
-  const moneyProof=from(local.stdout);assert.equal(p.run(['ios-touch','--from',moneyProof]).status,0)
-  assert.match(p.run(['ios-touch','--from',moneyProof]).stderr,/拒绝重复/)
-  const zero=p.run(['debug','check','--check','app-tests','--name','absent']);assert.equal(zero.status,1)
-  const justGreen=p.run(['debug','check','--check','app-tests']);assert.equal(justGreen.status,0,justGreen.stderr)
-  assert.match(p.run(['ios-touch','--from',from(justGreen.stdout)]).stderr,/拒绝重复/)
-  p.write('fail-local','newly observed failure');assert.equal(p.run(['debug','check','--check','app-tests','--file','src/domain/money.spec.ts']).status,1)
-  fs.unlinkSync(path.join(p.root,'fail-local'))
-  const repaired=p.run(['debug','check','--check','app-tests','--file','src/domain/money.spec.ts']);assert.equal(repaired.status,0,repaired.stderr)
-  assert.equal(p.run(['ios-touch','--from',from(repaired.stdout)]).status,0)
-  assert.match(p.run(['ios-touch','--from',from(repaired.stdout)]).stderr,/拒绝重复/)
+`
+    )
+    const first = p.run(['debug', 'check', '--check', 'resources'])
+    assert.equal(first.status, 0, first.stderr)
+    const from = (text) => text.match(/^EVIDENCE=(.+)$/m)[1]
+    const proof = from(first.stdout)
+    const full = p.run(['ios-touch', '--from', proof])
+    assert.equal(full.status, 1)
+    const unrelated = p.run(['ios-touch', '--from', p.evidence(ui('test00EightOriginalEntries')).run])
+    assert.match(unrelated.stderr, /app-test.*money sum/)
+    p.write('allow-pass', 'fixed environment')
+    const local = p.run([
+      'debug',
+      'check',
+      '--check',
+      'app-tests',
+      '--file',
+      'src/domain/money.spec.ts',
+      '--name',
+      'money sum'
+    ])
+    assert.equal(local.status, 0, local.stderr)
+    const moneyProof = from(local.stdout)
+    assert.equal(p.run(['ios-touch', '--from', moneyProof]).status, 0)
+    assert.match(p.run(['ios-touch', '--from', moneyProof]).stderr, /拒绝重复/)
+    const zero = p.run(['debug', 'check', '--check', 'app-tests', '--name', 'absent'])
+    assert.equal(zero.status, 1)
+    const justGreen = p.run(['debug', 'check', '--check', 'app-tests'])
+    assert.equal(justGreen.status, 0, justGreen.stderr)
+    assert.match(p.run(['ios-touch', '--from', from(justGreen.stdout)]).stderr, /拒绝重复/)
+    p.write('fail-local', 'newly observed failure')
+    assert.equal(
+      p.run(['debug', 'check', '--check', 'app-tests', '--file', 'src/domain/money.spec.ts']).status,
+      1
+    )
+    fs.unlinkSync(path.join(p.root, 'fail-local'))
+    const repaired = p.run(['debug', 'check', '--check', 'app-tests', '--file', 'src/domain/money.spec.ts'])
+    assert.equal(repaired.status, 0, repaired.stderr)
+    assert.equal(p.run(['ios-touch', '--from', from(repaired.stdout)]).status, 0)
+    assert.match(p.run(['ios-touch', '--from', from(repaired.stdout)]).stderr, /拒绝重复/)
+  }
+)
+
+test('内部许可绑定工作区锁、存活进程与模式，直接内部调用拒绝', (t) => {
+  const p = project(t),
+    a = beginFull(p.root, 'ios-touch', p.evidence(), p.hash(), process.pid, p.context())
+  assert.throws(() => requireActiveFull(p.root, 'ios-touch', a.run))
+  p.write('.local/ios/tmp/ai-agent/ios-command.lock/owner.json', JSON.stringify({ pid: process.pid }))
+  assert.equal(requireActiveFull(p.root, 'ios-touch', a.run).run, a.run)
+  assert.throws(() => requireActiveFull(p.root, 'ios-smoke', a.run))
+  finishFull(p.root, a)
+  assert.throws(() => requireActiveFull(p.root, 'ios-touch', a.run))
 })
 
-test('内部许可绑定工作区锁、存活进程与模式，直接内部调用拒绝',t=>{
-  const p=project(t),a=beginFull(p.root,'ios-touch',p.evidence(),p.hash(),process.pid,p.context())
-  assert.throws(()=>requireActiveFull(p.root,'ios-touch',a.run));p.write('.local/ios/tmp/ai-agent/ios-command.lock/owner.json',JSON.stringify({pid:process.pid}))
-  assert.equal(requireActiveFull(p.root,'ios-touch',a.run).run,a.run);assert.throws(()=>requireActiveFull(p.root,'ios-smoke',a.run));finishFull(p.root,a)
-  assert.throws(()=>requireActiveFull(p.root,'ios-touch',a.run))
-})
-
-test('真实 CLI 成对恢复局部入口只接受受管阶段，结束后回收活动许可并生成可用证据', {timeout:15000, skip:process.platform !== 'darwin'}, t=>{
-  const p=project(t)
-  p.write('scripts/lib/ios-app-full.sh', `#!/bin/bash
+test(
+  '真实 CLI 成对恢复局部入口只接受受管阶段，结束后回收活动许可并生成可用证据',
+  { timeout: 15000, skip: process.platform !== 'darwin' },
+  (t) => {
+    const p = project(t)
+    p.write(
+      'scripts/lib/ios-app-full.sh',
+      `#!/bin/bash
 set -e
 node scripts/lib/ios-verification.mjs permit ios-recovery "$MYBILL_FULL_ATTEMPT"
 IFS=',' read -r -a phases <<< "$MYBILL_RECOVERY_PHASES"
 for item in "\${phases[@]}"; do echo "LEDGER_PROCESS_INTERRUPTION_RECOVERED $item"; done
-`)
-  const run=p.run(['debug','run','--session',p.session,'--scenario','interruption-migration-recorded'])
-  assert.equal(run.status,0,run.stderr + run.stdout + fs.readdirSync(p.session).filter(n=>n.startsWith("run-")).map(n=>fs.readFileSync(path.join(p.session,n,"test.log"),"utf8")).join("\n"))
-  const proof=run.stdout.match(/^EVIDENCE=(.+)$/m)[1]
-  assert.ok(!fs.existsSync(path.join(proof,'active.json')))
-  const evidence=requireEvidence(p.root,proof,inputHash(p.root),environment)
-  assert.ok(evidence.result.coverage.includes('recovery/migration-recorded'))
-  assert.ok(!evidence.result.coverage.includes('recovery/snapshot-ready'))
-  const closed = p.run(['debug', 'close', '--session', p.session])
-  assert.equal(closed.status, 0, closed.stderr)
-  assert.equal(JSON.parse(fs.readFileSync(path.join(p.session, 'test-context.json'))).state, 'closed')
-})
+`
+    )
+    const run = p.run([
+      'debug',
+      'run',
+      '--session',
+      p.session,
+      '--scenario',
+      'interruption-migration-recorded'
+    ])
+    assert.equal(
+      run.status,
+      0,
+      run.stderr +
+        run.stdout +
+        fs
+          .readdirSync(p.session)
+          .filter((n) => n.startsWith('run-'))
+          .map((n) => fs.readFileSync(path.join(p.session, n, 'test.log'), 'utf8'))
+          .join('\n')
+    )
+    const proof = run.stdout.match(/^EVIDENCE=(.+)$/m)[1]
+    assert.ok(!fs.existsSync(path.join(proof, 'active.json')))
+    const evidence = requireEvidence(p.root, proof, inputHash(p.root), environment)
+    assert.ok(evidence.result.coverage.includes('recovery/migration-recorded'))
+    assert.ok(!evidence.result.coverage.includes('recovery/snapshot-ready'))
+    const closed = p.run(['debug', 'close', '--session', p.session])
+    assert.equal(closed.status, 0, closed.stderr)
+    assert.equal(JSON.parse(fs.readFileSync(path.join(p.session, 'test-context.json'))).state, 'closed')
+  }
+)
 
-
-test('本机阶段新失败强制重做，相关成功后恢复缓存但仍保留故障复验依据', t => {
+test('本机阶段新失败强制重做，相关成功后恢复缓存但仍保留故障复验依据', (t) => {
   clock(t)
-  const p = project(t), key = 'native-install/App/Debug', H = p.hash()
+  const p = project(t),
+    key = 'native-install/App/Debug',
+    H = p.hash()
   finishAttempt(p, H, p.evidence(), false)
   const failed = p.evidence(target, { status: 'failed', failure: { required: [key] } })
   recordLocal(p.root, failed.run, failed.result)
@@ -248,3 +579,259 @@ test('本机阶段新失败强制重做，相关成功后恢复缓存但仍保�
   assert.ok(attempt.incident.startsWith('local:'))
   assert.throws(() => finishAttempt(p, H, p.evidence(), false), /拒绝重复/)
 })
+
+test('跨版本/跨套件恢复旧输入仍检查历史失败，修复后可以继续正常验证', (t) => {
+  clock(t)
+  const p = project(t),
+    A = 'A',
+    B = 'B'
+  finishAttempt(p, A, p.evidence())
+  finishAttempt(p, B, p.evidence(), false)
+  const native = p.evidence('NativeTests/NativeSqliteTests/testLedgerLifecycleAndProtection')
+  assert.throws(() => beginFull(p.root, 'ios-smoke', native, A, process.pid, p.context()), /先处理 ios-touch/)
+  finishAttempt(p, A, p.evidence(), false)
+  const allowed = beginFull(p.root, 'ios-smoke', native, A, process.pid, p.context())
+  finishFull(p.root, allowed)
+  assert.throws(() => finishAttempt(p, A, p.evidence(), false), /拒绝重复/)
+})
+
+test('历史输入的构建失败仍要求重做，其他输入的新成功不覆盖该失败', (t) => {
+  clock(t)
+  const p = project(t),
+    A = p.hash(),
+    key = 'native-build/DictionaryTouch/Release'
+  const failed = beginFull(p.root, 'ios-touch', p.evidence(), A, process.pid, p.context())
+  startPhase(failed.run, { stage: 'build', coverage: [key] })
+  finishFull(p.root, failed, new Error('controlled build failure'))
+  p.write('app/src/view.vue', 'changed input')
+  finishAttempt(p, p.hash(), p.evidence(target, { coverage: [caseKey(target), key] }), false)
+  p.write('app/src/view.vue', 'fixture')
+  assert.equal(p.hash(), A)
+  assert.equal(needsPhaseRepair(p.root, key, environment), true)
+})
+
+test('场景名参与失败及成功证据，crud 不能修复 template-tie，也不能伪造场景覆盖', (t) => {
+  clock(t)
+  const p = project(t),
+    H = p.hash(),
+    native = 'NativeTests/NativeSqliteTests/testLedgerLifecycleAndProtection'
+  const baseline = beginFull(p.root, 'ios-smoke', p.evidence(native), H, process.pid, p.context())
+  finishFull(p.root, baseline)
+  const failed = p.evidence('template-tie', { status: 'failed' })
+  startPhase(failed.run, { stage: 'test', scenario: 'template-tie', coverage: failed.result.coverage })
+  failed.result.failure = failureDetails({ root: p.root, run: failed.run }, failed.result.executedCases)
+  assert.deepEqual(failed.result.failure.required, [scenarioKey('template-tie')])
+  recordLocal(p.root, failed.run, failed.result)
+  const unrelated = p.evidence('crud')
+  requireEvidence(p.root, unrelated.run, inputHash(p.root), environment)
+  assert.throws(() => beginFull(p.root, 'ios-smoke', unrelated, H, process.pid, p.context()), /template-tie/)
+  const forged = p.evidence('crud', { coverage: [...unrelated.result.coverage, scenarioKey('template-tie')] })
+  assert.throws(() => requireEvidence(p.root, forged.run, inputHash(p.root), environment), /未执行范围/)
+  fs.writeFileSync(
+    path.join(unrelated.run, 'test.log'),
+    fs.readFileSync(path.join(unrelated.run, 'test.log'), 'utf8').replace('VERIFIED crud', 'VERIFIED merge')
+  )
+  assert.throws(() => requireEvidence(p.root, unrelated.run, inputHash(p.root), environment), /场景通过记录/)
+  const repaired = p.evidence('template-tie')
+  requireEvidence(p.root, repaired.run, inputHash(p.root), environment)
+  const allowed = beginFull(p.root, 'ios-smoke', repaired, H, process.pid, p.context())
+  finishFull(p.root, allowed)
+})
+
+test('多份证据逐份校验，拒绝重复/空集合/过多/旧输入回执', (t) => {
+  const p = project(t),
+    good = p.evidence(),
+    another = p.evidence(ui('test07RestoreCandidates'))
+  const read = (paths) => requireEvidenceSet(p.root, paths, inputHash(p.root), environment)
+  assert.equal(read([good.run, another.run]).length, 2)
+  assert.throws(() => read([]), /1 至 32/)
+  assert.throws(() => read(Array(33).fill(good.run)), /1 至 32/)
+  assert.throws(() => read([good.run, good.run]), /重复/)
+  assert.throws(() => read([good.run, p.evidence(target, { inputHash: 'old' }).run]), /版本不符/)
+})
+
+test(
+  '真实 CLI 合并跨层修复证据，各目标按自己的失败时间验证，单份/重复/无关证据拒绝',
+  { timeout: 20000 },
+  async (t) => {
+    const p = project(t),
+      native = 'NativeTests/NativeSqliteTests/testLedgerLifecycleAndProtection'
+    p.write('scripts/lib/ios-app-full.sh', '#!/bin/bash\nexit 0\n')
+    const from = (text) => text.match(/^EVIDENCE=(.+)$/m)[1]
+    assert.equal(p.run(['ios-smoke', '--from', p.evidence(native).run]).status, 0)
+    await new Promise((resolve) => setTimeout(resolve, 5))
+    const failed = p.evidence(native, { status: 'failed', failure: { required: [caseKey(native)] } })
+    recordLocal(p.root, failed.run, failed.result)
+    await new Promise((resolve) => setTimeout(resolve, 5))
+    const fixedNative = p.evidence(native)
+    recordLocal(p.root, fixedNative.run, fixedNative.result)
+    p.write('fail-local', 'controlled newer Vitest failure')
+    assert.equal(
+      p.run(['debug', 'check', '--check', 'app-tests', '--file', 'src/domain/money.spec.ts']).status,
+      1
+    )
+    fs.unlinkSync(path.join(p.root, 'fail-local'))
+    const fixedVitest = p.run([
+      'debug',
+      'check',
+      '--check',
+      'app-tests',
+      '--file',
+      'src/domain/money.spec.ts'
+    ])
+    assert.equal(fixedVitest.status, 0, fixedVitest.stderr)
+    const nodeProof = from(fixedVitest.stdout)
+    assert.match(p.run(['ios-smoke', '--from', fixedNative.run]).stderr, /app-test/)
+    assert.match(p.run(['ios-smoke', '--from', nodeProof]).stderr, /testLedgerLifecycleAndProtection/)
+    assert.match(p.run(['ios-smoke', '--from', nodeProof, '--from', nodeProof]).stderr, /重复/)
+    const combined = p.run(['ios-smoke', '--from', fixedNative.run, '--from', nodeProof])
+    assert.equal(combined.status, 0, combined.stderr)
+    const attempt = readState(p.root).attempts['ios-smoke']
+    assert.deepEqual(attempt.evidenceRuns, [fixedNative.run, nodeProof])
+    assert.match(p.run(['ios-smoke', '--from', fixedNative.run, '--from', nodeProof]).stderr, /拒绝重复/)
+  }
+)
+
+for (const mode of ['common', 'ios-build']) {
+  test(`真实 ${mode} 入口强制阶段许可与构建超时，停止子进程并保存失败耗时`, { timeout: 15000 }, (t) => {
+    const p = project(t)
+    p.write(
+      'scripts/lib/ios-app-full.sh',
+      `#!/bin/bash
+set -e
+trap 'echo cleaned > cleanup-receipt; exit 143' TERM INT
+node scripts/lib/ios-verification.mjs permit ${mode} "$MYBILL_FULL_ATTEMPT"
+LOG="$MYBILL_FULL_ATTEMPT/build.log"
+node scripts/lib/ios-verification.mjs phase ${mode} "$MYBILL_FULL_ATTEMPT" build check/app-build "$LOG"
+node -e 'const fs=require("fs");const p=process.env.MYBILL_FULL_ATTEMPT+"/progress.json";const d=JSON.parse(fs.readFileSync(p));d.startedAt-=600001;fs.writeFileSync(p,JSON.stringify(d))'
+sleep 5
+echo SHOULD_NOT_CONTINUE > continued
+`
+    )
+    const result = p.run([mode])
+    assert.equal(result.status, 1, result.stderr)
+    assert.match(result.stderr, /build 阶段超时/)
+    assert.ok(fs.existsSync(path.join(p.root, 'cleanup-receipt')))
+    assert.equal(fs.existsSync(path.join(p.root, 'continued')), false)
+    assert.equal(fs.existsSync(path.join(p.base, 'ios-command.lock')), false)
+    const run = fs.readdirSync(p.base).find((name) => name.startsWith('ios-command-'))
+    const receipt = JSON.parse(fs.readFileSync(path.join(p.base, run, 'result.json')))
+    assert.equal(receipt.scope, 'engineering')
+    assert.equal(receipt.status, 'failed')
+    assert.equal(receipt.timings[0].status, 'failed')
+    assert.ok(receipt.timings[0].elapsedMs >= 600001)
+    assert.equal(fs.existsSync(path.join(p.base, run, 'active.json')), false)
+    assert.equal(fs.existsSync(path.join(p.base, 'ios-verification-state.json')), false)
+  })
+}
+
+test('工程检查正常分阶段执行并保存耗时，错误模式许可被拒绝，不消耗完整验收次数', (t) => {
+  const p = project(t)
+  p.write(
+    'scripts/lib/ios-app-full.sh',
+    `#!/bin/bash
+set -e
+node scripts/lib/ios-verification.mjs permit common "$MYBILL_FULL_ATTEMPT"
+if node scripts/lib/ios-verification.mjs permit ios-build "$MYBILL_FULL_ATTEMPT"; then exit 9; fi
+node scripts/lib/ios-verification.mjs phase common "$MYBILL_FULL_ATTEMPT" build check/app-build "$MYBILL_FULL_ATTEMPT/build.log"
+node scripts/lib/ios-verification.mjs phase common "$MYBILL_FULL_ATTEMPT" check check/resources/source "$MYBILL_FULL_ATTEMPT/resources.log"
+`
+  )
+  const result = p.run(['common'])
+  assert.equal(result.status, 0, result.stderr)
+  const run = fs.readdirSync(p.base).find((name) => name.startsWith('ios-command-'))
+  const receipt = JSON.parse(fs.readFileSync(path.join(p.base, run, 'result.json')))
+  assert.equal(receipt.status, 'passed')
+  assert.deepEqual(
+    receipt.timings.map((phase) => phase.stage),
+    ['build', 'check']
+  )
+  assert.equal(fs.existsSync(path.join(p.base, 'ios-verification-state.json')), false)
+  assert.equal(fs.existsSync(path.join(p.base, run, 'active.json')), false)
+  assert.throws(() => requireEvidence(p.root, path.join(p.base, run), inputHash(p.root), environment))
+})
+
+test('完整失败后局部发现另一层故障，两层相关修复均须覆盖', (t) => {
+  clock(t)
+  const p = project(t)
+  const H = p.hash()
+  finishAttempt(p, H, p.evidence())
+  const otherKey = 'app-test/src/domain/money.spec.ts#money sum'
+  const failed = p.evidence(target, {
+    status: 'failed',
+    failure: { required: [otherKey] }
+  })
+  recordLocal(p.root, failed.run, failed.result)
+  const fixedUi = p.evidence()
+  assert.throws(() => finishAttempt(p, H, fixedUi, false), /app-test/)
+  const fixedNode = {
+    run: 'controlled-node-proof',
+    result: { ...p.context(), coverage: [otherKey], completedAt: Date.now() }
+  }
+  const retry = finishAttempt(p, H, [fixedUi, fixedNode], false)
+  assert.equal(retry.retry, 1)
+})
+
+test('首次完整验证也拒绝用无关绿色跳过已观察到的局部失败', (t) => {
+  clock(t)
+  const p = project(t)
+  const H = p.hash()
+  const failed = p.evidence('template-tie', {
+    status: 'failed',
+    failure: { required: [scenarioKey('template-tie')] }
+  })
+  recordLocal(p.root, failed.run, failed.result)
+  assert.throws(
+    () => beginFull(p.root, 'ios-smoke', p.evidence('crud'), H, process.pid, p.context()),
+    /template-tie/
+  )
+  const allowed = beginFull(p.root, 'ios-smoke', p.evidence('template-tie'), H, process.pid, p.context())
+  finishFull(p.root, allowed)
+})
+
+test(
+  '原生场景 CLI 把具体场景传入测试阶段及最终回执，受控工具替身不启动设备',
+  { timeout: 15000, skip: process.platform !== 'darwin' },
+  (t) => {
+    const p = project(t)
+    const executable = (name, source) => {
+      const file = p.write('bin/' + name, source)
+      fs.chmodSync(file, 0o755)
+    }
+    executable('plutil', '#!/bin/sh\nprintf "{}"\n')
+    executable('python3', '#!/bin/sh\nprintf "ISOLATED_NATIVE_HOST_INITIALIZED"\n')
+    executable(
+      'xcodebuild',
+      `#!${process.execPath}
+const fs = require('node:fs')
+const path = require('node:path')
+const args = process.argv.slice(2)
+if (args.includes('-version')) {
+  console.log('Xcode 27.0')
+} else if (args[0] === 'build-for-testing') {
+  const derived = args[args.indexOf('-derivedDataPath') + 1]
+  const products = path.join(derived, 'Build/Products')
+  fs.mkdirSync(path.join(products, 'Debug-iphonesimulator/App.app'), { recursive: true })
+  fs.writeFileSync(path.join(products, 'Debug-iphonesimulator/App.app/App'), 'controlled fixture binary')
+  fs.writeFileSync(path.join(products, 'App.xctestrun'), 'controlled fixture plan')
+} else if (args[0] === 'test-without-building') {
+  const context = JSON.parse(fs.readFileSync(${JSON.stringify(path.join(p.session, 'test-context.json'))}))
+  console.log("Test Case '-[NativeTests.NativeSqliteTests testOfflineDictionaryScenario]' passed (0.1 seconds).")
+  console.log('Executed 1 test, with 0 failures')
+  console.log('NATIVE_DICTIONARY_SCENARIO_VERIFIED ' + context.scenario)
+} else {
+  process.exit(9)
+}
+`
+    )
+    const result = p.run(['debug', 'run', '--session', p.session, '--scenario', 'template-tie'])
+    assert.equal(result.status, 0, result.stderr)
+    const run = result.stdout.match(/^EVIDENCE=(.+)$/m)[1]
+    const evidence = requireEvidence(p.root, run, inputHash(p.root), environment)
+    assert.ok(evidence.result.coverage.includes(scenarioKey('template-tie')))
+    assert.ok(!evidence.result.coverage.includes(scenarioKey('crud')))
+    const phase = evidence.result.timings.find((item) => item.stage === 'test')
+    assert.equal(phase.scenario, 'template-tie')
+    assert.ok(phase.coverage.includes(scenarioKey('template-tie')))
+  }
+)
