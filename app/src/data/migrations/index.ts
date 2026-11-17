@@ -11,6 +11,8 @@ import nameV1Source from '../../domain/dictionaryNameV1.ts?raw'
 import { backfillSnapshotSearch } from './0004_snapshot_search'
 import type { SqlSession } from '../ledgerDatabase'
 import type { SchemaObject } from './schema'
+import personalState from './0005_personal_state.sql?raw'
+import personalSchema from './0005_schema.json'
 
 export type Migration = Readonly<{
   version: number
@@ -25,6 +27,7 @@ export const migrations: readonly Migration[] = [
   { version: 3, sql: ledgerWrites, schema: ledgerSchema },
   { version: 4, sql: snapshotSearch, schema: searchSchema,
     data: { source: JSON.stringify([searchDataSource, nameV1Source]), apply: backfillSnapshotSearch } },
+  { version: 5, sql: personalState, schema: personalSchema },
 ]
 export const publishedSchemaVersions: readonly number[] = []
 

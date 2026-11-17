@@ -1,38 +1,187 @@
-import { computed, nextTick, onScopeDispose, ref, type Ref } from 'vue'
+import { computed, nextTick, onDeactivated, onScopeDispose, ref, watch, type Ref } from 'vue'
 import type { EntryType } from '../domain/preferences'
+import { DRAFT_DEBOUNCE_MS, sanitizeDraft } from '../domain/ledgerDraft'
+import { DraftService } from '../data/personal/draftService'
+import { appDatabase } from '../data/appDatabase'
+import { localOperation } from '../data/localOperation'
+import { useBootstrapStore } from '../stores/bootstrap'
+import { registerDraftFlush } from '../platform/draftLifecycle'
 import { registerUnsavedChanges, notifyUnsavedChangesChanged } from './unsavedChanges'
 
-/** T4 仅保留缓存页内输入；T7 接统一 SQLite 草稿，当前不伪装持久化成功。 */
+const service = new DraftService(appDatabase)
+/** 每个表单独占编辑状态，250ms 合并输入；离开缓存页/切后台时立即提交最新快照。 */
 export function useLedgerDraft(type: Ref<EntryType>, enabled?: Ref<boolean>) {
+  const bootstrap = useBootstrapStore()
+  const dataset = bootstrap.datasetId
   const data = ref<Record<string, string>>({})
   const restored = ref(false)
   const storageError = ref<string>()
-  const dirty = computed(() => (enabled?.value ?? true) && Object.keys(data.value).length > 0)
-  const clear = async () => {
-    data.value = {}
-    notifyUnsavedChangesChanged()
+  const editRevision = ref(0)
+  const active = computed(() => (enabled?.value ?? true) && bootstrap.datasetId === dataset)
+  const dirty = computed(() => active.value && Object.keys(data.value).length > 0)
+  let revision = 0
+  let pending = false
+  let timer: ReturnType<typeof setTimeout> | undefined
+  let operation = Promise.resolve()
+  let disposed = false
+  let submitting = false
+  let writing = false
+  let epoch = 0
+  let restoreFailed = false
+
+  function cancelTimer() {
+    clearTimeout(timer)
+    timer = undefined
   }
-  const stop = registerUnsavedChanges(dirty, clear)
-  onScopeDispose(stop)
-  const replace = async (value: Record<string, string>) => {
-    if (enabled?.value ?? true) {
-      data.value = { ...value }
+  function failure(error: unknown, request: number) {
+    if (!disposed && revision === request && active.value) {
+      storageError.value = error instanceof Error ? error.message : '草稿未保存，请保留输入后重试。'
+    }
+  }
+  function flush(force = false): Promise<void> {
+    cancelTimer()
+    if (!pending || !active.value || !dataset || submitting && !force || writing) {
+      return operation
+    }
+    writing = true
+    const currentEpoch = epoch
+    // 最多一笔在途写入 + 一份最新编辑态；慢磁盘时合并中间版本，不积压每次输入快照。
+    operation = operation.then(async () => {
+      try {
+        while (pending && active.value && currentEpoch === epoch && (!submitting || force)) {
+          const snapshot = { ...data.value }
+          const currentType = type.value
+          const request = revision
+          pending = false
+          try {
+            await localOperation(() => service.save(dataset, currentType, snapshot))
+            if (!disposed && request === revision) {
+              storageError.value = undefined
+            }
+          } catch (error) {
+            if (request === revision) {
+              pending = true
+            }
+            failure(error, request)
+            break
+          }
+        }
+      } finally {
+        writing = false
+      }
+    })
+    return operation
+  }
+  async function restore() {
+    const request = ++revision
+    restored.value = false
+    await nextTick()
+    try {
+      const stored = active.value && dataset ? await localOperation(() => service.read(dataset, type.value)) : {}
+      if (!disposed && request === revision && active.value) {
+        data.value = stored
+        restoreFailed = false
+        storageError.value = undefined
+      }
+    } catch (error) {
+      if (request === revision && active.value) {
+        restoreFailed = true
+      }
+      failure(error, request)
+    }
+    if (!disposed && active.value) {
+      restored.value = true
+      notifyUnsavedChangesChanged()
+    }
+  }
+  function replace(value: Record<string, string>): Promise<void> {
+    if (!active.value) {
+      return Promise.resolve()
+    }
+    const request = ++revision
+    editRevision.value += 1
+    try {
+      data.value = sanitizeDraft(type.value, value)
+      restoreFailed = false
+      pending = true
+      cancelTimer()
+      timer = setTimeout(() => { void flush() }, DRAFT_DEBOUNCE_MS)
+    } catch (error) {
+      failure(error, request)
     }
     notifyUnsavedChangesChanged()
+    return Promise.resolve()
   }
-  const restore = async () => {
-    restored.value = true
+  async function clear() {
+    ++epoch
+    ++revision
+    editRevision.value += 1
+    cancelTimer()
+    pending = false
+    restoreFailed = false
+    data.value = {}
+    const request = revision
+    const currentType = type.value
+    operation = operation.then(async () => {
+      if (!dataset || !active.value) {
+        return
+      }
+      try {
+        await localOperation(() => service.save(dataset, currentType, {}))
+        if (request === revision) {
+          storageError.value = undefined
+        }
+      } catch (error) {
+        failure(error, request)
+      }
+    })
+    await operation
+    notifyUnsavedChangesChanged()
   }
-  // 与原表单的恢复观察器保持时序；不在调用方注册观察器前发布完成信号。
-  void nextTick(restore)
-  return {
-    data,
-    restored,
-    storageError,
-    dirty,
-    replace,
-    clear,
-    restore,
-    retryBackup: async () => {},
-  }
+  const stopUnsaved = registerUnsavedChanges(dirty, clear)
+  const stopFlush = registerDraftFlush(() => flush())
+  const stopDataset = watch(() => bootstrap.datasetId, value => {
+    if (value !== dataset) {
+      ++revision
+      pending = false
+      cancelTimer()
+      data.value = {}
+      restored.value = false
+      storageError.value = undefined
+    }
+  }, { flush: 'sync' })
+  onDeactivated(() => { void flush() })
+  onScopeDispose(() => {
+    void flush()
+    disposed = true
+    ++revision
+    cancelTimer()
+    stopUnsaved()
+    stopFlush()
+    stopDataset()
+  })
+  void restore()
+  return { data, dirty, restored, storageError, editRevision, restore, replace, clear,
+    // 提交前排空已有写入并冻结后台 flush，防止提交清草稿后旧防抖又把它写回来。
+    beginSubmit: async () => {
+      submitting = true
+      cancelTimer()
+      await operation
+      await flush(true)
+    },
+    endSubmit: () => {
+      submitting = false
+      if (pending && active.value) {
+        cancelTimer()
+        timer = setTimeout(() => { void flush() }, DRAFT_DEBOUNCE_MS)
+      }
+    },
+    retryBackup: () => {
+      // 读取失败时重读原草稿，不能拿空的回退表单覆盖未知版本或暂时不可读的内容。
+      if (restoreFailed) {
+        return restore()
+      }
+      pending = true
+      return flush()
+    } }
 }

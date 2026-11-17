@@ -1,25 +1,28 @@
 import type { components } from './generated/schema'
-import { apiRequest } from './http'
+import { TemplateService } from '../data/personal/templateService'
+import { appDatabase } from '../data/appDatabase'
+import { useBootstrapStore } from '../stores/bootstrap'
+import { localOperation } from '../data/localOperation'
 
 export type DailyTemplateSummary = components['schemas']['DailyTemplateSummary']
 export type DailyTemplateSelection = components['schemas']['DailyTemplateSelection']
 export type DailyTemplateList = components['schemas']['DailyTemplateList']
 export type DailyTemplateEntryType = components['schemas']['EntryType']
+const service = new TemplateService(appDatabase)
 
 export function listDailyTemplates(type: DailyTemplateEntryType, signal?: AbortSignal): Promise<DailyTemplateList> {
-  const params = new URLSearchParams({ type })
-  return apiRequest(`/daily-templates?${params}`, { signal })
+  const dataset = useBootstrapStore().datasetId
+  return localOperation(() => service.list(dataset, type, signal))
 }
-
-export function selectDailyTemplate(templateId: string): Promise<DailyTemplateSelection> {
-  return apiRequest(`/daily-templates/${encodeURIComponent(templateId)}/select`, { method: 'POST' })
+export function selectDailyTemplate(id: string): Promise<DailyTemplateSelection> {
+  const dataset = useBootstrapStore().datasetId
+  return localOperation(() => service.select(dataset, id))
 }
-
-export function removeDailyTemplate(templateId: string): Promise<void> {
-  return apiRequest(`/daily-templates/${encodeURIComponent(templateId)}`, { method: 'DELETE' })
+export function removeDailyTemplate(id: string): Promise<void> {
+  const dataset = useBootstrapStore().datasetId
+  return localOperation(() => service.remove(dataset, id))
 }
-
-/** T14 的明细上下文操作复用此契约；T13 只提供选择器，不提前暴露明细入口。 */
-export function upsertDailyTemplateFromLedger(ledgerId: string): Promise<DailyTemplateSummary> {
-  return apiRequest(`/ledger-entries/${encodeURIComponent(ledgerId)}/daily-template`, { method: 'PUT' })
+export function upsertDailyTemplateFromLedger(id: string): Promise<DailyTemplateSummary> {
+  const dataset = useBootstrapStore().datasetId
+  return localOperation(() => service.upsert(dataset, id))
 }

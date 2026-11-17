@@ -35,13 +35,7 @@ function selectType(type: EntryType): void {
 }
 
 async function applyTemplate(selection: DailyTemplateSelection): Promise<void> {
-  if (preferences.isSaving) {
-    await new Promise<void>((resolve) => {
-      const stop = watch(() => preferences.isSaving, (saving) => {
-        if (!saving) { stop(); resolve() }
-      }, { immediate: true })
-    })
-  }
+  // 偏好按字段排队；不等待旧偏好写入再迟到覆盖用户已经开始编辑的表单。
   selectType(selection.entryType)
   await nextTick()
   const state = templateStates[selection.entryType]

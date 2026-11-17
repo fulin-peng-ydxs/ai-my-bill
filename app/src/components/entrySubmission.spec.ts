@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import ExpenseEntryForm from './ExpenseEntryForm.vue'
 import IncomeEntryForm from './IncomeEntryForm.vue'
 import { LocalError } from '../domain/localError'
+import { createPinia } from 'pinia'
 import type { ExpenseResponse } from '../api/expenses'
 import type { IncomeResponse } from '../api/incomes'
 
@@ -44,6 +45,7 @@ async function mount(kind: 'expense' | 'income') {
   const component = kind === 'expense' ? ExpenseEntryForm : IncomeEntryForm
   const saved = vi.fn()
   const app = createApp({ render: () => h(component as typeof ExpenseEntryForm, { editEntry: (kind === 'expense' ? expense : income) as ExpenseResponse, onSaved: saved }) })
+  app.use(createPinia())
   dispose = () => {
     app.unmount()
     host.remove()

@@ -1,0 +1,87 @@
+// @vitest-environment jsdom
+import { createPinia, setActivePinia } from 'pinia'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { DEFAULT_PREFERENCES } from '../domain/preferences'
+const api = vi.hoisted(() => ({ read: vi.fn(), save: vi.fn(), reset: vi.fn() }))
+vi.mock('../api/preferences', () => ({ getPreferences: api.read, savePreferences: api.save, resetPreferences: api.reset }))
+import { usePreferencesStore } from './preferences'
+import { useThemeStore } from './theme'
+const response = (patch = {}) => ({ ...DEFAULT_PREFERENCES, updatedAt: '2026-11-17T01:00:00.000Z', ...patch })
+beforeEach(() => {
+  vi.clearAllMocks()
+  setActivePinia(createPinia())
+  vi.stubGlobal('matchMedia', () => ({ matches: false, addEventListener() {} }))
+  api.read.mockResolvedValue(response())
+})
+describe('本地偏好唯一状态源', () => {
+  it('初始读取失败后保存其他字段，成功响应恢复尚未编辑的合法旧设置', async () => {
+    api.read.mockRejectedValueOnce(new Error('暂时不可读'))
+    const store = usePreferencesStore()
+    await store.initialize('a')
+    api.save.mockResolvedValueOnce(response({ recentEntryType: 'INCOME', themeMode: 'DARK', ledgerDefaultRange: 'THIS_WEEK' }))
+    await store.update({ recentEntryType: 'INCOME' })
+    expect(store.values.themeMode).toBe('DARK')
+    expect(store.values.ledgerDefaultRange).toBe('THIS_WEEK')
+    expect(store.status).toBe('ready')
+  })
+  it('恢复 SQLite 后消费主题；加载失败使用安全回退并允许重试', async () => {
+    api.read.mockResolvedValueOnce(response({ themeMode: 'DARK', recentEntryType: 'INCOME' }))
+    const store = usePreferencesStore()
+    await store.initialize('a')
+    expect(useThemeStore().mode).toBe('dark')
+    expect(store.values.recentEntryType).toBe('INCOME')
+    api.read.mockRejectedValueOnce(new Error('受控读取失败'))
+    await store.initialize('b')
+    expect(store.status).toBe('error')
+    expect(store.values.themeMode).toBe('SYSTEM')
+    await store.retry()
+    expect(store.status).toBe('ready')
+    expect(store.requestError).toBeUndefined()
+  })
+  it('同字段快速修改按序落盘，旧响应不能覆盖新输入', async () => {
+    const store = usePreferencesStore()
+    await store.initialize('a')
+    let finish!: (value: unknown) => void
+    api.save.mockImplementationOnce(() => new Promise(done => { finish = done })).mockResolvedValueOnce(response({ themeMode: 'LIGHT' }))
+    const first = store.update({ themeMode: 'DARK' })
+    const second = store.update({ themeMode: 'LIGHT' })
+    await Promise.resolve()
+    await Promise.resolve()
+    finish(response({ themeMode: 'DARK' }))
+    await Promise.all([first, second])
+    expect(store.values.themeMode).toBe('LIGHT')
+    expect(store.fieldStates.themeMode).toBe('idle')
+    expect(api.save.mock.calls.map(call => call[1])).toEqual([{ themeMode: 'DARK' }, { themeMode: 'LIGHT' }])
+  })
+  it('一个字段失败不被另一字段成功覆盖，重试后恢复；重置失败不改原偏好', async () => {
+    const store = usePreferencesStore()
+    await store.initialize('a')
+    api.save.mockRejectedValueOnce(new Error('主题未保存')).mockResolvedValueOnce(response({ recentEntryType: 'INCOME' }))
+    await expect(store.update({ themeMode: 'DARK' })).rejects.toThrow()
+    await store.update({ recentEntryType: 'INCOME' })
+    expect(store.values.themeMode).toBe('DARK')
+    expect(store.fieldStates.themeMode).toBe('error')
+    api.save.mockResolvedValueOnce(response({ themeMode: 'DARK', recentEntryType: 'INCOME' }))
+    await store.retry('themeMode')
+    expect(store.requestError).toBeUndefined()
+    api.reset.mockRejectedValueOnce(new Error('重置失败')).mockResolvedValueOnce(response())
+    await expect(store.reset()).rejects.toThrow()
+    expect(store.values.themeMode).toBe('DARK')
+    await store.reset()
+    expect(store.values).toEqual(DEFAULT_PREFERENCES)
+  })
+  it('旧数据集的迟到返回不能覆盖新库偏好', async () => {
+    const store = usePreferencesStore()
+    await store.initialize('a')
+    let finish!: (value: unknown) => void
+    api.save.mockImplementationOnce(() => new Promise(done => { finish = done }))
+    const old = store.update({ themeMode: 'DARK' })
+    await Promise.resolve()
+    await Promise.resolve()
+    await store.initialize('b')
+    finish(response({ themeMode: 'DARK' }))
+    await old
+    expect(store.datasetId).toBe('b')
+    expect(store.values.themeMode).toBe('SYSTEM')
+  })
+})

@@ -2,6 +2,7 @@ import Foundation
 import Capacitor
 import CryptoKit
 import OSLog
+import UIKit
 
 /// 私有账本文件操作；调用方必须先关闭连接，所有路径由经过校验的库标识派生。
 @objc(LedgerFilesPlugin)
@@ -10,9 +11,46 @@ public class LedgerFilesPlugin: CAPPlugin, CAPBridgedPlugin {
     public let jsName = "LedgerFiles"
     public let pluginMethods: [CAPPluginMethod] = [
         CAPPluginMethod(name: "protect", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "snapshot", returnType: CAPPluginReturnPromise)
+        CAPPluginMethod(name: "snapshot", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "finishBackground", returnType: CAPPluginReturnPromise)
     ]
     private let worker = DispatchQueue(label: "com.mybill.offline.files", qos: .utility)
+    private var backgroundTask: UIBackgroundTaskIdentifier = .invalid
+    private var backgroundObservers: [NSObjectProtocol] = []
+
+    public override func load() {
+        // 在挂起前通知 JS 合并写入；系统到期回调始终释放，不延长后台驻留。
+        for event in [UIApplication.willResignActiveNotification, UIScene.willDeactivateNotification] {
+            let observer = NotificationCenter.default.addObserver(forName: event, object: nil, queue: .main) { [weak self] _ in
+                guard let self, self.backgroundTask == .invalid else { return }
+                self.backgroundTask = UIApplication.shared.beginBackgroundTask(withName: "SaveLedgerDrafts") { [weak self] in self?.endBackgroundWrite() }
+                self.notifyListeners("background", data: [:])
+            }
+            backgroundObservers.append(observer)
+        }
+    }
+
+    private func endBackgroundWrite() {
+        if backgroundTask != .invalid {
+            UIApplication.shared.endBackgroundTask(backgroundTask)
+            backgroundTask = .invalid
+        }
+    }
+
+    @objc func finishBackground(_ call: CAPPluginCall) {
+        DispatchQueue.main.async {
+            self.endBackgroundWrite()
+            call.resolve()
+        }
+    }
+
+    deinit {
+        for observer in backgroundObservers { NotificationCenter.default.removeObserver(observer) }
+        let task = backgroundTask
+        if task != .invalid {
+            DispatchQueue.main.async { UIApplication.shared.endBackgroundTask(task) }
+        }
+    }
 
     private func root() throws -> URL {
         guard let library = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask).first else {

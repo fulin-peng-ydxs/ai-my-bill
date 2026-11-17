@@ -88,6 +88,10 @@ export class EntryService {
       }
       const values = await valuesFor(sql, input)
       await storeEntry(sql, id, type, values, now.toISOString(), version)
+      if (version === undefined) {
+        // 正式保存与消费对应草稿同事务，提交后未收到确认/进程退出也不会恢复已入账草稿。
+        await sql.run('DELETE FROM ledger_draft WHERE dataset_id=(SELECT dataset_id FROM ledger_meta) AND entry_type=?', [type])
+      }
       const reference = type === 'EXPENSE' ? 'product_id' : 'payer_id'
       await refreshRecent(sql, type, String(values[reference]), now.toISOString(), id)
       if (previous && previous[reference] !== values[reference]) {

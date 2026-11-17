@@ -166,7 +166,7 @@ final class NativeSqliteTests: XCTestCase {
         _ = try await webView.evaluateJavaScript(String(contentsOf: script, encoding: .utf8) + ";void 0;")
         let result = try await webView.callAsyncJavaScript("return await MyBillNativeProbe.dictionaries()", arguments: [:], in: nil, contentWorld: .page)
         let evidence = try XCTUnwrap(result as? [String: Any])
-        XCTAssertEqual(evidence["schemaVersion"] as? Int, 4)
+        XCTAssertEqual(evidence["schemaVersion"] as? Int, 5)
         XCTAssertEqual((evidence["checks"] as? [String])?.count, 10)
         let prefix = try XCTUnwrap(evidence["databasePrefix"] as? String)
         try verifySnapshots(prefix: prefix, minimum: 5, cleanup: true)
@@ -179,10 +179,22 @@ final class NativeSqliteTests: XCTestCase {
         _ = try await webView.evaluateJavaScript(String(contentsOf: script, encoding: .utf8) + ";void 0;")
         let result = try await webView.callAsyncJavaScript("return await MyBillNativeProbe.entries()", arguments: [:], in: nil, contentWorld: .page)
         let evidence = try XCTUnwrap(result as? [String: Any])
-        XCTAssertEqual(evidence["schemaVersion"] as? Int, 4)
+        XCTAssertEqual(evidence["schemaVersion"] as? Int, 5)
         XCTAssertEqual((evidence["checks"] as? [String])?.count, 7)
         try verifySnapshots(prefix: XCTUnwrap(evidence["databasePrefix"] as? String), minimum: 3, cleanup: true)
         print("OFFLINE_ENTRY_EVIDENCE " + String(decoding: try JSONSerialization.data(withJSONObject: evidence, options: [.sortedKeys]), as: UTF8.self))
+    }
+
+    func testOfflinePersonalState() async throws {
+        let webView = try await readyWebView()
+        let script = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "sqlite-probe", withExtension: "js"))
+        _ = try await webView.evaluateJavaScript(String(contentsOf: script, encoding: .utf8) + ";void 0;")
+        let result = try await webView.callAsyncJavaScript("return await MyBillNativeProbe.personal()", arguments: [:], in: nil, contentWorld: .page)
+        let evidence = try XCTUnwrap(result as? [String: Any])
+        XCTAssertEqual(evidence["schemaVersion"] as? Int, 5)
+        XCTAssertEqual((evidence["checks"] as? [String])?.count, 5)
+        try verifySnapshots(prefix: XCTUnwrap(evidence["databasePrefix"] as? String), minimum: 1, cleanup: true)
+        print("OFFLINE_PERSONAL_EVIDENCE " + String(decoding: try JSONSerialization.data(withJSONObject: evidence, options: [.sortedKeys]), as: UTF8.self))
     }
 
     // 只由局部入口明确选中；完整入口仍执行 testOfflineDictionaryGovernance 的全部场景。

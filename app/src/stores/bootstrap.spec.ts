@@ -6,6 +6,7 @@ vi.mock('../data/ledgerDatabase', () => ({ LedgerDatabase: class {
   open = database.open
   read = database.read
 } }))
+vi.mock('./preferences', () => ({ usePreferencesStore: () => ({ initialize: vi.fn(async () => {}) }) }))
 
 describe('账本初始化状态入口', () => {
   beforeEach(() => {

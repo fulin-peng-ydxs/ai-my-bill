@@ -205,7 +205,7 @@ function touchFixture(root) {
   const file = path.join(directory, 'ledgerSQLite.db')
   const database = new DatabaseSync(file)
   try {
-    for (const name of ['0001_initial.sql', '0002_dictionary_governance.sql', '0003_ledger_writes.sql', '0004_snapshot_search.sql']) {
+    for (const name of ['0001_initial.sql', '0002_dictionary_governance.sql', '0003_ledger_writes.sql', '0004_snapshot_search.sql', '0005_personal_state.sql']) {
       database.exec(
         fs.readFileSync(new URL('../../app/src/data/migrations/' + name, import.meta.url), 'utf8')
       )
@@ -303,6 +303,42 @@ test('收支组合夹具必须同时保留两笔结果，单场景拒绝误提�
     assert.notEqual(execute('debug-check-16').status, 0, '单收入场景不能额外提交支出草稿')
     database.prepare('UPDATE ledger_entry SET amount_cents=1 WHERE id=?').run(expense)
     assert.notEqual(execute('debug-check-entry-cycle').status, 0, '后续场景不能破坏前一笔支出')
+  } finally {
+    database.close()
+  }
+})
+test('T7 局部选择保留必要前置，模板与重启场景不混入另一组', () => {
+  const templates = selection('--scenario', 'template-cycle', [])
+  assert.equal(templates.fixture, 'personal-17,18,19,20,21')
+  assert.equal(templates.cases.length, 6)
+  assert.ok(templates.cases.every(id => !id.includes('test22') && !id.includes('test24')))
+  const drafts = selection('--scenario', 'draft-relaunch', [])
+  assert.equal(drafts.fixture, 'personal-22,23,24,25')
+  assert.equal(drafts.cases.length, 5)
+  const fallback = selection('--case', 'DictionaryUITests/DictionaryTouchTests/test20TemplateFallbackRemove', [])
+  assert.equal(fallback.fixture, 'personal-17,19,20')
+  assert.equal(selection('--case', 'NativeTests/NativeSqliteTests/testOfflinePersonalState', []).cases.length, 1)
+})
+test('T7 夹具不替代被验收操作，回读拒绝未保存、串写和来源变动', (t) => {
+  const { file, execute } = touchFixture(temporary(t))
+  assert.equal(execute('debug-personal-22,23,24').status, 0)
+  assert.notEqual(execute('debug-check-personal-22,23,24').status, 0)
+  const database = new DatabaseSync(file)
+  try {
+    // 仅验证检查器的正反例，不作为 App 业务或页面证明。
+    database.prepare(`INSERT INTO ledger_meta VALUES(1,5,'fixture-dataset',1,1,'2026-11-17','2026-11-17')`).run()
+    for (const [type, value] of [['EXPENSE', { paidAmount: '77' }], ['INCOME', { amount: '222' }]]) {
+      database.prepare('INSERT INTO ledger_draft VALUES(?,?,1,?,?,?)').run('fixture-dataset', type, JSON.stringify(value), '2026-11-17', '2026-11-17')
+    }
+    database.prepare("UPDATE preference SET value='\"DARK\"' WHERE key='theme'").run()
+    database.prepare("UPDATE preference SET value='\"THIS_WEEK\"' WHERE key='ledgerRange'").run()
+    database.prepare("UPDATE preference SET value='\"INCOME\"' WHERE key='recentEntryType'").run()
+    assert.equal(execute('debug-check-personal-22,23,24').status, 0)
+    database.prepare("UPDATE ledger_draft SET data_json='{}' WHERE entry_type='INCOME'").run()
+    assert.notEqual(execute('debug-check-personal-22,23,24').status, 0)
+    database.prepare("UPDATE ledger_draft SET data_json=? WHERE entry_type='INCOME'").run(JSON.stringify({ amount: '222' }))
+    database.prepare("UPDATE ledger_entry SET amount_cents=1 WHERE id='t7-expense'").run()
+    assert.notEqual(execute('debug-check-personal-22,23,24').status, 0)
   } finally {
     database.close()
   }

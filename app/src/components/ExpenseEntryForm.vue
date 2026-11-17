@@ -23,6 +23,7 @@ import {
   type ExpenseField, type ExpenseFormState,
 } from '../domain/ledgerEntryForm'
 import { useLedgerDraft } from '../composables/useLedgerDraft'
+import { useTemplateDelivery } from '../composables/useTemplateDelivery'
 import DraftBackupNotice from './DraftBackupNotice.vue'
 import { registerUnsavedChanges, unsavedChangeScope } from '../composables/unsavedChanges'
 import AppStatusNotice from './AppStatusNotice.vue'
@@ -67,6 +68,7 @@ const productSelection = createExpenseProductSelection(form)
 const editMode = computed(() => Boolean(props.editEntry))
 const expenseType = ref<'EXPENSE'>('EXPENSE')
 const draft = useLedgerDraft(expenseType, computed(() => !editMode.value))
+const canDeliverTemplate = useTemplateDelivery(() => props.templateRevision, draft.editRevision)
 const optionItems = reactive<Record<OptionGroup, ExpenseOption[]>>({
   categories: [], units: [], funding: [], purchase: [], locations: [],
 })
@@ -165,6 +167,11 @@ watch(() => draft.restored.value, (restored) => {
 watch([() => draft.restored.value, () => props.templateRevision], ([restored, revision]) => {
   const selection = props.templateSelection
   if (editMode.value || !restored || !revision || revision === appliedTemplateRevision.value || selection?.entryType !== 'EXPENSE') return
+  if (!canDeliverTemplate()) {
+    appliedTemplateRevision.value = revision
+    emit('templateConsumed')
+    return
+  }
   ensureOption('categories', selection.primaryCategoryId, selection.primaryCategoryName)
   ensureOption('categories', selection.secondaryCategoryId, selection.secondaryCategoryName,
     selection.primaryCategoryId ?? undefined)
@@ -318,6 +325,7 @@ async function submit(continueEntry: boolean): Promise<void> {
   if (submitting.value || !validate()) return
   submitting.value = true
   try {
+    await draft.beginSubmit()
     const body = expenseRequestFromForm(form)
     const idempotencyKey = idempotencyAttempt.keyFor(props.editEntry ? { id: props.editEntry.id, version: editVersion.value, entry: body } : body)
     if (props.editEntry) {
@@ -351,6 +359,7 @@ async function submit(continueEntry: boolean): Promise<void> {
     toastMessage.value = failure.message
     toastOpen.value = true
   } finally {
+    draft.endSubmit()
     submitting.value = false
   }
 }

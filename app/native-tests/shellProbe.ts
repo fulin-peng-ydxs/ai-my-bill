@@ -39,6 +39,8 @@ export async function shell() {
   for (const [label, value] of [['夜晚','dark'], ['白天','light'], ['跟随系统',matchMedia('(prefers-color-scheme: dark)').matches ? 'dark':'light']]) {
     const button = [...document.querySelectorAll<HTMLButtonElement>('#profile-setting button')].find(item => item.textContent?.trim() === label)
     requireValue(button, `主题控件 ${label} 缺失`)
+    // 真实偏好保存有忙碌态；等待上一笔完成，不能在禁用控件上派发无效点击。
+    await waitFor(() => !button.disabled, '上次主题偏好保存尚未完成')
     button.click()
     await waitFor(() => document.documentElement.dataset.theme === value, '主题未更新')
   }

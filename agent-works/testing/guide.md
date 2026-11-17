@@ -30,7 +30,7 @@ App 设计门禁由 [designContract.spec.ts](../../app/src/app/designContract.sp
 
 [关闭重试回归](../../app/src/data/ledgerDatabase.spec.ts) 经 check:app 执行，在原生桥边界注入失败，覆盖关闭后禁止读写、保留所有权、重复关闭、直接重开及打开/校验与关闭同时失败的原因链；它不模拟真实 SQL 持久化。check:ios-app:simulator 的 lifecycleProbe 在真实原生库上补充注入关闭拒绝，恢复后调用真实关闭/重开，核对数据集、已提交金额和同名账本交接；故障包装仅存在于 test bundle，finally 恢复，不进入生产入口。
 
-原生 [shellProbe](../../app/native-tests/shellProbe.ts) 在实际 WKWebView 中检查四导航、原图标、切页草稿、主题及抽屉焦点返回。业务尚未接通时，嵌套放弃/取消使用 test bundle 内共享组件夹具，验证父子层与未保存作用域，不冒充账目编辑链路。探针不进入生产资源。日常页面还须在独立小/默认/大 iPhone 模拟器，从 App 图标直接操作导航、表单、完整软键盘、原生选择器、明暗主题、横屏与减少动态效果；记录原页面操作和各自边界，不将脚本派发事件当成触摸验证。未接通功能应显示明确不可用而非假成功。
+原生 [shellProbe](../../app/native-tests/shellProbe.ts) 在实际 WKWebView 中检查四导航、原图标、切页草稿、主题及抽屉焦点返回。业务尚未接通时，嵌套放弃/取消使用 test bundle 内共享组件夹具，验证父子层与未保存作用域，不冒充账目编辑链路。探针不进入生产资源。主题选择接 SQLite 后，探针在每次点击前等待上一笔保存结束、控件恢复可用，不能把对禁用控件的 DOM 点击当作已执行。日常页面还须在独立小/默认/大 iPhone 模拟器，从 App 图标直接操作导航、表单、完整软键盘、原生选择器、明暗主题、横屏与减少动态效果；记录原页面操作和各自边界，不将脚本派发事件当成触摸验证。未接通功能应显示明确不可用而非假成功。
 
 [字典场景](../../app/test-support/dictionaryScenarios.ts)与[升级场景](../../app/test-support/dictionaryUpgradeScenario.ts)由 Node SQLite 测试及原生 dictionaryProbe 共用，覆盖八类字典、规范化唯一键、两级分类、有界分页、排序故障回滚、类型/引用保护、历史快照、模板冲突（含相同时间下 UUID 有符号高/低位的取舍）、合并幂等及 v1→v2 升级。Node 测试只在原生桥边界换成临时文件 SQLite，不证明 iOS 文件策略，也不进入生产包；原生测试经正式生命周期核验相同 SQL/事务及快照。seed A/B 样本核对用户改名/停用/排序、删除项及 false/0/空值不被新版清单覆盖，并验证必需数据迁移冲突的拒绝、回滚与重试。
 
@@ -122,6 +122,10 @@ common / ios-build 的工程检查保存于 ios-command-*（scope=engineering）
 T6 收支写入先运行 `debug check --check app-tests --file src/data/entries/entryService.spec.ts`；表单错误/冲突接入运行 `debug check --check app-tests --file src/components/entrySubmission.spec.ts`，失败可用 `--name` 仅选择对应用例。`testOfflineEntryWrites` 共用 [entryScenarios](../../app/test-support/entryScenarios.ts)，在原生 SQLite 验证精确量价、引用、幂等、旧编辑回放冲突、时钟回拨后重试、最终回执故障回滚、撤销和旧版升级。v3→v4 覆盖 205 条跨批次快照检索键回填、数据步骤故障时 DDL/数据/履历回滚、用户配置保护及数据步骤/算法摘要篡改拒绝。丢失确认场景丢弃原提交返回值、关闭并重开连接后使用原操作 ID 重试；实际 App 进程重启后回读另由 Release 触摸用例 test15 验证，不把连接重开写成进程杀停证据。
 
 原页面触摸组合使用 `debug run --session "$IOS_DEBUG_SESSION" --scenario entry-cycle`：只带键盘就绪、test15 支出保存/重启/编辑回显和 test16 收入连续录入/另一类型草稿/备注编辑，三项在同一安装及自动化会话连续执行，test15 内部按用例重启 App，test15 结束与 test16 开始之间不额外重置；test15 结束须关闭编辑抽屉，不能让模态层挡住下一条导航。单独定位仍可用 `--case DictionaryUITests/DictionaryTouchTests/test15ExpenseWriteReopen` 或 `test16IncomeContinueEdit`。每次运行结束终止 App，只读 SQLite 回验金额、量价、名称快照和版本；entry-cycle 必须同时保留两笔结果，单收入场景还须确认没有误提交支出草稿。夹具只准备字典及过往名称，不替代待验收的页面提交。完整原生入口包含写入探针，完整触摸入口在字典/末页场景后追加独立收支夹具并连续运行相同两项用例，CI 复用该入口；单用例绿色不能代表组合通过。日常局部通过后不自动全跑，模拟器保存/重开耗时只作开发观测，D07 真机 Release 容量门禁仍在 V14。
+
+T7 先以 `debug check --check app-tests --file src/data/personal/personalState.spec.ts` 验证 SQL/事务/兼容，草稿调度和偏好竞态分别选择 `src/composables/useLedgerDraft.spec.ts`、`src/stores/preferences.spec.ts`，表单提交冻结复用 entrySubmission 回归。`testOfflinePersonalState` 共用 [personalScenarios](../../app/test-support/personalScenarios.ts)，在真实 SQLite 桥验证双草稿重开/过期/非法旧值与失败重试、偏好消费/重置、模板白名单/同名更新/改名合并/失效回退/来源删除、排队旧数据集拒绝，以及 v4→v5 故障回滚与仅补缺省；不能用这些内部场景代替实际页面操作。
+
+T7 页面局部入口为 `--scenario template-cycle`（键盘前置及 test17–21）和 `--scenario draft-relaunch`（键盘前置及 test22–25），组合 `personal-cycle` 连续执行全部。单个依赖用例显式补前置：test18 带 test17，test20 带 test17/19，test24 带 test22/23，test25 带 test22/23/24；其余只跑目标及必要键盘前置。均使用本轮空沙盒的独立 t7 合成字典与有效来源，不预写被验收的模板、偏好或草稿；页面执行同名加入、选择/失效提示/移除、双类型输入、真实 Home/终止重启、主题和偏好重置。结束后只读回验对应范围的草稿/偏好/模板、来源账目金额/备注/版本及无额外入账。完整 touch 在 T6 后准备同一 t7 来源并执行 test17–25，CI 调用相同入口；首次字典阶段显式排除这些依赖不同夹具的用例。新增脚本反例确保未执行、草稿串写或来源被改写均不能通过。此阶段不触发 T8、不替代最终真机性能与交付。 设置摘要按完整按钮可访问名称核对，标签和值可能合并；明细优先按按钮/标题定位，OCR 仅作后备。模板成功以子操作层关闭及 SQLite 版本/内容回读核验，不依赖短暂提示；移除核对目标消失并保留其他模板，不把“移除一项”等同于整个列表为空。
 
 App 的最小 [Actions 工作流](../../.github/workflows/offline-ios.yml) 已定义自动触发和调用同一脚本，但尚无远端运行证据。真实 iPhone 的签名安装、飞行模式冷启动及 Release 性能另验；当前骨架已在指定真机完成签名安装与图标离线冷启动，正式业务及 Release 容量性能尚未验收。模拟器、小样本耗时或 common 绿色不能替代这些条件，当前也未实现完整性能交付门禁。
 

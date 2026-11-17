@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import { resolveTheme, type ThemeMode, type ResolvedTheme } from '../theme/theme'
 
-/** T4 仅维护运行期主题；T7 接统一 SQLite 偏好，不使用第二套浏览器持久化。 */
+/** 主题渲染消费统一 SQLite 偏好；自身不建立第二套持久化。 */
 export const useThemeStore = defineStore('theme', {
   state: () => ({
     mode: 'system' as ThemeMode,

@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 
 import { useThemeStore } from '../stores/theme'
+import { usePreferencesStore } from '../stores/preferences'
 import { themeModes, themeModeLabel, type ThemeMode } from '../theme/theme'
 import SegmentedControl from './SegmentedControl.vue'
 
@@ -13,8 +14,7 @@ const options = computed(() => themeModes.map((mode) => ({
 })))
 
 function select(mode: ThemeMode): void {
-  theme.setMode(mode)
-
+  void usePreferencesStore().update({ themeMode: mode.toUpperCase() as 'SYSTEM' | 'LIGHT' | 'DARK' }).catch(() => undefined)
 }
 </script>
 

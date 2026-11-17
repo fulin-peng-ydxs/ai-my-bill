@@ -1,25 +1,14 @@
-import { LedgerDatabase } from '../src/data/ledgerDatabase'
-import { migrations, type Migration } from '../src/data/migrations'
-import { nativeSqlite } from '../src/infrastructure/database/nativeConnection'
+import { migrations } from '../src/data/migrations'
+import { withProbeDatabases } from './probeDatabases'
 import { entryWriteScenario, entryValidationScenario, entryFailureUndoScenario, legacyEntryFixture,
   entryReplayScenario, entrySearchScenario, entrySearchUpgradeScenario } from '../test-support/entryScenarios'
 
 /** 与 Node 共用业务场景，在真实 WKWebView → Capacitor → SQLite 桥执行。 */
 export async function entries() {
   const started = performance.now()
-  const prefix = `probe_t6_${crypto.randomUUID().replaceAll('-', '')}`
-  const names: string[] = []
-  const managers: LedgerDatabase[] = []
-  const checks: string[] = []
-  const observations: { saveMs: number; reopenReadMs: number }[] = []
-  function manager(suffix: string, chain: readonly Migration[] = migrations) {
-    const name = `${prefix}_${suffix}`
-    names.push(name)
-    const database = new LedgerDatabase(name, chain)
-    managers.push(database)
-    return database
-  }
-  try {
+  return withProbeDatabases('t6', async (manager, prefix) => {
+    const checks: string[] = []
+    const observations: { saveMs: number; reopenReadMs: number }[] = []
     for (const [index, scenario] of [entryWriteScenario, entryValidationScenario, entryFailureUndoScenario, entryReplayScenario, entrySearchScenario].entries()) {
       const database = manager(`case${index}`)
       await database.open()
@@ -42,17 +31,5 @@ export async function entries() {
     checks.push('v2-current-native-upgrade-preserves-dataset-and-preferences')
     checks.push(await entrySearchUpgradeScenario(manager))
     return { checks, observations, databasePrefix: prefix, schemaVersion: migrations.length, durationMs: Math.round(performance.now() - started) }
-  } finally {
-    for (const database of managers) {
-      await database.close()
-    }
-    for (const name of new Set(names)) {
-      const cleanup = await nativeSqlite.createConnection(name, false, 'no-encryption', 1, false)
-      try {
-        await cleanup.delete()
-      } finally {
-        await nativeSqlite.closeConnection(name, false)
-      }
-    }
-  }
+  })
 }

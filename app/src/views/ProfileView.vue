@@ -21,7 +21,6 @@ import { useThemeStore } from '../stores/theme'
 import { useLatestRequest } from '../composables/useLatestRequest'
 import { useDictionaryPanel } from '../composables/useDictionaryPanel'
 import { listDictionaryCandidates } from '../api/dictionaries'
-import { resetPreferences } from '../api/preferences'
 import { normalizeRequestError, canRetryRequest, type RequestError } from '../api/errors'
 import { ledgerRangeOptions, reportRangeOptions, preferenceLabel, type PreferenceRequest, type LedgerDefaultRange, type ReportDefaultRange } from '../domain/preferences'
 import { themeModeLabel } from '../theme/theme'
@@ -52,7 +51,8 @@ const settingItems = computed<SettingsDisclosureItem[]>(() => [
   {
     key: 'funding',
     label: '默认资金渠道',
-    value: fundingOptions.value.find(i => i.id === preferencesStore.values.defaultFundingChannelId)?.name ?? '未设置',
+    value: fundingOptions.value.find(i => i.id === preferencesStore.values.defaultFundingChannelId)?.name
+      ?? preferencesStore.defaultFundingChannelName ?? '未设置',
   },
   {
     key: 'ledgerRange',
@@ -79,22 +79,24 @@ function openSetting(key: string) {
   drawerOpen.value = true
 }
 function updatePreference(value: Partial<PreferenceRequest>) {
-  void preferencesStore.update(value)
+  void preferencesStore.update(value).catch(() => undefined)
 }
 function selectDefaultFunding(item: { id: string }) {
   updatePreference({ defaultFundingChannelId: item.id })
 }
 async function retryPreferences() {
-  if (activeField.value) {
-    await preferencesStore.retry(activeField.value)
-  }
+  await preferencesStore.retry(preferencesStore.status === 'error' ? undefined : activeField.value).catch(() => undefined)
 }
 async function retryActive() {
   await retryPreferences()
 }
 async function confirmReset() {
   try {
-    await resetPreferences()
+    await preferencesStore.reset()
+    resetOpen.value = false
+    toastKind.value = 'success'
+    toastMessage.value = '偏好已恢复默认。'
+    toastOpen.value = true
   } catch (error) {
     resetError.value = normalizeRequestError(error)
   }

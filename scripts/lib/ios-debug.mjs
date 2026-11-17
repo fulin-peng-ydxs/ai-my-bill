@@ -12,6 +12,7 @@ export const nativeCases = [
   'testOfflineDictionaryGovernance',
   'testOfflineDictionaryPages',
   'testOfflineEntryWrites',
+  'testOfflinePersonalState',
   'testOriginalShellNavigationAndOverlays',
   'testRejectUnownedTestContexts'
 ]
@@ -32,7 +33,16 @@ export const uiCases = [
   'test13UnitLastPage',
   'test14DisableLastPageUnit',
   'test15ExpenseWriteReopen',
-  'test16IncomeContinueEdit'
+  'test16IncomeContinueEdit',
+  'test17ExpenseTemplateUpsert',
+  'test18ExpenseTemplateFill',
+  'test19DisableTemplateUnit',
+  'test20TemplateFallbackRemove',
+  'test21IncomeTemplateCycle',
+  'test22PrepareDualDrafts',
+  'test23SaveThemePreference',
+  'test24RelaunchPersonalState',
+  'test25ResetPreferencesKeepsDrafts'
 ]
 
 export const recoveryPhases = ['snapshot-ready', 'migration-recorded', 'upgrade-committed']
@@ -43,7 +53,10 @@ export const uiScenarios = {
   'paging-disable': [13, 14],
   'merge-relaunch': [9, 10],
   'merge-cycle': [8, 9, 10],
-  'entry-cycle': [15, 16]
+  'entry-cycle': [15, 16],
+  'template-cycle': [17, 18, 19, 20, 21],
+  'draft-relaunch': [22, 23, 24, 25],
+  'personal-cycle': [17, 18, 19, 20, 21, 22, 23, 24, 25]
 }
 
 /** 前置用例显式列出；只补必要环境与导航，不能暗中扩展为完整触摸套件。 */
@@ -81,7 +94,9 @@ export function selection(kind, name, nativeScenarios) {
       const index = uiCases.indexOf(parts[2])
       if (index >= 0)
         return uiSelection(
-          index === 10 ? [9, 10] : index === 12 ? [11, 12] : index === 14 ? [13, 14] : [index]
+          index === 10 ? [9, 10] : index === 12 ? [11, 12] : index === 14 ? [13, 14]
+            : index === 18 ? [17, 18] : index === 20 ? [17, 19, 20]
+              : index === 24 ? [22, 23, 24] : index === 25 ? [22, 23, 24, 25] : [index]
         )
     }
   }
@@ -91,7 +106,8 @@ function uiSelection(indices) {
   return {
     scheme: 'DictionaryTouch',
     configuration: 'Release',
-    fixture: indices.includes(15) && indices.includes(16) ? 'entry-cycle' : String(indices.at(-1)),
+    fixture: indices.some(i => i >= 17) ? 'personal-' + indices.join(',')
+      : indices.includes(15) && indices.includes(16) ? 'entry-cycle' : String(indices.at(-1)),
     cases: [
       ...(indices.some((i) => (i >= 1 && i <= 5) || i === 11 || i === 13 || i >= 15)
         ? ['DictionaryUITests/DictionaryTouchTests/test00DebugKeyboardReady']

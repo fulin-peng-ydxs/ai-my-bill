@@ -359,9 +359,11 @@ final class DictionaryTouchTests: XCTestCase {
 
     private func tapLedgerRow(_ title: String, kind: String) {
         let row = app.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH %@", kind + " " + title)).firstMatch
+        let button = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", title)).firstMatch
+        let text = app.staticTexts.matching(NSPredicate(format: "label == %@", title)).firstMatch
         var box: CGRect?
         let ready = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
-            if row.exists && row.isHittable {
+            if button.exists && button.isHittable || text.exists && text.isHittable || row.exists && row.isHittable {
                 return true
             }
             // 原明细行会把类型、名称及金额识别为同一文本块；只在该行内定位唯一合成名称。
@@ -369,7 +371,11 @@ final class DictionaryTouchTests: XCTestCase {
             return box != nil
         }, object: nil)
         XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 5), .completed, "找不到账目行 \(title)")
-        if row.exists && row.isHittable {
+        if button.exists && button.isHittable {
+            button.tap()
+        } else if text.exists && text.isHittable {
+            text.tap()
+        } else if row.exists && row.isHittable {
             row.tap()
         } else if let box {
             app.coordinate(withNormalizedOffset: CGVector(dx: box.midX, dy: 1 - box.midY)).tap()
@@ -434,6 +440,132 @@ final class DictionaryTouchTests: XCTestCase {
         tap("保存修改")
         appears("收入修改已保存。")
         print("ENTRY_TOUCH_INCOME_CONTINUE_EDIT_VERIFIED")
+    }
+
+    func test17ExpenseTemplateUpsert() {
+        tap("明细")
+        tapLedgerRow("日常苹果", kind: "支出")
+        appears("编辑支出")
+        for _ in 0..<2 {
+            tap("更多操作")
+            tap("保存为日常支出")
+            disappears(app.buttons.matching(NSPredicate(format: "label == %@", "保存为日常支出")).firstMatch)
+        }
+        tap("关闭")
+        disappears(matching("编辑支出").firstMatch)
+        print("PERSONAL_TOUCH_EXPENSE_TEMPLATE_UPSERT")
+    }
+
+    func test18ExpenseTemplateFill() {
+        tap("记一笔")
+        tap("支出")
+        tap("日常支出")
+        tap("日常苹果")
+        expectValue(entryField("expense-paid-amount", "实付金额"), "15")
+        expectValue(entryField("expense-unit-price", "单价"), "12.3456")
+        tap("补充信息")
+        let note = app.textViews.firstMatch
+        XCTAssertTrue(note.waitForExistence(timeout: 3))
+        XCTAssertTrue((note.value as? String) == "" || (note.value as? String) == note.placeholderValue)
+        print("PERSONAL_TOUCH_EXPENSE_TEMPLATE_FILL")
+    }
+
+    func test19DisableTemplateUnit() {
+        openKind("单位")
+        tap("管理日常份")
+        tap("停用")
+        appears("停用日常份？")
+        tap("停用")
+        disappears(matching("停用日常份？").firstMatch)
+        print("PERSONAL_TOUCH_TEMPLATE_UNIT_DISABLED")
+    }
+
+    func test20TemplateFallbackRemove() {
+        tap("记一笔")
+        tap("支出")
+        tap("日常支出")
+        tap("日常苹果")
+        appears("模板中的部分选项已不可用")
+        expectValue(entryField("expense-paid-amount", "实付金额"), "15")
+        tap("日常支出")
+        tap("移除日常模板：日常苹果")
+        disappears(app.buttons.matching(NSPredicate(format: "label == %@", "移除日常模板：日常苹果")).firstMatch)
+        XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "移除日常模板：")).firstMatch.exists)
+        tap("关闭")
+        print("PERSONAL_TOUCH_TEMPLATE_FALLBACK_REMOVE")
+    }
+
+    func test21IncomeTemplateCycle() {
+        tap("明细")
+        tapLedgerRow("日常工资", kind: "收入")
+        appears("编辑收入")
+        tap("更多操作")
+        tap("保存为日常收入")
+        disappears(app.buttons.matching(NSPredicate(format: "label == %@", "保存为日常收入")).firstMatch)
+        tap("关闭")
+        tap("记一笔")
+        tap("收入")
+        tap("日常收入")
+        tap("日常工资")
+        expectValue(entryField("income-amount", "收入金额"), "1000")
+        tap("日常收入")
+        tap("移除日常模板：日常工资")
+        appears("还没有日常模板")
+        tap("关闭")
+        print("PERSONAL_TOUCH_INCOME_TEMPLATE_CYCLE")
+    }
+
+    func test22PrepareDualDrafts() {
+        tap("记一笔")
+        tap("支出")
+        replaceEntryField("expense-paid-amount", "实付金额", "77")
+        tap("收入")
+        replaceEntryField("income-amount", "收入金额", "222")
+        dismissEntryKeyboard()
+        // 真实 Home/终止 App；不派发 JS 或直接写库来代替后台落盘。
+        XCUIDevice.shared.press(.home)
+        app.terminate()
+        print("PERSONAL_TOUCH_DUAL_DRAFTS_BACKGROUND_TERMINATED")
+    }
+
+    func test23SaveThemePreference() {
+        tap("我的")
+        tap("外观")
+        tap("夜晚")
+        tap("关闭")
+        XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@ AND label CONTAINS %@", "外观", "夜晚")).firstMatch.waitForExistence(timeout: 5))
+        tap("明细默认范围")
+        tapVisibleText("今天")
+        tap("本周")
+        tap("关闭")
+        print("PERSONAL_TOUCH_THEME_SAVED")
+    }
+
+    func test24RelaunchPersonalState() {
+        app.terminate()
+        app.launch()
+        activateWebContent()
+        appears("记一笔")
+        expectValue(entryField("income-amount", "收入金额"), "222")
+        tap("支出")
+        expectValue(entryField("expense-paid-amount", "实付金额"), "77")
+        tap("收入")
+        tap("我的")
+        XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@ AND label CONTAINS %@", "外观", "夜晚")).firstMatch.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@ AND label CONTAINS %@", "明细默认范围", "本周")).firstMatch.waitForExistence(timeout: 5))
+        tap("记一笔")
+        expectValue(entryField("income-amount", "收入金额"), "222")
+        print("PERSONAL_TOUCH_DRAFTS_THEME_RELAUNCH_VERIFIED")
+    }
+
+    func test25ResetPreferencesKeepsDrafts() {
+        tap("我的")
+        tap("恢复默认偏好")
+        tap("确认恢复")
+        disappears(app.buttons.matching(NSPredicate(format: "label == %@", "确认恢复")).firstMatch)
+        tap("记一笔")
+        expectValue(entryField("expense-paid-amount", "实付金额"), "77")
+        print("PERSONAL_TOUCH_RESET_KEEPS_DRAFTS")
     }
 
 }

@@ -200,7 +200,7 @@ export async function entrySearchUpgradeScenario(manager: (suffix: string, chain
     await data.apply(sql)
     throw new Error('controlled-search-backfill-failure')
   } } }])
-  const tampered = manager('search_upgrade', [...oldChain, { ...migrations[3]!, data: { ...data, source: `${data.source}\nchanged` } }])
+  const tampered = manager('search_upgrade', [...oldChain, { ...migrations[3]!, data: { ...data, source: `${data.source}\nchanged` } }, ...migrations.slice(4)])
   try {
     await old.open()
     const f = await entryFixture(old)

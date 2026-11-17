@@ -8,6 +8,8 @@ import sqlite3
 import sys
 import unicodedata
 import uuid
+from datetime import datetime
+from zoneinfo import ZoneInfo
 from pathlib import Path
 
 mode, container, simulator_id, receipt_file = sys.argv[1:]
@@ -31,13 +33,17 @@ if mode == 'wait-initialized':
     raise RuntimeError('本轮模拟器的正式账本未在准备预算内初始化')
 assert database.is_file()
 # debug 数据仅由已校验会话中的全新 App 初始化；复用同一夹具，不开放任意 SQL 或路径。
+personal_match = re.fullmatch(r'debug-(check-)?personal-((?:1[7-9]|2[0-5])(?:,(?:1[7-9]|2[0-5]))*)', mode)
+personal_cases = [int(case) for case in personal_match[2].split(',')] if personal_match else []
+if personal_match:
+    mode = 'debug-check' if personal_match[1] else 'prepare'
 debug_match = re.fullmatch(r'debug-(check-)?(\d|1[0-6]|entry-cycle)', mode)
 debug_entry_cycle = bool(debug_match and debug_match[2] == 'entry-cycle')
 debug_case = 16 if debug_entry_cycle else int(debug_match[2]) if debug_match else None
 debug_check = bool(debug_match and debug_match[1])
 if debug_match:
     mode = 'debug-check' if debug_check else 'prepare'
-connection = sqlite3.connect(f'file:{database}?mode={"rw" if mode in ("prepare", "prepare-paging", "prepare-entry") else "ro"}', uri=True)
+connection = sqlite3.connect(f'file:{database}?mode={"rw" if mode in ("prepare", "prepare-paging", "prepare-entry", "prepare-personal") else "ro"}', uri=True)
 def add_paging_items(connection, ids):
     """完整和局部触摸共用相同末页数据，始终拒绝覆盖既有同名样本。"""
     assert connection.execute("SELECT count(*) FROM dictionary_item WHERE name LIKE 'PageProduct%' OR name LIKE 'PageUnit%'").fetchone()[0] == 0
@@ -73,11 +79,71 @@ def check_entries(connection, case):
     print('ENTRY_TOUCH_SQLITE_VERIFIED case=' + str(case))
 
 
+def add_personal_items(connection):
+    assert connection.execute("SELECT count(*) FROM dictionary_item WHERE id LIKE 't7-%'").fetchone()[0] == 0
+    for key, kind, name in [('product', 'PRODUCT', '日常苹果'), ('category', 'EXPENSE_CATEGORY', '日常水果'),
+                            ('unit', 'UNIT', '日常份'), ('funding', 'FUNDING_CHANNEL', '日常现金'), ('payer', 'PAYER', '日常公司')]:
+        connection.execute("INSERT INTO dictionary_item(id,kind,name,normalized_name,status,sort_order) VALUES(?,?,?,?,'ACTIVE',100)", ('t7-'+key,kind,name,name))
+    now = datetime.now(ZoneInfo('Asia/Shanghai'))
+    timestamp = now.isoformat(timespec='milliseconds')
+    connection.execute("""INSERT INTO ledger_entry(id,entry_type,amount_cents,funding_channel_id,funding_channel_name_snapshot,business_time,business_date,
+        product_id,product_name_snapshot,normalized_product_name_snapshot,primary_category_id,primary_category_name_snapshot,unit_id,unit_name_snapshot,
+        unit_price_scaled,quantity_scaled,calculated_amount_cents,note,updated_at) VALUES('t7-expense','EXPENSE',1500,'t7-funding','日常现金',?,?,'t7-product','日常苹果','日常苹果',
+        't7-category','日常水果','t7-unit','日常份',123456,1250,1543,'来源备注',?)""", (timestamp, now.date().isoformat(), timestamp))
+    connection.execute("""INSERT INTO ledger_entry(id,entry_type,amount_cents,funding_channel_id,funding_channel_name_snapshot,business_time,business_date,
+        income_name,normalized_income_name,payer_id,payer_name_snapshot,income_category_id,income_category_name_snapshot,note,updated_at)
+        VALUES('t7-income','INCOME',100000,'t7-funding','日常现金',?,?,'日常工资','日常工资','t7-payer','日常公司',
+        '61000000-0000-0000-0000-000000000001','工资','来源收入备注',?)""", (timestamp,now.date().isoformat(),timestamp))
+
+
+def check_personal(connection, cases):
+    def one(statement):
+        return connection.execute(statement).fetchone()[0]
+    assert one("SELECT count(*) FROM ledger_entry WHERE id='t7-expense' AND amount_cents=1500 AND note='来源备注' AND row_version=1") == 1
+    assert one("SELECT count(*) FROM ledger_entry WHERE id='t7-income' AND amount_cents=100000 AND note='来源收入备注' AND row_version=1") == 1
+    assert one("SELECT count(*) FROM ledger_entry WHERE product_id='t7-product' OR payer_id='t7-payer'") == 2
+    if 17 in cases or 18 in cases:
+        assert one("SELECT count(*) FROM daily_entry_template WHERE product_id='t7-product'") == (0 if 20 in cases else 1)
+        if 20 not in cases:
+            assert one("SELECT row_version FROM daily_entry_template WHERE product_id='t7-product'") == (3 if 18 in cases else 2)
+    if 19 in cases:
+        assert one("SELECT status FROM dictionary_item WHERE id='t7-unit'") == 'INACTIVE'
+    if 20 in cases:
+        assert one("SELECT count(*) FROM daily_entry_template WHERE product_id='t7-product'") == 0
+    if 21 in cases:
+        assert one("SELECT count(*) FROM daily_entry_template WHERE payer_id='t7-payer'") == 0
+    drafts = {row['entry_type']: json.loads(row['data_json']) for row in connection.execute('SELECT * FROM ledger_draft WHERE dataset_id=(SELECT dataset_id FROM ledger_meta)')}
+    if 18 in cases or 20 in cases:
+        assert drafts['EXPENSE']['paidAmount'] == ('77' if 22 in cases else '15')
+        assert not drafts['EXPENSE'].get('note')
+        if 20 in cases:
+            assert not drafts['EXPENSE'].get('unitId')
+    if 21 in cases:
+        assert drafts['INCOME']['amount'] == ('222' if 22 in cases else '1000')
+        assert not drafts['INCOME'].get('note')
+    if 22 in cases or 24 in cases:
+        assert drafts['EXPENSE']['paidAmount'] == '77' and drafts['INCOME']['amount'] == '222'
+    if 23 in cases or 24 in cases:
+        assert one("SELECT value FROM preference WHERE key='theme'") == ('"SYSTEM"' if 25 in cases else '"DARK"')
+        assert one("SELECT value FROM preference WHERE key='ledgerRange'") == ('"TODAY"' if 25 in cases else '"THIS_WEEK"')
+    if 22 in cases or 24 in cases:
+        assert one("SELECT value FROM preference WHERE key='recentEntryType'") == ('"EXPENSE"' if 25 in cases else '"INCOME"')
+    print('PERSONAL_TOUCH_SQLITE_VERIFIED cases=' + ','.join(map(str,cases)))
+
+
 connection.row_factory = sqlite3.Row
 connection.execute('PRAGMA foreign_keys=ON')
 receipt_path = Path(receipt_file)
 try:
-    if mode == 'debug-check':
+    if mode == 'debug-check' and personal_cases:
+        check_personal(connection, personal_cases)
+    elif mode == 'prepare-personal':
+        with connection:
+            add_personal_items(connection)
+        print('PERSONAL_TOUCH_FIXTURE_PREPARED')
+    elif mode == 'check-personal':
+        check_personal(connection, list(range(17,26)))
+    elif mode == 'debug-check':
         ids = json.loads(receipt_path.read_text())
         def one(sql, values=()):
             return connection.execute(sql, values).fetchone()[0]
@@ -161,6 +227,9 @@ try:
                 VALUES(?,'EXPENSE','触摸合并源','触摸合并源',?,'触摸合并源',?,'触摸分类',?,'触摸单位',123456,1250,1543,?,'触摸资金',
                 '2026-11-15T01:00:00.000Z','2026-11-15T01:00:00.000Z','2026-11-15T01:00:00.000Z')""",
                                (ids['template'], ids['source'], ids['category'], ids['unit'], ids['funding']))
+        if personal_cases:
+            with connection:
+                add_personal_items(connection)
         if debug_case is not None:
             with connection:
                 if debug_case in [15, 16]:

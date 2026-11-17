@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import MoneyValue from './MoneyValue.vue'
-import { computed, ref, watch } from 'vue'
+import { computed, onScopeDispose, ref, watch } from 'vue'
+import { useBootstrapStore } from '../stores/bootstrap'
 
 import {
   listDailyTemplates, removeDailyTemplate, selectDailyTemplate,
@@ -23,6 +24,10 @@ const items = computed(() => request.data.value?.items ?? [])
 const actionError = ref<RequestError>()
 const regionStatus = computed(() => isAccessDenied(actionError.value) ? 'error' : request.status.value)
 const busyId = ref('')
+const bootstrap = useBootstrapStore()
+let generation = 0
+onScopeDispose(() => { generation += 1 })
+watch(() => bootstrap.datasetId, () => { generation += 1; open.value = false; request.cancel() })
 const title = computed(() => activeType.value === 'EXPENSE' ? '日常支出' : '日常收入')
 
 watch(() => props.entryType, (value) => {
@@ -49,8 +54,10 @@ async function choose(item: DailyTemplateSummary): Promise<void> {
   if (busyId.value) return
   busyId.value = item.id
   actionError.value = undefined
+  const requestedGeneration = generation
   try {
     const selection = await selectDailyTemplate(item.id)
+    if (requestedGeneration !== generation || !open.value) return
     emit('select', selection)
     open.value = false
   } catch (cause) {

@@ -1,7 +1,7 @@
 import { LedgerDatabase, type LifecycleStage } from '../src/data/ledgerDatabase'
 import { migrations, sha256 } from '../src/data/migrations'
 import { nativeSqlite, openIosDatabase } from '../src/infrastructure/database/nativeConnection'
-import { ledgerFiles } from '../src/platform/ledgerFiles'
+import { ledgerFiles, type LedgerFiles } from '../src/platform/ledgerFiles'
 import type { Seed } from '../src/data/seed/defaults'
 
 // 历史受控结构链固定从 v1 起步，不随当前正式迁移数量漂移。
@@ -76,7 +76,7 @@ export async function lifecycle() {
   const next = { version: 2, schema: schema2, sql: "CREATE INDEX preference_value ON preference(value); INSERT INTO preference(key,value) SELECT 'new_field','false' WHERE NOT EXISTS(SELECT 1 FROM preference WHERE key='new_field');" }
   const third = { version: 3, schema: [...schema2, { type: 'index', name: 'dictionary_parent', tableName: 'dictionary_item', sql: 'CREATE INDEX dictionary_parent ON dictionary_item(parent_id)' }], sql: "CREATE INDEX dictionary_parent ON dictionary_item(parent_id);" }
   const chain = [...baseline, next, third]
-  function manager(suffix: string, version = baseline, seed = seedA, files = ledgerFiles) {
+  function manager(suffix: string, version = baseline, seed = seedA, files: LedgerFiles = ledgerFiles) {
     const name = `${prefix}_${suffix}`
     if (!names.includes(name)) names.push(name)
     const db = new LedgerDatabase(name, version, seed, files)
