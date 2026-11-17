@@ -70,7 +70,9 @@ test('单用例/场景选择只带显式必要前置，拒绝任意过滤器与�
     'test02RenameProduct',
     'test03CreateCategory',
     'test04CreateUnit',
-    'test05CreateFunding'
+    'test05CreateFunding',
+    'test15ExpenseWriteReopen',
+    'test16IncomeContinueEdit'
   ]) {
     assert.deepEqual(selection('--case', 'DictionaryUITests/DictionaryTouchTests/' + method, []).cases, [
       'DictionaryUITests/DictionaryTouchTests/test00DebugKeyboardReady',
@@ -185,7 +187,7 @@ test('缓存以内容而非时间判断；生产/探针/工程/锁定依赖/工�
 })
 test('UI 局部夹具拒绝已有数据；准备改名/恢复/末页前置，回读拒绝未执行或历史被改写', (t) => {
   const root = temporary(t)
-  for (const selected of [2, 7, 12, 14]) {
+  for (const selected of [2, 7, 12, 14, 15, 16]) {
     const device = randomUUID()
     const container = path.join(
       root,
@@ -199,7 +201,7 @@ test('UI 局部夹具拒绝已有数据；准备改名/恢复/末页前置，回
     const file = path.join(directory, 'ledgerSQLite.db')
     const database = new DatabaseSync(file)
     try {
-      for (const name of ['0001_initial.sql', '0002_dictionary_governance.sql'])
+      for (const name of ['0001_initial.sql', '0002_dictionary_governance.sql', '0003_ledger_writes.sql'])
         database.exec(
           fs.readFileSync(new URL('../../app/src/data/migrations/' + name, import.meta.url), 'utf8')
         )
@@ -208,7 +210,7 @@ test('UI 局部夹具拒绝已有数据；准备改名/恢复/末页前置，回
           .prepare(
             "INSERT INTO dictionary_item(id,kind,name,normalized_name,status) VALUES(?,'INCOME_CATEGORY',?,?,'ACTIVE')"
           )
-          .run(randomUUID(), '收入' + i, '收入' + i)
+          .run(`61000000-0000-0000-0000-${String(i + 1).padStart(12, '0')}`, i === 0 ? '工资' : '收入' + i, i === 0 ? '工资' : '收入' + i)
     } finally {
       database.close()
     }
@@ -231,13 +233,29 @@ test('UI 局部夹具拒绝已有数据；准备改名/恢复/末页前置，回
           check.prepare('SELECT status FROM dictionary_item WHERE id=?').get(ids.maintenance).status,
           'INACTIVE'
         )
-      if (selected >= 12)
+      if (selected === 12 || selected === 14)
         for (const prefix of ['PageProduct%', 'PageUnit%'])
           assert.equal(
             check.prepare('SELECT count(*) AS n FROM dictionary_item WHERE name LIKE ?').get(prefix).n,
             21
           )
       assert.notEqual(execute('debug-check-' + selected).status, 0, '未执行目标操作不能判通过')
+      if (selected >= 15) {
+        assert.equal(check.prepare("SELECT CAST(last_unit_price_scaled AS TEXT) AS price FROM product_details WHERE product_id='t6-product'").get().price, '123456')
+        assert.equal(check.prepare("SELECT count(*) AS n FROM ledger_entry WHERE id<>'t6-name-history' AND payer_id='t6-payer'").get().n, 0)
+        if (selected === 15) {
+          check.prepare(`INSERT INTO ledger_entry(id,entry_type,amount_cents,funding_channel_id,funding_channel_name_snapshot,business_time,business_date,
+            product_id,product_name_snapshot,unit_id,unit_name_snapshot,unit_price_scaled,quantity_scaled,calculated_amount_cents)
+            VALUES('t6-saved','EXPENSE',1500,'t6-funding','测试现金','2026-11-17T01:00:00.000Z','2026-11-17','t6-product','测试苹果','t6-unit','斤',123456,1250,1543)`).run()
+        } else {
+          check.prepare(`INSERT INTO ledger_entry(id,entry_type,amount_cents,funding_channel_id,funding_channel_name_snapshot,business_time,business_date,
+            income_name,payer_id,payer_name_snapshot,note,row_version) VALUES('t6-saved','INCOME',100000,'t6-funding','测试现金',
+            '2026-11-17T01:00:00.000Z','2026-11-17','测试工资','t6-payer','合成公司','T6 edited',2)`).run()
+        }
+        assert.equal(execute('debug-check-' + selected).status, 0, '必须回读真实金额/名称/版本/类型字段')
+        check.prepare("UPDATE ledger_entry SET amount_cents=1 WHERE id='t6-saved'").run()
+        assert.notEqual(execute('debug-check-' + selected).status, 0, '错误金额不能通过回读')
+      }
       const count = check.prepare('SELECT count(*) AS n FROM dictionary_item').get().n
       assert.notEqual(execute('debug-' + selected).status, 0, '拒绝重铺已有测试数据')
       assert.equal(check.prepare('SELECT count(*) AS n FROM dictionary_item').get().n, count)

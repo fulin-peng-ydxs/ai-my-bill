@@ -11,6 +11,7 @@ export const nativeCases = [
   'testLedgerLifecycleAndProtection',
   'testOfflineDictionaryGovernance',
   'testOfflineDictionaryPages',
+  'testOfflineEntryWrites',
   'testOriginalShellNavigationAndOverlays',
   'testRejectUnownedTestContexts'
 ]
@@ -29,7 +30,9 @@ export const uiCases = [
   'test11ProductLastPage',
   'test12MergeLastPageProduct',
   'test13UnitLastPage',
-  'test14DisableLastPageUnit'
+  'test14DisableLastPageUnit',
+  'test15ExpenseWriteReopen',
+  'test16IncomeContinueEdit'
 ]
 
 export const recoveryPhases = ['snapshot-ready', 'migration-recorded', 'upgrade-committed']
@@ -89,7 +92,7 @@ function uiSelection(indices) {
     configuration: 'Release',
     fixture: String(indices.at(-1)),
     cases: [
-      ...(indices.some((i) => (i >= 1 && i <= 5) || i === 11 || i === 13)
+      ...(indices.some((i) => (i >= 1 && i <= 5) || i === 11 || i === 13 || i >= 15)
         ? ['DictionaryUITests/DictionaryTouchTests/test00DebugKeyboardReady']
         : []),
       ...indices.map((i) => `DictionaryUITests/DictionaryTouchTests/${uiCases[i]}`)

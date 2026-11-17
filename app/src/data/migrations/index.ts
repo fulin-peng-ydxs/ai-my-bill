@@ -2,6 +2,8 @@ import initial from './0001_initial.sql?raw'
 import initialSchema from './0001_schema.json'
 import dictionaryGovernance from './0002_dictionary_governance.sql?raw'
 import dictionarySchema from './0002_schema.json'
+import ledgerWrites from './0003_ledger_writes.sql?raw'
+import ledgerSchema from './0003_schema.json'
 import type { SchemaObject } from './schema'
 
 export type Migration = Readonly<{ version: number; sql: string; schema: readonly SchemaObject[] }>
@@ -9,6 +11,7 @@ export type Migration = Readonly<{ version: number; sql: string; schema: readonl
 export const migrations: readonly Migration[] = [
   { version: 1, sql: initial, schema: initialSchema },
   { version: 2, sql: dictionaryGovernance, schema: dictionarySchema },
+  { version: 3, sql: ledgerWrites, schema: ledgerSchema },
 ]
 export const publishedSchemaVersions: readonly number[] = []
 

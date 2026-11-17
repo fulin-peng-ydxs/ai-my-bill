@@ -31,12 +31,12 @@ if mode == 'wait-initialized':
     raise RuntimeError('本轮模拟器的正式账本未在准备预算内初始化')
 assert database.is_file()
 # debug 数据仅由已校验会话中的全新 App 初始化；复用同一夹具，不开放任意 SQL 或路径。
-debug_match = re.fullmatch(r'debug-(check-)?(\d|1[0-4])', mode)
+debug_match = re.fullmatch(r'debug-(check-)?(\d|1[0-6])', mode)
 debug_case = int(debug_match[2]) if debug_match else None
 debug_check = bool(debug_match and debug_match[1])
 if debug_match:
     mode = 'debug-check' if debug_check else 'prepare'
-connection = sqlite3.connect(f'file:{database}?mode={"rw" if mode in ("prepare", "prepare-paging") else "ro"}', uri=True)
+connection = sqlite3.connect(f'file:{database}?mode={"rw" if mode in ("prepare", "prepare-paging", "prepare-entry") else "ro"}', uri=True)
 def add_paging_items(connection, ids):
     """完整和局部触摸共用相同末页数据，始终拒绝覆盖既有同名样本。"""
     assert connection.execute("SELECT count(*) FROM dictionary_item WHERE name LIKE 'PageProduct%' OR name LIKE 'PageUnit%'").fetchone()[0] == 0
@@ -47,6 +47,30 @@ def add_paging_items(connection, ids):
             item_id = str(uuid.uuid4())
             ids['paging'][key] = item_id
             connection.execute("INSERT INTO dictionary_item(id,kind,name,normalized_name,status,sort_order) VALUES(?,?,?,?,'ACTIVE',?)", (item_id, kind, key, key.lower(), index * 10))
+
+def add_entry_items(connection):
+    # 只添加本轮合成字典与一条过往收入名称；所有待验收写入由原页面完成。
+    assert connection.execute("SELECT count(*) FROM dictionary_item WHERE id LIKE 't6-%'").fetchone()[0] == 0
+    for key, kind, name in [('product', 'PRODUCT', '测试苹果'), ('category', 'EXPENSE_CATEGORY', '测试水果'),
+                             ('unit', 'UNIT', '斤'), ('funding', 'FUNDING_CHANNEL', '测试现金'), ('payer', 'PAYER', '合成公司')]:
+        connection.execute("INSERT INTO dictionary_item(id,kind,name,normalized_name,status,sort_order) VALUES(?,?,?,?,'ACTIVE',100)",
+                           ('t6-'+key, kind, name, name))
+    connection.execute("UPDATE product_details SET default_primary_category_id='t6-category',default_unit_id='t6-unit',last_unit_price_scaled=123456,last_funding_channel_id='t6-funding',updated_at='2099-01-01' WHERE product_id='t6-product'")
+    connection.execute("""INSERT INTO ledger_entry(id,entry_type,amount_cents,funding_channel_id,funding_channel_name_snapshot,business_time,business_date,
+        income_name,normalized_income_name,payer_id,payer_name_snapshot,income_category_id,income_category_name_snapshot,created_at,updated_at)
+        VALUES('t6-name-history','INCOME',100,'t6-funding','测试现金','2000-01-01T00:00:00.000Z','2000-01-01','测试工资','测试工资','t6-payer','合成公司',
+        '61000000-0000-0000-0000-000000000001','工资','2000-01-01T00:00:00.000Z','2000-01-01T00:00:00.000Z')""")
+
+
+def check_entries(connection, case):
+    if case == 15:
+        row = connection.execute("SELECT CAST(unit_price_scaled AS TEXT),CAST(quantity_scaled AS TEXT),CAST(calculated_amount_cents AS TEXT),CAST(amount_cents AS TEXT),product_name_snapshot,unit_name_snapshot FROM ledger_entry WHERE product_id='t6-product'").fetchall()
+        assert [tuple(r) for r in row] == [('123456', '1250', '1543', '1500', '测试苹果', '斤')]
+    else:
+        rows = connection.execute("SELECT CAST(amount_cents AS TEXT),income_name,payer_name_snapshot,note,row_version,product_id,quantity_scaled FROM ledger_entry WHERE payer_id='t6-payer' AND id<>'t6-name-history'").fetchall()
+        assert [tuple(r) for r in rows] == [('100000', '测试工资', '合成公司', 'T6 edited', 2, None, None)]
+    print('ENTRY_TOUCH_SQLITE_VERIFIED case=' + str(case))
+
 
 connection.row_factory = sqlite3.Row
 connection.execute('PRAGMA foreign_keys=ON')
@@ -77,6 +101,15 @@ try:
             assert one('SELECT status FROM dictionary_item WHERE id=?', (ids['paging']['PageUnit20'],)) == 'INACTIVE'
             assert one("SELECT count(*) FROM dictionary_item WHERE name LIKE 'PageUnit%' AND status='ACTIVE'") == 20
         print('DICTIONARY_DEBUG_SQLITE_VERIFIED case=' + str(debug_case))
+        if debug_case in [15, 16]:
+            check_entries(connection, debug_case)
+    elif mode == 'prepare-entry':
+        with connection:
+            add_entry_items(connection)
+        print('ENTRY_TOUCH_FIXTURE_PREPARED')
+    elif mode == 'check-entry':
+        check_entries(connection, 15)
+        check_entries(connection, 16)
     elif mode == 'check-empty':
         assert connection.execute('SELECT count(*) FROM dictionary_item').fetchone()[0] == 8
         for table in ['ledger_entry', 'daily_entry_template', 'product_merge_event']:
@@ -123,6 +156,8 @@ try:
                                (ids['template'], ids['source'], ids['category'], ids['unit'], ids['funding']))
         if debug_case is not None:
             with connection:
+                if debug_case in [15, 16]:
+                    add_entry_items(connection)
                 if debug_case == 2:
                     connection.execute("INSERT INTO dictionary_item(id,kind,name,normalized_name,status,sort_order) VALUES(?,'PRODUCT','Touch Created','touch created','ACTIVE',20)", (str(uuid.uuid4()),))
                 if debug_case == 7:

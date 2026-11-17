@@ -219,7 +219,7 @@ JS
     xcrun simctl bootstatus "${SIMULATOR_ID}" -b > "${RUN_DIRECTORY}/touch-guard-reboot.log" 2>&1
     APP_CONTAINER="$(xcrun simctl get_app_container "${SIMULATOR_ID}" com.mybill.offline data)"
     python3 scripts/fixtures/dictionary-touch.py prepare "${APP_CONTAINER}" "${SIMULATOR_ID}" "${RUN_DIRECTORY}/touch-fixture.json"
-    if ! positive_test "${RUN_DIRECTORY}/touch.log" "${XCODE_COMMON_ARGUMENTS[@]}" -scheme DictionaryTouch -configuration Release -destination "platform=iOS Simulator,id=${SIMULATOR_ID}" -parallel-testing-enabled NO -test-timeouts-enabled YES -maximum-test-execution-time-allowance 60 -skip-testing:DictionaryUITests/DictionaryTouchTests/test00DebugKeyboardReady -skip-testing:DictionaryUITests/DictionaryTouchTests/test11ProductLastPage -skip-testing:DictionaryUITests/DictionaryTouchTests/test12MergeLastPageProduct -skip-testing:DictionaryUITests/DictionaryTouchTests/test13UnitLastPage -skip-testing:DictionaryUITests/DictionaryTouchTests/test14DisableLastPageUnit -resultBundlePath "${RUN_DIRECTORY}/touch.xcresult"; then
+    if ! positive_test "${RUN_DIRECTORY}/touch.log" "${XCODE_COMMON_ARGUMENTS[@]}" -scheme DictionaryTouch -configuration Release -destination "platform=iOS Simulator,id=${SIMULATOR_ID}" -parallel-testing-enabled NO -test-timeouts-enabled YES -maximum-test-execution-time-allowance 60 -skip-testing:DictionaryUITests/DictionaryTouchTests/test00DebugKeyboardReady -skip-testing:DictionaryUITests/DictionaryTouchTests/test11ProductLastPage -skip-testing:DictionaryUITests/DictionaryTouchTests/test12MergeLastPageProduct -skip-testing:DictionaryUITests/DictionaryTouchTests/test13UnitLastPage -skip-testing:DictionaryUITests/DictionaryTouchTests/test14DisableLastPageUnit -skip-testing:DictionaryUITests/DictionaryTouchTests/test15ExpenseWriteReopen -skip-testing:DictionaryUITests/DictionaryTouchTests/test16IncomeContinueEdit -resultBundlePath "${RUN_DIRECTORY}/touch.xcresult"; then
       tail -80 "${RUN_DIRECTORY}/touch.log" >&2
       exit 1
     fi
@@ -237,8 +237,16 @@ JS
     APP_CONTAINER="$(xcrun simctl get_app_container "${SIMULATOR_ID}" com.mybill.offline data)"
     phase check native-readback/DictionaryTouch/Release "${RUN_DIRECTORY}/touch-paging-readback.log"
     python3 scripts/fixtures/dictionary-touch.py check-paging "${APP_CONTAINER}" "${SIMULATOR_ID}" "${RUN_DIRECTORY}/touch-fixture.json" | tee "${RUN_DIRECTORY}/touch-paging-readback.log"
+    python3 scripts/fixtures/dictionary-touch.py prepare-entry "${APP_CONTAINER}" "${SIMULATOR_ID}" "${RUN_DIRECTORY}/touch-fixture.json"
+    if ! positive_test "${RUN_DIRECTORY}/touch-entry.log" "${XCODE_COMMON_ARGUMENTS[@]}" -scheme DictionaryTouch -configuration Release -destination "platform=iOS Simulator,id=${SIMULATOR_ID}" -parallel-testing-enabled NO -test-timeouts-enabled YES -maximum-test-execution-time-allowance 60 -only-testing:DictionaryUITests/DictionaryTouchTests/test15ExpenseWriteReopen -only-testing:DictionaryUITests/DictionaryTouchTests/test16IncomeContinueEdit -resultBundlePath "${RUN_DIRECTORY}/touch-entry.xcresult"; then
+      tail -80 "${RUN_DIRECTORY}/touch-entry.log" >&2
+      exit 1
+    fi
+    stop_owned_app "${RUN_DIRECTORY}/touch-entry-stop.log"
+    phase check native-readback/DictionaryTouch/Release "${RUN_DIRECTORY}/touch-entry-readback.log"
+    python3 scripts/fixtures/dictionary-touch.py check-entry "${APP_CONTAINER}" "${SIMULATOR_ID}" "${RUN_DIRECTORY}/touch-fixture.json" | tee "${RUN_DIRECTORY}/touch-entry-readback.log"
     run_phase check check/resources/simulator "${RUN_DIRECTORY}/simulator-resources.log" '' node scripts/verify-ios-resources.mjs .local/ios/DerivedData/Build/Products/Release-iphonesimulator/App.app
-    sed -n '/DICTIONARY_TOUCH_/p; /Executed .* tests\{0,1\}, with/p; /\*\* TEST SUCCEEDED \*\*/p' "${RUN_DIRECTORY}/touch.log" "${RUN_DIRECTORY}/touch-paging.log"
+    sed -n '/DICTIONARY_TOUCH_/p; /Executed .* tests\{0,1\}, with/p; /\*\* TEST SUCCEEDED \*\*/p' "${RUN_DIRECTORY}/touch.log" "${RUN_DIRECTORY}/touch-paging.log" "${RUN_DIRECTORY}/touch-entry.log"
     exit 0
   fi
   if [[ "${MODE}" != ios-recovery ]]; then
@@ -290,5 +298,5 @@ JS
   done
   if [[ "${MODE}" == ios-recovery ]]; then exit 0; fi
   # 输出固定探针结果，不打印数据库内容或真实设备信息。
-  sed -n '/NATIVE_SQLITE_EVIDENCE/p; /LEDGER_LIFECYCLE_EVIDENCE/p; /IPHONE_SHELL_EVIDENCE/p; /OFFLINE_DICTIONARY_EVIDENCE/p; /OFFLINE_DICTIONARY_UI_EVIDENCE/p; /Executed .* tests\{0,1\}, with/p; /\*\* TEST SUCCEEDED \*\*/p' "${RUN_DIRECTORY}/test.log"
+  sed -n '/NATIVE_SQLITE_EVIDENCE/p; /LEDGER_LIFECYCLE_EVIDENCE/p; /IPHONE_SHELL_EVIDENCE/p; /OFFLINE_DICTIONARY_EVIDENCE/p; /OFFLINE_DICTIONARY_UI_EVIDENCE/p; /OFFLINE_ENTRY_EVIDENCE/p; /Executed .* tests\{0,1\}, with/p; /\*\* TEST SUCCEEDED \*\*/p' "${RUN_DIRECTORY}/test.log"
 fi

@@ -7,7 +7,7 @@ import { computed, inject, onScopeDispose, reactive, ref, useId, watch } from 'v
 
 import type { DailyTemplateSelection } from '../api/dailyTemplates'
 import { listDictionaryCandidates, type DictionaryItem } from '../api/dictionaries'
-import { ApiClientError } from '../api/http'
+import { LocalError } from '../domain/localError'
 import {
   createIncome, getIncome, listRecentIncomeNames, undoCreatedIncome, updateIncome, type IncomeResponse,
 } from '../api/incomes'
@@ -189,7 +189,7 @@ async function submit(continueEntry: boolean): Promise<void> {
   submitting.value = true
   try {
     const body = incomeRequestFromForm(form)
-    const key = attempt.keyFor(body)
+    const key = attempt.keyFor(props.editEntry ? { id: props.editEntry.id, version: editVersion.value, entry: body } : body)
     if (props.editEntry) {
       saved.value = await updateIncome(props.editEntry.id, { version: editVersion.value, entry: body }, key)
       applyEditEntry(saved.value)
@@ -204,10 +204,12 @@ async function submit(continueEntry: boolean): Promise<void> {
     templateUnavailableFields.value = []; emit('templateConsumed')
     if (!recentNames.value.includes(saved.value.incomeName)) recentNames.value.unshift(saved.value.incomeName)
   } catch (error) {
-    if (error instanceof ApiClientError && error.body?.fieldErrors) Object.entries(error.body.fieldErrors)
-      .forEach(([field, messages]) => { errors[field as IncomeField] = messages?.[0] })
-    versionConflict.value = error instanceof ApiClientError && error.body?.code === 'LEDGER_VERSION_CONFLICT'
-    toastKind.value = 'error'; toastMessage.value = error instanceof Error ? error.message : '保存失败，请重试。'; toastOpen.value = true
+    const failure = normalizeRequestError(error)
+    Object.entries(failure.fieldErrors).forEach(([field, messages]) => {
+      errors[field as IncomeField] = messages[0]
+    })
+    versionConflict.value = error instanceof LocalError && error.code === 'LEDGER_VERSION_CONFLICT'
+    toastKind.value = 'error'; toastMessage.value = failure.message; toastOpen.value = true
   } finally { submitting.value = false }
 }
 

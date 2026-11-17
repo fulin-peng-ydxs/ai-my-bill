@@ -1,5 +1,9 @@
 import type { components } from './generated/schema'
-import { apiRequest } from './http'
+import { EntryReadbackQuery } from '../data/entries/readbackQuery'
+import { appDatabase } from '../data/appDatabase'
+import { localOperation } from '../data/localOperation'
+
+const readback = new EntryReadbackQuery(appDatabase)
 
 export type LedgerItem = components['schemas']['LedgerItem']
 export type LedgerPage = components['schemas']['LedgerPage']
@@ -38,21 +42,5 @@ export function listLedgerEntries(
   cursor?: string,
   signal?: AbortSignal,
 ): Promise<LedgerPage> {
-  const params = new URLSearchParams({ query: filters.query, type: filters.type, lifecycle: filters.lifecycle, range: filters.range })
-  if (filters.fundingChannelId) params.set('fundingChannelId', filters.fundingChannelId)
-  for (const key of ['primaryCategoryId', 'secondaryCategoryId', 'productId', 'unitId', 'purchaseChannelId',
-    'locationLabelId', 'incomeCategoryId', 'payerId', 'incomeName', 'entryId'] as const) {
-    if (filters[key]) params.set(key, filters[key])
-  }
-  for (const key of ['missingSecondaryCategory', 'missingPurchaseChannel', 'missingLocation'] as const) {
-    if (filters[key]) params.set(key, 'true')
-  }
-  if (filters.expenseWeekday) params.set('expenseWeekday', String(filters.expenseWeekday))
-  if (filters.expenseTimeBand) params.set('expenseTimeBand', filters.expenseTimeBand)
-  if (filters.range === 'CUSTOM' && filters.startDate && filters.endDate) {
-    params.set('startDate', filters.startDate)
-    params.set('endDate', filters.endDate)
-  }
-  if (cursor) params.set('cursor', cursor)
-  return apiRequest(`/ledger-entries?${params}`, { signal })
+  return localOperation(() => readback.list(filters, cursor, signal))
 }

@@ -4,7 +4,7 @@ import { useRefreshOnReturn } from '../composables/useRefreshOnReturn'
 import { useLatestRequest } from '../composables/useLatestRequest'
 import { computed, inject, onScopeDispose, reactive, ref, useId, watch } from 'vue'
 
-import { ApiClientError } from '../api/http'
+import { LocalError } from '../domain/localError'
 import type { DailyTemplateSelection } from '../api/dailyTemplates'
 import {
   createExpense, getExpense, undoCreatedExpense, updateExpense, type ExpenseResponse, type ProductSuggestion,
@@ -319,7 +319,7 @@ async function submit(continueEntry: boolean): Promise<void> {
   submitting.value = true
   try {
     const body = expenseRequestFromForm(form)
-    const idempotencyKey = idempotencyAttempt.keyFor(body)
+    const idempotencyKey = idempotencyAttempt.keyFor(props.editEntry ? { id: props.editEntry.id, version: editVersion.value, entry: body } : body)
     if (props.editEntry) {
       saved.value = await updateExpense(props.editEntry.id, { version: editVersion.value, entry: body }, idempotencyKey)
       applyEditEntry(saved.value)
@@ -342,14 +342,13 @@ async function submit(continueEntry: boolean): Promise<void> {
     emit('templateConsumed')
     idempotencyAttempt.reset()
   } catch (error) {
-    if (error instanceof ApiClientError && error.body?.fieldErrors) {
-      Object.entries(error.body.fieldErrors).forEach(([field, messages]) => {
-        errors[field as ExpenseField] = messages?.[0]
-      })
-    }
-    versionConflict.value = error instanceof ApiClientError && error.body?.code === 'LEDGER_VERSION_CONFLICT'
+    const failure = normalizeRequestError(error)
+    Object.entries(failure.fieldErrors).forEach(([field, messages]) => {
+      errors[field as ExpenseField] = messages[0]
+    })
+    versionConflict.value = error instanceof LocalError && error.code === 'LEDGER_VERSION_CONFLICT'
     toastKind.value = 'error'
-    toastMessage.value = error instanceof Error ? error.message : '保存失败，请重试。'
+    toastMessage.value = failure.message
     toastOpen.value = true
   } finally {
     submitting.value = false

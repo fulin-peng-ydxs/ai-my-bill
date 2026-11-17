@@ -1,5 +1,5 @@
 import type { components } from './generated/schema'
-import { apiRequest } from './http'
+import { entries, mutateEntry } from './localEntries'
 import { appDatabase } from '../data/appDatabase'
 import { ProductService } from '../data/dictionaries/productService'
 import { localOperation } from '../data/localOperation'
@@ -20,15 +20,11 @@ export function createExpense(
   request: CreateExpenseRequest,
   idempotencyKey: string,
 ): Promise<ExpenseResponse> {
-  return apiRequest('/expenses', {
-    method: 'POST',
-    headers: { 'Idempotency-Key': idempotencyKey },
-    body: JSON.stringify(request),
-  })
+  return mutateEntry(() => entries.createExpense(request, idempotencyKey))
 }
 
 export function getExpense(expenseId: string, signal?: AbortSignal): Promise<ExpenseResponse> {
-  return apiRequest(`/expenses/${encodeURIComponent(expenseId)}`, { signal })
+  return localOperation(() => entries.getExpense(expenseId, signal))
 }
 
 export function updateExpense(
@@ -36,13 +32,9 @@ export function updateExpense(
   request: UpdateExpenseRequest,
   idempotencyKey: string,
 ): Promise<ExpenseResponse> {
-  return apiRequest(`/expenses/${encodeURIComponent(expenseId)}`, {
-    method: 'PUT', headers: { 'Idempotency-Key': idempotencyKey }, body: JSON.stringify(request),
-  })
+  return mutateEntry(() => entries.updateExpense(expenseId, request, idempotencyKey))
 }
 
 export function undoCreatedExpense(expenseId: string, idempotencyKey: string): Promise<void> {
-  return apiRequest(`/expenses/${encodeURIComponent(expenseId)}/undo`, {
-    method: 'DELETE', headers: { 'Idempotency-Key': idempotencyKey },
-  })
+  return mutateEntry(() => entries.undo('EXPENSE', expenseId, idempotencyKey))
 }

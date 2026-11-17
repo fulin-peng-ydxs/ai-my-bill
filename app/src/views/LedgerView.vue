@@ -5,6 +5,7 @@ import { formatLedgerCounterparty } from '../domain/ledgerFormatting'
 import { pageScrollTop, scrollPageTo } from '../composables/pageScroll'
 import { usePageActivity } from '../composables/usePageActivity'
 import { useRefreshOnReturn } from '../composables/useRefreshOnReturn'
+import { LEDGER_CHANGED_EVENT } from '../api/localEntries'
 import { ArrowLeft } from 'lucide-vue-next'
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
@@ -380,7 +381,17 @@ function refreshOverlayItems(): void {
 }
 
 onBeforeRouteLeave(() => { rememberLedgerScroll(currentScrollKey.value, pageScrollTop()) })
-onBeforeUnmount(() => { editRequest.cancel(); adjustmentRequest.cancel() })
+function ledgerChanged(): void {
+  if (pageActive.value && !editOpen.value) {
+    void list.refresh()
+  }
+}
+globalThis.addEventListener(LEDGER_CHANGED_EVENT, ledgerChanged)
+onBeforeUnmount(() => {
+  globalThis.removeEventListener(LEDGER_CHANGED_EVENT, ledgerChanged)
+  editRequest.cancel()
+  adjustmentRequest.cancel()
+})
 useRefreshOnReturn(() => list.refresh())
 </script>
 

@@ -110,3 +110,4 @@ export { shell } from './shellProbe'
 
 export { dictionaries } from './dictionaryProbe'
 export { dictionaryUi } from './dictionaryUiProbe'
+export { entries } from './entryProbe'

@@ -23,6 +23,7 @@ export const referencedSql = `(
   OR EXISTS(SELECT 1 FROM product_details r WHERE ${recentFields.map(field => `r.${field}=d.id`).join(' OR ')})
   OR EXISTS(SELECT 1 FROM preference f WHERE f.key='defaultFundingChannelId' AND json_extract(f.value,'$')=d.id)
   OR EXISTS(SELECT 1 FROM product_merge_event e WHERE e.source_product_id=d.id OR e.target_product_id=d.id)
+  OR EXISTS(SELECT 1 FROM payer_details r WHERE r.payer_id=d.id OR r.last_income_category_id=d.id OR r.last_funding_channel_id=d.id)
 )`
 export const dictionaryFromSql = `FROM dictionary_item d
   LEFT JOIN dictionary_item parent ON parent.id=d.parent_id

@@ -42,14 +42,17 @@ final class DictionaryTouchTests: XCTestCase {
 
     // iOS 模拟器冷启动时 WebKit 的 AX 树可能尚未包含 HTML；只用截图文字作定位，
     // 实际输入仍由 XCUITest 原生触摸/键盘完成，不注入 JS、不调用业务 API。
-    private func visualText(_ label: String) -> CGRect? {
+    private func visualText(_ label: String, containing: Bool = false) -> CGRect? {
         guard let image = XCUIScreen.main.screenshot().image.cgImage else { return nil }
         let request = VNRecognizeTextRequest()
         request.recognitionLanguages = ["zh-Hans", "en-US"]
         request.usesLanguageCorrection = false
         do { try VNImageRequestHandler(cgImage: image).perform([request]) }
         catch { return nil }
-        return request.results?.first { $0.topCandidates(1).first?.string == label }?.boundingBox
+        return request.results?.first {
+            guard let text = $0.topCandidates(1).first?.string else { return false }
+            return containing ? text.contains(label) : text == label
+        }?.boundingBox
     }
 
     private func tap(_ label: String) {
@@ -321,6 +324,108 @@ final class DictionaryTouchTests: XCTestCase {
         XCTAssertFalse(matching("没有匹配项").firstMatch.exists)
         XCTAssertEqual(app.searchFields.firstMatch.value as? String, "PageUnit")
         print("DICTIONARY_TOUCH_LAST_PAGE_DISABLE_RECOVERED")
+    }
+
+    private func entryField(_ id: String, _ label: String) -> XCUIElement {
+        let field = app.textFields.matching(NSPredicate(format: "identifier == %@ OR label == %@", id, label)).firstMatch
+        XCTAssertTrue(field.waitForExistence(timeout: 5), app.debugDescription)
+        return field
+    }
+
+    private func replaceEntryField(_ id: String, _ label: String, _ value: String) {
+        let field = entryField(id, label)
+        field.tap()
+        if let old = field.value as? String, !old.isEmpty, old != field.placeholderValue {
+            field.press(forDuration: 1.2)
+            let selectAll = app.descendants(matching: .any).matching(NSPredicate(format: "label IN %@", ["全选", "Select All"])).firstMatch
+            XCTAssertTrue(selectAll.waitForExistence(timeout: 3))
+            selectAll.tap()
+        }
+        field.typeText(value)
+        expectValue(field, value)
+    }
+
+    private func dismissEntryKeyboard() {
+        let done = app.buttons.matching(NSPredicate(format: "label IN %@", ["完成", "Done"])).firstMatch
+        if done.exists && done.isHittable {
+            done.tap()
+        } else {
+            // 键盘期间保存区按原契约回到正文流；原生滚动到动作区，不改页面布局。
+            app.webViews.firstMatch.swipeUp()
+        }
+    }
+
+    private func tapLedgerRow(_ title: String, kind: String) {
+        let row = app.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH %@", kind + " " + title)).firstMatch
+        var box: CGRect?
+        let ready = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            if row.exists && row.isHittable { return true }
+            // 原明细行会把类型、名称及金额识别为同一文本块；只在该行内定位唯一合成名称。
+            box = self.visualText(title, containing: true)
+            return box != nil
+        }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 5), .completed, "找不到账目行 \(title)")
+        if row.exists && row.isHittable { row.tap() }
+        else if let box {
+            app.coordinate(withNormalizedOffset: CGVector(dx: box.midX, dy: 1 - box.midY)).tap()
+        }
+    }
+
+    func test15ExpenseWriteReopen() {
+        tap("记一笔")
+        tap("选择或新增商品")
+        tap("测试苹果")
+        replaceEntryField("expense-quantity", "数量", "1.25")
+        replaceEntryField("expense-paid-amount", "实付金额", "15.00")
+        dismissEntryKeyboard()
+        tap("保存支出")
+        appears("支出已保存，可撤销本次保存。")
+        app.terminate()
+        app.launch()
+        activateWebContent()
+        tap("明细")
+        tapLedgerRow("测试苹果", kind: "支出")
+        appears("编辑支出")
+        expectValue(entryField("expense-paid-amount", "实付金额"), "15")
+        expectValue(entryField("expense-unit-price", "单价"), "12.3456")
+        print("ENTRY_TOUCH_EXPENSE_REOPEN_VERIFIED")
+    }
+
+    func test16IncomeContinueEdit() {
+        tap("记一笔")
+        replaceEntryField("expense-unit-price", "单价", "77")
+        tap("收入")
+        tap("选择或填写收入名称")
+        tap("测试工资")
+        tap("分类")
+        tap("收入分类")
+        tap("工资")
+        tap("付款方")
+        tap("合成公司")
+        tap("收款方式")
+        tap("测试现金")
+        replaceEntryField("income-amount", "收入金额", "1000.00")
+        dismissEntryKeyboard()
+        tap("保存并继续")
+        appears("收入已保存，可撤销本次保存。")
+        let amount = entryField("income-amount", "收入金额")
+        XCTAssertTrue((amount.value as? String) == "" || (amount.value as? String) == amount.placeholderValue)
+        appears("测试现金")
+        tap("支出")
+        expectValue(entryField("expense-unit-price", "单价"), "77")
+        tap("收入")
+        tap("明细")
+        tapLedgerRow("测试工资", kind: "收入")
+        appears("编辑收入")
+        tap("补充信息")
+        let note = app.textViews.firstMatch
+        XCTAssertTrue(note.waitForExistence(timeout: 3))
+        note.tap()
+        note.typeText("T6 edited")
+        dismissEntryKeyboard()
+        tap("保存修改")
+        appears("收入修改已保存。")
+        print("ENTRY_TOUCH_INCOME_CONTINUE_EDIT_VERIFIED")
     }
 
 }

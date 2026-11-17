@@ -1,28 +1,27 @@
 import type { components } from './generated/schema'
-import { apiRequest } from './http'
+import { entries, mutateEntry } from './localEntries'
+import { localOperation } from '../data/localOperation'
 
 export type CreateIncomeRequest = components['schemas']['CreateIncomeRequest']
 export type IncomeResponse = components['schemas']['IncomeResponse']
 export type UpdateIncomeRequest = components['schemas']['UpdateIncomeRequest']
 
 export function listRecentIncomeNames(query: string, signal?: AbortSignal): Promise<{ items: string[] }> {
-  return apiRequest(`/incomes/names?${new URLSearchParams({ query })}`, { signal })
+  return localOperation(() => entries.recentIncomeNames(query, signal))
 }
 
 export function createIncome(request: CreateIncomeRequest, key: string): Promise<IncomeResponse> {
-  return apiRequest('/incomes', { method: 'POST', headers: { 'Idempotency-Key': key }, body: JSON.stringify(request) })
+  return mutateEntry(() => entries.createIncome(request, key))
 }
 
 export function getIncome(id: string, signal?: AbortSignal): Promise<IncomeResponse> {
-  return apiRequest(`/incomes/${encodeURIComponent(id)}`, { signal })
+  return localOperation(() => entries.getIncome(id, signal))
 }
 
 export function updateIncome(id: string, request: UpdateIncomeRequest, key: string): Promise<IncomeResponse> {
-  return apiRequest(`/incomes/${encodeURIComponent(id)}`, {
-    method: 'PUT', headers: { 'Idempotency-Key': key }, body: JSON.stringify(request),
-  })
+  return mutateEntry(() => entries.updateIncome(id, request, key))
 }
 
 export function undoCreatedIncome(id: string, key: string): Promise<void> {
-  return apiRequest(`/incomes/${encodeURIComponent(id)}/undo`, { method: 'DELETE', headers: { 'Idempotency-Key': key } })
+  return mutateEntry(() => entries.undo('INCOME', id, key))
 }
