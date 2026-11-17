@@ -5,6 +5,7 @@ import { spawn } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { constants } from 'node:os'
 import { APP_ID, RUNTIME, DEVICE_TYPE, nativeCases, uiCases, uiScenarios, selection, readSession, assertDevice, hashPaths, sourceHash } from './lib/ios-debug.mjs'
+import { verificationHash, requireEvidence, beginFull, finishFull, observeFull } from './lib/ios-verification.mjs'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const temporary = path.join(root, '.local/ios/tmp/ai-agent')
@@ -25,13 +26,22 @@ for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, () => {
   }
 })
 
-async function command(program, args, { log, timeout = 300_000, accept = [0], input, inherit = false, env = process.env } = {}) {
+async function command(program, args, { log, timeout = 300_000, accept = [0], input, inherit = false, env = process.env, observer } = {}) {
   if (interrupted) throw new Error(`已取消：${interrupted}`)
   const output = log ? fs.openSync(log, 'wx', 0o600) : undefined
   let text = ''
   let timedOut = false
   let inputError
   let timer
+  let watching
+  let observationError
+  const stop = error => {
+    if (observationError) return
+    observationError = error
+    const pid = child.pid
+    killGroup(pid, 'SIGTERM')
+    cancellationTimer = setTimeout(() => killGroup(pid, 'SIGKILL'), 10_000)
+  }
   try {
     const status = await new Promise((resolve, reject) => {
       child = spawn(program, args, { cwd: root, env, detached: true,
@@ -43,23 +53,34 @@ async function command(program, args, { log, timeout = 300_000, accept = [0], in
       if (!log && !inherit) for (const stream of [child.stdout, child.stderr]) stream.on('data', data => {
         text += data.toString(); if (text.length > 1_048_576) { timedOut = true; killGroup(child.pid, 'SIGKILL') }
       })
-      timer = setTimeout(() => { timedOut = true; killGroup(child.pid, 'SIGKILL') }, timeout)
+      timer = setTimeout(() => { timedOut = true; stop(new Error(`${program} 超过执行预算，停止并保留失败证据。`)) }, timeout)
+      if (observer) watching = setInterval(() => { try { observer.poll() } catch (error) { stop(error) } }, 100)
       child.once('error', reject)
       child.once('close', (code, signal) => resolve(code ?? (128 + (constants.signals[signal] ?? 0))))
     })
+    if (observer && !observationError) { try { observer.poll() } catch (error) { observationError = error } }
+    if (observationError) throw observationError
     // common/touch 可以在已完成门禁后正常提前 exit；仅此类成功退出允许输入端 EPIPE。
     if (interrupted || timedOut || (inputError && inputError.code !== 'EPIPE') || !accept.includes(status)) {
       throw new Error(`${program} 未通过（exit=${status}${timedOut ? ', timeout/output-limit' : ''}）${log ? `，日志：${log}` : `：${text.trim()}`}`)
     }
     return { status, text }
   } finally {
-    clearTimeout(timer); clearTimeout(cancellationTimer); child = undefined
+    clearTimeout(timer); clearInterval(watching); clearTimeout(cancellationTimer); child = undefined
     if (output !== undefined) fs.closeSync(output)
   }
 }
 const simctl = (...args) => command('xcrun', ['simctl', ...args])
 const writeContext = session => fs.writeFileSync(session.file, JSON.stringify(session.context), { mode: 0o600 })
 const inventory = async () => JSON.parse((await simctl('list', 'devices', '--json')).text)
+async function nativeToolchain() {
+  if (process.platform === 'darwin' && !process.env.DEVELOPER_DIR
+    && (await command('xcode-select', ['-p'])).text.trim() === '/Library/Developer/CommandLineTools'
+    && fs.existsSync('/Applications/Xcode.app')) process.env.DEVELOPER_DIR = '/Applications/Xcode.app/Contents/Developer'
+  const sdk = (await command('xcrun', ['--sdk', 'iphoneos', '--show-sdk-version'])).text.trim()
+  if (!/^27\./.test(sdk)) throw new Error('需要 Xcode / iOS 27 SDK。')
+  return sdk + (await command('xcodebuild', ['-version'])).text + process.version
+}
 
 async function stopApp(id, log) {
   const { status, text } = await command('xcrun', ['simctl', 'terminate', id, APP_ID], { accept: [0, 3] })
@@ -110,6 +131,7 @@ async function runPartial(session, selected, toolchain, requested) {
     status: 'failed', simulatorId: device.udid, runId: session.context.runId }
   console.log(`请求：${requested.kind} ${requested.name}\n实际局部用例：${selected.cases.join(', ')}\n证据：${run}`)
   try {
+    result.verificationHash = verificationHash(root, toolchain)
     // 失败的 UI 自动化会话可能在 launchd 中遗留 runner；只重启本轮设备，保留 UUID 和产物。
     if (needsRecovery && selected.scheme === 'DictionaryTouch' && device.state !== 'Shutdown') {
       await command('xcrun', ['simctl', 'shutdown', device.udid], { log: path.join(run, 'recover-device.log') })
@@ -157,13 +179,15 @@ async function runPartial(session, selected, toolchain, requested) {
     await stopApp(device.udid, path.join(run, 'stop-final.log'))
     if (selected.fixture) await command('python3', ['scripts/fixtures/dictionary-touch.py', 'debug-check-' + selected.fixture,
       (await simctl('get_app_container', device.udid, APP_ID, 'data')).text.trim(), device.udid, fixture], { log: path.join(run, 'readback.log') })
+    if (verificationHash(root, toolchain) !== result.verificationHash) throw new Error('执行器、夹具或测试输入变化，局部结果不能用于当前版本完整验收。')
     result.status = 'passed'
     console.log(`局部验证通过（${selected.cases.length} 项，不能替代完整验收）；保留本轮模拟器供下一次调试。`)
   } catch (error) {
     result.error = error.message
     throw error
   } finally {
-    fs.writeFileSync(path.join(run, 'result.json'), JSON.stringify({ ...result, elapsedMs: Date.now() - started }, null, 2))
+    fs.writeFileSync(path.join(run, 'result.json'), JSON.stringify({ ...result, completedAt: Date.now(), elapsedMs: Date.now() - started }, null, 2))
+    if (result.status === 'passed') console.log(`EVIDENCE=${run}`)
   }
 }
 
@@ -171,17 +195,36 @@ async function main(args) {
   const full = ['common', 'ios-build', 'ios-smoke', 'ios-touch']
   if (!args.length) args = ['common']
   if (args[0] !== 'debug') {
-    const borrowing = ['ios-smoke', 'ios-touch'].includes(args[0]) && args.length === 3 && args[1] === '--session'
-    if (!full.includes(args[0]) || (!borrowing && args.length !== 1)) throw new Error('用法：ios-app.sh common|ios-build|ios-smoke|ios-touch [--session PATH]|debug list|create|run|suspend|close')
-    const session = borrowing ? readSession(temporary, args[2]) : undefined
+    const guarded = ['ios-smoke', 'ios-touch'].includes(args[0])
+    const options = {}
+    if (!full.includes(args[0]) || (!guarded && args.length !== 1)) throw new Error('用法：common|ios-build；ios-smoke|ios-touch --from RUN_DIRECTORY [--session PATH]；debug list|create|run|suspend|close')
+    for (let i = 1; i < args.length; i += 2) {
+      if (!['--session', '--from'].includes(args[i]) || !args[i + 1] || Object.hasOwn(options, args[i])) throw new Error('完整验收参数无效；拒绝局部过滤、重复参数和强制绕过。')
+      options[args[i]] = args[i + 1]
+    }
+    if (guarded && !options['--from']) throw new Error('完整验收前必须先通过局部验证，并用 --from RUN_DIRECTORY 指定成功证据。')
+    const session = options['--session'] ? readSession(temporary, options['--session']) : undefined
     const scriptPath = path.join(root, 'scripts/lib/ios-app-full.sh')
     const script = fs.readFileSync(scriptPath, 'utf8')
     // Shell 会逐段读取脚本；用校验后的不可变输入，避免运行中编辑文件造成偏移/解析错误。
     await command('bash', ['-n'], { input: script })
+    const toolchain = guarded ? await nativeToolchain() : undefined
+    const fingerprint = guarded ? verificationHash(root, toolchain) : undefined
+    const evidence = guarded ? requireEvidence(root, options['--from'], fingerprint) : undefined
+    const attempt = guarded ? beginFull(root, args[0], evidence, fingerprint, process.pid) : undefined
+    const observer = attempt && observeFull(attempt)
     // 设备可借用，验收范围与资源生成不能借用局部结果；子流程再次核对真实设备后才重置 App。
-    await command('bash', ['-s', '--', args[0]], { timeout: 2_400_000, inherit: true, input: script,
-      env: { ...process.env, MYBILL_FULL_SESSION: session?.directory ?? '' } })
-    if (fs.readFileSync(scriptPath, 'utf8') !== script) throw new Error('完整流程脚本在执行期间变化；快照已执行，但不能认定当前脚本通过。')
+    try {
+      if (attempt) console.log(`完整验收记录：${attempt.run}`)
+      await command('bash', ['-s', '--', args[0]], { timeout: guarded ? 900_000 : 2_400_000, inherit: true, input: script, observer,
+        env: { ...process.env, MYBILL_FULL_SESSION: session?.directory ?? '', MYBILL_FULL_ATTEMPT: attempt?.run ?? '' } })
+      if (fs.readFileSync(scriptPath, 'utf8') !== script) throw new Error('完整流程脚本在执行期间变化；快照已执行，但不能认定当前脚本通过。')
+      if (guarded && verificationHash(root, toolchain) !== fingerprint) throw new Error('完整验收期间源码、测试或执行器变化，不能认定当前版本通过。')
+      if (attempt) finishFull(root, attempt)
+    } catch (error) {
+      if (attempt) finishFull(root, attempt, error, observer.failedCases)
+      throw error
+    }
     return
   }
   if (args[1] === 'list' && args.length === 2) {
@@ -192,11 +235,8 @@ async function main(args) {
   }
   if (!['create', 'run', 'suspend', 'close'].includes(args[1])) throw new Error('未知 debug 操作。')
   if (process.platform !== 'darwin') throw new Error('原生调试需要 macOS。')
-  if (!process.env.DEVELOPER_DIR && (await command('xcode-select', ['-p'])).text.trim() === '/Library/Developer/CommandLineTools'
-    && fs.existsSync('/Applications/Xcode.app')) process.env.DEVELOPER_DIR = '/Applications/Xcode.app/Contents/Developer'
   const managing = ['suspend', 'close'].includes(args[1])
-  const sdk = managing ? '' : (await command('xcrun', ['--sdk', 'iphoneos', '--show-sdk-version'])).text.trim()
-  if (!managing && !/^27\./.test(sdk)) throw new Error('需要 Xcode / iOS 27 SDK。')
+  const toolchain = managing ? '' : await nativeToolchain()
   if (args[1] === 'create') {
     if (args.length !== 2) throw new Error('create 不接受已有设备或会话参数。')
     const directory = fs.mkdtempSync(path.join(temporary, 'ios-debug-'))
@@ -250,7 +290,7 @@ async function main(args) {
     console.log('本轮调试设备和构建缓存已清理，证据保留。')
     return
   }
-  await runPartial(session, selected, sdk + (await command('xcodebuild', ['-version'])).text + process.version,
+  await runPartial(session, selected, toolchain,
     { kind: args[4].slice(2), name: args[5] })
 }
 

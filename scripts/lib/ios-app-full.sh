@@ -17,12 +17,21 @@ if [[ $# -gt 1 || ! "${MODE}" =~ ^(common|ios-build|ios-smoke|ios-touch)$ ]]; th
   exit 2
 fi
 
+# 内部脚本不能绕过调度器的局部证据和失败锁；在生成资源前拒绝直接执行。
+if [[ "${MODE}" == ios-smoke || "${MODE}" == ios-touch ]]; then
+  if [[ -z "${MYBILL_FULL_ATTEMPT:-}" ]]; then
+    echo '内部完整入口缺少调度许可；先局部验证，再经根目录命令提供 --from。' >&2
+    exit 2
+  fi
+  node scripts/lib/ios-verification.mjs permit "${MODE}" "${MYBILL_FULL_ATTEMPT}"
+fi
+
 # 每次从源码生成，探针只供 NativeTests 的独立资源阶段使用。
 npm --prefix app run native:sync
 npm --prefix app run probe:bundle
 npm --prefix app run test
 node scripts/verify-ios-resources.mjs
-node --test scripts/tests/ios-resources.test.mjs scripts/tests/ios-debug.test.mjs
+node --test scripts/tests/ios-resources.test.mjs scripts/tests/ios-debug.test.mjs scripts/tests/ios-verification.test.mjs
 if [[ "${MODE}" == common ]]; then exit 0; fi
 
 if [[ -z "${DEVELOPER_DIR:-}" && "$(xcode-select -p)" == /Library/Developer/CommandLineTools && -d /Applications/Xcode.app ]]; then
@@ -68,6 +77,14 @@ trap 'exit 130' INT
 trap 'exit 143' TERM
 
 # 保留测试日志、截图和 xcresult；关闭额外系统诊断，避免失败后长时间采集 sysdiagnose。
+# 只有正例注册观察日志；隔离拒绝与主动进程中断保留原预期非零契约。
+positive_test() {
+  local test_log="$1"
+  shift
+  node scripts/lib/ios-verification.mjs step "${MODE}" "${MYBILL_FULL_ATTEMPT}" "${test_log}" || return
+  xcodebuild test -collect-test-diagnostics never "$@" > "${test_log}" 2>&1
+}
+
 XCODE_COMMON_ARGUMENTS=(-project app/ios/App/App.xcodeproj
   -derivedDataPath .local/ios/DerivedData -clonedSourcePackagesDirPath .local/ios/SourcePackages
   -disableAutomaticPackageResolution CODE_SIGNING_ALLOWED=NO)
@@ -125,7 +142,7 @@ JS
   xcrun simctl terminate "${SIMULATOR_ID}" com.mybill.offline
   if [[ "${MODE}" == ios-touch ]]; then
     # 正式生命周期先创建空账本；夹具仅写本轮模拟器、进程关闭后的文件，不启用 T6 保存。
-    if ! xcodebuild test -collect-test-diagnostics never "${XCODE_ARGUMENTS[@]}" -destination "platform=iOS Simulator,id=${SIMULATOR_ID}" -parallel-testing-enabled NO -test-timeouts-enabled YES -maximum-test-execution-time-allowance 60 -only-testing:NativeTests/NativeSqliteTests/testBundledEntryAndNativeSqliteBridge -resultBundlePath "${RUN_DIRECTORY}/touch-initialize.xcresult" > "${RUN_DIRECTORY}/touch-initialize.log" 2>&1; then
+    if ! positive_test "${RUN_DIRECTORY}/touch-initialize.log" "${XCODE_ARGUMENTS[@]}" -destination "platform=iOS Simulator,id=${SIMULATOR_ID}" -parallel-testing-enabled NO -test-timeouts-enabled YES -maximum-test-execution-time-allowance 60 -only-testing:NativeTests/NativeSqliteTests/testBundledEntryAndNativeSqliteBridge -resultBundlePath "${RUN_DIRECTORY}/touch-initialize.xcresult"; then
       tail -60 "${RUN_DIRECTORY}/touch-initialize.log" >&2
       exit 1
     fi
@@ -169,7 +186,7 @@ JS
     xcrun simctl bootstatus "${SIMULATOR_ID}" -b > "${RUN_DIRECTORY}/touch-guard-reboot.log" 2>&1
     APP_CONTAINER="$(xcrun simctl get_app_container "${SIMULATOR_ID}" com.mybill.offline data)"
     python3 scripts/fixtures/dictionary-touch.py prepare "${APP_CONTAINER}" "${SIMULATOR_ID}" "${RUN_DIRECTORY}/touch-fixture.json"
-    if ! xcodebuild test -collect-test-diagnostics never "${XCODE_COMMON_ARGUMENTS[@]}" -scheme DictionaryTouch -configuration Release -destination "platform=iOS Simulator,id=${SIMULATOR_ID}" -parallel-testing-enabled NO -test-timeouts-enabled YES -maximum-test-execution-time-allowance 60 -skip-testing:DictionaryUITests/DictionaryTouchTests/test00DebugKeyboardReady -skip-testing:DictionaryUITests/DictionaryTouchTests/test11ProductLastPage -skip-testing:DictionaryUITests/DictionaryTouchTests/test12MergeLastPageProduct -skip-testing:DictionaryUITests/DictionaryTouchTests/test13UnitLastPage -skip-testing:DictionaryUITests/DictionaryTouchTests/test14DisableLastPageUnit -resultBundlePath "${RUN_DIRECTORY}/touch.xcresult" > "${RUN_DIRECTORY}/touch.log" 2>&1; then
+    if ! positive_test "${RUN_DIRECTORY}/touch.log" "${XCODE_COMMON_ARGUMENTS[@]}" -scheme DictionaryTouch -configuration Release -destination "platform=iOS Simulator,id=${SIMULATOR_ID}" -parallel-testing-enabled NO -test-timeouts-enabled YES -maximum-test-execution-time-allowance 60 -skip-testing:DictionaryUITests/DictionaryTouchTests/test00DebugKeyboardReady -skip-testing:DictionaryUITests/DictionaryTouchTests/test11ProductLastPage -skip-testing:DictionaryUITests/DictionaryTouchTests/test12MergeLastPageProduct -skip-testing:DictionaryUITests/DictionaryTouchTests/test13UnitLastPage -skip-testing:DictionaryUITests/DictionaryTouchTests/test14DisableLastPageUnit -resultBundlePath "${RUN_DIRECTORY}/touch.xcresult"; then
       tail -80 "${RUN_DIRECTORY}/touch.log" >&2
       exit 1
     fi
@@ -178,7 +195,7 @@ JS
     APP_CONTAINER="$(xcrun simctl get_app_container "${SIMULATOR_ID}" com.mybill.offline data)"
     python3 scripts/fixtures/dictionary-touch.py check "${APP_CONTAINER}" "${SIMULATOR_ID}" "${RUN_DIRECTORY}/touch-fixture.json" | tee "${RUN_DIRECTORY}/touch-readback.log"
     python3 scripts/fixtures/dictionary-touch.py prepare-paging "${APP_CONTAINER}" "${SIMULATOR_ID}" "${RUN_DIRECTORY}/touch-fixture.json"
-    if ! xcodebuild test -collect-test-diagnostics never "${XCODE_COMMON_ARGUMENTS[@]}" -scheme DictionaryTouch -configuration Release -destination "platform=iOS Simulator,id=${SIMULATOR_ID}" -parallel-testing-enabled NO -test-timeouts-enabled YES -maximum-test-execution-time-allowance 60 -only-testing:DictionaryUITests/DictionaryTouchTests/test11ProductLastPage -only-testing:DictionaryUITests/DictionaryTouchTests/test12MergeLastPageProduct -only-testing:DictionaryUITests/DictionaryTouchTests/test13UnitLastPage -only-testing:DictionaryUITests/DictionaryTouchTests/test14DisableLastPageUnit -resultBundlePath "${RUN_DIRECTORY}/touch-paging.xcresult" > "${RUN_DIRECTORY}/touch-paging.log" 2>&1; then
+    if ! positive_test "${RUN_DIRECTORY}/touch-paging.log" "${XCODE_COMMON_ARGUMENTS[@]}" -scheme DictionaryTouch -configuration Release -destination "platform=iOS Simulator,id=${SIMULATOR_ID}" -parallel-testing-enabled NO -test-timeouts-enabled YES -maximum-test-execution-time-allowance 60 -only-testing:DictionaryUITests/DictionaryTouchTests/test11ProductLastPage -only-testing:DictionaryUITests/DictionaryTouchTests/test12MergeLastPageProduct -only-testing:DictionaryUITests/DictionaryTouchTests/test13UnitLastPage -only-testing:DictionaryUITests/DictionaryTouchTests/test14DisableLastPageUnit -resultBundlePath "${RUN_DIRECTORY}/touch-paging.xcresult"; then
       tail -80 "${RUN_DIRECTORY}/touch-paging.log" >&2
       exit 1
     fi
@@ -189,7 +206,7 @@ JS
     sed -n '/DICTIONARY_TOUCH_/p; /Executed .* tests\{0,1\}, with/p; /\*\* TEST SUCCEEDED \*\*/p' "${RUN_DIRECTORY}/touch.log" "${RUN_DIRECTORY}/touch-paging.log"
     exit 0
   fi
-  if ! xcodebuild test -collect-test-diagnostics never "${XCODE_ARGUMENTS[@]}" -destination "platform=iOS Simulator,id=${SIMULATOR_ID}" -parallel-testing-enabled NO -test-timeouts-enabled YES -maximum-test-execution-time-allowance 60 -skip-testing:NativeTests/NativeSqliteTests/testOfflineDictionaryScenario -skip-testing:NativeTests/NativeSqliteTests/testPrepareProcessInterruption -skip-testing:NativeTests/NativeSqliteTests/testRecoverProcessInterruption -resultBundlePath "${RUN_DIRECTORY}/native.xcresult" > "${RUN_DIRECTORY}/test.log" 2>&1; then
+  if ! positive_test "${RUN_DIRECTORY}/test.log" "${XCODE_ARGUMENTS[@]}" -destination "platform=iOS Simulator,id=${SIMULATOR_ID}" -parallel-testing-enabled NO -test-timeouts-enabled YES -maximum-test-execution-time-allowance 60 -skip-testing:NativeTests/NativeSqliteTests/testOfflineDictionaryScenario -skip-testing:NativeTests/NativeSqliteTests/testPrepareProcessInterruption -skip-testing:NativeTests/NativeSqliteTests/testRecoverProcessInterruption -resultBundlePath "${RUN_DIRECTORY}/native.xcresult"; then
     tail -60 "${RUN_DIRECTORY}/test.log" >&2
     exit 1
   fi
@@ -223,7 +240,7 @@ JS
       exit 1
     fi
     printf '%s -> owned-app-terminated -> xcodebuild=%s\n' "${CRASH_PHASE}" "${CRASH_STATUS}" > "${RUN_DIRECTORY}/interruption-${CRASH_PHASE}-receipt.txt"
-    if ! xcodebuild test -collect-test-diagnostics never "${XCODE_ARGUMENTS[@]}" -destination "platform=iOS Simulator,id=${SIMULATOR_ID}" -parallel-testing-enabled NO -only-testing:NativeTests/NativeSqliteTests/testRecoverProcessInterruption -resultBundlePath "${RUN_DIRECTORY}/recovery-${CRASH_PHASE}.xcresult" > "${RUN_DIRECTORY}/recovery-${CRASH_PHASE}.log" 2>&1; then
+    if ! positive_test "${RUN_DIRECTORY}/recovery-${CRASH_PHASE}.log" "${XCODE_ARGUMENTS[@]}" -destination "platform=iOS Simulator,id=${SIMULATOR_ID}" -parallel-testing-enabled NO -only-testing:NativeTests/NativeSqliteTests/testRecoverProcessInterruption -resultBundlePath "${RUN_DIRECTORY}/recovery-${CRASH_PHASE}.xcresult"; then
       tail -40 "${RUN_DIRECTORY}/recovery-${CRASH_PHASE}.log" >&2
       exit 1
     fi

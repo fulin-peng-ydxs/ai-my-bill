@@ -10,6 +10,7 @@ on:
       - 'scripts/lib/ios-*.mjs'
       - 'scripts/lib/ios-app-full.sh'
       - 'scripts/tests/ios-debug.test.mjs'
+      - 'scripts/tests/ios-verification.test.mjs'
       - 'scripts/fixtures/dictionary-touch.py'
       - 'scripts/normalize-capacitor-spm.mjs'
       - 'scripts/verify-ios-resources.mjs'
@@ -28,6 +29,7 @@ on:
       - 'scripts/lib/ios-*.mjs'
       - 'scripts/lib/ios-app-full.sh'
       - 'scripts/tests/ios-debug.test.mjs'
+      - 'scripts/tests/ios-verification.test.mjs'
       - 'scripts/fixtures/dictionary-touch.py'
       - 'scripts/normalize-capacitor-spm.mjs'
       - 'scripts/verify-ios-resources.mjs'
@@ -74,13 +76,52 @@ jobs:
           cache-dependency-path: app/package-lock.json
       - run: npm --prefix app ci --ignore-scripts
       - run: npm run build:ios-app
-      - run: npm run check:ios-app:simulator
-      - run: npm run check:ios-app:touch
+      - id: ios-session
+        shell: bash
+        run: |
+          output="$(npm run debug:ios-app -- create)"
+          printf '%s\n' "$output"
+          session="$(printf '%s\n' "$output" | sed -n 's/^SESSION=//p')"
+          test -n "$session"
+          printf 'session=%s\n' "$session" >> "$GITHUB_OUTPUT"
+      - id: native-local
+        env:
+          IOS_DEBUG_SESSION: ${{ steps.ios-session.outputs.session }}
+        run: |
+          npm run debug:ios-app -- run --session "$IOS_DEBUG_SESSION" --case NativeTests/NativeSqliteTests/testBundledEntryAndNativeSqliteBridge | tee .local/ios/tmp/ai-agent/ci-native-local.log
+          proof="$(sed -n 's/^EVIDENCE=//p' .local/ios/tmp/ai-agent/ci-native-local.log)"
+          test -n "$proof"
+          printf 'evidence=%s\n' "$proof" >> "$GITHUB_OUTPUT"
+      - env:
+          IOS_DEBUG_SESSION: ${{ steps.ios-session.outputs.session }}
+          IOS_LOCAL_EVIDENCE: ${{ steps.native-local.outputs.evidence }}
+        run: npm run check:ios-app:simulator -- --session "$IOS_DEBUG_SESSION" --from "$IOS_LOCAL_EVIDENCE"
+      - id: touch-local
+        env:
+          IOS_DEBUG_SESSION: ${{ steps.ios-session.outputs.session }}
+        run: |
+          npm run debug:ios-app -- run --session "$IOS_DEBUG_SESSION" --case DictionaryUITests/DictionaryTouchTests/test00EightOriginalEntries | tee .local/ios/tmp/ai-agent/ci-touch-local.log
+          proof="$(sed -n 's/^EVIDENCE=//p' .local/ios/tmp/ai-agent/ci-touch-local.log)"
+          test -n "$proof"
+          printf 'evidence=%s\n' "$proof" >> "$GITHUB_OUTPUT"
+      - env:
+          IOS_DEBUG_SESSION: ${{ steps.ios-session.outputs.session }}
+          IOS_LOCAL_EVIDENCE: ${{ steps.touch-local.outputs.evidence }}
+        run: npm run check:ios-app:touch -- --session "$IOS_DEBUG_SESSION" --from "$IOS_LOCAL_EVIDENCE"
+      - if: always() && steps.ios-session.outputs.session != ''
+        env:
+          IOS_DEBUG_SESSION: ${{ steps.ios-session.outputs.session }}
+        run: npm run debug:ios-app -- close --session "$IOS_DEBUG_SESSION"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: offline-ios-native-${{ github.sha }}
           path: |
+            .local/ios/tmp/ai-agent/ios-verification-state.json
+            .local/ios/tmp/ai-agent/ios-full-*/*.json
+            .local/ios/tmp/ai-agent/ios-debug-*/run-*/*.json
+            .local/ios/tmp/ai-agent/ios-debug-*/run-*/*.log
+            .local/ios/tmp/ai-agent/ios-debug-*/run-*/*.xcresult
             .local/ios/tmp/ai-agent/native-*/build.log
             .local/ios/tmp/ai-agent/native-*/test.log
             .local/ios/tmp/ai-agent/native-*/interruption-*.log

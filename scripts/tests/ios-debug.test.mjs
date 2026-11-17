@@ -15,7 +15,7 @@ function temporary(t) {
 }
 function cliProject(t) {
   const root = temporary(t)
-  for (const file of ['scripts/ios-app.mjs', 'scripts/lib/ios-debug.mjs', 'app/native-tests/scenarios.json']) {
+  for (const file of ['scripts/ios-app.mjs', 'scripts/lib/ios-debug.mjs', 'scripts/lib/ios-verification.mjs', 'app/native-tests/scenarios.json']) {
     const target = path.join(root, file)
     fs.mkdirSync(path.dirname(target), { recursive: true })
     fs.copyFileSync(new URL('../../' + file, import.meta.url), target)
@@ -151,7 +151,7 @@ test('完整入口拒绝局部过滤，正常委托完整流程并释放锁', t 
   const run = args => spawnSync(process.execPath, [path.join(root, 'scripts/ios-app.mjs'), ...args], { encoding: 'utf8' })
   const rejected = run(['ios-touch', '--case', 'test01'])
   assert.equal(rejected.status, 1)
-  assert.match(rejected.stderr, /用法/)
+  assert.match(rejected.stderr, /参数无效/)
   assert.doesNotMatch(rejected.stdout, /FULL_GATE_EXECUTED/)
   const accepted = run(['common'])
   assert.equal(accepted.status, 0)
@@ -172,7 +172,7 @@ test('完整入口仅允许受管会话借用设备；不接受过滤器或外�
   const run = args => spawnSync(process.execPath, [path.join(root, 'scripts/ios-app.mjs'), ...args],
     { encoding: 'utf8', env: { ...process.env, MYBILL_FULL_SESSION: '/unmanaged' } })
   const normal = run(['common']); assert.equal(normal.status, 0); assert.equal(normal.stdout, 'FULL_SESSION=')
-  const accepted = run(['ios-touch', '--session', directory]); assert.equal(accepted.status, 0); assert.equal(accepted.stdout, 'FULL_SESSION=' + directory)
+  const rejectedFull = run(['ios-touch', '--session', directory]); assert.equal(rejectedFull.status, 1); assert.match(rejectedFull.stderr, /--from/); assert.doesNotMatch(rejectedFull.stdout, /FULL_SESSION=/)
   for (const args of [['common', '--session', directory], ['ios-build', '--session', directory],
     ['ios-touch', '--session', directory, '--case', 'test01'], ['ios-touch', '--session', root]]) {
     const result = run(args); assert.equal(result.status, 1); assert.doesNotMatch(result.stdout, /FULL_SESSION=/)

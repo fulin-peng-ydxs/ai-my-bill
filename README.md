@@ -14,13 +14,13 @@
 npm --prefix app ci --ignore-scripts
 ```
 
-日常定位先使用 `npm run debug:ios-app -- list`，按[局部调试流程](agent-works/testing/guide.md#原生局部调试与完整验收)选择用例或场景。局部验证通过后，按改动影响选择下列完整检查；三个原生入口已经包含 check:app，无需为同一轮再单独重复运行它。模拟器和触摸完整检查可按规范借用本轮受管会话，仍重建当前资源、重置合成 App 数据并执行全部门禁。
+日常定位先使用 `npm run debug:ios-app -- list`，按[局部调试流程](agent-works/testing/guide.md#原生局部调试与完整验收)选择用例或场景。局部验证通过后，按改动影响选择下列完整检查；三个原生入口已经包含 check:app，无需为同一轮再单独重复运行它。`IOS_NATIVE_EVIDENCE` / `IOS_TOUCH_EVIDENCE` 必须取自对应局部成功命令输出的 `EVIDENCE=` 路径；缺少、失效、未覆盖失败用例或重复无变化验收会在启动前被拒绝。模拟器和触摸完整检查可按规范借用本轮受管会话，仍重建当前资源、重置合成 App 数据并执行全部门禁。
 
 ```bash
 npm run check:app
 npm run build:ios-app
-npm run check:ios-app:simulator
-npm run check:ios-app:touch
+npm run check:ios-app:simulator -- --from "$IOS_NATIVE_EVIDENCE"
+npm run check:ios-app:touch -- --from "$IOS_TOUCH_EVIDENCE"
 ```
 
 依赖由 app/package-lock.json 固定；命令来源为 [package.json](package.json) 与 [ios-app.sh](scripts/ios-app.sh)，各检查的条件和判据见[开发验证规范](agent-works/testing/guide.md#工程检查)。`check:app` 运行领域、队列、初始化状态、组件四态及设计契约测试、类型检查、随包资源构建和资源门禁；`build:ios-app` 编译未签名的真机架构 Release；模拟器入口运行实际 WKWebView → SQLite 桥测试，并删除本轮创建的模拟器。成功时构建/资源检查或 XCTest 报告通过；本地阶段结果见开发计划；远端 Actions 的实际执行结果须另行核验。

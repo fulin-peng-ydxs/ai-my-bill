@@ -52,7 +52,20 @@ NativeTests 与 DictionaryUITests 只支持 simulator SDK，并由共享 [OwnedS
 
 ### 原生局部调试与完整验收
 
-先在能证明问题的最低层定位，再运行对应原生单用例/场景；局部通过且相关源码稳定后，按影响执行一次完整验收。定位或夹具错误修正后先复跑失败场景及同根因边界；只有新改动、失败或未覆盖风险才重复已通过的完整套件。完整检查不接受单用例或场景过滤，始终重新生成资源、通过正常构建入口并执行原门禁；默认新建独立模拟器，CI 保持这一默认。仅 simulator/touch 两个入口可通过 `-- --session "$IOS_DEBUG_SESSION"` 借用本轮受管设备；它们重新校验归属、只重置该设备的合成 App 数据，按新账本执行完整范围，不消费局部构建或测试结果，结束后关闭设备运行但保留会话。
+先在能证明问题的最低层定位，再运行对应原生单用例/场景；局部通过且相关源码稳定后，按影响执行一次完整验收。以下规则由 [ios-verification.mjs](../../scripts/lib/ios-verification.mjs) 与根目录统一入口强制执行，适用于本机和 CI，不提供 force/skip/CI 环境变量绕过：
+
+| 条件 | 实际执行约束 |
+| --- | --- |
+| 首次启动 simulator/touch 完整验收 | 必须提供 `--from RUN_DIRECTORY`，指向本工作区受管会话的当前版本局部成功回执；先校验回执、实际用例通过日志、范围、完成时间及输入摘要，再允许生成资源和启动完整工作 |
+| 正例出现失败或执行时间告警 | 每 100ms 观察正例日志；发现首个失败立即终止本次进程组并执行清理，不继续后续测试阶段；记录失败用例及日志路径，下一步只能先局部定位 |
+| 完整验收失败、取消或宿主中断 | 工作区状态保留失败/未完成锁；旧回执、失败之前的回执、无关用例以及改跑另一完整套件均拒绝。已识别失败用例必须在新局部成功证据中实际执行；无对应局部入口时先补入口，不用无关用例替代 |
+| 同一输入复验再次失败 | 初验之后最多允许一次由新局部证据解锁的完整复验；再次失败/中断后，必须修改相关源码、测试、执行器或工具链并重新局部验证，不能循环制造相同输入的局部绿色解锁 |
+| 完整验收已通过且输入未变 | 拒绝再次启动；单纯重跑局部绿色不算新风险。新增未覆盖风险先补相应回归；README、规范措辞和生成物不使完整证据失效 |
+| 自动化会话未进入用例或整套运行超预算 | 正例步骤 180 秒仍未开始用例即停止；完整 simulator/touch 总预算 15 分钟，终止后最多再给清理 10 秒；预算到期记失败，不延长预算换取绿色 |
+
+摘要覆盖 App、测试/探针、工程、依赖锁、Node/Xcode/iOS SDK，以及执行器、夹具和资源门禁；局部构建缓存与执行证据摘要分别维护，不因夹具修改无谓重编原生包。`.local/ios/tmp/ai-agent/ios-verification-state.json` 与 `ios-full-*/result.json` 保存尝试、来源证据、失败锁和次数；不因关闭调试会话删除。禁止删除状态、换会话/工作目录或直接调用内部 Shell 规避限制，也不得用无关注释/格式改动刷摘要重置次数；内部 Shell 在生成资源前核对调度器活动许可。进程被 SIGKILL 留下 running 状态时按未完成处理，不自动放行。
+
+完整检查不接受单用例过滤，仍重新生成资源、执行原范围与门禁；默认新建独立模拟器，也可通过 `--session` 借用本轮受管设备。局部证据只用于启动资格，不替代完整结果，也不消费旧测试结果。CI 使用同一约束，先局部烟测取得新回执，再完整验收并 finally 关闭会话。
 
 ```bash
 npm run debug:ios-app -- list
@@ -66,9 +79,11 @@ npm run debug:ios-app -- run --session "$IOS_DEBUG_SESSION" --case NativeTests/N
 npm run debug:ios-app -- run --session "$IOS_DEBUG_SESSION" --scenario template-tie
 npm run debug:ios-app -- run --session "$IOS_DEBUG_SESSION" --scenario paging-disable
 npm run debug:ios-app -- suspend --session "$IOS_DEBUG_SESSION"
-# 按影响执行完整验收；可借用本轮设备，仍执行全部门禁
-npm run check:ios-app:simulator -- --session "$IOS_DEBUG_SESSION"
-npm run check:ios-app:touch -- --session "$IOS_DEBUG_SESSION"
+# 将对应局部成功命令输出的 EVIDENCE= 路径分别保存为这两个变量
+# IOS_NATIVE_EVIDENCE=...；IOS_TOUCH_EVIDENCE=...
+# 按影响执行；首次证据须与完整类型一致，失败后须覆盖实际失败用例
+npm run check:ios-app:simulator -- --from "$IOS_NATIVE_EVIDENCE" --session "$IOS_DEBUG_SESSION"
+npm run check:ios-app:touch -- --from "$IOS_TOUCH_EVIDENCE" --session "$IOS_DEBUG_SESSION"
 # 需要回查时 run 恢复；全部工作结束后清理
 npm run debug:ios-app -- close --session "$IOS_DEBUG_SESSION"
 ```
@@ -80,7 +95,7 @@ npm run debug:ios-app -- close --session "$IOS_DEBUG_SESSION"
 - 首次运行按 Debug/Release 分别 build-for-testing；之后核对源码、探针、工程、依赖锁、工具链及产物内容摘要，一致才使用 test-without-building。原生用例还核对已安装 App 与当前产物的内容摘要，一致时跳过重复安装和首次初始化准备。任何输入变化、产物缺失或内容变化都重新生成与构建；构建或测试期间源码变化不得判为当前版本通过。缓存只省准备工作，不复用旧的测试结果；每次仍执行目标断言、数量及完成信号检查。完整验收可复用已校验的设备，但不消费局部构建或旧测试结果。
 - 完整流程先校验脚本语法，再执行启动时的不可变快照；执行期间脚本变化不破坏当前进程，但本轮不能认定当前脚本通过，需冻结后复验。所有入口共用工作区命令锁，避免同步资源和构建互相覆盖；并发调用明确拒绝。中断转发给本命令的子进程组并释放命令锁。若进程被 SIGKILL 或宿主崩溃导致锁遗留，先核实 `.local/ios/tmp/ai-agent/ios-command.lock/owner.json` 中 PID 已退出且无相应子进程，再移除该锁；禁止清空共享目录或接管其他任务。
 
-每次局部运行在会话的 run-* 下保存独立日志、xcresult、SQLite 回读和 `result.json`，标明 scope=partial、所选/实际用例、源码摘要、缓存命中、状态及耗时；局部绿色不更新完整验收状态。[脚本回归](../../scripts/tests/ios-debug.test.mjs) 经 check:app 执行，覆盖选择/前置、会话与设备拒绝、内容摘要失效、夹具拒绝与回读、命令锁与脚本快照边界；真实原生运行、设备复用及关闭仍需通过 CLI 在独立模拟器验证。新增入口及完整入口变更纳入同一 Actions 触发路径；不放宽原超时、断言或真机 Release 性能要求。
+每次局部运行在会话的 run-* 下保存独立日志、xcresult、SQLite 回读和 `result.json`，标明 scope=partial、所选/实际用例、构建与执行输入摘要、完成时间、缓存命中、状态及耗时，成功时输出 EVIDENCE=路径；局部绿色不更新完整验收状态。[脚本回归](../../scripts/tests/ios-debug.test.mjs) 经 check:app 执行，覆盖选择/前置、会话与设备拒绝、内容摘要失效、夹具拒绝与回读、命令锁与脚本快照边界；[执行约束回归](../../scripts/tests/ios-verification.test.mjs) 经同一入口检查缺少/失效证据、跨会话失败锁、无关修复、重复验收、次数上限、内部入口许可、首败取消与清理；测试使用隔离临时工程与可控子进程，不冒充 App 页面验收。真实原生运行、设备复用及关闭仍需通过 CLI 在独立模拟器验证。新增入口及完整入口变更纳入同一 Actions 触发路径；不放宽原超时、断言或真机 Release 性能要求。
 
 App 的最小 [Actions 工作流](../../.github/workflows/offline-ios.yml) 已定义自动触发和调用同一脚本，但尚无远端运行证据。真实 iPhone 的签名安装、飞行模式冷启动及 Release 性能另验；当前骨架已在指定真机完成签名安装与图标离线冷启动，正式业务及 Release 容量性能尚未验收。模拟器、小样本耗时或 common 绿色不能替代这些条件，当前也未实现完整性能交付门禁。
 
