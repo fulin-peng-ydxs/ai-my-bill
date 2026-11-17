@@ -13,11 +13,17 @@ export const uiCases = ['test00EightOriginalEntries', 'test01CreateProduct', 'te
   'test07RestoreCandidates', 'test08MergeCancel', 'test09MergeConfirm', 'test10RelaunchedMergeCandidates',
   'test11ProductLastPage', 'test12MergeLastPageProduct', 'test13UnitLastPage', 'test14DisableLastPageUnit']
 
+export const recoveryPhases = ['snapshot-ready', 'migration-recorded', 'upgrade-committed']
+export const recoveryScenarios = [...recoveryPhases.map(p => 'interruption-' + p), 'interruption-all']
+
 export const uiScenarios = { 'paging-merge': [11, 12], 'paging-disable': [13, 14], 'merge-relaunch': [9, 10], 'merge-cycle': [8, 9, 10] }
 
 /** 前置用例显式列出；只补必要环境与导航，不能暗中扩展为完整触摸套件。 */
 export function selection(kind, name, nativeScenarios) {
   if (kind === '--scenario') {
+    if (recoveryScenarios.includes(name)) return { scheme: 'App', configuration: 'Debug',
+      recoveryPhases: name === 'interruption-all' ? recoveryPhases : [name.slice('interruption-'.length)],
+      cases: ['NativeTests/NativeSqliteTests/testPrepareProcessInterruption', 'NativeTests/NativeSqliteTests/testRecoverProcessInterruption'] }
     if (nativeScenarios.includes(name)) return { scheme: 'App', configuration: 'Debug', scenario: name,
       cases: ['NativeTests/NativeSqliteTests/testOfflineDictionaryScenario'] }
     if (Object.hasOwn(uiScenarios, name)) return uiSelection(uiScenarios[name])

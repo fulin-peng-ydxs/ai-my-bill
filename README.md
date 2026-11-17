@@ -14,7 +14,7 @@
 npm --prefix app ci --ignore-scripts
 ```
 
-日常定位先使用 `npm run debug:ios-app -- list`，按[局部调试流程](agent-works/testing/guide.md#原生局部调试与完整验收)选择用例或场景。局部验证通过后，按改动影响选择下列完整检查；三个原生入口已经包含 check:app，无需为同一轮再单独重复运行它。`IOS_NATIVE_EVIDENCE` / `IOS_TOUCH_EVIDENCE` 必须取自对应局部成功命令输出的 `EVIDENCE=` 路径；缺少、失效、未覆盖失败用例或重复无变化验收会在启动前被拒绝。模拟器和触摸完整检查可按规范借用本轮受管会话，仍重建当前资源、重置合成 App 数据并执行全部门禁。
+日常定位先使用 `npm run debug:ios-app -- list`，按[局部调试流程](agent-works/testing/guide.md#原生局部调试与完整验收)选择最低层检查、单用例或场景。纯逻辑优先 `npm run debug:ios-app -- check --check app-tests --file src/domain/money.spec.ts`；编译与资源问题可单独 check，恢复问题使用 `interruption-阶段` 成对场景。局部验证通过后，仅在影响范围必要时选择下列完整检查；三个原生入口已经包含 check:app，无需为同一轮再单独重复运行它。`IOS_NATIVE_EVIDENCE` / `IOS_TOUCH_EVIDENCE` 必须取自对应局部成功命令输出的 `EVIDENCE=` 路径；缺少、失效、未覆盖失败用例或重复无变化验收会在启动前被拒绝。模拟器和触摸完整检查可按规范借用本轮受管会话，仍重建当前资源、重置合成 App 数据并执行全部门禁。
 
 ```bash
 npm run check:app
@@ -25,11 +25,11 @@ npm run check:ios-app:touch -- --from "$IOS_TOUCH_EVIDENCE"
 
 依赖由 app/package-lock.json 固定；命令来源为 [package.json](package.json) 与 [ios-app.sh](scripts/ios-app.sh)，各检查的条件和判据见[开发验证规范](agent-works/testing/guide.md#工程检查)。`check:app` 运行领域、队列、初始化状态、组件四态及设计契约测试、类型检查、随包资源构建和资源门禁；`build:ios-app` 编译未签名的真机架构 Release；模拟器入口运行实际 WKWebView → SQLite 桥测试，并删除本轮创建的模拟器。成功时构建/资源检查或 XCTest 报告通过；本地阶段结果见开发计划；远端 Actions 的实际执行结果须另行核验。
 
-每轮原生证据位于 .local/ios/tmp/ai-agent/native-*，构建失败先查其中 build.log/test.log；诊断结束后可删除对应轮次目录。增量构建与依赖缓存在 .local/ios/DerivedData、.local/ios/SourcePackages。脚本只为本次命令选择完整 Xcode，不修改全局 xcode-select；非默认安装位置可设置 DEVELOPER_DIR。不要把凭据、真实账本或 Web 本地配置复制到这些测试目录。
+每轮原生日志位于 .local/ios/tmp/ai-agent/native-*，分阶段耗时 timings.json 位于对应的 ios-full-* 或调试会话 run-*，分别记录构建、安装和测试；失败先查对应阶段，诊断结束后可删除不再需要的日志，工作区验证状态须保留。增量构建与依赖缓存在 .local/ios/DerivedData、.local/ios/SourcePackages。脚本只为本次命令选择完整 Xcode，不修改全局 xcode-select；非默认安装位置可设置 DEVELOPER_DIR。不要把凭据、真实账本或 Web 本地配置复制到这些测试目录。
 
 需要签名时在 Xcode 打开 [App.xcodeproj](app/ios/App/App.xcodeproj)，为 App target 选择自己的 Team。已用 Personal Team 完成骨架 Release 的签名安装，并在 iPhone 14 Pro Max / iOS 27.0.1 通过飞行模式、无 Wi-Fi、进程结束后的图标冷启动验证。上述自动构建入口仍生成未签名产物，不能直接安装到手机；正式业务、完整升级与性能尚未验收。当前可以调试四个原页面入口、主题、缓存草稿，以及“我的 → 选项管理”中的八类字典与商品合并；这些字典修改跨重启保留，默认清单只写入新账本。支出/收入保存等未接通业务会提示暂不支持；草稿和偏好尚不跨重启保存，不能作为已完成的记账 App 使用。原生装配机制见[总体架构](agent-works/architecture/architecture-decisions.md#离线-ios-原生入口)。
 
-原生回归统一从上述根目录命令启动。局部调试使用 `npm run debug:ios-app -- list` 查看单用例和场景，按[局部调试流程](agent-works/testing/guide.md#原生局部调试与完整验收)创建、复用及关闭本轮独立模拟器；局部通过后再运行完整检查。两个测试 target 仅允许模拟器，测试前校验本轮设备归属清单；直接在 Xcode 执行测试而没有清单会拒绝探针和页面操作。正式 App 的运行、签名与安装不需要测试清单，详见[测试隔离规则](agent-works/testing/guide.md#工程检查)。
+原生回归统一从上述根目录命令启动。局部调试使用 `npm run debug:ios-app -- list` 查看单用例和场景，按[局部调试流程](agent-works/testing/guide.md#原生局部调试与完整验收)创建、复用及关闭本轮独立模拟器；局部通过后按必要影响选择完整检查，不因局部绿色自动全跑。两个测试 target 仅允许模拟器，测试前校验本轮设备归属清单；直接在 Xcode 执行测试而没有清单会拒绝探针和页面操作。正式 App 的运行、签名与安装不需要测试清单，详见[测试隔离规则](agent-works/testing/guide.md#工程检查)。
 
 ## 手机安装与使用
 

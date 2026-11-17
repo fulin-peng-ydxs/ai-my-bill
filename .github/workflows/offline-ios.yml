@@ -85,10 +85,8 @@ jobs:
           test -n "$session"
           printf 'session=%s\n' "$session" >> "$GITHUB_OUTPUT"
       - id: native-local
-        env:
-          IOS_DEBUG_SESSION: ${{ steps.ios-session.outputs.session }}
         run: |
-          npm run debug:ios-app -- run --session "$IOS_DEBUG_SESSION" --case NativeTests/NativeSqliteTests/testBundledEntryAndNativeSqliteBridge | tee .local/ios/tmp/ai-agent/ci-native-local.log
+          npm run debug:ios-app -- check --check app-tests | tee .local/ios/tmp/ai-agent/ci-native-local.log
           proof="$(sed -n 's/^EVIDENCE=//p' .local/ios/tmp/ai-agent/ci-native-local.log)"
           test -n "$proof"
           printf 'evidence=%s\n' "$proof" >> "$GITHUB_OUTPUT"
@@ -97,10 +95,8 @@ jobs:
           IOS_LOCAL_EVIDENCE: ${{ steps.native-local.outputs.evidence }}
         run: npm run check:ios-app:simulator -- --session "$IOS_DEBUG_SESSION" --from "$IOS_LOCAL_EVIDENCE"
       - id: touch-local
-        env:
-          IOS_DEBUG_SESSION: ${{ steps.ios-session.outputs.session }}
         run: |
-          npm run debug:ios-app -- run --session "$IOS_DEBUG_SESSION" --case DictionaryUITests/DictionaryTouchTests/test00EightOriginalEntries | tee .local/ios/tmp/ai-agent/ci-touch-local.log
+          npm run debug:ios-app -- check --check app-tests --file src/views/me/dictionaries/DictionaryDetailView.spec.ts | tee .local/ios/tmp/ai-agent/ci-touch-local.log
           proof="$(sed -n 's/^EVIDENCE=//p' .local/ios/tmp/ai-agent/ci-touch-local.log)"
           test -n "$proof"
           printf 'evidence=%s\n' "$proof" >> "$GITHUB_OUTPUT"
@@ -119,16 +115,14 @@ jobs:
           path: |
             .local/ios/tmp/ai-agent/ios-verification-state.json
             .local/ios/tmp/ai-agent/ios-full-*/*.json
+            .local/ios/tmp/ai-agent/ios-check-*/*.json
+            .local/ios/tmp/ai-agent/ios-check-*/*.log
             .local/ios/tmp/ai-agent/ios-debug-*/run-*/*.json
             .local/ios/tmp/ai-agent/ios-debug-*/run-*/*.log
             .local/ios/tmp/ai-agent/ios-debug-*/run-*/*.xcresult
-            .local/ios/tmp/ai-agent/native-*/build.log
-            .local/ios/tmp/ai-agent/native-*/test.log
-            .local/ios/tmp/ai-agent/native-*/interruption-*.log
-            .local/ios/tmp/ai-agent/native-*/interruption-*-receipt.txt
-            .local/ios/tmp/ai-agent/native-*/recovery-*.log
-            .local/ios/tmp/ai-agent/native-*/touch*.log
-            .local/ios/tmp/ai-agent/native-*/prepare*.log
+            .local/ios/tmp/ai-agent/native-*/*.log
+            .local/ios/tmp/ai-agent/native-*/*.json
+            .local/ios/tmp/ai-agent/native-*/*-receipt.txt
             .local/ios/tmp/ai-agent/native-*/*.xcresult
           retention-days: 7
           if-no-files-found: error

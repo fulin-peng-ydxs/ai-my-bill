@@ -12,35 +12,18 @@ resolve_node
 cd "${PROJECT_ROOT}"
 
 MODE="${1:-common}"
-if [[ $# -gt 1 || ! "${MODE}" =~ ^(common|ios-build|ios-smoke|ios-touch)$ ]]; then
+if [[ $# -gt 1 || ! "${MODE}" =~ ^(common|ios-build|ios-smoke|ios-touch|ios-recovery)$ ]]; then
   echo '用法：bash scripts/ios-app.sh [common|ios-build|ios-smoke|ios-touch]' >&2
   exit 2
 fi
 
 # 内部脚本不能绕过调度器的局部证据和失败锁；在生成资源前拒绝直接执行。
-if [[ "${MODE}" == ios-smoke || "${MODE}" == ios-touch ]]; then
+if [[ "${MODE}" == ios-smoke || "${MODE}" == ios-touch || "${MODE}" == ios-recovery ]]; then
   if [[ -z "${MYBILL_FULL_ATTEMPT:-}" ]]; then
     echo '内部完整入口缺少调度许可；先局部验证，再经根目录命令提供 --from。' >&2
     exit 2
   fi
   node scripts/lib/ios-verification.mjs permit "${MODE}" "${MYBILL_FULL_ATTEMPT}"
-fi
-
-# 每次从源码生成，探针只供 NativeTests 的独立资源阶段使用。
-npm --prefix app run native:sync
-npm --prefix app run probe:bundle
-npm --prefix app run test
-node scripts/verify-ios-resources.mjs
-node --test scripts/tests/ios-resources.test.mjs scripts/tests/ios-debug.test.mjs scripts/tests/ios-verification.test.mjs
-if [[ "${MODE}" == common ]]; then exit 0; fi
-
-if [[ -z "${DEVELOPER_DIR:-}" && "$(xcode-select -p)" == /Library/Developer/CommandLineTools && -d /Applications/Xcode.app ]]; then
-  export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
-fi
-SDK_VERSION="$(xcrun --sdk iphoneos --show-sdk-version)"
-if [[ ! "${SDK_VERSION}" =~ ^27\. ]]; then
-  echo '原生验证需要 Xcode / iOS 27 SDK；可为本次命令设置 DEVELOPER_DIR，不修改全局选择。' >&2
-  exit 1
 fi
 
 mkdir -p .local/ios/tmp/ai-agent .local/ios/SourcePackages
@@ -76,14 +59,67 @@ trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
-# 保留测试日志、截图和 xcresult；关闭额外系统诊断，避免失败后长时间采集 sysdiagnose。
-# 只有正例注册观察日志；隔离拒绝与主动进程中断保留原预期非零契约。
+phase() {
+  if [[ -n "${MYBILL_FULL_ATTEMPT:-}" ]]; then
+    node scripts/lib/ios-verification.mjs phase "${MODE}" "${MYBILL_FULL_ATTEMPT}" "$@"
+  fi
+}
+run_phase() {
+  local stage="$1" coverage="$2" log="$3" report="$4"
+  shift 4
+  phase "${stage}" "${coverage}" "${log}" "${report}" || return
+  if ! "$@" > "${log}" 2>&1; then tail -60 "${log}" >&2; return 1; fi
+  cat "${log}"
+}
+# 构建、显式安装、测试分开计时；XCTest 的再次安装校验属于测试准备，不包含编译。
+prepare_test() {
+  local test_log="$1" argument next index
+  shift
+  TEST_ARGS=("$@")
+  BUILD_ARGS=()
+  TEST_SCHEME=App
+  TEST_CONFIG=Debug
+  TEST_DERIVED=.local/ios/DerivedData
+  for ((index=0; index<${#TEST_ARGS[@]}; index++)); do
+    argument="${TEST_ARGS[$index]}"
+    next="${TEST_ARGS[$((index+1))]:-}"
+    case "${argument}" in
+      -scheme) TEST_SCHEME="${next}" ;;
+      -configuration) TEST_CONFIG="${next}" ;;
+      -derivedDataPath) TEST_DERIVED="${next}" ;;
+      -resultBundlePath) index=$((index+1)); continue ;;
+    esac
+    BUILD_ARGS+=("${argument}")
+  done
+  phase build "native-build/${TEST_SCHEME}/${TEST_CONFIG}" "${test_log%.log}-build.log" || return
+  if ! xcodebuild build-for-testing "${BUILD_ARGS[@]}" > "${test_log%.log}-build.log" 2>&1; then tail -60 "${test_log%.log}-build.log" >&2; return 1; fi
+  phase install "native-install/${TEST_SCHEME}/${TEST_CONFIG}" "${test_log%.log}-install.log" || return
+  xcrun simctl install "${SIMULATOR_ID}" "${TEST_DERIVED}/Build/Products/${TEST_CONFIG}-iphonesimulator/App.app" > "${test_log%.log}-install.log" 2>&1 || return
+  if [[ "${TEST_SCHEME}" == DictionaryTouch ]]; then
+    xcrun simctl install "${SIMULATOR_ID}" "${TEST_DERIVED}/Build/Products/${TEST_CONFIG}-iphonesimulator/DictionaryUITests-Runner.app" >> "${test_log%.log}-install.log" 2>&1 || return
+  fi
+}
 positive_test() {
   local test_log="$1"
   shift
-  node scripts/lib/ios-verification.mjs step "${MODE}" "${MYBILL_FULL_ATTEMPT}" "${test_log}" || return
-  xcodebuild test -collect-test-diagnostics never "$@" > "${test_log}" 2>&1
+  prepare_test "${test_log}" "$@" || return
+  phase test "${RECOVERY_COVERAGE:-native-startup/${TEST_SCHEME}/${TEST_CONFIG}}" "${test_log}" || return
+  xcodebuild test-without-building -collect-test-diagnostics never "${TEST_ARGS[@]}" > "${test_log}" 2>&1
 }
+
+run_phase build check/app-build "${RUN_DIRECTORY}/app-build.log" '' npm --prefix app run native:sync
+run_phase build check/probe-build "${RUN_DIRECTORY}/probe-build.log" '' npm --prefix app run probe:bundle
+if [[ "${MODE}" != ios-recovery ]]; then
+  run_phase check check/app-tests "${RUN_DIRECTORY}/app-tests.log" "${RUN_DIRECTORY}/app-tests.json" npm --prefix app test -- --bail=1 --reporter=json --outputFile="${RUN_DIRECTORY}/app-tests.json"
+  run_phase check check/script-tests "${RUN_DIRECTORY}/script-tests.log" '' node --test scripts/tests/ios-resources.test.mjs scripts/tests/ios-debug.test.mjs scripts/tests/ios-verification.test.mjs
+fi
+run_phase check check/resources/source "${RUN_DIRECTORY}/resources.log" '' node scripts/verify-ios-resources.mjs
+if [[ "${MODE}" == common ]]; then exit 0; fi
+if [[ -z "${DEVELOPER_DIR:-}" && "$(xcode-select -p)" == /Library/Developer/CommandLineTools && -d /Applications/Xcode.app ]]; then
+  export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
+fi
+SDK_VERSION="$(xcrun --sdk iphoneos --show-sdk-version)"
+if [[ ! "${SDK_VERSION}" =~ ^27\. ]]; then echo '需要 Xcode / iOS 27 SDK。' >&2; exit 1; fi
 
 XCODE_COMMON_ARGUMENTS=(-project app/ios/App/App.xcodeproj
   -derivedDataPath .local/ios/DerivedData -clonedSourcePackagesDirPath .local/ios/SourcePackages
@@ -91,12 +127,14 @@ XCODE_COMMON_ARGUMENTS=(-project app/ios/App/App.xcodeproj
 XCODE_ARGUMENTS=("${XCODE_COMMON_ARGUMENTS[@]}" -scheme App)
 if [[ "${MODE}" == ios-build ]]; then
   # 这只证明真机架构 Release 编译；没有签名，不能声称可在真机安装。
+  phase build native-build/App/Release "${RUN_DIRECTORY}/build.log"
   if ! xcodebuild build "${XCODE_ARGUMENTS[@]}" -configuration Release -destination 'generic/platform=iOS' > "${RUN_DIRECTORY}/build.log" 2>&1; then
     tail -60 "${RUN_DIRECTORY}/build.log" >&2
     exit 1
   fi
-  node scripts/verify-ios-resources.mjs .local/ios/DerivedData/Build/Products/Release-iphoneos/App.app
+  run_phase check check/resources/device "${RUN_DIRECTORY}/device-resources.log" '' node scripts/verify-ios-resources.mjs .local/ios/DerivedData/Build/Products/Release-iphoneos/App.app
 else
+  phase boot native-boot "${RUN_DIRECTORY}/boot.log"
   if [[ -n "${MYBILL_FULL_SESSION:-}" ]]; then
     # 借用只限本仓库明确打开的调试会话；独立校验后才允许结束/卸载其中的合成测试 App。
     SESSION_INFO="$(node --input-type=module - "${MYBILL_FULL_SESSION}" <<'JS'
@@ -131,11 +169,8 @@ JS
   XCODE_ARGUMENTS=("${XCODE_COMMON_ARGUMENTS[@]}" -scheme App)
   # 先完成首次运行时/正式账本初始化，再由 XCTest 重新启动宿主，分离环境准备和测试。
   # 这不是冷启动性能验收；readyWebView 的 20 秒和单用例 60 秒预算保持不变。
-  if ! xcodebuild build-for-testing "${XCODE_ARGUMENTS[@]}" -destination "platform=iOS Simulator,id=${SIMULATOR_ID}" > "${RUN_DIRECTORY}/prepare-build.log" 2>&1; then
-    tail -60 "${RUN_DIRECTORY}/prepare-build.log" >&2
-    exit 1
-  fi
-  xcrun simctl install "${SIMULATOR_ID}" .local/ios/DerivedData/Build/Products/Debug-iphonesimulator/App.app
+  prepare_test "${RUN_DIRECTORY}/prepare.log" "${XCODE_ARGUMENTS[@]}" -destination "platform=iOS Simulator,id=${SIMULATOR_ID}"
+  phase initialize native-initialize/App/Debug "${RUN_DIRECTORY}/prepare-host.log"
   xcrun simctl launch "${SIMULATOR_ID}" com.mybill.offline > "${RUN_DIRECTORY}/prepare-launch.log"
   PREPARE_CONTAINER="$(xcrun simctl get_app_container "${SIMULATOR_ID}" com.mybill.offline data)"
   python3 scripts/fixtures/dictionary-touch.py wait-initialized "${PREPARE_CONTAINER}" "${SIMULATOR_ID}" "${RUN_DIRECTORY}/unused-receipt.json" > "${RUN_DIRECTORY}/prepare-host.log" 2>&1
@@ -165,7 +200,9 @@ JS
       for argument in "${XCODE_COMMON_ARGUMENTS[@]}"; do
         if [[ "${argument}" != MYBILL_TEST_CONTEXT_FILE=* ]]; then unowned_arguments+=("${argument}"); fi
       done
-      xcodebuild test -collect-test-diagnostics never "${unowned_arguments[@]}" -scheme "${scheme}" -configuration "${configuration}" -destination "platform=iOS Simulator,id=${SIMULATOR_ID}" -parallel-testing-enabled NO -test-timeouts-enabled YES -maximum-test-execution-time-allowance 60 MYBILL_TEST_CONTEXT_FILE= -only-testing:"${test_case}" -resultBundlePath "${RUN_DIRECTORY}/touch-reject-${label}.xcresult" > "${RUN_DIRECTORY}/touch-reject-${label}.log" 2>&1 || rejection_status=$?
+      prepare_test "${RUN_DIRECTORY}/touch-reject-${label}.log" "${unowned_arguments[@]}" -scheme "${scheme}" -configuration "${configuration}" -destination "platform=iOS Simulator,id=${SIMULATOR_ID}" -parallel-testing-enabled NO -test-timeouts-enabled YES -maximum-test-execution-time-allowance 60 MYBILL_TEST_CONTEXT_FILE= -only-testing:"${test_case}" -resultBundlePath "${RUN_DIRECTORY}/touch-reject-${label}.xcresult" || return
+      phase test case/NativeTests/NativeSqliteTests/testRejectUnownedTestContexts "${RUN_DIRECTORY}/touch-reject-${label}.log" '' yes || return
+      xcodebuild test-without-building -collect-test-diagnostics never "${TEST_ARGS[@]}" > "${RUN_DIRECTORY}/touch-reject-${label}.log" 2>&1 || rejection_status=$?
       if [[ "${rejection_status}" != 65 ]] || ! grep -Fq 'Error Domain=OwnedSimulatorTestContext Code=1' "${RUN_DIRECTORY}/touch-reject-${label}.log" || ! grep -Eq "Test Case .*${test_case##*/}.*failed" "${RUN_DIRECTORY}/touch-reject-${label}.log"; then
         tail -60 "${RUN_DIRECTORY}/touch-reject-${label}.log" >&2
         echo '缺少隔离清单的测试未按守卫预期拒绝。' >&2
@@ -193,6 +230,7 @@ JS
     # UI 用例共用一个交互会话，最后验证一次重新启动；结束 App 后才回读文件。
     stop_owned_app "${RUN_DIRECTORY}/touch-final-stop.log"
     APP_CONTAINER="$(xcrun simctl get_app_container "${SIMULATOR_ID}" com.mybill.offline data)"
+    phase check native-readback/DictionaryTouch/Release "${RUN_DIRECTORY}/touch-readback.log"
     python3 scripts/fixtures/dictionary-touch.py check "${APP_CONTAINER}" "${SIMULATOR_ID}" "${RUN_DIRECTORY}/touch-fixture.json" | tee "${RUN_DIRECTORY}/touch-readback.log"
     python3 scripts/fixtures/dictionary-touch.py prepare-paging "${APP_CONTAINER}" "${SIMULATOR_ID}" "${RUN_DIRECTORY}/touch-fixture.json"
     if ! positive_test "${RUN_DIRECTORY}/touch-paging.log" "${XCODE_COMMON_ARGUMENTS[@]}" -scheme DictionaryTouch -configuration Release -destination "platform=iOS Simulator,id=${SIMULATOR_ID}" -parallel-testing-enabled NO -test-timeouts-enabled YES -maximum-test-execution-time-allowance 60 -only-testing:DictionaryUITests/DictionaryTouchTests/test11ProductLastPage -only-testing:DictionaryUITests/DictionaryTouchTests/test12MergeLastPageProduct -only-testing:DictionaryUITests/DictionaryTouchTests/test13UnitLastPage -only-testing:DictionaryUITests/DictionaryTouchTests/test14DisableLastPageUnit -resultBundlePath "${RUN_DIRECTORY}/touch-paging.xcresult"; then
@@ -201,20 +239,28 @@ JS
     fi
     stop_owned_app "${RUN_DIRECTORY}/touch-paging-stop.log"
     APP_CONTAINER="$(xcrun simctl get_app_container "${SIMULATOR_ID}" com.mybill.offline data)"
+    phase check native-readback/DictionaryTouch/Release "${RUN_DIRECTORY}/touch-paging-readback.log"
     python3 scripts/fixtures/dictionary-touch.py check-paging "${APP_CONTAINER}" "${SIMULATOR_ID}" "${RUN_DIRECTORY}/touch-fixture.json" | tee "${RUN_DIRECTORY}/touch-paging-readback.log"
-    node scripts/verify-ios-resources.mjs .local/ios/DerivedData/Build/Products/Release-iphonesimulator/App.app
+    run_phase check check/resources/simulator "${RUN_DIRECTORY}/simulator-resources.log" '' node scripts/verify-ios-resources.mjs .local/ios/DerivedData/Build/Products/Release-iphonesimulator/App.app
     sed -n '/DICTIONARY_TOUCH_/p; /Executed .* tests\{0,1\}, with/p; /\*\* TEST SUCCEEDED \*\*/p' "${RUN_DIRECTORY}/touch.log" "${RUN_DIRECTORY}/touch-paging.log"
     exit 0
   fi
+  if [[ "${MODE}" != ios-recovery ]]; then
   if ! positive_test "${RUN_DIRECTORY}/test.log" "${XCODE_ARGUMENTS[@]}" -destination "platform=iOS Simulator,id=${SIMULATOR_ID}" -parallel-testing-enabled NO -test-timeouts-enabled YES -maximum-test-execution-time-allowance 60 -skip-testing:NativeTests/NativeSqliteTests/testOfflineDictionaryScenario -skip-testing:NativeTests/NativeSqliteTests/testPrepareProcessInterruption -skip-testing:NativeTests/NativeSqliteTests/testRecoverProcessInterruption -resultBundlePath "${RUN_DIRECTORY}/native.xcresult"; then
     tail -60 "${RUN_DIRECTORY}/test.log" >&2
     exit 1
   fi
+  fi
   # 只对本轮模拟器的正式迁移路径分阶段中断；请求及信号只供 test bundle 消费。
-  for CRASH_PHASE in snapshot-ready migration-recorded upgrade-committed; do
+  CRASH_PHASES=(snapshot-ready migration-recorded upgrade-committed)
+  if [[ "${MODE}" == ios-recovery ]]; then IFS=',' read -r -a CRASH_PHASES <<< "${MYBILL_RECOVERY_PHASES}"; fi
+  for CRASH_PHASE in "${CRASH_PHASES[@]}"; do
+    RECOVERY_COVERAGE="recovery/${CRASH_PHASE}"
     APP_CONTAINER="$(xcrun simctl get_app_container "${SIMULATOR_ID}" com.mybill.offline data)"
     printf '%s' "${CRASH_PHASE}" > "${APP_CONTAINER}/Library/Caches/ledger-crash-request"
-    xcodebuild test -collect-test-diagnostics never "${XCODE_ARGUMENTS[@]}" -destination "platform=iOS Simulator,id=${SIMULATOR_ID}" -parallel-testing-enabled NO -only-testing:NativeTests/NativeSqliteTests/testPrepareProcessInterruption -resultBundlePath "${RUN_DIRECTORY}/interruption-${CRASH_PHASE}.xcresult" > "${RUN_DIRECTORY}/interruption-${CRASH_PHASE}.log" 2>&1 &
+    prepare_test "${RUN_DIRECTORY}/interruption-${CRASH_PHASE}.log" "${XCODE_ARGUMENTS[@]}" -destination "platform=iOS Simulator,id=${SIMULATOR_ID}" -parallel-testing-enabled NO -only-testing:NativeTests/NativeSqliteTests/testPrepareProcessInterruption -resultBundlePath "${RUN_DIRECTORY}/interruption-${CRASH_PHASE}.xcresult"
+    phase test "${RECOVERY_COVERAGE}" "${RUN_DIRECTORY}/interruption-${CRASH_PHASE}.log" '' yes
+    xcodebuild test-without-building -collect-test-diagnostics never "${TEST_ARGS[@]}" > "${RUN_DIRECTORY}/interruption-${CRASH_PHASE}.log" 2>&1 &
     CRASH_TEST_PID=$!
     TRANSACTION_READY=0
     for ((attempt=0; attempt<120; attempt++)); do
@@ -246,6 +292,7 @@ JS
     fi
     sed -n '/LEDGER_PROCESS_INTERRUPTION_RECOVERED/p' "${RUN_DIRECTORY}/recovery-${CRASH_PHASE}.log"
   done
+  if [[ "${MODE}" == ios-recovery ]]; then exit 0; fi
   # 输出固定探针结果，不打印数据库内容或真实设备信息。
   sed -n '/NATIVE_SQLITE_EVIDENCE/p; /LEDGER_LIFECYCLE_EVIDENCE/p; /IPHONE_SHELL_EVIDENCE/p; /OFFLINE_DICTIONARY_EVIDENCE/p; /OFFLINE_DICTIONARY_UI_EVIDENCE/p; /Executed .* tests\{0,1\}, with/p; /\*\* TEST SUCCEEDED \*\*/p' "${RUN_DIRECTORY}/test.log"
 fi

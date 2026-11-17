@@ -15,7 +15,7 @@ function temporary(t) {
 }
 function cliProject(t) {
   const root = temporary(t)
-  for (const file of ['scripts/ios-app.mjs', 'scripts/lib/ios-debug.mjs', 'scripts/lib/ios-verification.mjs', 'app/native-tests/scenarios.json']) {
+  for (const file of ['scripts/ios-app.mjs', 'scripts/lib/ios-debug.mjs', 'scripts/lib/ios-verification.mjs', 'scripts/lib/ios-checks.mjs', 'app/native-tests/scenarios.json']) {
     const target = path.join(root, file)
     fs.mkdirSync(path.dirname(target), { recursive: true })
     fs.copyFileSync(new URL('../../' + file, import.meta.url), target)
