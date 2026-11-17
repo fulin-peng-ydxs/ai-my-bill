@@ -32,6 +32,8 @@ import {
   readVitest,
   caseKey,
   budgets,
+  totalBudgets,
+  createDeadline,
   writeJson,
   needsPhaseRepair,
   selectedCoverage
@@ -44,8 +46,11 @@ const temporary = path.join(root, '.local/ios/tmp/ai-agent')
 const scenarios = JSON.parse(fs.readFileSync(path.join(root, 'app/native-tests/scenarios.json'), 'utf8'))
 let child
 let phaseObserver
+let deadline
+let invocation
 let interrupted
 let cancellationTimer
+let terminationGraceMs = 10_000
 function killGroup(pid, signal) {
   try {
     process.kill(-pid, signal)
@@ -60,7 +65,7 @@ for (const signal of ['SIGINT', 'SIGTERM'])
       const pid = child.pid
       killGroup(pid, signal)
       clearTimeout(cancellationTimer)
-      cancellationTimer = setTimeout(() => killGroup(pid, 'SIGKILL'), 10_000)
+      cancellationTimer = setTimeout(() => killGroup(pid, 'SIGKILL'), terminationGraceMs)
     }
   })
 
@@ -78,6 +83,8 @@ async function command(
   } = {}
 ) {
   if (interrupted) throw new Error(`已取消：${interrupted}`)
+  const remaining = deadline?.remaining() ?? Infinity
+  const commandBudget = Math.min(timeout, remaining)
   const output = log ? fs.openSync(log, 'wx', 0o600) : undefined
   let text = ''
   let timedOut = false
@@ -90,7 +97,7 @@ async function command(
     observationError = error
     const pid = child.pid
     killGroup(pid, 'SIGTERM')
-    cancellationTimer = setTimeout(() => killGroup(pid, 'SIGKILL'), 10_000)
+    cancellationTimer = setTimeout(() => killGroup(pid, 'SIGKILL'), terminationGraceMs)
   }
   try {
     const status = await new Promise((resolve, reject) => {
@@ -121,11 +128,18 @@ async function command(
           })
       timer = setTimeout(() => {
         timedOut = true
-        stop(new Error(`${program} 超过执行预算，停止并保留失败证据。`))
-      }, timeout)
+        stop(
+          new Error(
+            remaining <= timeout
+              ? '整轮执行超时（包含工具链前置检查），停止并保留证据。'
+              : `${program} 超过执行预算，停止并保留失败证据。`
+          )
+        )
+      }, commandBudget)
       if (observer)
         watching = setInterval(() => {
           try {
+            deadline?.remaining()
             observer.poll()
           } catch (error) {
             stop(error)
@@ -134,6 +148,7 @@ async function command(
       child.once('error', reject)
       child.once('close', (code, signal) => resolve(code ?? 128 + (constants.signals[signal] ?? 0)))
     })
+    deadline?.remaining()
     if (observer && !observationError) {
       try {
         observer.poll()
@@ -235,6 +250,7 @@ async function runCheck(args) {
       environment = await nativeToolchain()
       result.environment = environment
     }
+    if (invocation) invocation.phase = 'execution'
     await tracked(run, selected.stage, selected.coverage, selected.program, selected.args, selected)
     result.command = { program: path.basename(selected.program), args: selected.args, exit: 0 }
     if (name === 'app-tests') {
@@ -247,6 +263,7 @@ async function runCheck(args) {
       ]
     }
     if (inputHash(root) !== inputs) throw new Error('局部执行期间输入变化，不能作为当前版本证据。')
+    deadline?.remaining()
     result.status = 'passed'
   } catch (error) {
     result.error = error.message
@@ -379,6 +396,7 @@ async function runPartial(session, selected, toolchain, requested) {
     result.inputHash = inputHash(root)
     result.environment = toolchain
     result.coverage = []
+    if (invocation) invocation.phase = 'execution'
     result.verificationHash = verificationHash(root, toolchain)
     phaseObserver = observeFull({ run, root, evidenceRoot: temporary })
     if (selected.recoveryPhases) {
@@ -412,6 +430,7 @@ async function runPartial(session, selected, toolchain, requested) {
           ...finishPhases(run).flatMap((p) => p.coverage)
         ])
       ]
+      deadline?.remaining()
       result.status = 'passed'
       return
     }
@@ -577,6 +596,7 @@ async function runPartial(session, selected, toolchain, requested) {
         ...successful
       ])
     ]
+    deadline?.remaining()
     result.status = 'passed'
     console.log(`局部验证通过（${selected.cases.length} 项，不能替代完整验收）；保留本轮模拟器供下一次调试。`)
   } catch (error) {
@@ -643,9 +663,10 @@ async function main(args) {
     const observer = observeFull({ ...attempt, root, evidenceRoot: temporary })
     // 设备可借用，验收范围与资源生成不能借用局部结果；子流程再次核对真实设备后才重置 App。
     try {
+      if (invocation) invocation.phase = 'execution'
       if (guarded) console.log(`完整验收记录：${attempt.run}`)
       await command('bash', ['-s', '--', args[0]], {
-        timeout: guarded ? 900_000 : 2_400_000,
+        timeout: guarded ? totalBudgets.acceptance : totalBudgets.engineering,
         inherit: true,
         input: script,
         observer,
@@ -659,6 +680,7 @@ async function main(args) {
         throw new Error('完整流程脚本在执行期间变化；快照已执行，但不能认定当前脚本通过。')
       if (guarded && verificationHash(root, toolchain) !== fingerprint)
         throw new Error('完整验收期间源码、测试或执行器变化，不能认定当前版本通过。')
+      deadline?.remaining()
       if (guarded) finishFull(root, attempt)
     } catch (error) {
       if (guarded) finishFull(root, attempt, error, observer.failedCases)
@@ -712,12 +734,19 @@ async function main(args) {
     const pending = path.join(directory, 'creating.json')
     fs.writeFileSync(pending, JSON.stringify(context), { mode: 0o600 })
     try {
+      if (invocation) invocation.phase = 'execution'
       context.simulatorId = (await simctl('create', context.name, DEVICE_TYPE, RUNTIME)).text.trim()
       writeContext({ file: path.join(directory, 'test-context.json'), context })
+      deadline?.remaining()
       fs.unlinkSync(pending)
     } catch (error) {
       const signal = interrupted
+      const validationDeadline = deadline
+      const validationGraceMs = terminationGraceMs
       interrupted = undefined
+      // 失败补偿单独最多 10 秒，不能延长验证预算。
+      deadline = createDeadline(10_000)
+      terminationGraceMs = 0
       try {
         const devices = Object.values((await inventory()).devices)
           .flat()
@@ -728,6 +757,8 @@ async function main(args) {
         throw new Error(`${error.message}；创建补偿失败：${cleanupError.message}，归属清单：${pending}`)
       } finally {
         interrupted = signal
+        deadline = validationDeadline
+        terminationGraceMs = validationGraceMs
       }
       throw error
     }
@@ -794,10 +825,40 @@ try {
     JSON.stringify({ pid: process.pid, startedAt: new Date().toISOString() }),
     { mode: 0o600 }
   )
-  await main(process.argv.slice(2))
+  const args = process.argv.slice(2)
+  const mode = args[0] ?? 'common'
+  if (mode !== 'debug' || args[1] !== 'list') {
+    const budget = ['common', 'ios-build'].includes(mode) ? totalBudgets.engineering : totalBudgets.acceptance
+    deadline = createDeadline(budget)
+    invocation = {
+      scope: 'invocation',
+      mode: args.slice(0, mode === 'debug' ? 2 : 1).join(' ') || 'common',
+      phase: 'preflight',
+      startedAt: Date.now(),
+      status: 'running',
+      run: fs.mkdtempSync(path.join(temporary, 'ios-invocation-'))
+    }
+    writeJson(path.join(invocation.run, 'result.json'), { ...invocation, deadline: deadline.snapshot() })
+  }
+  await main(args)
+  if (invocation) invocation.status = 'passed'
 } catch (error) {
+  if (invocation) {
+    invocation.status = 'failed'
+    invocation.error = error.message
+    invocation.cancelled = Boolean(interrupted)
+  }
   console.error(error.message)
   process.exitCode = interrupted === 'SIGINT' ? 130 : interrupted ? 143 : 1
 } finally {
-  if (locked) fs.rmSync(lock, { recursive: true })
+  try {
+    if (invocation)
+      writeJson(path.join(invocation.run, 'result.json'), {
+        ...invocation,
+        finishedAt: Date.now(),
+        deadline: deadline.snapshot()
+      })
+  } finally {
+    if (locked) fs.rmSync(lock, { recursive: true })
+  }
 }

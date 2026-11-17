@@ -8,6 +8,8 @@ import { spawnSync } from 'node:child_process'
 import { selection, APP_ID } from '../lib/ios-debug.mjs'
 import {
   controlInputs,
+  createDeadline,
+  totalBudgets,
   inputHash,
   verificationHash,
   requireEvidence,
@@ -174,10 +176,10 @@ process.exit(0)
     CI: 'true',
     MYBILL_FULL_ATTEMPT: '/forged'
   }
-  const run = (args) =>
+  const run = (args, overrides = {}) =>
     spawnSync(process.execPath, [path.join(root, 'scripts/ios-app.mjs'), ...args], {
       cwd: root,
-      env,
+      env: { ...env, ...overrides },
       encoding: 'utf8',
       timeout: 12000
     })
@@ -824,6 +826,17 @@ if (args.includes('-version')) {
 }
 `
     )
+    const key = 'native-build/App/Debug'
+    const full = beginFull(
+      p.root,
+      'ios-smoke',
+      p.evidence('template-tie'),
+      p.hash(),
+      process.pid,
+      p.context()
+    )
+    startPhase(full.run, { stage: 'build', coverage: [key] })
+    finishFull(p.root, full, new Error('controlled full build failure'))
     const result = p.run(['debug', 'run', '--session', p.session, '--scenario', 'template-tie'])
     assert.equal(result.status, 0, result.stderr)
     const run = result.stdout.match(/^EVIDENCE=(.+)$/m)[1]
@@ -833,5 +846,219 @@ if (args.includes('-version')) {
     const phase = evidence.result.timings.find((item) => item.stage === 'test')
     assert.equal(phase.scenario, 'template-tie')
     assert.ok(phase.coverage.includes(scenarioKey('template-tie')))
+    const second = p.run(['debug', 'run', '--session', p.session, '--scenario', 'crud'])
+    assert.equal(second.status, 0, second.stderr)
+    assert.match(second.stdout, /BUILD_CACHE_HIT/)
+    const cachedRun = second.stdout.match(/^EVIDENCE=(.+)$/m)[1]
+    assert.equal(requireEvidence(p.root, cachedRun, inputHash(p.root), environment).result.cacheHit, true)
+    assert.equal(readState(p.root).attempts['ios-smoke'].status, 'failed')
+  }
+)
+
+for (const phase of ['build', 'install', 'initialize']) {
+  test(`完整 ${phase} 失败后的相关局部成功恢复缓存，失败锁和复验次数仍保留`, (t) => {
+    clock(t)
+    const p = project(t)
+    const H = p.hash()
+    const key = `native-${phase}/App/Debug`
+    const native = 'NativeTests/NativeSqliteTests/testLedgerLifecycleAndProtection'
+    const old = p.evidence(native)
+    const full = beginFull(p.root, 'ios-smoke', old, H, process.pid, p.context())
+    startPhase(full.run, { stage: phase, coverage: [key] })
+    finishFull(p.root, full, new Error('controlled full phase failure'))
+    const check = () => needsPhaseRepair(p.root, key, environment)
+    assert.equal(check(), true)
+    for (const overrides of [
+      { coverage: ['native-build/DictionaryTouch/Release'] },
+      { completedAt: full.startedAt - 1 },
+      { inputHash: 'old-input' },
+      { environment: 'another-runtime' },
+      { scope: 'engineering' }
+    ]) {
+      const unrelated = p.evidence(native, { coverage: [caseKey(native), key], ...overrides })
+      recordLocal(p.root, unrelated.run, unrelated.result)
+      assert.equal(check(), true)
+    }
+    const repaired = p.evidence(native, { coverage: [caseKey(native), key] })
+    recordLocal(p.root, repaired.run, repaired.result)
+    assert.equal(check(), false)
+    const older = p.evidence(native, { coverage: [caseKey(native), key], completedAt: full.startedAt - 1 })
+    recordLocal(p.root, older.run, older.result)
+    assert.equal(check(), false)
+    assert.equal(readState(p.root).attempts['ios-smoke'].status, 'failed')
+    assert.throws(() => beginFull(p.root, 'ios-touch', repaired, H, process.pid, p.context()), /先处理/)
+    assert.throws(() => beginFull(p.root, 'ios-smoke', old, H, process.pid, p.context()), /相关局部/)
+    p.write('app/src/view.vue', 'another input')
+    assert.equal(check(), true)
+    p.write('app/src/view.vue', 'fixture')
+    assert.equal(check(), false)
+    const retry = beginFull(p.root, 'ios-smoke', repaired, H, process.pid, p.context())
+    startPhase(retry.run, { stage: phase, coverage: [key] })
+    finishFull(p.root, retry, new Error('same phase failed again'))
+    assert.equal(check(), true)
+    const fixedAgain = p.evidence(native, { coverage: [caseKey(native), key] })
+    recordLocal(p.root, fixedAgain.run, fixedAgain.result)
+    assert.equal(check(), false)
+    assert.throws(
+      () => beginFull(p.root, 'ios-smoke', fixedAgain, H, process.pid, p.context()),
+      /初验及一次复验/
+    )
+  })
+}
+
+test('单调整轮截止时间累计工具链及执行耗时，不受系统日期回拨影响', (t) => {
+  let elapsed = 0
+  const deadline = createDeadline(totalBudgets.acceptance, { now: () => elapsed })
+  for (let i = 0; i < 3; i++) {
+    elapsed += 240000
+    assert.equal(deadline.remaining(), 900000 - elapsed)
+  }
+  t.mock.method(Date, 'now', () => 0)
+  elapsed += 170000
+  assert.equal(deadline.remaining(), 10000)
+  elapsed += 10000
+  assert.throws(() => deadline.remaining(), /整轮执行超时/)
+  assert.deepEqual(deadline.snapshot(), { budgetMs: 900000, elapsedMs: 900000 })
+  const engineering = createDeadline(totalBudgets.engineering, { now: () => 0 })
+  assert.equal(engineering.remaining(), 2400000)
+})
+
+// 只推进单调时钟，不真实等待分钟数；每个受控步骤均低于其单独的子命令上限。
+function virtualClock(p, durations) {
+  return p.write(
+    '.local/ios/virtual-clock.mjs',
+    `
+import cp from 'node:child_process'
+import { performance } from 'node:perf_hooks'
+import { syncBuiltinESMExports } from 'node:module'
+const originalNow = performance.now.bind(performance)
+let elapsed = 0
+Object.defineProperty(performance, 'now', { value: () => originalNow() + elapsed })
+const spawn = cp.spawn
+cp.spawn = (program, args, options) => {
+  const child = spawn(program, args, options)
+  const values = ${JSON.stringify(durations)}
+  const duration = program === 'xcrun' || program === 'xcodebuild' ? values.toolchain
+    : program === 'bash' && args[0] === '-n' ? values.syntax : program === 'bash' && args[0] === '-s' ? values.body : 0
+  const once = child.once.bind(child)
+  child.once = (event, fn) => once(event, event === 'close' ? (...args) => {
+    elapsed += duration
+    fn(...args)
+  } : fn)
+  return child
+}
+syncBuiltinESMExports()
+`
+  )
+}
+
+for (const kind of ['preflight', 'execution', 'within-budget']) {
+  test(`真实 CLI 从入口累计整轮预算：${kind}，留下独立回执且不会误记通过`, { timeout: 15000 }, (t) => {
+    const p = project(t)
+    p.write('scripts/lib/ios-app-full.sh', '#!/bin/bash\nexit 0\n')
+    const proof = p.evidence('NativeTests/NativeSqliteTests/testLedgerLifecycleAndProtection')
+    const durations =
+      kind === 'preflight'
+        ? { syntax: 240000, toolchain: 240000, body: 0 }
+        : kind === 'execution'
+          ? { syntax: 0, toolchain: 240000, body: 300000 }
+          : { syntax: 0, toolchain: 100000, body: 100000 }
+    const preload = virtualClock(p, durations)
+    const result = p.run(['ios-smoke', '--from', proof.run], {
+      DEVELOPER_DIR: '/controlled/sdk',
+      NODE_OPTIONS: '--import=' + preload
+    })
+    const passed = kind === 'within-budget'
+    assert.equal(result.status, passed ? 0 : 1, result.stderr)
+    if (!passed) assert.match(result.stderr, /整轮执行超时/)
+    const directory = fs.readdirSync(p.base).find((name) => name.startsWith('ios-invocation-'))
+    const receipt = JSON.parse(fs.readFileSync(path.join(p.base, directory, 'result.json')))
+    assert.equal(receipt.status, passed ? 'passed' : 'failed')
+    assert.equal(receipt.deadline.budgetMs, 900000)
+    assert.ok(receipt.deadline.elapsedMs >= (passed ? 400000 : 900000))
+    assert.equal(receipt.phase, kind === 'preflight' ? 'preflight' : 'execution')
+    assert.equal(fs.existsSync(path.join(p.base, 'ios-command.lock')), false)
+    if (kind === 'preflight') {
+      assert.equal(fs.existsSync(path.join(p.base, 'ios-verification-state.json')), false)
+      assert.equal(
+        fs.readdirSync(p.base).some((name) => name.startsWith('ios-full-')),
+        false
+      )
+    } else {
+      assert.equal(readState(p.root).attempts['ios-smoke'].status, passed ? 'passed' : 'failed')
+    }
+  })
+}
+
+test('前置检查消耗的预算会缩短活动子进程的剩余时间，超时立即取消并清理', { timeout: 15000 }, (t) => {
+  const p = project(t)
+  p.write(
+    'scripts/lib/ios-app-full.sh',
+    `#!/bin/bash
+trap 'echo cleaned > cleanup-receipt; exit 143' TERM INT
+sleep 5
+echo SHOULD_NOT_CONTINUE > continued
+`
+  )
+  const proof = p.evidence('NativeTests/NativeSqliteTests/testLedgerLifecycleAndProtection')
+  const preload = virtualClock(p, { syntax: 0, toolchain: 299000, body: 0 })
+  const result = p.run(['ios-smoke', '--from', proof.run], {
+    DEVELOPER_DIR: '/controlled/sdk',
+    NODE_OPTIONS: '--import=' + preload
+  })
+  assert.equal(result.status, 1, result.stderr)
+  assert.match(result.stderr, /整轮执行超时/)
+  assert.ok(fs.existsSync(path.join(p.root, 'cleanup-receipt')))
+  assert.equal(fs.existsSync(path.join(p.root, 'continued')), false)
+  assert.equal(fs.existsSync(path.join(p.base, 'ios-command.lock')), false)
+  const directory = fs.readdirSync(p.base).find((name) => name.startsWith('ios-invocation-'))
+  const receipt = JSON.parse(fs.readFileSync(path.join(p.base, directory, 'result.json')))
+  assert.equal(receipt.status, 'failed')
+  assert.ok(receipt.deadline.elapsedMs >= receipt.deadline.budgetMs)
+})
+
+test(
+  '创建失败补偿共享 10 秒清理预算，耗尽时不再叠加一次强杀宽限',
+  {
+    timeout: 15000,
+    skip: process.platform !== 'darwin'
+  },
+  (t) => {
+    const p = project(t)
+    const xcrun = p.write(
+      'bin/xcrun',
+      `#!/bin/sh
+if [ "$2" = "create" ]; then exit 1; fi
+if [ "$3" = "devices" ]; then trap '' TERM; sleep 5; exit 1; fi
+if [ "$1" = "simctl" ]; then
+  printf '%s\\n' '{"runtimes":[{"identifier":"com.apple.CoreSimulator.SimRuntime.iOS-27-0","isAvailable":true,"buildversion":"TEST"}]}'
+else
+  printf '27.0\\n'
+fi
+`
+    )
+    fs.chmodSync(xcrun, 0o755)
+    const timers = path.join(p.base, 'cleanup-timers.jsonl')
+    const preload = p.write(
+      '.local/ios/cleanup-clock.mjs',
+      `
+import fs from 'node:fs'
+const original = globalThis.setTimeout
+globalThis.setTimeout = (fn, ms, ...args) => {
+  fs.appendFileSync(${JSON.stringify(timers)}, JSON.stringify(ms) + '\\n')
+  return original(fn, ms === 10000 ? 10 : ms, ...args)
+}
+`
+    )
+    const result = p.run(['debug', 'create'], {
+      DEVELOPER_DIR: '/controlled/sdk',
+      NODE_OPTIONS: '--import=' + preload
+    })
+    assert.equal(result.status, 1, result.stderr)
+    assert.match(result.stderr, /创建补偿失败/)
+    const delays = fs.readFileSync(timers, 'utf8').trim().split('\n').map(JSON.parse)
+    assert.ok(delays.includes(10000))
+    assert.equal(delays.at(-1), 0)
+    assert.equal(fs.existsSync(path.join(p.base, 'ios-command.lock')), false)
   }
 )

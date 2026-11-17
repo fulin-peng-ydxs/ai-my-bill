@@ -3,6 +3,7 @@ import path from 'node:path'
 import { createHash, randomUUID } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 import { release } from 'node:os'
+import { performance } from 'node:perf_hooks'
 import { readSession, sourceHash, hashPaths, selection } from './ios-debug.mjs'
 import { checkDefinition } from './ios-checks.mjs'
 
@@ -30,7 +31,24 @@ export const budgets = {
   testCase: 60_000,
   interruption: 120_000
 }
+export const totalBudgets = { acceptance: 900_000, engineering: 2_400_000 }
+
+/** 单调时钟从入口累计；子命令只能消费剩余预算，不能重新获得一整轮时间。 */
+export function createDeadline(budgetMs, { now = () => performance.now() } = {}) {
+  const started = now()
+  const snapshot = () => ({ budgetMs, elapsedMs: Math.max(0, now() - started) })
+  return {
+    snapshot,
+    remaining() {
+      const remaining = budgetMs - snapshot().elapsedMs
+      if (remaining <= 0) throw new Error('整轮执行超时（包含工具链前置检查），停止并保留证据。')
+      return Math.ceil(remaining)
+    }
+  }
+}
 const digest = (text) => createHash('sha256').update(text).digest('hex')
+const cacheRepairKey = (inputs, environment, key) => digest(inputs + '\0' + environment + '\0' + key)
+const cachedPhase = (key) => /^(native-build|native-install|native-initialize)\//.test(key)
 export const evidenceRoot = (root) => path.join(root, '.local/ios/tmp/ai-agent')
 const stateFile = (root) => path.join(evidenceRoot(root), 'ios-verification-state.json')
 export const inputHash = (root) =>
@@ -58,10 +76,11 @@ export const recoveryKeys = ['snapshot-ready', 'migration-recorded', 'upgrade-co
 
 /** v1 的最近记录和仍在保留的逐轮回执一起迁移，不把已有失败次数清零。 */
 export function readState(root) {
-  if (!fs.existsSync(stateFile(root))) return { schema: 2, attempts: {}, history: [], localFailures: {} }
+  if (!fs.existsSync(stateFile(root)))
+    return { schema: 2, attempts: {}, history: [], localFailures: {}, cacheRepairs: {} }
   const state = readJson(stateFile(root))
   if (state.schema === 2 && Array.isArray(state.history) && state.attempts && state.localFailures)
-    return state
+    return { ...state, cacheRepairs: state.cacheRepairs ?? {} }
   if (state.schema !== 1 || !state.attempts || Array.isArray(state.attempts))
     throw new Error('完整验收状态损坏，先排查，不自动清空。')
   const records = new Map()
@@ -79,7 +98,8 @@ export function readState(root) {
     schema: 2,
     attempts: state.attempts,
     history: [...records.values()].sort((a, b) => a.startedAt - b.startedAt),
-    localFailures: {}
+    localFailures: {},
+    cacheRepairs: {}
   }
 }
 const covers = (coverage, required) => required.every((key) => coverage.includes(key))
@@ -191,6 +211,19 @@ export function recordLocal(root, run, result) {
     }
   }
   if (result.status === 'passed') {
+    // 缓存修复是逐阶段、逐输入的事实；不把完整失败/未完成记录改为通过。
+    if (result.scope === 'partial' && result.environment) {
+      for (const key of result.coverage.filter(cachedPhase)) {
+        const identity = cacheRepairKey(result.inputHash, result.environment, key)
+        if (state.cacheRepairs[identity]?.completedAt >= result.completedAt) continue
+        state.cacheRepairs[identity] = {
+          run,
+          inputHash: result.inputHash,
+          environment: result.environment,
+          completedAt: result.completedAt
+        }
+      }
+    }
     for (const failure of Object.values(state.localFailures)) {
       if (
         failure.inputHash === result.inputHash &&
@@ -207,19 +240,23 @@ export function recordLocal(root, run, result) {
 /** 失败阶段必须重做；成功修复后恢复缓存，不把旧输入故障永久变成缓存禁用。 */
 export function needsPhaseRepair(root, key, environment) {
   const state = readState(root)
-  const current = currentAttempts(state, verificationHash(root, environment))
+  const inputs = inputHash(root)
+  const current = currentAttempts(state, digest(inputs + '\0' + environment))
+  const repaired = state.cacheRepairs[cacheRepairKey(inputs, environment, key)]
+  const repairedAfter = (time) => repaired?.completedAt > time
   const pendingFull = Object.entries(state.attempts)
     .map(([mode, attempt]) => current.get(mode) ?? attempt)
     .some(
       (a) =>
         a.status !== 'passed' &&
-        (a.failure ?? failureDetails({ ...a, root }, a.failedCases)).required.includes(key)
+        (a.failure ?? failureDetails({ ...a, root }, a.failedCases)).required.includes(key) &&
+        !repairedAfter(a.finishedAt ?? a.startedAt)
     )
   if (pendingFull) return true
-  const inputs = inputHash(root)
   return Object.values(state.localFailures).some(
     (f) =>
       !f.repairedAt &&
+      !repairedAfter(f.completedAt) &&
       f.inputHash === inputs &&
       (!environment || !f.environment || f.environment === environment) &&
       f.required.includes(key)
