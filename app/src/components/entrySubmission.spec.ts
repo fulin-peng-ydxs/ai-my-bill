@@ -44,7 +44,10 @@ async function mount(kind: 'expense' | 'income') {
   const component = kind === 'expense' ? ExpenseEntryForm : IncomeEntryForm
   const saved = vi.fn()
   const app = createApp({ render: () => h(component as typeof ExpenseEntryForm, { editEntry: (kind === 'expense' ? expense : income) as ExpenseResponse, onSaved: saved }) })
-  dispose = () => { app.unmount(); host.remove() }
+  dispose = () => {
+    app.unmount()
+    host.remove()
+  }
   app.mount(host)
   await settle()
   const submit = async () => {

@@ -11,7 +11,8 @@ vi.mock('@capacitor/core', async () => {
 })
 
 import { LedgerDatabase } from '../ledgerDatabase'
-import { entryFixture, entryWriteScenario, entryValidationScenario, entryFailureUndoScenario, legacyEntryFixture } from '../../../test-support/entryScenarios'
+import { entryFixture, entryWriteScenario, entryValidationScenario, entryFailureUndoScenario, legacyEntryFixture,
+  entryReplayScenario, entrySearchScenario, entrySearchUpgradeScenario } from '../../../test-support/entryScenarios'
 import { EntryReadbackQuery } from './readbackQuery'
 import { EntryService } from './entryService'
 import { migrations } from '../migrations'
@@ -29,6 +30,10 @@ describe('T6 真实 SQLite 写入闭环', () => {
   it('精确量价、快照、并发、幂等、旧版本编辑、丢弃确认后重开', () => entryWriteScenario(database))
   it('精度、上限、Unicode、时间、失效字典和字段错误', () => entryValidationScenario(database))
   it('最终回执故障整笔回滚、原键重试与撤销保护', () => entryFailureUndoScenario(database))
+  it('已提交回放跳过时钟校验，旧编辑回放进入版本冲突', () => entryReplayScenario(database))
+  it('全角、空白、大小写及组合字符沿历史快照名称检索', () => entrySearchScenario(database))
+  it('v3→v4 跨批次回填、故障回滚及数据步骤摘要保护', () => entrySearchUpgradeScenario(
+    (suffix, chain) => new LedgerDatabase(`entry_${counter}_${suffix}`, chain)))
   it('提交本身失败后不留下业务/回执，原键可重试', async () => {
     const f = await entryFixture(database)
     const commit = vi.spyOn(state.fixture!.sqlite, 'commitTransaction').mockRejectedValueOnce(new Error('controlled-commit-failure'))

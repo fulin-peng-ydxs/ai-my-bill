@@ -3,7 +3,7 @@ import type { CreateExpenseRequest, CreateIncomeRequest, EntryType, UpdateExpens
 import { sha256 } from '../migrations'
 import { LocalError } from '../../domain/localError'
 import { requireId, validateQuery } from '../dictionaries/repository'
-import { expectedVersion, expenseInput, incomeInput, operationId } from './writePolicy'
+import { expectedVersion, expenseInput, incomeInput, operationId, validateWriteTime } from './writePolicy'
 import { expenseResponse, expenseValues, incomeResponse, incomeValues, readEntry, refreshRecent, storeEntry, versionConflict } from './repository'
 
 /** 字段、引用、版本、最近值和操作回执由同一事务维护；页面不直接拼接写入步骤。 */
@@ -12,22 +12,22 @@ export class EntryService {
 
   createExpense(request: CreateExpenseRequest, key: string) {
     const now = this.clock()
-    return this.save('EXPENSE', expenseInput(request, now), key, now, expenseValues, expenseResponse)
+    return this.save('EXPENSE', expenseInput(request), key, now, expenseValues, expenseResponse)
   }
 
   updateExpense(id: string, request: UpdateExpenseRequest, key: string) {
     const now = this.clock()
-    return this.save('EXPENSE', expenseInput(request.entry, now), key, now, expenseValues, expenseResponse, id, expectedVersion(request.version))
+    return this.save('EXPENSE', expenseInput(request.entry), key, now, expenseValues, expenseResponse, id, expectedVersion(request.version))
   }
 
   createIncome(request: CreateIncomeRequest, key: string) {
     const now = this.clock()
-    return this.save('INCOME', incomeInput(request, now), key, now, incomeValues, incomeResponse)
+    return this.save('INCOME', incomeInput(request), key, now, incomeValues, incomeResponse)
   }
 
   updateIncome(id: string, request: UpdateIncomeRequest, key: string) {
     const now = this.clock()
-    return this.save('INCOME', incomeInput(request.entry, now), key, now, incomeValues, incomeResponse, id, expectedVersion(request.version))
+    return this.save('INCOME', incomeInput(request.entry), key, now, incomeValues, incomeResponse, id, expectedVersion(request.version))
   }
 
   getExpense(id: string, signal?: AbortSignal) {
@@ -70,7 +70,7 @@ export class EntryService {
     })
   }
 
-  private async save<I, R>(type: EntryType, input: I, requestedKey: string, now: Date,
+  private async save<I extends { occurredAt: string }, R extends { id: string; version: number }>(type: EntryType, input: I, requestedKey: string, now: Date,
     valuesFor: (sql: SqlSession, input: I) => Promise<Record<string, string | number | null>>,
     project: (row: Record<string, unknown>) => R, requestedId?: string, version?: number): Promise<R> {
     const key = operationId(requestedKey)
@@ -80,6 +80,7 @@ export class EntryService {
     const operation = `${type.toLowerCase()}.${version === undefined ? 'create' : 'update'}`
     const digest = await sha256(JSON.stringify({ id: requestedId, version, input }))
     const result = await this.database.executeOnce(operation, key, digest, async sql => {
+      validateWriteTime(input.occurredAt, now)
       const id = requestedId ?? crypto.randomUUID()
       const previous = version === undefined ? undefined : await readEntry(sql, id, type)
       if (previous && previous.row_version !== version) {
@@ -93,15 +94,20 @@ export class EntryService {
         await refreshRecent(sql, type, String(previous[reference]), now.toISOString())
       }
       return project(await readEntry(sql, id, type))
-    })
-    if (version === undefined) {
-      await this.database.read(async sql => {
+    }, undefined, async (sql, saved) => {
+      if (version === undefined) {
         const undone = await sql.query('SELECT operation_id FROM idempotency_result WHERE operation=? AND operation_id=?', [`${type.toLowerCase()}.undo`, key])
         if (undone.length) {
           throw new LocalError('LEDGER_ENTRY_UNDONE', '本次保存已撤销，请重新填写并保存。')
         }
-      })
-    }
+      } else {
+        // 原回执保留不变；账目后续已修改时不能把旧 DTO 当作当前保存成功。
+        const current = await readEntry(sql, saved.id, type)
+        if (current.row_version !== saved.version) {
+          throw versionConflict()
+        }
+      }
+    })
     return result
   }
 }

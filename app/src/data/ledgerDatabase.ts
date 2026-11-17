@@ -3,7 +3,7 @@ import { LocalError, throwIfCancelled } from '../domain/localError'
 import { nativeSqlite, createIosDatabase } from '../infrastructure/database/nativeConnection'
 import { SerialQueue } from '../infrastructure/database/serialQueue'
 import { ledgerFiles, type LedgerFiles } from '../platform/ledgerFiles'
-import { migrations, sha256, type Migration } from './migrations'
+import { migrations, migrationDigest, type Migration } from './migrations'
 import { assertSchema, type SchemaObject } from './migrations/schema'
 import { defaultSeed, seedValues, type Seed } from './seed/defaults'
 
@@ -93,7 +93,8 @@ export class LedgerDatabase {
   }
 
   /** 操作名+ID 范围去重；digest 由应用层对规范化业务输入计算。记录与写入同事务。 */
-  executeOnce<T>(operation: string, id: string, digest: string, task: (sql: SqlSession) => Promise<T>, signal?: AbortSignal): Promise<T> {
+  executeOnce<T>(operation: string, id: string, digest: string, task: (sql: SqlSession) => Promise<T>, signal?: AbortSignal,
+    verifyResult?: (sql: SqlSession, result: T) => Promise<void>): Promise<T> {
     if (!/^[a-z][a-z0-9_.]{0,63}$/.test(operation) || !id || id.length > 128 || !/^[a-f0-9]{64}$/.test(digest)) {
       return Promise.reject(new LocalError('INVALID_OPERATION', '操作标识不合法。'))
     }
@@ -103,9 +104,13 @@ export class LedgerDatabase {
         if (old.request_digest !== digest) {
           throw new LocalError('IDEMPOTENCY_CONFLICT', '相同操作标识对应的内容不一致。')
         }
-        return JSON.parse(old.result_json as string) as T
+        const result = JSON.parse(old.result_json as string) as T
+        await verifyResult?.(sql, result)
+        return result
       }
       const result = await task(sql)
+      // 当前状态校验同时覆盖首次执行/回放，与读回执、业务写入共享事务和队列。
+      await verifyResult?.(sql, result)
       const encoded = JSON.stringify(result)
       if (encoded === undefined) {
         throw new TypeError('幂等结果必须可序列化。')
@@ -161,7 +166,7 @@ export class LedgerDatabase {
       this.refuse('迁移履历不完整。')
     }
     for (let i = 0; i < version; i++) {
-      if (history[i].version !== i + 1 || history[i].digest !== await sha256(this.chain[i].sql)) {
+      if (history[i].version !== i + 1 || history[i].digest !== await migrationDigest(this.chain[i])) {
         this.refuse('迁移摘要与历史不一致。')
       }
     }
@@ -191,7 +196,8 @@ export class LedgerDatabase {
 
   private async apply(migration: Migration) {
     await this.connection!.execute(migration.sql, false)
-    await this.session().run('INSERT INTO migration_history VALUES(?,?,?)', [migration.version, await sha256(migration.sql), new Date().toISOString()])
+    await migration.data?.apply(this.session())
+    await this.session().run('INSERT INTO migration_history VALUES(?,?,?)', [migration.version, await migrationDigest(migration), new Date().toISOString()])
     await this.observe('migration-recorded', migration.version)
   }
 

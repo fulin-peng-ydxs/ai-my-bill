@@ -116,6 +116,7 @@ jobs:
       - env:
           IOS_DEBUG_SESSION: ${{ steps.ios-session.outputs.session }}
           IOS_LOCAL_EVIDENCE: ${{ steps.touch-local.outputs.evidence }}
+        # 连续执行 T6 支出→收入组合；与本地 entry-cycle 共用用例及回读规则。
         run: npm run check:ios-app:touch -- --session "$IOS_DEBUG_SESSION" --from "$IOS_LOCAL_EVIDENCE"
       - if: always() && steps.ios-session.outputs.session != ''
         env:

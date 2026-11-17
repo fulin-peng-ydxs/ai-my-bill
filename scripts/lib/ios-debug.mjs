@@ -42,7 +42,8 @@ export const uiScenarios = {
   'paging-merge': [11, 12],
   'paging-disable': [13, 14],
   'merge-relaunch': [9, 10],
-  'merge-cycle': [8, 9, 10]
+  'merge-cycle': [8, 9, 10],
+  'entry-cycle': [15, 16]
 }
 
 /** 前置用例显式列出；只补必要环境与导航，不能暗中扩展为完整触摸套件。 */
@@ -90,7 +91,7 @@ function uiSelection(indices) {
   return {
     scheme: 'DictionaryTouch',
     configuration: 'Release',
-    fixture: String(indices.at(-1)),
+    fixture: indices.includes(15) && indices.includes(16) ? 'entry-cycle' : String(indices.at(-1)),
     cases: [
       ...(indices.some((i) => (i >= 1 && i <= 5) || i === 11 || i === 13 || i >= 15)
         ? ['DictionaryUITests/DictionaryTouchTests/test00DebugKeyboardReady']

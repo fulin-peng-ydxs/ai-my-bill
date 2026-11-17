@@ -83,6 +83,12 @@ test('单用例/场景选择只带显式必要前置，拒绝任意过滤器与�
     selection('--scenario', 'merge-cycle', []).cases.map((id) => id.split('/').at(-1)),
     ['test08MergeCancel', 'test09MergeConfirm', 'test10RelaunchedMergeCandidates']
   )
+  assert.deepEqual(selection('--scenario', 'entry-cycle', []).cases, [
+    'DictionaryUITests/DictionaryTouchTests/test00DebugKeyboardReady',
+    'DictionaryUITests/DictionaryTouchTests/test15ExpenseWriteReopen',
+    'DictionaryUITests/DictionaryTouchTests/test16IncomeContinueEdit'
+  ])
+  assert.equal(selection('--scenario', 'entry-cycle', []).fixture, 'entry-cycle')
   assert.throws(() => selection('--scenario', 'unknown', []))
 })
 test('会话拒绝越界路径、符号链接、篡改清单、宽权限及已关闭设备', (t) => {
@@ -185,40 +191,61 @@ test('缓存以内容而非时间判断；生产/探针/工程/锁定依赖/工�
   fs.writeFileSync(path.join(products, 'App'), 'tampered')
   assert.notEqual(hashPaths(products, ['.']), built)
 })
+function touchFixture(root) {
+  const device = randomUUID()
+  const container = path.join(
+    root,
+    'CoreSimulator/Devices',
+    device,
+    'data/Containers/Data/Application',
+    randomUUID()
+  )
+  const directory = path.join(container, 'Library/OfflineLedger')
+  fs.mkdirSync(directory, { recursive: true })
+  const file = path.join(directory, 'ledgerSQLite.db')
+  const database = new DatabaseSync(file)
+  try {
+    for (const name of ['0001_initial.sql', '0002_dictionary_governance.sql', '0003_ledger_writes.sql', '0004_snapshot_search.sql']) {
+      database.exec(
+        fs.readFileSync(new URL('../../app/src/data/migrations/' + name, import.meta.url), 'utf8')
+      )
+    }
+    for (let i = 0; i < 8; i++) {
+      database
+        .prepare(
+          "INSERT INTO dictionary_item(id,kind,name,normalized_name,status) VALUES(?,'INCOME_CATEGORY',?,?,'ACTIVE')"
+        )
+        .run(`61000000-0000-0000-0000-${String(i + 1).padStart(12, '0')}`, i === 0 ? '工资' : '收入' + i, i === 0 ? '工资' : '收入' + i)
+    }
+  } finally {
+    database.close()
+  }
+  const receipt = path.join(container, 'fixture.json')
+  const execute = (mode) =>
+    spawnSync('python3', ['scripts/fixtures/dictionary-touch.py', mode, container, device, receipt], {
+      encoding: 'utf8'
+    })
+  return { file, receipt, execute }
+}
+
+/** 仅供夹具检查器正反例，不作为 App 业务写入/页面验收。 */
+function writeEntryOutcome(database, selected) {
+  if (selected === 15) {
+    database.prepare(`INSERT INTO ledger_entry(id,entry_type,amount_cents,funding_channel_id,funding_channel_name_snapshot,business_time,business_date,
+      product_id,product_name_snapshot,unit_id,unit_name_snapshot,unit_price_scaled,quantity_scaled,calculated_amount_cents)
+      VALUES('t6-saved-expense','EXPENSE',1500,'t6-funding','测试现金','2026-11-17T01:00:00.000Z','2026-11-17','t6-product','测试苹果','t6-unit','斤',123456,1250,1543)`).run()
+    return 't6-saved-expense'
+  }
+  database.prepare(`INSERT INTO ledger_entry(id,entry_type,amount_cents,funding_channel_id,funding_channel_name_snapshot,business_time,business_date,
+    income_name,payer_id,payer_name_snapshot,note,row_version) VALUES('t6-saved-income','INCOME',100000,'t6-funding','测试现金',
+    '2026-11-17T01:00:00.000Z','2026-11-17','测试工资','t6-payer','合成公司','T6 edited',2)`).run()
+  return 't6-saved-income'
+}
+
 test('UI 局部夹具拒绝已有数据；准备改名/恢复/末页前置，回读拒绝未执行或历史被改写', (t) => {
   const root = temporary(t)
   for (const selected of [2, 7, 12, 14, 15, 16]) {
-    const device = randomUUID()
-    const container = path.join(
-      root,
-      'CoreSimulator/Devices',
-      device,
-      'data/Containers/Data/Application',
-      randomUUID()
-    )
-    const directory = path.join(container, 'Library/OfflineLedger')
-    fs.mkdirSync(directory, { recursive: true })
-    const file = path.join(directory, 'ledgerSQLite.db')
-    const database = new DatabaseSync(file)
-    try {
-      for (const name of ['0001_initial.sql', '0002_dictionary_governance.sql', '0003_ledger_writes.sql'])
-        database.exec(
-          fs.readFileSync(new URL('../../app/src/data/migrations/' + name, import.meta.url), 'utf8')
-        )
-      for (let i = 0; i < 8; i++)
-        database
-          .prepare(
-            "INSERT INTO dictionary_item(id,kind,name,normalized_name,status) VALUES(?,'INCOME_CATEGORY',?,?,'ACTIVE')"
-          )
-          .run(`61000000-0000-0000-0000-${String(i + 1).padStart(12, '0')}`, i === 0 ? '工资' : '收入' + i, i === 0 ? '工资' : '收入' + i)
-    } finally {
-      database.close()
-    }
-    const receipt = path.join(container, 'fixture.json')
-    const execute = (mode) =>
-      spawnSync('python3', ['scripts/fixtures/dictionary-touch.py', mode, container, device, receipt], {
-        encoding: 'utf8'
-      })
+    const { file, receipt, execute } = touchFixture(root)
     assert.equal(execute('debug-' + selected).status, 0)
     const ids = JSON.parse(fs.readFileSync(receipt, 'utf8'))
     const check = new DatabaseSync(file)
@@ -243,17 +270,9 @@ test('UI 局部夹具拒绝已有数据；准备改名/恢复/末页前置，回
       if (selected >= 15) {
         assert.equal(check.prepare("SELECT CAST(last_unit_price_scaled AS TEXT) AS price FROM product_details WHERE product_id='t6-product'").get().price, '123456')
         assert.equal(check.prepare("SELECT count(*) AS n FROM ledger_entry WHERE id<>'t6-name-history' AND payer_id='t6-payer'").get().n, 0)
-        if (selected === 15) {
-          check.prepare(`INSERT INTO ledger_entry(id,entry_type,amount_cents,funding_channel_id,funding_channel_name_snapshot,business_time,business_date,
-            product_id,product_name_snapshot,unit_id,unit_name_snapshot,unit_price_scaled,quantity_scaled,calculated_amount_cents)
-            VALUES('t6-saved','EXPENSE',1500,'t6-funding','测试现金','2026-11-17T01:00:00.000Z','2026-11-17','t6-product','测试苹果','t6-unit','斤',123456,1250,1543)`).run()
-        } else {
-          check.prepare(`INSERT INTO ledger_entry(id,entry_type,amount_cents,funding_channel_id,funding_channel_name_snapshot,business_time,business_date,
-            income_name,payer_id,payer_name_snapshot,note,row_version) VALUES('t6-saved','INCOME',100000,'t6-funding','测试现金',
-            '2026-11-17T01:00:00.000Z','2026-11-17','测试工资','t6-payer','合成公司','T6 edited',2)`).run()
-        }
+        const savedId = writeEntryOutcome(check, selected)
         assert.equal(execute('debug-check-' + selected).status, 0, '必须回读真实金额/名称/版本/类型字段')
-        check.prepare("UPDATE ledger_entry SET amount_cents=1 WHERE id='t6-saved'").run()
+        check.prepare("UPDATE ledger_entry SET amount_cents=1 WHERE id=?").run(savedId)
         assert.notEqual(execute('debug-check-' + selected).status, 0, '错误金额不能通过回读')
       }
       const count = check.prepare('SELECT count(*) AS n FROM dictionary_item').get().n
@@ -268,6 +287,24 @@ test('UI 局部夹具拒绝已有数据；准备改名/恢复/末页前置，回
     } finally {
       check.close()
     }
+  }
+})
+test('收支组合夹具必须同时保留两笔结果，单场景拒绝误提交另一类型草稿', (t) => {
+  const root = temporary(t)
+  const { file, execute } = touchFixture(root)
+  assert.equal(execute('debug-entry-cycle').status, 0)
+  const database = new DatabaseSync(file)
+  try {
+    assert.notEqual(execute('debug-check-entry-cycle').status, 0)
+    const expense = writeEntryOutcome(database, 15)
+    assert.notEqual(execute('debug-check-entry-cycle').status, 0, '只有支出不能代表组合通过')
+    writeEntryOutcome(database, 16)
+    assert.equal(execute('debug-check-entry-cycle').status, 0)
+    assert.notEqual(execute('debug-check-16').status, 0, '单收入场景不能额外提交支出草稿')
+    database.prepare('UPDATE ledger_entry SET amount_cents=1 WHERE id=?').run(expense)
+    assert.notEqual(execute('debug-check-entry-cycle').status, 0, '后续场景不能破坏前一笔支出')
+  } finally {
+    database.close()
   }
 })
 test('共享入口发现已有命令锁时拒绝执行，保留原归属记录', (t) => {

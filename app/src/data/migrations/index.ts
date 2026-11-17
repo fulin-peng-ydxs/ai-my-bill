@@ -4,16 +4,34 @@ import dictionaryGovernance from './0002_dictionary_governance.sql?raw'
 import dictionarySchema from './0002_schema.json'
 import ledgerWrites from './0003_ledger_writes.sql?raw'
 import ledgerSchema from './0003_schema.json'
+import snapshotSearch from './0004_snapshot_search.sql?raw'
+import searchSchema from './0004_schema.json'
+import searchDataSource from './0004_snapshot_search.ts?raw'
+import nameV1Source from '../../domain/dictionaryNameV1.ts?raw'
+import { backfillSnapshotSearch } from './0004_snapshot_search'
+import type { SqlSession } from '../ledgerDatabase'
 import type { SchemaObject } from './schema'
 
-export type Migration = Readonly<{ version: number; sql: string; schema: readonly SchemaObject[] }>
+export type Migration = Readonly<{
+  version: number
+  sql: string
+  schema: readonly SchemaObject[]
+  data?: Readonly<{ source: string; apply: (sql: SqlSession) => Promise<void> }>
+}>
 /** 发布后仅追加；当前尚无正式发布的旧版本，原生测试使用受控旧版夹具。 */
 export const migrations: readonly Migration[] = [
   { version: 1, sql: initial, schema: initialSchema },
   { version: 2, sql: dictionaryGovernance, schema: dictionarySchema },
   { version: 3, sql: ledgerWrites, schema: ledgerSchema },
+  { version: 4, sql: snapshotSearch, schema: searchSchema,
+    data: { source: JSON.stringify([searchDataSource, nameV1Source]), apply: backfillSnapshotSearch } },
 ]
 export const publishedSchemaVersions: readonly number[] = []
+
+/** 旧迁移继续使用原 SQL 摘要；含数据步骤的新迁移同时锁定其代码与版本化算法。 */
+export function migrationDigest(migration: Migration): Promise<string> {
+  return sha256(migration.data ? JSON.stringify([migration.sql, migration.data.source]) : migration.sql)
+}
 
 export async function sha256(value: string): Promise<string> {
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value))

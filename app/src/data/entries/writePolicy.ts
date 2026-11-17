@@ -22,7 +22,7 @@ function text(field: string, value: unknown, limit: number, required = false): s
   return normalized
 }
 
-function occurredAt(value: string, now: Date) {
+function occurredAt(value: string) {
   // 只接受带明确偏移的真实时刻，拒绝 Date 对非法日期的自动进位。
   const match = typeof value === 'string' && /^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2}:\d{2})(?:\.(\d{1,3}))?(Z|[+-]\d{2}:\d{2})$/.exec(value)
   const date = new Date(value)
@@ -30,10 +30,17 @@ function occurredAt(value: string, now: Date) {
     throw fieldError('occurredAt', '请选择有效业务时间。')
   }
   const wall = new Date(`${match[1]}T${match[2]}.${(match[3] ?? '').padEnd(3, '0')}Z`)
-  if (!Number.isFinite(wall.getTime()) || wall.toISOString().slice(0, 19) !== `${match[1]}T${match[2]}` || date.getTime() > now.getTime() + 300_000) {
-    throw fieldError('occurredAt', '业务时间无效或超过当前设备时间 5 分钟。')
+  if (!Number.isFinite(wall.getTime()) || wall.toISOString().slice(0, 19) !== `${match[1]}T${match[2]}`) {
+    throw fieldError('occurredAt', '请选择有效业务时间。')
   }
   return { occurredAt: date.toISOString(), businessDate: formatShanghaiBusinessDate(date) }
+}
+
+/** 仅首次执行校验设备时钟；已提交回执不因时钟回拨被误判为未保存。 */
+export function validateWriteTime(value: string, now: Date): void {
+  if (!Number.isFinite(now.getTime()) || Date.parse(value) > now.getTime() + 300_000) {
+    throw fieldError('occurredAt', '业务时间无效或超过当前设备时间 5 分钟。')
+  }
 }
 
 export function operationId(value: string): string {
@@ -56,7 +63,7 @@ function reference(id: string, field: string) {
   return id
 }
 
-export function expenseInput(request: CreateExpenseRequest, now: Date) {
+export function expenseInput(request: CreateExpenseRequest) {
   const unitPrice = decimal('unitPrice', request.unitPrice, 4, UNIT_PRICE_MAX)
   const quantity = decimal('quantity', request.quantity, 3, QUANTITY_MAX, true)
   let calculatedAmount: string
@@ -74,17 +81,17 @@ export function expenseInput(request: CreateExpenseRequest, now: Date) {
     fundingChannelId: reference(request.fundingChannelId, 'fundingChannelId'),
     purchaseChannelId: request.purchaseChannelId == null ? undefined : reference(request.purchaseChannelId, 'purchaseChannelId'),
     locationLabelId: request.locationLabelId == null ? undefined : reference(request.locationLabelId, 'locationLabelId'),
-    ...occurredAt(request.occurredAt, now), note: text('note', request.note, 500),
+    ...occurredAt(request.occurredAt), note: text('note', request.note, 500),
   }
 }
 
-export function incomeInput(request: CreateIncomeRequest, now: Date) {
+export function incomeInput(request: CreateIncomeRequest) {
   const incomeName = text('incomeName', request.incomeName, 200, true)!
   return {
     incomeName, normalizedIncomeName: normalizedDictionaryName(incomeName),
     payerId: reference(request.payerId, 'payerId'), incomeCategoryId: reference(request.incomeCategoryId, 'incomeCategoryId'),
     amount: decimal('amount', request.amount, 2, MONEY_MAX, true),
     fundingChannelId: reference(request.fundingChannelId, 'fundingChannelId'),
-    ...occurredAt(request.occurredAt, now), note: text('note', request.note, 500),
+    ...occurredAt(request.occurredAt), note: text('note', request.note, 500),
   }
 }

@@ -185,7 +185,9 @@ function validate(): boolean {
 }
 
 async function submit(continueEntry: boolean): Promise<void> {
-  if (submitting.value || !validate()) return
+  if (submitting.value || !validate()) {
+    return
+  }
   submitting.value = true
   try {
     const body = incomeRequestFromForm(form)
@@ -196,47 +198,80 @@ async function submit(continueEntry: boolean): Promise<void> {
       emit('saved', saved.value)
       return
     }
-    saved.value = await createIncome(body, key); savedKey.value = key
-    toastKind.value = 'success'; toastMessage.value = '收入已保存，可撤销本次保存。'; toastOpen.value = true
+    saved.value = await createIncome(body, key)
+    savedKey.value = key
+    toastKind.value = 'success'
+    toastMessage.value = '收入已保存，可撤销本次保存。'
+    toastOpen.value = true
     const retained = continueEntry ? { occurredAt: form.occurredAt, incomeCategoryId: form.incomeCategoryId,
       fundingChannelId: form.fundingChannelId } : {}
-    await draft.clear(); Object.assign(form, empty(), retained); attempt.reset()
-    templateUnavailableFields.value = []; emit('templateConsumed')
-    if (!recentNames.value.includes(saved.value.incomeName)) recentNames.value.unshift(saved.value.incomeName)
+    await draft.clear()
+    Object.assign(form, empty(), retained)
+    attempt.reset()
+    templateUnavailableFields.value = []
+    emit('templateConsumed')
+    if (!recentNames.value.includes(saved.value.incomeName)) {
+      recentNames.value.unshift(saved.value.incomeName)
+    }
   } catch (error) {
     const failure = normalizeRequestError(error)
     Object.entries(failure.fieldErrors).forEach(([field, messages]) => {
       errors[field as IncomeField] = messages[0]
     })
     versionConflict.value = error instanceof LocalError && error.code === 'LEDGER_VERSION_CONFLICT'
-    toastKind.value = 'error'; toastMessage.value = failure.message; toastOpen.value = true
-  } finally { submitting.value = false }
+    toastKind.value = 'error'
+    toastMessage.value = failure.message
+    toastOpen.value = true
+  } finally {
+    submitting.value = false
+  }
 }
 
 async function resolveConflict(overwrite: boolean): Promise<void> {
-  if (!props.editEntry || submitting.value) return
+  if (!props.editEntry || submitting.value) {
+    return
+  }
   submitting.value = true
   try {
     const latest = await getIncome(props.editEntry.id)
-    if (overwrite) applyEditEntry(latest)
-    else {
+    if (overwrite) {
+      applyEditEntry(latest)
+    } else {
       editVersion.value = latest.version
       versionConflict.value = false
       attempt.reset()
-      toastKind.value = 'success'; toastMessage.value = '已同步最新版本；你的输入仍保留，请确认后再次保存。'; toastOpen.value = true
+      toastKind.value = 'success'
+      toastMessage.value = '已同步最新版本；你的输入仍保留，请确认后再次保存。'
+      toastOpen.value = true
     }
   } catch (error) {
-    toastKind.value = 'error'; toastMessage.value = error instanceof Error ? error.message : '加载最新收入失败。'; toastOpen.value = true
-  } finally { submitting.value = false }
+    toastKind.value = 'error'
+    toastMessage.value = error instanceof Error ? error.message : '加载最新收入失败。'
+    toastOpen.value = true
+  } finally {
+    submitting.value = false
+  }
 }
 
 async function undo(): Promise<void> {
-  if (!saved.value || !savedKey.value || undoing.value) return
+  if (!saved.value || !savedKey.value || undoing.value) {
+    return
+  }
   undoing.value = true
-  try { await undoCreatedIncome(saved.value.id, savedKey.value); saved.value = undefined; savedKey.value = ''
-    toastKind.value = 'success'; toastMessage.value = '本次保存已撤销。'; toastOpen.value = true }
-  catch (error) { toastKind.value = 'error'; toastMessage.value = error instanceof Error ? error.message : '撤销失败。'; toastOpen.value = true }
-  finally { undoing.value = false }
+  try {
+    await undoCreatedIncome(saved.value.id, savedKey.value)
+    saved.value = undefined
+    savedKey.value = ''
+    toastKind.value = 'success'
+    toastMessage.value = '本次保存已撤销。'
+    toastOpen.value = true
+  } catch (error) {
+    toastKind.value = 'error'
+    toastMessage.value = error instanceof Error ? error.message : '撤销失败。'
+    toastOpen.value = true
+  } finally {
+    undoing.value = false
+  }
 }
 void loadOptions()
 useRefreshOnReturn(() => loadOptions())

@@ -15,7 +15,7 @@ vi.mock('@capacitor/core', () => ({
 import { nativeSqlite } from '../infrastructure/database/nativeConnection'
 import type { LedgerFiles } from '../platform/ledgerFiles'
 import { LedgerDatabase } from './ledgerDatabase'
-import { migrations, sha256 } from './migrations'
+import { migrations, migrationDigest } from './migrations'
 
 // 只替换原生桥的连接故障，不替换生命周期、所有权、队列及 schema/履历校验。
 // 真实 SQL 的提交/回滚和持久化由同一生产入口的模拟器 hosted XCTest 覆盖。
@@ -33,7 +33,7 @@ function manager(name = `close_retry_${++nextName}`) {
 
 beforeEach(async () => {
   vi.resetAllMocks()
-  history = await Promise.all(migrations.map(async migration => ({ version: migration.version, digest: await sha256(migration.sql) })))
+  history = await Promise.all(migrations.map(async migration => ({ version: migration.version, digest: await migrationDigest(migration) })))
   bridge.createConnection.mockImplementation(async ({ database }: { database: string }) => {
     if (nativeConnections.has(database)) {
       throw new Error('Connection already exists')

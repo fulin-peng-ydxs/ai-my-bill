@@ -31,8 +31,9 @@ if mode == 'wait-initialized':
     raise RuntimeError('本轮模拟器的正式账本未在准备预算内初始化')
 assert database.is_file()
 # debug 数据仅由已校验会话中的全新 App 初始化；复用同一夹具，不开放任意 SQL 或路径。
-debug_match = re.fullmatch(r'debug-(check-)?(\d|1[0-6])', mode)
-debug_case = int(debug_match[2]) if debug_match else None
+debug_match = re.fullmatch(r'debug-(check-)?(\d|1[0-6]|entry-cycle)', mode)
+debug_entry_cycle = bool(debug_match and debug_match[2] == 'entry-cycle')
+debug_case = 16 if debug_entry_cycle else int(debug_match[2]) if debug_match else None
 debug_check = bool(debug_match and debug_match[1])
 if debug_match:
     mode = 'debug-check' if debug_check else 'prepare'
@@ -103,6 +104,12 @@ try:
         print('DICTIONARY_DEBUG_SQLITE_VERIFIED case=' + str(debug_case))
         if debug_case in [15, 16]:
             check_entries(connection, debug_case)
+            if debug_case == 16:
+                # 单收入场景不提交支出草稿；组合场景必须保留前一用例的支出。
+                if debug_entry_cycle:
+                    check_entries(connection, 15)
+                else:
+                    assert one("SELECT count(*) FROM ledger_entry WHERE product_id='t6-product'") == 0
     elif mode == 'prepare-entry':
         with connection:
             add_entry_items(connection)

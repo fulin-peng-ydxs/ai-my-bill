@@ -5,6 +5,7 @@ import type { expenseInput, incomeInput } from './writePolicy'
 import { fieldError, requireDictionary } from '../dictionaries/repository'
 import { LocalError } from '../../domain/localError'
 import { decimalToScaledInteger, fromSqliteInteger, scaledIntegerToDecimal, toSqliteInteger } from '../../domain/money'
+import { normalizedDictionaryName } from '../../domain/text'
 
 type Values = Record<string, string | number | null>
 export const entryProjection = `SELECT l.*, CAST(amount_cents AS TEXT) AS amount_text,
@@ -81,9 +82,10 @@ async function active(sql: SqlSession, type: DictionaryType, id: string, field: 
 const scaled = (value: string, scale: number) => toSqliteInteger(decimalToScaledInteger(value, scale))
 
 export async function expenseValues(sql: SqlSession, input: ReturnType<typeof expenseInput>): Promise<Values> {
+  const productName = await active(sql, 'product', input.productId, 'productId')
   return {
     ...baseValues(input, input.paidAmount), product_id: input.productId,
-    product_name_snapshot: await active(sql, 'product', input.productId, 'productId'),
+    product_name_snapshot: productName, normalized_product_name_snapshot: normalizedDictionaryName(productName),
     primary_category_id: input.primaryCategoryId,
     primary_category_name_snapshot: await active(sql, 'expense-category', input.primaryCategoryId, 'primaryCategoryId'),
     secondary_category_id: input.secondaryCategoryId ?? null,

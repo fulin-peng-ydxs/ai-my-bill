@@ -50,7 +50,9 @@ final class DictionaryTouchTests: XCTestCase {
         do { try VNImageRequestHandler(cgImage: image).perform([request]) }
         catch { return nil }
         return request.results?.first {
-            guard let text = $0.topCandidates(1).first?.string else { return false }
+            guard let text = $0.topCandidates(1).first?.string else {
+                return false
+            }
             return containing ? text.contains(label) : text == label
         }?.boundingBox
     }
@@ -359,14 +361,17 @@ final class DictionaryTouchTests: XCTestCase {
         let row = app.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH %@", kind + " " + title)).firstMatch
         var box: CGRect?
         let ready = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
-            if row.exists && row.isHittable { return true }
+            if row.exists && row.isHittable {
+                return true
+            }
             // 原明细行会把类型、名称及金额识别为同一文本块；只在该行内定位唯一合成名称。
             box = self.visualText(title, containing: true)
             return box != nil
         }, object: nil)
         XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 5), .completed, "找不到账目行 \(title)")
-        if row.exists && row.isHittable { row.tap() }
-        else if let box {
+        if row.exists && row.isHittable {
+            row.tap()
+        } else if let box {
             app.coordinate(withNormalizedOffset: CGVector(dx: box.midX, dy: 1 - box.midY)).tap()
         }
     }
@@ -388,6 +393,9 @@ final class DictionaryTouchTests: XCTestCase {
         appears("编辑支出")
         expectValue(entryField("expense-paid-amount", "实付金额"), "15")
         expectValue(entryField("expense-unit-price", "单价"), "12.3456")
+        // 完整入口与 entry-cycle 连续执行下一条；明确关闭原编辑抽屉，交回底部导航。
+        tap("关闭")
+        disappears(matching("编辑支出").firstMatch)
         print("ENTRY_TOUCH_EXPENSE_REOPEN_VERIFIED")
     }
 

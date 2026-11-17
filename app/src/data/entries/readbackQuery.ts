@@ -33,7 +33,7 @@ export class EntryReadbackQuery {
     }
     if (query) {
       // 原表单只需名称检索；T9 扩展统一搜索，不把未支持维度静默忽略。
-      conditions.push("(instr(lower(COALESCE(product_name_snapshot,'')),?)>0 OR instr(COALESCE(normalized_income_name,''),?)>0)")
+      conditions.push("(instr(COALESCE(normalized_product_name_snapshot,''),?)>0 OR instr(COALESCE(normalized_income_name,''),?)>0)")
       values.push(query, query)
     }
     if (cursor) {
