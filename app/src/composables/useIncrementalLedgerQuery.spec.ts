@@ -218,3 +218,92 @@ it('游标自动恢复中的慢响应不能覆盖替换后的条件', async () =
   expect(state.lastOperation.value).toBe('replace')
   expect(state.loadingMore.value).toBe(false)
 })
+
+it('销毁发生在游标错误发布后、恢复启动前时不再读取或写回', async () => {
+  const state = start()
+  api.mockResolvedValueOnce(page(['kept'], 'expired'))
+  await state.replace(filters)
+  api.mockRejectedValueOnce(invalidCursor()).mockResolvedValue(page(['after-disposal']))
+  const pending = state.more()
+  let reachedWindow = false
+  // 第一层 await 接收 API 拒绝，第二层发布错误；在外层 more 续发前销毁。
+  queueMicrotask(() => queueMicrotask(() => {
+    reachedWindow = Boolean(state.staleWarning.value?.fieldErrors.cursor?.length)
+    stop()
+  }))
+  await pending
+  expect(reachedWindow).toBe(true)
+  expect(api).toHaveBeenCalledTimes(2)
+  expect(state.items.value.map(item => item.id)).toEqual(['kept'])
+  expect(state.loadingMore.value).toBe(false)
+})
+
+it.each(['cursor-error', 'success'])('销毁提前取消更多读取，迟到 %s 不启动恢复或覆盖快照', async response => {
+  const state = start()
+  api.mockResolvedValueOnce(page(['kept'], 'expired'))
+  await state.replace(filters)
+  let complete!: (value: LedgerPage) => void
+  let fail!: (cause: unknown) => void
+  let signal!: AbortSignal
+  api.mockImplementationOnce((_filters, _cursor, currentSignal) => new Promise((resolve, reject) => {
+    signal = currentSignal!
+    complete = resolve
+    fail = reject
+  }))
+  const pending = state.more()
+  // 取消信号的订阅者也不能在销毁过程中重新启动当前实例。
+  signal.addEventListener('abort', () => { void state.refresh() }, { once: true })
+  stop()
+  expect(signal.aborted).toBe(true)
+  if (response === 'cursor-error') fail(invalidCursor())
+  else complete(page(['late-success']))
+  await pending
+  expect(api).toHaveBeenCalledTimes(2)
+  expect(state.items.value.map(item => item.id)).toEqual(['kept'])
+  expect(state.staleWarning.value).toBeUndefined()
+  expect(state.loadingMore.value).toBe(false)
+})
+
+it.each([1, 2])('恢复第 %i 页读取中销毁，迟到分页不继续读下一页或写回', async blockedPage => {
+  const state = start()
+  api.mockResolvedValueOnce(page(['old-a'], 'old-first')).mockResolvedValueOnce(page(['old-b'], 'old-second'))
+    .mockResolvedValueOnce(page(['old-c'], 'old-third'))
+  await state.replace(filters)
+  await state.more()
+  await state.more()
+  let complete!: (value: LedgerPage) => void
+  let started!: () => void
+  let signal!: AbortSignal
+  const entered = new Promise<void>(resolve => { started = resolve })
+  api.mockRejectedValueOnce(invalidCursor())
+  if (blockedPage === 2) api.mockResolvedValueOnce(page(['partial-first'], 'partial-next'))
+  api.mockImplementationOnce((_filters, _cursor, currentSignal) => new Promise(resolve => {
+    signal = currentSignal!
+    complete = resolve
+    started()
+  })).mockResolvedValue(page(['unexpected-next-page']))
+  const pending = state.more()
+  await entered
+  expect(api).toHaveBeenCalledTimes(4 + blockedPage)
+  stop()
+  expect(signal.aborted).toBe(true)
+  complete(page(['late-recovery'], 'must-not-read'))
+  await pending
+  expect(api).toHaveBeenCalledTimes(4 + blockedPage)
+  expect(state.items.value.map(item => item.id)).toEqual(['old-a', 'old-b', 'old-c'])
+  expect(state.loadingMore.value).toBe(false)
+})
+
+it('销毁后的 replace、more、refresh 和 retry 均不再读取或修改条件', async () => {
+  const state = start()
+  api.mockResolvedValue(page(['kept'], 'next'))
+  await state.replace(filters)
+  stop()
+  await state.replace({ ...filters, query: 'after-disposal' })
+  await state.more()
+  await state.refresh()
+  await state.retry()
+  expect(api).toHaveBeenCalledTimes(1)
+  expect(state.lastOperation.value).toBe('replace')
+  expect(state.items.value.map(item => item.id)).toEqual(['kept'])
+})

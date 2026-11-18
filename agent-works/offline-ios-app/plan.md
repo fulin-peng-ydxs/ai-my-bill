@@ -937,6 +937,10 @@
 
   两项新回归先分别复现失败（ios-check-fU1AzV、ios-check-KtwB8a）；修复后增量请求 12/12（ios-check-xjQknR）、真实 LedgerView/KeepAlive 搜索与状态回归 24/24（ios-check-DEBFCP）、SQL 7/7（ios-check-FjK4ok）通过。新增覆盖上海午夜 TODAY/THIS_MONTH 的游标拒绝与首批重读、空分页后失败保留及真实空结果、恢复部分失败后的两种重试入口、再次失效停止续发、普通错误/迟到结果隔离；两条 DOM 回归核对原列表和重试按钮消费，不冒充原生触摸。类型/随包构建/同步 ios-check-OCqHkW、源资源门禁 ios-check-YwRc3E 通过。未运行模拟器、真机或完整验收；现有测试文件由 App CI 自动发现，脚本和 CI 入口不变。
 
+  页面销毁后的游标恢复已补齐生命周期保护：作用域销毁先永久停用实例、递增外层代次并释放更多加载锁，再由原 useLatestRequest 取消内层请求。replace/more/refresh 入口、结果发布及恢复前共同检查实例存活和当前代次；增量与恢复的每页读取返回后复用 throwIfCancelled，取消后不继续读下一页，也不发布部分结果。取消信号订阅者不能在销毁过程中重新发起读取。原页面布局、交互及内层通用请求实现不变。
+
+  精确时间窗回归先复现销毁后多出第 3 次读取（ios-check-AHB0gi）；修复后当前增量请求 18/18（ios-check-S711sT）通过，新增 6 项覆盖错误发布后/恢复启动前销毁、提前取消后的迟到成功/游标错误、恢复第 1/2 页途中取消及销毁后的全部读取入口。原明细失败重试与 KeepAlive 返回局部 DOM 3/3（ios-check-SAVz7A）、类型/随包构建/同步 ios-check-ImCUW9、源资源门禁 ios-check-hPEsEy 通过；其余搜索与 SQL 未变分支沿用既有证据。脚本与 CI 自动发现当前文件的新用例，无入口变更；未启动模拟器、真机、旧 Web/PG 或完整验收，未推进后续阶段。
+
   V9-T1/T2/B1/B2 按上述模拟器范围及本次局部修复证据通过。原页面元素、布局、文案与样式保持，仅补搜索事件及状态绑定，未启动旧 Web/PG、未使用真机，未运行远端 CI 或完整 ios-smoke/ios-touch；脚本/CI 接入同一局部探针与页面场景。本段保留 T9 实施时的阶段证据；后续进度以对应任务和交付汇总为准。首次 T9 实施的模拟器与专用构建缓存已清理，必要成功/失败日志和页面证据保留于 .local/ios/tmp/ai-agent/ios-debug-GQA6Pk、ios-debug-Op876F 及上述 ios-check-* / t9-search-*，交付稳定且不再引用后回收。
 
 ### T10：收支总览与时间报表
@@ -1635,7 +1639,7 @@
 | 检查点 / 关联差异 | 执行入口、命令与用例范围 | 预期结果与通过条件 | AI验证结果 / 证据 / 后续处理 |
 | --- | --- | --- | --- |
 | V9-T1 | 实际入口：ledgerQuery.spec.ts / ledgerQueryScenarios / testOfflineLedgerQuery；组合条件、稳定游标、字面搜索、跨日和增删后的分页及 v6→v7 | 稳定排序，首批/后续无重复遗漏，过滤与计数一致，不把另一类型专属条件误用 | 通过：当前 SQL 7/7（ios-check-FjK4ok），新增上海跨午夜 TODAY/THIS_MONTH 旧游标拒绝及首批重读；此前 SQL 5/5（ios-check-vmKnMu），含中文与补充平面字符各 200 码点的精确名称；原生 run-sQSM7z 1/1 执行 3 组共享 SQL 场景，45 笔跨日样本分页为 20/20/5，无重复遗漏；参数化字面搜索、类型隔离、游标条件/数据集绑定、实际索引及 205 行原子升级通过。边界与复用范围见 T9。 |
-| V9-T2 | 实际入口：GlobalLedgerSearch.spec.ts、useIncrementalLedgerQuery.spec.ts、ledgerNavigationMemory.spec.ts、ledgerQuery.spec.ts（domain）及 test33LedgerEditReturn；过时防抖/结果、加载锁、失败重试、上下文与滚动 | 旧结果不会盖过新条件；恢复只作用对应返回链路，数据刷新不覆盖之后的新滚动 | 通过：当前搜索/页面状态 24/24（ios-check-DEBFCP），新增空分页失败仍显示明细及游标恢复失败后原按钮从首批重试，含 IME 防抖未到期的取消/201 回退后合法搜索、已提交不重查、连续取消与最新输入；清除全部/搜索、外部不同值/同值/无关键词替换及真实 KeepAlive 离页不复活旧查询、后续正常搜索可用；增量请求 12/12（ios-check-xjQknR），含失效游标有界恢复、部分失败重试、再次失效停止续发和累计快照空态保护；记忆 2/2（ios-check-wxQ3pc）、最终路由 4/4（ios-check-ZuLL6I）；替换/刷新/更多乱序、错误区域/适用旧结果、后续滚动保护、数据集/链路隔离和 200 字符上下文往返通过。Release 资源的实际返回沿用 run-WDWD1B；原生普通输入/粘贴沿用 run-KgNQHz / run-qNyVE2；IME 时序原证据为 ios-check-OB8sve 的 22/22，本次 24/24 已再次覆盖；当前随包类型/构建 ios-check-OCqHkW 和资源门禁 ios-check-YwRc3E 通过，未冒充原生输入法实操；报表跨页由 V10-B2 承接。 |
+| V9-T2 | 实际入口：GlobalLedgerSearch.spec.ts、useIncrementalLedgerQuery.spec.ts、ledgerNavigationMemory.spec.ts、ledgerQuery.spec.ts（domain）及 test33LedgerEditReturn；过时防抖/结果、加载锁、失败重试、上下文与滚动 | 旧结果不会盖过新条件；恢复只作用对应返回链路，数据刷新不覆盖之后的新滚动 | 通过：搜索/页面状态原 24/24（ios-check-DEBFCP）沿用未变分支；本次原明细失败重试与 KeepAlive 返回局部 DOM 3/3（ios-check-SAVz7A），新增空分页失败仍显示明细及游标恢复失败后原按钮从首批重试，含 IME 防抖未到期的取消/201 回退后合法搜索、已提交不重查、连续取消与最新输入；清除全部/搜索、外部不同值/同值/无关键词替换及真实 KeepAlive 离页不复活旧查询、后续正常搜索可用；当前增量请求 18/18（ios-check-S711sT），含失效游标有界恢复、部分失败重试、再次失效停止续发、累计快照空态保护及 6 项作用域销毁/逐页取消回归；记忆 2/2（ios-check-wxQ3pc）、最终路由 4/4（ios-check-ZuLL6I）；替换/刷新/更多乱序、错误区域/适用旧结果、后续滚动保护、数据集/链路隔离和 200 字符上下文往返通过。Release 资源的实际返回沿用 run-WDWD1B；原生普通输入/粘贴沿用 run-KgNQHz / run-qNyVE2；IME 时序原证据为 ios-check-OB8sve 的 22/22，已由 ios-check-DEBFCP 的 24/24 再次覆盖；当前随包类型/构建 ios-check-ImCUW9 和资源门禁 ios-check-hPEsEy 通过，未冒充原生输入法实操；报表跨页由 V10-B2 承接。 |
 
 #### 业务验证点（真实系统交互）
 
