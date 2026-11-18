@@ -12,6 +12,7 @@ public class LedgerFilesPlugin: CAPPlugin, CAPBridgedPlugin {
     public let pluginMethods: [CAPPluginMethod] = [
         CAPPluginMethod(name: "protect", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "snapshot", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "getLifecycleState", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "finishBackground", returnType: CAPPluginReturnPromise)
     ]
     private let worker = DispatchQueue(label: "com.mybill.offline.files", qos: .utility)
@@ -46,6 +47,13 @@ public class LedgerFilesPlugin: CAPPlugin, CAPBridgedPlugin {
         DispatchQueue.main.async {
             self.endBackgroundWrite()
             call.resolve()
+        }
+    }
+
+    /// 在主线程读取真实初态，供 JS 订阅完成后补齐冷启动期间遗漏的通知。
+    @objc func getLifecycleState(_ call: CAPPluginCall) {
+        DispatchQueue.main.async {
+            call.resolve(["active": UIApplication.shared.applicationState == .active])
         }
     }
 

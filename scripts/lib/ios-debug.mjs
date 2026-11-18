@@ -15,6 +15,7 @@ export const nativeCases = [
   'testOfflinePersonalState',
   'testOfflineAdjustmentLifecycle',
   'testOfflineCleanupFinalization',
+  'testOfflineCleanupForegroundState',
   'testOriginalShellNavigationAndOverlays',
   'testRejectUnownedTestContexts'
 ]

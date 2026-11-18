@@ -98,7 +98,7 @@ jobs:
           test -n "$session"
           printf 'session=%s\n' "$session" >> "$GITHUB_OUTPUT"
       - id: native-local
-        # 包含 T8 清理最终状态/部分失败及后台就绪回归；原生套件另发现独立清理收尾探针。
+        # 包含 T8 清理失败、DOM/原生双向乱序及后台就绪回归；原生套件另发现收尾与只读初态探针。
         run: |
           npm run debug:ios-app -- check --check app-tests | tee .local/ios/tmp/ai-agent/ci-native-local.log
           proof="$(sed -n 's/^EVIDENCE=//p' .local/ios/tmp/ai-agent/ci-native-local.log)"

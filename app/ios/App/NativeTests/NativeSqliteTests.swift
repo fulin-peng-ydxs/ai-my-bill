@@ -222,6 +222,17 @@ final class NativeSqliteTests: XCTestCase {
         print("OFFLINE_CLEANUP_FINALIZATION_EVIDENCE " + String(decoding: try JSONSerialization.data(withJSONObject: evidence, options: [.sortedKeys]), as: UTF8.self))
     }
 
+    func testOfflineCleanupForegroundState() async throws {
+        let webView = try await readyWebView()
+        let script = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "sqlite-probe", withExtension: "js"))
+        _ = try await webView.evaluateJavaScript(String(contentsOf: script, encoding: .utf8) + ";void 0;")
+        let result = try await webView.callAsyncJavaScript("return await MyBillNativeProbe.cleanupForegroundState()", arguments: [:], in: nil, contentWorld: .page)
+        let evidence = try XCTUnwrap(result as? [String: Any])
+        let active = try XCTUnwrap(evidence["active"] as? Bool)
+        XCTAssertEqual(active, UIApplication.shared.applicationState == .active)
+        print("OFFLINE_CLEANUP_FOREGROUND_STATE_VERIFIED")
+    }
+
     // 只由局部入口明确选中；完整入口仍执行 testOfflineDictionaryGovernance 的全部场景。
     func testOfflineDictionaryScenario() async throws {
         let selected = try OwnedSimulatorTestContext.requestedScenario()

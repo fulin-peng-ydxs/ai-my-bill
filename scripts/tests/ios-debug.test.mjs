@@ -316,6 +316,8 @@ test('T8 局部选择保留业务前置并隔离清理场景', () => {
   assert.equal(selection('--case', 'NativeTests/NativeSqliteTests/testOfflineAdjustmentLifecycle', []).cases.length, 1)
   assert.deepEqual(selection('--case', 'NativeTests/NativeSqliteTests/testOfflineCleanupFinalization', []).cases,
     ['NativeTests/NativeSqliteTests/testOfflineCleanupFinalization'])
+  assert.deepEqual(selection('--case', 'NativeTests/NativeSqliteTests/testOfflineCleanupForegroundState', []).cases,
+    ['NativeTests/NativeSqliteTests/testOfflineCleanupForegroundState'])
 })
 test('T7 局部选择保留必要前置，模板与重启场景不混入另一组', () => {
   const templates = selection('--scenario', 'template-cycle', [])

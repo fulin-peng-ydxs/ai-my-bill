@@ -7,6 +7,8 @@ export interface LedgerFiles {
 }
 interface DraftLifecycle {
   addListener(event: 'background' | 'foreground', callback: () => void): Promise<PluginListenerHandle>
+  /** 注册监听后读取冷启动初态，不由 DOM 可见性推断原生活跃状态。 */
+  getLifecycleState(): Promise<{ active: boolean }>
   finishBackground(): Promise<void>
 }
 export const ledgerFiles = registerPlugin<LedgerFiles & DraftLifecycle>('LedgerFiles')

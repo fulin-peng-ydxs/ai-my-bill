@@ -1,5 +1,6 @@
 import { migrations } from '../src/data/migrations'
 import { withProbeDatabases } from './probeDatabases'
+import { ledgerFiles } from '../src/platform/ledgerFiles'
 import { adjustmentLifecycleScenario, lifecycleFailureScenario, cleanupScenario, cleanupProtectionScenario, lifecycleUpgradeScenario, cleanupFinalizationScenario } from '../test-support/lifecycleScenarios'
 
 /** Node/原生共用 T8 场景；随机库、时钟和失败点不进入正式 App。 */
@@ -26,4 +27,9 @@ export function cleanupFinalization() {
     await db.close()
     return { checks: [check], databasePrefix: prefix, schemaVersion: migrations.length }
   })
+}
+
+/** 只读原生初态探针；生命周期排列由平台事件回归验证，不写业务数据。 */
+export function cleanupForegroundState() {
+  return ledgerFiles.getLifecycleState()
 }
