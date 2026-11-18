@@ -118,3 +118,5 @@ export { cleanupForegroundState } from './adjustmentProbe'
 export { backgroundCompletion } from './adjustmentProbe'
 
 export { ledgerQueries } from './ledgerQueryProbe'
+
+export { reportQueries } from './reportProbe'

@@ -15,6 +15,7 @@ export const nativeCases = [
   'testOfflinePersonalState',
   'testOfflineAdjustmentLifecycle',
   'testOfflineLedgerQuery',
+  'testOfflineCoreReports',
   'testOfflineCleanupFinalization',
   'testOfflineCleanupForegroundState',
   'testNativeLifecycleDraftWindow',
@@ -57,7 +58,14 @@ export const uiCases = [
   'test32LedgerFilterReset',
   'test33LedgerEditReturn',
   'test34LedgerUnicodeInput',
-  'test35LedgerUnicodePaste'
+  'test35LedgerUnicodePaste',
+  'test36ReportOverview',
+  'test37ReportTimeGrains',
+  'test38ReportDrillReturn',
+  'test39ReportComparison',
+  'test37ReportTimeGrainsQuarterYear',
+  'test36PrepareTimeReport',
+  'test00PrepareReportApp'
 ]
 
 export const recoveryPhases = ['snapshot-ready', 'migration-recorded', 'upgrade-committed']
@@ -76,7 +84,20 @@ export const uiScenarios = {
   'lifecycle-cycle': [26, 27, 28, 29, 30],
   'cleanup-relaunch': [30],
   'query-cycle': [31, 32, 33],
-  'query-input': [34, 35]
+  'query-input': [34, 35],
+  'report-cycle': [42, 36, 41, 37, 40, 38, 39],
+  'report-grains': [42, 41, 37, 40]
+}
+
+/** 后续构建/安装/初始化失败不能遮住上一次未结束的自动化会话。 */
+export function needsSimulatorRecovery(directory) {
+  const previous = fs.readdirSync(directory)
+    .filter(name => /^run-[A-Za-z0-9]+$/.test(name))
+    .sort((a, b) => fs.statSync(path.join(directory, a)).birthtimeMs - fs.statSync(path.join(directory, b)).birthtimeMs)
+    .findLast(name => fs.existsSync(path.join(directory, name, 'test.log')))
+  if (!previous) return false
+  const result = path.join(directory, previous, 'result.json')
+  return !fs.existsSync(result) || JSON.parse(fs.readFileSync(result, 'utf8')).status !== 'passed'
 }
 
 /** 前置用例显式列出；只补必要环境与导航，不能暗中扩展为完整触摸套件。 */
@@ -117,7 +138,8 @@ export function selection(kind, name, nativeScenarios) {
           index === 10 ? [9, 10] : index === 12 ? [11, 12] : index === 14 ? [13, 14]
             : index === 18 ? [17, 18] : index === 20 ? [17, 19, 20]
               : index === 27 ? [26, 27] : index === 28 ? [26, 28] : index === 29 ? [26, 28, 29]
-              : index === 24 ? [22, 23, 24] : index === 25 ? [22, 23, 24, 25] : [index]
+              : index === 24 ? [22, 23, 24] : index === 25 ? [22, 23, 24, 25]
+                : index === 37 || index === 40 ? [42, 41, index] : index === 41 ? [42, 41] : [index]
         )
     }
   }
@@ -127,12 +149,14 @@ function uiSelection(indices) {
   return {
     scheme: 'DictionaryTouch',
     configuration: 'Release',
-    fixture: indices.some(i => i >= 31) ? 'query-' + indices.join(',')
+    fixture: indices.some(i => i >= 36) ? 'report-' + indices.join(',')
+      : indices.some(i => i >= 31) ? 'query-' + indices.join(',')
       : indices.some(i => i >= 26) ? 'lifecycle-' + indices.join(',')
       : indices.some(i => i >= 17) ? 'personal-' + indices.join(',')
       : indices.includes(15) && indices.includes(16) ? 'entry-cycle' : String(indices.at(-1)),
     cases: [
-      ...(indices.some((i) => (i >= 1 && i <= 5) || i === 11 || i === 13 || i >= 15)
+      // 只为实际输入场景保留键盘前置；只读报表粒度不串入明细搜索键盘验收。
+      ...(indices.some((i) => (i >= 1 && i <= 5) || i === 11 || i === 13 || (i >= 15 && i <= 35) || i === 38)
         ? ['DictionaryUITests/DictionaryTouchTests/test00DebugKeyboardReady']
         : []),
       ...indices.map((i) => `DictionaryUITests/DictionaryTouchTests/${uiCases[i]}`)

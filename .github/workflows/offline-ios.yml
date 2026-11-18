@@ -98,7 +98,7 @@ jobs:
           test -n "$session"
           printf 'session=%s\n' "$session" >> "$GITHUB_OUTPUT"
       - id: native-local
-        # 包含 T8 生命周期和 T9 搜索取消、Unicode 输入边界、查询/分页/返回回归；原生套件自动发现同一 SQL/迁移场景。
+        # 包含 T8 生命周期和 T9 搜索取消、Unicode 输入边界、查询/分页/返回及 T10 原子统计快照回归；原生套件自动发现同一 SQL/迁移场景。
         run: |
           npm run debug:ios-app -- check --check app-tests | tee .local/ios/tmp/ai-agent/ci-native-local.log
           proof="$(sed -n 's/^EVIDENCE=//p' .local/ios/tmp/ai-agent/ci-native-local.log)"
@@ -117,7 +117,7 @@ jobs:
       - env:
           IOS_DEBUG_SESSION: ${{ steps.ios-session.outputs.session }}
           IOS_LOCAL_EVIDENCE: ${{ steps.touch-local.outputs.evidence }}
-        # 连续执行 T6 收支、T7 个人状态、T8 生命周期及 T9 查询/返回及 test34/35 的真实键盘/粘贴；共用局部用例与 SQLite 回读。
+        # 连续执行 T6 收支、T7 个人状态、T8 生命周期及 T9 查询/返回及 test34/35 的真实键盘/粘贴；追加 T10 总览/时间/下钻/比较；共用局部用例与 SQLite 回读。
         run: npm run check:ios-app:touch -- --session "$IOS_DEBUG_SESSION" --from "$IOS_LOCAL_EVIDENCE"
       - if: always() && steps.ios-session.outputs.session != ''
         env:

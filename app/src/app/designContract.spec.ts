@@ -13,13 +13,35 @@ const digest = (s: string) => createHash('sha256').update(s).digest('hex')
 const source = ['components', 'views'].flatMap(folder => readdirSync(resolve(root, folder), { recursive: true }).map(String).filter(name => name.endsWith('.vue')).map(name => read(`${folder}/${name}`))).concat(read('App.vue'))
 const design = readFileSync(resolve(root,'../../DESIGN.md'),'utf8')
 
+/** 保留原哈希，并证明登记的 iPhone 输入适配只改变已确认的行为绑定。 */
+function assertOriginalTemplate(name: string, template: string, originalHash: string): void {
+  if (name === 'GlobalLedgerSearch') {
+    expect(digest(template), name).toBe(baseline.templateAdaptations.GlobalLedgerSearch.sha256)
+    const original = template.replace('      ref="input"\n', '')
+      .replace('      @beforeinput="beforeInput"\n', '      :maxlength="maxLength"\n')
+      .replace('      @paste="paste"\n', '')
+      .replace('      @compositionstart="compositionStart"\n', '')
+      .replace('      @compositionend="compositionEnd"\n', '')
+    expect(digest(original), name + ' 原布局基线').toBe(originalHash)
+  } else {
+    expect(digest(template), name).toBe(originalHash)
+  }
+}
+
 describe('沿用原界面的 iPhone 设计契约', () => {
  it('关键共享组件的模板与全局样式保持原基线，不建立第二套视觉', () => {
    for (const [name, hash] of Object.entries(baseline.components)) {
      const file = read(`components/${name}.vue`)
-     expect(digest(file.includes('<template>') ? file.slice(file.indexOf('<template>')) : file), name).toBe(hash)
+     assertOriginalTemplate(name, file.includes('<template>') ? file.slice(file.indexOf('<template>')) : file, hash)
    }
    for (const [name, hash] of Object.entries(baseline.styles)) expect(digest(read('styles/'+name))).toBe(hash)
+ })
+ it('已登记输入适配不豁免搜索框布局或其他行为变化', () => {
+   const file = read('components/GlobalLedgerSearch.vue')
+   const template = file.slice(file.indexOf('<template>'))
+   const hash = baseline.components.GlobalLedgerSearch
+   expect(() => assertOriginalTemplate('GlobalLedgerSearch', template.replace('class="global-search"', 'class="changed-layout"'), hash)).toThrow()
+   expect(() => assertOriginalTemplate('GlobalLedgerSearch', template.replace('@input="onInput"', '@input="otherInput"'), hash)).toThrow()
  })
  it('登记与真实导入/渲染相符，注释和同名标签不能替代消费', () => {
    const required = ['AppShell','BottomNavigation','PageWorkspace','AppDrawer','AppDialog','EntryReceipt','EntrySaveBar','FormField','AppStateBlock']

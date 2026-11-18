@@ -14,6 +14,7 @@ import {
   recoveryScenarios,
   selection,
   readSession,
+  needsSimulatorRecovery,
   assertDevice,
   hashPaths,
   sourceHash
@@ -287,8 +288,9 @@ async function runCheck(args) {
 }
 
 async function stopApp(id, log) {
-  const { status, text } = await command('xcrun', ['simctl', 'terminate', id, APP_ID], { accept: [0, 3] })
-  fs.writeFileSync(log, text)
+  // 不等待模拟器辅助进程继承的输出管道关闭；直接落文件，仍以 simctl 退出码确认终止。
+  const { status } = await command('xcrun', ['simctl', 'terminate', id, APP_ID], { accept: [0, 3], log })
+  const text = fs.readFileSync(log, 'utf8')
   if (status === 3 && !text.includes('found nothing to terminate'))
     throw new Error('结束本轮 App 失败，拒绝夹具读写。')
 }
@@ -363,21 +365,7 @@ async function prepareBuild(session, selected, run, toolchain) {
 
 async function runPartial(session, selected, toolchain, requested) {
   const device = assertDevice(session.context, await inventory())
-  const previousRuns = fs
-    .readdirSync(session.directory)
-    .filter((name) => /^run-[A-Za-z0-9]+$/.test(name))
-    .sort(
-      (a, b) =>
-        fs.statSync(path.join(session.directory, a)).birthtimeMs -
-        fs.statSync(path.join(session.directory, b)).birthtimeMs
-    )
-  const previous = previousRuns.at(-1)
-  const previousResult = previous && path.join(session.directory, previous, 'result.json')
-  const needsRecovery =
-    previousResult &&
-    fs.existsSync(path.join(session.directory, previous, 'test.log')) &&
-    (!fs.existsSync(previousResult) ||
-      JSON.parse(fs.readFileSync(previousResult, 'utf8')).status !== 'passed')
+  const needsRecovery = needsSimulatorRecovery(session.directory)
   const run = fs.mkdtempSync(path.join(session.directory, 'run-'))
   const started = Date.now()
   let result = {
@@ -502,7 +490,10 @@ async function runPartial(session, selected, toolchain, requested) {
       coverage: [`native-initialize/${selected.scheme}/${selected.configuration}`],
       log: path.join(run, 'initialize.log')
     })
-    if (!initialized) await simctl('launch', device.udid, APP_ID)
+    if (!initialized)
+      await command('xcrun', ['simctl', 'launch', device.udid, APP_ID], {
+        log: path.join(run, 'initialize-launch.log')
+      })
     await command(
       'python3',
       ['scripts/fixtures/dictionary-touch.py', 'wait-initialized', container, device.udid, fixture],

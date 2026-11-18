@@ -3,7 +3,7 @@ import AppLoadingHint from '../components/AppLoadingHint.vue'
 import { pageScrollTop, scrollPageTo } from '../composables/pageScroll'
 import { usePageActivity } from '../composables/usePageActivity'
 import { useRefreshOnReturn } from '../composables/useRefreshOnReturn'
-import { computed, nextTick, onDeactivated, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onDeactivated, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import type { LedgerDateRange, LedgerFilters } from '../api/ledgerEntries'
@@ -38,12 +38,19 @@ import {
   type ReportDimension,
 } from '../domain/reportQuery'
 import { usePreferencesStore } from '../stores/preferences'
+import { useBootstrapStore } from '../stores/bootstrap'
+import { LEDGER_CHANGED_EVENT } from '../api/localEntries'
+import { createLedgerScrollRestorer, ledgerScrollKey } from '../composables/ledgerNavigationMemory'
 
 const pageActive = usePageActivity()
 const route = useRoute()
 const router = useRouter()
 const preferences = usePreferencesStore()
 const request = useReportData()
+const bootstrap = useBootstrapStore()
+const reportSearch = ref<InstanceType<typeof GlobalLedgerSearch>>()
+const contextKey = computed(() => ledgerScrollKey(bootstrap.datasetId, route.fullPath))
+const scrollRestorer = createLedgerScrollRestorer({ key: () => contextKey.value, active: () => pageActive.value, read: pageScrollTop, write: scrollPageTo })
 const searchText = ref('')
 const filters = ref<ReportFilters>({ query: '', scope: 'ALL', range: 'THIS_MONTH' })
 const draft = ref<ReportFilters>({ ...filters.value })
@@ -137,13 +144,13 @@ const summaryItems = computed<MoneySummaryItem[]>(() => {
   ]
 })
 
-let pendingReturnPosition: { path: string, top: number } | undefined
-onDeactivated(() => { pendingReturnPosition = undefined; comparisonOpen.value = false })
+let pendingReturnPosition: { path: string, restore: () => boolean } | undefined
+onDeactivated(() => { scrollRestorer.cancel(); pendingReturnPosition = undefined; comparisonOpen.value = false; searchText.value = filters.value.query })
 async function load(restoreReturnPosition = false): Promise<void> {
   // 下钻返回参数只在路由变化时使用；缓存页刷新继续保留最新的实际滚动位置。
   if (restoreReturnPosition) {
     const top = Number.parseInt(typeof route.query.scroll === 'string' ? route.query.scroll : '', 10)
-    pendingReturnPosition = Number.isSafeInteger(top) && top >= 0 ? { path: route.fullPath, top } : undefined
+    pendingReturnPosition = Number.isSafeInteger(top) && top >= 0 ? { path: route.fullPath, restore: scrollRestorer.prepare(top) } : undefined
   }
   await request.load(filters.value, presentation.value)
   await nextTick(() => {
@@ -151,7 +158,7 @@ async function load(restoreReturnPosition = false): Promise<void> {
     const position = pendingReturnPosition
     if (!position || !pageActive.value || !request.canDrill.value || route.fullPath !== position.path) return
     pendingReturnPosition = undefined
-    scrollPageTo(position.top)
+    position.restore()
   })
 }
 
@@ -166,15 +173,25 @@ watch([() => route.fullPath, () => preferences.status], () => {
   void load(restoreReturnPosition)
 }, { immediate: true })
 
+function currentPage(): boolean {
+  return pageActive.value && router.currentRoute.value.name === 'reports' && router.currentRoute.value.fullPath === route.fullPath
+}
 function navigate(next: ReportFilters): void {
-  void router.replace({ query: reportPresentationQuery(next, parseReportPresentation(route.query, next)) })
+  if (!currentPage()) return
+  void router.replace({ name: 'reports', query: reportPresentationQuery(next, parseReportPresentation(route.query, next)) })
 }
 function updatePresentation(change: Partial<{ dimension: ReportDimension, grain: ReportTimeGrain, metric: ReportTimeMetric }>): void {
-  void router.replace({ query: reportPresentationQuery(filters.value, { ...presentation.value, ...change }) })
+  if (!currentPage()) return
+  void router.replace({ name: 'reports', query: reportPresentationQuery(filters.value, { ...presentation.value, ...change }) })
 }
 function updateSearch(value: string): void { navigate({ ...filters.value, query: value }) }
 function updateScope(value: string): void { navigate(clearIncompatibleReportFilters(filters.value, value as ReportScope)) }
-function clearFilters(): void { navigate(clearedReportFilters(defaultRange.value, filters.value.scope)) }
+function clearFilters(): void {
+  if (!currentPage()) return
+  reportSearch.value?.cancelPending()
+  searchText.value = ''
+  navigate(clearedReportFilters(defaultRange.value, filters.value.scope))
+}
 function setDraftRange(value: LedgerDateRange): void {
   draft.value = { ...draft.value, range: value, ...(value === 'CUSTOM' ? {} : { startDate: undefined, endDate: undefined }) }
   rangeError.value = ''
@@ -278,6 +295,11 @@ function drillIncome(point: IncomeReport['points'][number]): void {
   }
   void router.push({ path: '/ledger', query: ledgerRouteQuery(ledgerFilters, context) })
 }
+function ledgerChanged(): void {
+  if (pageActive.value) { comparisonOpen.value = false; void load() }
+}
+globalThis.addEventListener(LEDGER_CHANGED_EVENT, ledgerChanged)
+onBeforeUnmount(() => { globalThis.removeEventListener(LEDGER_CHANGED_EVENT, ledgerChanged); scrollRestorer.cancel() })
 useRefreshOnReturn(() => load())
 </script>
 
@@ -293,7 +315,9 @@ useRefreshOnReturn(() => load())
 
       <div class="list-search-controls">
         <GlobalLedgerSearch
+          ref="reportSearch"
           id="report-search"
+          :context-key="contextKey"
           v-model="searchText"
           @search="updateSearch"
         />

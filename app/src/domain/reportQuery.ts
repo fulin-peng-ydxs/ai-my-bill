@@ -1,4 +1,5 @@
 import type { LocationQuery, LocationQueryRaw } from 'vue-router'
+import { unicodeCodePointLength } from './text'
 
 import type { LedgerDateRange } from '../api/ledgerEntries'
 import type { ExpenseReportDimension, IncomeReportDimension, ReportFilters, ReportScope,
@@ -41,7 +42,7 @@ export function parseReportRoute(query: LocationQuery, defaultRange: LedgerDateR
   if (range === 'CUSTOM' && !validCustom) range = defaultRange
   const rawQuery = one(query.q)
   const result: ReportFilters = {
-    query: rawQuery.length <= 200 ? rawQuery : '', scope, range,
+    query: unicodeCodePointLength(rawQuery) <= 200 ? rawQuery : '', scope, range,
     ...(range === 'CUSTOM' && validCustom ? { startDate, endDate } : {}),
   }
   for (const key of UUID_KEYS) {
@@ -49,7 +50,7 @@ export function parseReportRoute(query: LocationQuery, defaultRange: LedgerDateR
     if (UUID.test(value)) result[key] = value
   }
   const incomeName = one(query.incomeName)
-  if (scope === 'INCOME' && incomeName.length <= 100 && incomeName) result.incomeName = incomeName
+  if (scope === 'INCOME' && unicodeCodePointLength(incomeName) <= 200 && incomeName) result.incomeName = incomeName
   return clearIncompatibleReportFilters(result, scope)
 }
 

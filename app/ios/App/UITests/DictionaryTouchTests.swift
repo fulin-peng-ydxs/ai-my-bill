@@ -34,7 +34,6 @@ final class DictionaryTouchTests: XCTestCase {
         // 本套只运行 14 Pro Max；在已核验的原页标题区域触摸一次，激活重启后 WebKit AX 内容。
         // 页面布局不变，坐标落在“记一笔”标题内，不触发表单或导航。
         web.coordinate(withNormalizedOffset: CGVector(dx: 0.10, dy: 0.085)).tap()
-        print(app.debugDescription)
     }
 
     private func matching(_ label: String) -> XCUIElementQuery {
@@ -62,10 +61,16 @@ final class DictionaryTouchTests: XCTestCase {
         var target: XCUIElement?
         var visualTarget: CGRect?
         let ready = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
-            let elements = self.matching(label).allElementsBoundByIndex.filter { $0.isHittable }
+            let candidates = self.matching(label).allElementsBoundByIndex
+            // 冷启动 WebKit 可能先返回没有有效 frame 的同名 Any 节点。
+            // 先找实际控件，避免对这些占位节点读取 isHittable 时由 XCTest 直接判失败。
+            let controls = candidates.filter { $0.elementType == .button || $0.elementType == .link }
+            let elements = (controls.isEmpty ? candidates : controls).filter {
+                let frame = $0.frame
+                return !frame.isNull && !frame.isInfinite && frame.width > 0 && frame.height > 0 && $0.isHittable
+            }
             // 优先按钮/链接，避免点到同名标题或整个区域；同名确认按钮选最下层。
-            let controls = elements.filter { $0.elementType == .button || $0.elementType == .link }
-            target = (controls.isEmpty ? elements : controls).last
+            target = elements.last
             if target != nil { return true }
             visualTarget = self.visualText(label)
             return visualTarget != nil && !self.app.frame.isEmpty
@@ -776,6 +781,116 @@ final class DictionaryTouchTests: XCTestCase {
         expectValue(search, full)
         tap("清空搜索")
         print("LEDGER_QUERY_TOUCH_UNICODE_PASTE_200_ACCEPTED_201_REJECTED")
+    }
+
+    private func reportControl(_ id: String, label: String) -> XCUIElement {
+        let field = app.buttons.matching(NSPredicate(format: "identifier == %@ OR label == %@", id, label)).firstMatch
+        XCTAssertTrue(field.exists || field.waitForExistence(timeout: 3), "缺少报表选择器 \(label)")
+        return field
+    }
+
+    private func selectReportControl(_ id: String, label: String, option: String) {
+        let field = reportControl(id, label: label)
+        // 原生 select 的当前项由 value 表达；已选目标无需再打开同一菜单。
+        if field.value as? String == option { return }
+        field.tap()
+        tap(option)
+        expectValue(field, option)
+    }
+
+    private func reportFixtureScope() {
+        tap("收支报表")
+        let clear = app.buttons.matching(NSPredicate(format: "label == %@", "清除全部筛选")).firstMatch
+        if clear.exists && clear.isHittable { clear.tap() }
+        tap("全部")
+        tap("筛选")
+        tap("不限")
+        tap("报表现金")
+        tap("应用筛选")
+    }
+
+    func test36ReportOverview() {
+        reportFixtureScope()
+        selectReportControl("report-dimension", label: "维度", option: "收支概览")
+        appears("¥988", containing: true)
+        appears("¥1,000", containing: true)
+        appears("¥15", containing: true)
+        appears("¥3", containing: true)
+        appears("¥12", containing: true)
+        print("REPORT_TOUCH_OVERVIEW_EXACT_TOTALS")
+    }
+
+    func test00PrepareReportApp() {
+        // 冷启动/建立原生自动化会话由 setUp 完成，不挤占后续筛选和粒度操作的单用例预算。
+        appears("记一笔")
+        print("REPORT_TOUCH_APP_READY")
+    }
+
+    // 准备与粒度断言分别受原有 60 秒预算约束；CLI 显式组合，仍走真实筛选/选择器。
+    func test36PrepareTimeReport() {
+        reportFixtureScope()
+        selectReportControl("report-dimension", label: "维度", option: "时间趋势")
+        selectReportControl("report-metric", label: "查看指标", option: "结余")
+        appears("结余趋势")
+        print("REPORT_TOUCH_TIME_PREPARED")
+    }
+
+    private func verifyReportGrains(_ grains: [String]) {
+        appears("结余趋势")
+        expectValue(reportControl("report-dimension", label: "维度"), "时间趋势")
+        expectValue(reportControl("report-metric", label: "查看指标"), "结余")
+        for grain in grains {
+            selectReportControl("report-grain", label: "时间粒度", option: grain)
+            // 时间趋势分别呈现范围合计、所选时段当期值及累计值；不能只命中旧摘要的一个金额。
+            let amounts = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "¥988"))
+            let ready = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in amounts.count == 3 }, object: nil)
+            XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 3), .completed, "粒度 \(grain) 的范围/当期/累计结余应均为 988.00")
+            appears("累计至该时段")
+            print("REPORT_TOUCH_GRAIN_VERIFIED \(grain) range=988.00 current=988.00 cumulative=988.00")
+        }
+    }
+
+    func test37ReportTimeGrains() {
+        verifyReportGrains(["按日", "按周", "按月"])
+        print("REPORT_TOUCH_DAY_WEEK_MONTH_AND_CUMULATIVE")
+    }
+
+    // 与日/周/月分开，各自可在原有 60 秒预算内定位，不放宽全套超时。
+    func test37ReportTimeGrainsQuarterYear() {
+        verifyReportGrains(["按季", "按年"])
+        print("REPORT_TOUCH_QUARTER_YEAR_AND_CUMULATIVE")
+    }
+
+    func test38ReportDrillReturn() {
+        reportFixtureScope()
+        selectReportControl("report-dimension", label: "维度", option: "时间趋势")
+        selectReportControl("report-metric", label: "查看指标", option: "净支出")
+        let detail = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "的净支出明细")).firstMatch
+        XCTAssertTrue(detail.waitForExistence(timeout: 3))
+        detail.tap()
+        appears("已加载 2 笔")
+        tapLedgerRow("报表苹果", kind: "支出")
+        replaceEntryField("expense-paid-amount", "实付金额", "16")
+        dismissEntryKeyboard()
+        tap("保存修改")
+        disappears(matching("编辑支出").firstMatch)
+        tap("返回报表")
+        appears("净支出趋势")
+        appears("¥13", containing: true)
+        print("REPORT_TOUCH_NET_DRILL_EDIT_RETURN_REFRESH")
+    }
+
+    func test39ReportComparison() {
+        reportFixtureScope()
+        selectReportControl("report-dimension", label: "维度", option: "时间趋势")
+        tap("范围对比")
+        appears("账本可信历史覆盖晚于", containing: true)
+        let evidence = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        evidence.name = "report-incomplete-history"
+        evidence.lifetime = .keepAlways
+        add(evidence)
+        tap("知道了")
+        print("REPORT_TOUCH_INCOMPLETE_HISTORY_REASON")
     }
 
 }

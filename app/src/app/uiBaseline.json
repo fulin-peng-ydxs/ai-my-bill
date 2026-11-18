@@ -23,6 +23,13 @@
     "GlobalLedgerSearch": "f7df623c410dbe6a84b2731527fcadb06513e92b90a16c48fdfb1ad4b50f53af",
     "AppliedFilterBar": "faf573697579bd25d19478da853f70b7868469d314761829334ba8bdc14a5e3a"
   },
+  "templateAdaptations": {
+    "GlobalLedgerSearch": {
+      "sourceCommit": "9c4e869df7b882bab6ae1decfae50da3f712d8ed",
+      "reason": "T9 已确认的 Unicode 码点与输入法边界适配，仅替换输入行为绑定，原元素、布局和样式保持。",
+      "sha256": "0a9ce84cc144e968275014fc74ce944ae3653b74fec02d4af2b6a70f80a2c7be"
+    }
+  },
   "styles": {
     "tokens.css": "29f57ae096597f42ea01c5455691106299d76073772b9128f6cce60528d4904c",
     "focus.css": "2c1e7cd2dfa643970bce28d31e0960252cc1f6eef142947281e193b366625972",

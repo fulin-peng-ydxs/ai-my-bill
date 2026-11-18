@@ -802,6 +802,34 @@ test(
     }
     executable('plutil', '#!/bin/sh\nprintf "{}"\n')
     executable('python3', '#!/bin/sh\nprintf "ISOLATED_NATIVE_HOST_INITIALIZED"\n')
+    // simctl 已退出，但辅助进程仍持有输出 FD；必须允许进入后续测试，不能等管道 EOF。
+    // 辅助进程到达测试启动信号或 8 秒上限即退出，故障反例也不遗留进程。
+    const startupSignal = path.join(p.root, 'test-started')
+    const drainResult = path.join(p.root, 'output-drain-result')
+    const helper = p.write('hold-output.cjs', `
+const fs = require('node:fs')
+const signal = ${JSON.stringify(startupSignal)}
+const result = ${JSON.stringify(drainResult)}
+const started = Date.now()
+const timer = setInterval(() => {
+  const ready = fs.existsSync(signal)
+  if (ready || Date.now() - started > 8000) {
+    fs.writeFileSync(result, ready ? 'test-started' : 'deadline')
+    clearInterval(timer)
+  }
+}, 10)
+`)
+    const launcher = p.write('hold-output-launch.cjs', `
+const { spawn } = require('node:child_process')
+spawn(process.execPath, [${JSON.stringify(helper)}], { detached: true, stdio: ['ignore', 1, 2] }).unref()
+`)
+    const originalXcrun = fs.readFileSync(path.join(p.root, 'bin/xcrun'), 'utf8')
+    executable('xcrun', `#!/bin/sh
+if [ "$2" = terminate ]; then
+  "${process.execPath}" "${launcher}"
+  exit $?
+fi
+${originalXcrun.replace(/^#![^\n]*\n/, '')}`)
     executable(
       'xcodebuild',
       `#!${process.execPath}
@@ -817,6 +845,7 @@ if (args.includes('-version')) {
   fs.writeFileSync(path.join(products, 'Debug-iphonesimulator/App.app/App'), 'controlled fixture binary')
   fs.writeFileSync(path.join(products, 'App.xctestrun'), 'controlled fixture plan')
 } else if (args[0] === 'test-without-building') {
+  fs.writeFileSync(${JSON.stringify(startupSignal)}, 'started')
   const context = JSON.parse(fs.readFileSync(${JSON.stringify(path.join(p.session, 'test-context.json'))}))
   console.log("Test Case '-[NativeTests.NativeSqliteTests testOfflineDictionaryScenario]' passed (0.1 seconds).")
   console.log('Executed 1 test, with 0 failures')
@@ -840,6 +869,9 @@ if (args.includes('-version')) {
     const result = p.run(['debug', 'run', '--session', p.session, '--scenario', 'template-tie'])
     assert.equal(result.status, 0, result.stderr)
     const run = result.stdout.match(/^EVIDENCE=(.+)$/m)[1]
+    assert.equal(fs.readFileSync(drainResult, 'utf8'), 'test-started', '初始化收尾不得等待辅助输出管道 EOF')
+    assert.ok(fs.existsSync(path.join(run, 'initialize-launch.log')))
+    assert.ok(fs.existsSync(path.join(run, 'stop-initialize.log')))
     const evidence = requireEvidence(p.root, run, inputHash(p.root), environment)
     assert.ok(evidence.result.coverage.includes(scenarioKey('template-tie')))
     assert.ok(!evidence.result.coverage.includes(scenarioKey('crud')))

@@ -1,5 +1,9 @@
 import type { components } from './generated/schema'
 import { apiRequest } from './http'
+import { ReportQueryService } from '../data/reports/reportQueryService'
+import { appDatabase } from '../data/appDatabase'
+import { localOperation } from '../data/localOperation'
+const reports = new ReportQueryService(appDatabase)
 
 export type ReportScope = components['schemas']['ReportScope']
 export type ReportSummary = components['schemas']['ReportSummary']
@@ -33,9 +37,12 @@ const OPTIONAL_KEYS = [
   'purchaseChannelId', 'locationLabelId', 'incomeCategoryId', 'payerId', 'incomeName',
 ] as const
 
-export function getReportSummary(filters: ReportFilters, signal?: AbortSignal): Promise<ReportSummary> {
-  const params = reportParams(filters)
-  return apiRequest(`/reports/summary?${params}`, { signal })
+/** 总览/时间共享同一原生账本读取，避免摘要与趋势之间插入正式写入。 */
+export function getCoreReport(filters: ReportFilters, grain?: ReportTimeGrain, signal?: AbortSignal) {
+  return localOperation(() => reports.snapshot(filters, grain, signal))
+}
+export async function getReportSummary(filters: ReportFilters, signal?: AbortSignal): Promise<ReportSummary> {
+  return (await getCoreReport(filters, undefined, signal)).summary
 }
 
 function reportParams(filters: ReportFilters): URLSearchParams {
@@ -48,10 +55,8 @@ function reportParams(filters: ReportFilters): URLSearchParams {
   return params
 }
 
-export function getTimeReport(filters: ReportFilters, grain: ReportTimeGrain, signal?: AbortSignal): Promise<TimeReport> {
-  const params = reportParams(filters)
-  params.set('grain', grain)
-  return apiRequest(`/reports/time?${params}`, { signal })
+export async function getTimeReport(filters: ReportFilters, grain: ReportTimeGrain, signal?: AbortSignal): Promise<TimeReport> {
+  return (await getCoreReport(filters, grain, signal)).time!
 }
 
 export function getExpenseReport(

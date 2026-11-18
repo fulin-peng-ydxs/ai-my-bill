@@ -12,6 +12,7 @@ import {
   DEVICE_TYPE,
   selection,
   readSession,
+  needsSimulatorRecovery,
   assertDevice,
   hashPaths,
   sourceHash
@@ -37,6 +38,27 @@ function cliProject(t) {
   }
   return root
 }
+test('后续准备失败不遮蔽历史自动化失败，成功测试才解除设备恢复需求', async t => {
+  const root = temporary(t)
+  const add = async (name, status, tested) => {
+    // 显式区分创建顺序，不以测试耗时作为行为判据。
+    await new Promise(resolve => setTimeout(resolve, 5))
+    const run = path.join(root, 'run-' + name)
+    fs.mkdirSync(run)
+    if (tested) fs.writeFileSync(path.join(run, 'test.log'), 'controlled test execution')
+    if (status) fs.writeFileSync(path.join(run, 'result.json'), JSON.stringify({ status }))
+  }
+  assert.equal(needsSimulatorRecovery(root), false)
+  await add('OldTest', 'failed', true)
+  for (const name of ['Build', 'Install', 'Initialize']) {
+    await add(name, 'failed', false)
+    assert.equal(needsSimulatorRecovery(root), true, name + ' 不得遮住旧失败')
+  }
+  await add('Passed', 'passed', true)
+  assert.equal(needsSimulatorRecovery(root), false)
+  await add('Unfinished', undefined, true)
+  assert.equal(needsSimulatorRecovery(root), true, '未写完回执仍需恢复')
+})
 test('单用例/场景选择只带显式必要前置，拒绝任意过滤器与中断半流程', () => {
   assert.deepEqual(
     selection('--case', 'NativeTests/NativeSqliteTests/testRejectUnownedTestContexts', []).cases,
@@ -554,5 +576,54 @@ test('T9 Unicode 输入夹具独立回读，拒绝任何业务改写', (t) => {
   try {
     db.prepare("UPDATE ledger_entry SET note='unexpected',row_version=2 WHERE id='t9-query-00'").run()
     assert.notEqual(execute('debug-check-query-34,35').status, 0)
+  } finally { db.close() }
+})
+
+test('T10 总览与时间场景隔离，CI 使用相同原生入口和只读回验', () => {
+  assert.deepEqual(selection('--case', 'NativeTests/NativeSqliteTests/testOfflineCoreReports', []).cases, ['NativeTests/NativeSqliteTests/testOfflineCoreReports'])
+  const selected = selection('--scenario', 'report-cycle', [])
+  assert.equal(selected.fixture, 'report-42,36,41,37,40,38,39')
+  assert.equal(selected.cases.length, 8)
+  // XCTest 按方法名排序；五种粒度须先于改金额，组合与单用例使用相同 988.00 预期。
+  const quarter = 'DictionaryUITests/DictionaryTouchTests/test37ReportTimeGrainsQuarterYear'
+  const edit = 'DictionaryUITests/DictionaryTouchTests/test38ReportDrillReturn'
+  assert.ok(selected.cases.indexOf(quarter) < selected.cases.indexOf(edit))
+  assert.ok(quarter < edit)
+  const shell = fs.readFileSync(new URL('../lib/ios-app-full.sh', import.meta.url), 'utf8')
+  for (const [index, name] of [[36, 'test36ReportOverview'], [37, 'test37ReportTimeGrains'], [38, 'test38ReportDrillReturn'], [39, 'test39ReportComparison'], [40, 'test37ReportTimeGrainsQuarterYear']]) {
+    const single = selection('--case', `DictionaryUITests/DictionaryTouchTests/${name}`, [])
+    const preparation = index === 37 || index === 40 ? [42, 41] : []
+    assert.equal(single.fixture, 'report-' + [...preparation, index].join(','))
+    assert.deepEqual(single.cases, [
+      ...(index === 38 ? ['DictionaryUITests/DictionaryTouchTests/test00DebugKeyboardReady'] : []),
+      ...preparation.map(i => 'DictionaryUITests/DictionaryTouchTests/' + (i === 42 ? 'test00PrepareReportApp' : 'test36PrepareTimeReport')),
+      `DictionaryUITests/DictionaryTouchTests/${name}`,
+    ])
+    assert.ok(shell.includes('-skip-testing:DictionaryUITests/DictionaryTouchTests/' + name))
+    assert.ok(shell.includes('-only-testing:DictionaryUITests/DictionaryTouchTests/' + name))
+  }
+  assert.ok(shell.includes('prepare-report') && shell.includes('check-report'))
+  assert.ok(shell.includes('/OFFLINE_CORE_REPORT_EVIDENCE/p'))
+  const grains = selection('--scenario', 'report-grains', [])
+  assert.equal(grains.fixture, 'report-42,41,37,40')
+  assert.equal(grains.cases.length, 4)
+  assert.ok(!grains.cases.some(name => name.endsWith('test00DebugKeyboardReady')))
+  assert.ok(grains.cases[0].endsWith('test00PrepareReportApp'))
+  assert.ok(grains.cases[1].endsWith('test36PrepareTimeReport'))
+})
+test('T10 夹具与其他阶段隔离，编辑用例必须且只能产生约定结果', t => {
+  const { file, execute } = touchFixture(temporary(t))
+  assert.equal(execute('debug-report-36,37,38,39').status, 0)
+  assert.equal(execute('debug-check-report-36,37,39').status, 0)
+  assert.notEqual(execute('debug-check-report-38').status, 0)
+  const db = new DatabaseSync(file)
+  try {
+    const funding = db.prepare("SELECT funding_channel_id AS id FROM ledger_entry WHERE id='t10-income'").get().id
+    assert.match(funding, /^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/)
+    db.prepare("UPDATE ledger_entry SET amount_cents=1600,row_version=2 WHERE id='t10-expense'").run()
+    assert.equal(execute('debug-check-report-36,37,38,39').status, 0)
+    db.prepare("UPDATE expense_adjustment SET amount_cents=301 WHERE id='t10-refund'").run()
+    assert.notEqual(execute('debug-check-report-38').status, 0)
+    assert.notEqual(execute('debug-report-36').status, 0)
   } finally { db.close() }
 })

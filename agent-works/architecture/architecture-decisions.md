@@ -36,9 +36,15 @@ App 的 API DTO 沿用旧接口类型维持页面兼容；字典 API 与支出�
 
 [0007](../../app/src/data/migrations/0007_ledger_query.sql) 追加历史快照检索键和稳定排序索引。版本化 [ledgerSearchV1](../../app/src/domain/ledgerSearchV1.ts) 复用名称 v1 的 NFKC/空白折叠/小写规则，搜索名称、分类、付款方、渠道、地点及备注；instr 将百分号、下划线、引号和反斜线作为字面内容。v7 数据步骤按 ID 每批最多 200 行回填，与 DDL/履历同事务，摘要包含数据步骤及版本化算法；金额、名称展示、行版本、用户字典和偏好不变。正式创建/编辑在同一事务更新搜索键；字典改名/合并不覆盖历史名称。
 
-[useIncrementalLedgerQuery](../../app/src/composables/useIncrementalLedgerQuery.ts) 复用请求代次/取消，只刷新已加载深度。条件替换撤下旧数据，读取失败区分当前条件错误与适用旧结果的过期提示；旧更多响应不能解除新更多的锁。明细的编辑/调整/生命周期变更保留加载深度，刷新不重新恢复旧滚动。ledgerNavigationMemory 以数据集和精确链路保存最多 100 个位置，查询恢复只执行一次，后续查询、离页及用户新滚动使旧恢复失效。原页面和筛选布局不变；报表页面及真实跨页下钻联验由 T10 承接。
+[useIncrementalLedgerQuery](../../app/src/composables/useIncrementalLedgerQuery.ts) 复用请求代次/取消，只刷新已加载深度。条件替换撤下旧数据，读取失败区分当前条件错误与适用旧结果的过期提示；旧更多响应不能解除新更多的锁。明细的编辑/调整/生命周期变更保留加载深度，刷新不重新恢复旧滚动。ledgerNavigationMemory 以数据集和精确链路保存最多 100 个位置，查询恢复只执行一次，后续查询、离页及用户新滚动使旧恢复失效。原页面和筛选布局不变；报表使用下述同一过滤和上下文返回机制。
 
 App 的 GlobalLedgerSearch 对输入、粘贴、选区替换及 IME 最终提交统一按 Unicode 码点检查，保留超限操作前的有效值；不使用按 UTF-16 计数的 HTML maxlength。明细上限 200，字典维护及合并搜索显式使用服务允许的 64。useDebouncedQuery 在缓存页停用/作用域销毁时取消计时器；搜索组件同时以页面活动状态、外部 modelValue 和 contextKey 取消过时任务，普通 v-model 回显不取消正常防抖。组合开始用 useDebouncedQuery.isPending 记录是否有尚未触发的防抖任务并暂停；组合结束值不变或超限回退时只恢复这份未提交任务，合法新值替换旧任务，已提交或仍在执行的查询不重发。外部取消和组件停用同时清除组合续发意图，未注入页面活动状态的 KeepAlive 也由组件自身停用钩子保护。明细清除全部条件显式取消搜索，离页回退到已提交关键词；路由写入检查当前活动页与精确链路，并明确指向 bill-details，避免隐藏实例改写其他页面。
+
+[ReportQueryService](../../app/src/data/reports/reportQueryService.ts) 在同一次 LedgerDatabase 队列读中生成总览、时间桶及比较期，正式写入不能插在各查询之间；API 的 getCoreReport 与 useReportData 一次发布过滤/呈现/摘要/趋势快照，失败保留旧成功快照并禁用下钻。共享 [querySql](../../app/src/data/entries/querySql.ts) 承接明细/报表的日期、有效状态、类型和历史快照过滤；EXPENSE_FLOW 包含支出及有效调整，调整按自身业务日期冲减，不计入收入。SQL 按类型或时间桶聚合，金额 SUM 明确 CAST 为 TEXT 跨桥，净额、结余、累计和比较使用 BigInt，不受单笔录入上限限制；SQLite 64 位 SUM 溢出返回安全的 REPORT_TOTAL_OVERFLOW，不能转浮点继续。图表数值转换只用于坐标，固定读数和下钻金额继续使用精确字符串。
+
+[自然日历](../../app/src/domain/businessDates.ts) 统一上海日期边界与 UTC 日历运算，周一为周起点，支持日/周/月/季/年，首尾桶裁剪并补零，最多 400 桶。比较期沿用旧核心口径：结束日期超过今天时按已过天数构造等长环比和同比，闰日按 LocalDate 减年夹到二月末；变化率先六位 HALF_UP、再百分比两位 HALF_UP，分母取对比额绝对值。可信覆盖使用已有 ledger_meta.history_start（ISO 时刻转上海日期），不以最早一笔记录猜测完整历史，不修改初始化元信息；覆盖不足/损坏、零基期或尚未开始时返回明确不可计算原因。T10 无结构迁移，旧 v6 账本沿既有 v7 升级后可直接统计。
+
+ReportView 保留原模板/组件/样式，搜索与明细共用取消/IME 保护；路由写入检查活动实例和精确链路。账目变更及返回激活刷新报表，显式下钻返回只恢复一次位置，用户的新滚动取消旧恢复。总览原指标行与时间趋势的原“查看明细”下钻到相同过滤的真实账目，范围、搜索、粒度、指标和位置随返回上下文保留。多维 getExpenseReport/getIncomeReport 仍待 T11，不以空统计伪装完成。
 
 T7 的 [0005](../../app/src/data/migrations/0005_personal_state.sql) 追加按 datasetId/类型唯一的 ledger_draft，以及收入模板独立名称字段；只为真正缺失的偏好补默认，不重跑 seed。旧模板收入名称由已保存的展示名补齐，不依赖仍存在的来源。DDL、数据与迁移履历仍在原生命周期事务内提交或回滚；v1—v4 及其摘要不改写。
 

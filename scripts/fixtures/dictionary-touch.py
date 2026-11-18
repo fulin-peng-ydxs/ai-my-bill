@@ -33,6 +33,10 @@ if mode == 'wait-initialized':
     raise RuntimeError('本轮模拟器的正式账本未在准备预算内初始化')
 assert database.is_file()
 # debug 数据仅由已校验会话中的全新 App 初始化；复用同一夹具，不开放任意 SQL 或路径。
+report_match = re.fullmatch(r'debug-(check-)?report-((?:3[6-9]|4[0-2])(?:,(?:3[6-9]|4[0-2]))*)', mode)
+report_cases = [int(case) for case in report_match[2].split(',')] if report_match else []
+if report_match:
+    mode = 'debug-check' if report_match[1] else 'prepare'
 query_match = re.fullmatch(r'debug-(check-)?query-((?:3[1-5])(?:,3[1-5])*)', mode)
 query_cases = [int(case) for case in query_match[2].split(',')] if query_match else []
 if query_match:
@@ -51,7 +55,7 @@ debug_case = 16 if debug_entry_cycle else int(debug_match[2]) if debug_match els
 debug_check = bool(debug_match and debug_match[1])
 if debug_match:
     mode = 'debug-check' if debug_check else 'prepare'
-connection = sqlite3.connect(f'file:{database}?mode={"rw" if mode in ("prepare", "prepare-paging", "prepare-entry", "prepare-personal", "prepare-lifecycle", "prepare-query") else "ro"}', uri=True)
+connection = sqlite3.connect(f'file:{database}?mode={"rw" if mode in ("prepare", "prepare-paging", "prepare-entry", "prepare-personal", "prepare-lifecycle", "prepare-query", "prepare-report") else "ro"}', uri=True)
 def add_paging_items(connection, ids):
     """完整和局部触摸共用相同末页数据，始终拒绝覆盖既有同名样本。"""
     assert connection.execute("SELECT count(*) FROM dictionary_item WHERE name LIKE 'PageProduct%' OR name LIKE 'PageUnit%'").fetchone()[0] == 0
@@ -87,21 +91,39 @@ def check_entries(connection, case):
     print('ENTRY_TOUCH_SQLITE_VERIFIED case=' + str(case))
 
 
-def add_personal_items(connection, prefix='t7', label='日常'):
+def add_personal_items(connection, prefix='t7', label='日常', dictionary_ids=None):
+    item_ids = dictionary_ids or {key:prefix+'-'+key for key in ['product','category','unit','funding','payer']}
     assert connection.execute("SELECT count(*) FROM dictionary_item WHERE id LIKE ?", (prefix+'-%',)).fetchone()[0] == 0
     for key, kind, name in [('product','PRODUCT','苹果'),('category','EXPENSE_CATEGORY','水果'),('unit','UNIT','份'),('funding','FUNDING_CHANNEL','现金'),('payer','PAYER','公司')]:
-        connection.execute("INSERT INTO dictionary_item(id,kind,name,normalized_name,status,sort_order) VALUES(?,?,?,?,'ACTIVE',100)", (prefix+'-'+key,kind,label+name,label+name))
+        connection.execute("INSERT INTO dictionary_item(id,kind,name,normalized_name,status,sort_order) VALUES(?,?,?,?,'ACTIVE',100)", (item_ids[key],kind,label+name,label+name))
     now = datetime.now(ZoneInfo('Asia/Shanghai'))
     stamp = now.astimezone(ZoneInfo('UTC')).isoformat(timespec='milliseconds').replace('+00:00','Z')
     connection.execute("""INSERT INTO ledger_entry(id,entry_type,amount_cents,funding_channel_id,funding_channel_name_snapshot,business_time,business_date,
         product_id,product_name_snapshot,normalized_product_name_snapshot,primary_category_id,primary_category_name_snapshot,unit_id,unit_name_snapshot,
         unit_price_scaled,quantity_scaled,calculated_amount_cents,note,updated_at) VALUES(?,'EXPENSE',1500,?,?,?,?,?,?,?,?,?,?,?,123456,1250,1543,'来源备注',?)""",
-        (prefix+'-expense',prefix+'-funding',label+'现金',stamp,now.date().isoformat(),prefix+'-product',label+'苹果',label+'苹果',prefix+'-category',label+'水果',prefix+'-unit',label+'份',stamp))
+        (prefix+'-expense',item_ids['funding'],label+'现金',stamp,now.date().isoformat(),item_ids['product'],label+'苹果',label+'苹果',item_ids['category'],label+'水果',item_ids['unit'],label+'份',stamp))
     connection.execute("""INSERT INTO ledger_entry(id,entry_type,amount_cents,funding_channel_id,funding_channel_name_snapshot,business_time,business_date,
         income_name,normalized_income_name,payer_id,payer_name_snapshot,income_category_id,income_category_name_snapshot,note,updated_at)
         VALUES(?,'INCOME',100000,?,?,?,?,?,?,?,?,'61000000-0000-0000-0000-000000000001','工资','来源收入备注',?)""",
-        (prefix+'-income',prefix+'-funding',label+'现金',stamp,now.date().isoformat(),label+'工资',label+'工资',prefix+'-payer',label+'公司',stamp))
+        (prefix+'-income',item_ids['funding'],label+'现金',stamp,now.date().isoformat(),label+'工资',label+'工资',item_ids['payer'],label+'公司',stamp))
 
+
+def add_report_items(connection):
+    # 与其他阶段共存，以独立 UUID 资金渠道在原筛选器隔离；不清空历史测试数据。
+    dictionary_ids = {key:str(uuid.uuid4()) for key in ['product','category','unit','funding','payer']}
+    add_personal_items(connection, 't10', '报表', dictionary_ids)
+    now = datetime.now(ZoneInfo('Asia/Shanghai'))
+    stamp = now.astimezone(ZoneInfo('UTC')).isoformat(timespec='milliseconds').replace('+00:00','Z')
+    connection.execute("INSERT INTO expense_adjustment(id,original_expense_id,adjustment_type,amount_cents,business_time,business_date,note,created_at,updated_at,search_text) VALUES('t10-refund','t10-expense','REFUND',300,?,?,'报表退款',?,?,'退款 报表退款')",(stamp,now.date().isoformat(),stamp,stamp))
+
+def check_reports(connection, cases):
+    rows = connection.execute("SELECT id,amount_cents,row_version,note FROM ledger_entry WHERE id LIKE 't10-%' ORDER BY id").fetchall()
+    assert len(rows) == 2
+    expected = [('t10-expense',1600 if 38 in cases else 1500,2 if 38 in cases else 1,'来源备注'),('t10-income',100000,1,'来源收入备注')]
+    assert [tuple(row) for row in rows] == expected
+    row = connection.execute("SELECT amount_cents,status,row_version,original_expense_id FROM expense_adjustment WHERE id='t10-refund'").fetchone()
+    assert tuple(row) == (300,'EFFECTIVE',1,'t10-expense')
+    print('REPORT_TOUCH_SQLITE_VERIFIED cases=' + ','.join(map(str,cases)))
 
 def add_query_items(connection):
     """只准备查询样本；编辑备注、筛选和翻页结果均由真实页面产生。"""
@@ -213,7 +235,14 @@ connection.row_factory = sqlite3.Row
 connection.execute('PRAGMA foreign_keys=ON')
 receipt_path = Path(receipt_file)
 try:
-    if mode == 'debug-check' and query_cases:
+    if mode == 'debug-check' and report_cases:
+        check_reports(connection, report_cases)
+    elif mode == 'prepare-report':
+        with connection: add_report_items(connection)
+        print('REPORT_TOUCH_FIXTURE_PREPARED')
+    elif mode == 'check-report':
+        check_reports(connection, [36,37,38,39,40])
+    elif mode == 'debug-check' and query_cases:
         check_query(connection, query_cases)
     elif mode == 'prepare-query':
         with connection: add_query_items(connection)
@@ -319,6 +348,8 @@ try:
                 VALUES(?,'EXPENSE','触摸合并源','触摸合并源',?,'触摸合并源',?,'触摸分类',?,'触摸单位',123456,1250,1543,?,'触摸资金',
                 '2026-11-15T01:00:00.000Z','2026-11-15T01:00:00.000Z','2026-11-15T01:00:00.000Z')""",
                                (ids['template'], ids['source'], ids['category'], ids['unit'], ids['funding']))
+        if report_cases:
+            with connection: add_report_items(connection)
         if query_cases:
             with connection: add_query_items(connection)
         if lifecycle_cases:

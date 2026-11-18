@@ -234,6 +234,18 @@ final class NativeSqliteTests: XCTestCase {
         print("OFFLINE_LEDGER_QUERY_EVIDENCE " + String(decoding: try JSONSerialization.data(withJSONObject: evidence, options: [.sortedKeys]), as: UTF8.self))
     }
 
+    func testOfflineCoreReports() async throws {
+        let webView = try await readyWebView()
+        let script = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "sqlite-probe", withExtension: "js"))
+        _ = try await webView.evaluateJavaScript(String(contentsOf: script, encoding: .utf8) + ";void 0;")
+        let result = try await webView.callAsyncJavaScript("return await MyBillNativeProbe.reportQueries()", arguments: [:], in: nil, contentWorld: .page)
+        let evidence = try XCTUnwrap(result as? [String: Any])
+        XCTAssertEqual(evidence["schemaVersion"] as? Int, 7)
+        XCTAssertEqual((evidence["checks"] as? [String])?.count, 5)
+        try verifySnapshots(prefix: XCTUnwrap(evidence["databasePrefix"] as? String), minimum: 1, cleanup: true)
+        print("OFFLINE_CORE_REPORT_EVIDENCE " + String(decoding: try JSONSerialization.data(withJSONObject: evidence, options: [.sortedKeys]), as: UTF8.self))
+    }
+
     func testNativeLifecycleDraftWindow() async throws {
         // 私有 NotificationCenter 与可控窗口使慢写/快速切换确定可复现，不改变宿主 App 状态。
         let center = NotificationCenter()
