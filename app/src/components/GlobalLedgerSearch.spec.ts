@@ -249,3 +249,149 @@ it('外部替换后的迟到输入法结束不能复活旧搜索，粘贴与非 
   expect(input.value).toBe('外部替换')
   expect(value.value).toBe('外部替换')
 })
+
+
+it.each([
+  { label: '取消预编辑', keyword: '苹果', preview: '苹果pin', final: '苹果' },
+  { label: '拒绝第201码点', keyword: '😀'.repeat(200), preview: '😀'.repeat(200) + '多', final: '😀'.repeat(200) + '多' },
+])('IME 防抖未到期时$label后仍提交合法关键词一次', async ({ keyword, preview, final }) => {
+  const { input, router } = await mountLedger()
+  inputEvent(input, keyword)
+  await settle()
+  await vi.advanceTimersByTimeAsync(100)
+  input.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true }))
+  inputEvent(input, preview)
+  await vi.advanceTimersByTimeAsync(1000)
+  expect(router.currentRoute.value.query.q).toBeUndefined()
+  input.value = final
+  input.dispatchEvent(new CompositionEvent('compositionend', { bubbles: true }))
+  // WebKit 可在 compositionend 后再发最终 input；不能重复提交。
+  inputEvent(input, input.value)
+  await settle()
+  await vi.advanceTimersByTimeAsync(300)
+  await settle()
+  expect(input.value).toBe(keyword)
+  expect(router.currentRoute.value.query.q).toBe(keyword)
+  expect(list.mock.calls.filter(([filters]) => filters.query === keyword)).toHaveLength(1)
+  await vi.advanceTimersByTimeAsync(1000)
+  expect(list.mock.calls.filter(([filters]) => filters.query === keyword)).toHaveLength(1)
+})
+it.each(['取消预编辑', '拒绝第201码点'])('IME 已提交值在%s后不重复查询', async kind => {
+  const { input, search } = await mountSearch()
+  const keyword = kind === '取消预编辑' ? '苹果' : '😀'.repeat(200)
+  inputEvent(input, keyword)
+  await settle()
+  await vi.advanceTimersByTimeAsync(300)
+  expect(search.mock.calls).toEqual([[keyword]])
+  input.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true }))
+  inputEvent(input, keyword + '多')
+  input.value = kind === '取消预编辑' ? keyword : keyword + '多'
+  input.dispatchEvent(new CompositionEvent('compositionend', { bubbles: true }))
+  inputEvent(input, input.value)
+  await settle()
+  await vi.advanceTimersByTimeAsync(1000)
+  expect(input.value).toBe(keyword)
+  expect(search.mock.calls).toEqual([[keyword]])
+})
+it('IME 连续取消仍只保留一份待提交，成功提交与后续输入取最新值', async () => {
+  const { input, search } = await mountSearch()
+  inputEvent(input, '旧')
+  await settle()
+  for (let round = 0; round < 2; round++) {
+    await vi.advanceTimersByTimeAsync(100)
+    input.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true }))
+    inputEvent(input, '旧pin')
+    input.value = '旧'
+    input.dispatchEvent(new CompositionEvent('compositionend', { bubbles: true }))
+    await settle()
+  }
+  await vi.advanceTimersByTimeAsync(100)
+  input.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true }))
+  inputEvent(input, '新的合法值')
+  input.dispatchEvent(new CompositionEvent('compositionend', { bubbles: true }))
+  inputEvent(input, input.value)
+  await settle()
+  await vi.advanceTimersByTimeAsync(100)
+  inputEvent(input, '最新输入')
+  await settle()
+  await vi.advanceTimersByTimeAsync(1000)
+  expect(search.mock.calls).toEqual([['最新输入']])
+})
+it.each(['清除全部筛选', '清空搜索', '外部条件替换', '外部同值替换', '外部清除关键词', '离页'])
+('IME 待续搜索在%s后失效，迟到结束不复活且后续正常搜索可用', async action => {
+  const { host, router, input } = await mountLedger()
+  const replace = vi.spyOn(router, 'replace')
+  inputEvent(input, '旧关键词')
+  await settle()
+  await vi.advanceTimersByTimeAsync(100)
+  input.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true }))
+  inputEvent(input, '旧关键词pin')
+  if (action === '离页') await router.push('/me')
+  else if (action.startsWith('外部')) await router.replace({ path: '/ledger', query: { type: 'INCOME', range: 'THIS_YEAR',
+    ...(action === '外部条件替换' ? { q: '新关键词' } : action === '外部同值替换' ? { q: '旧关键词' } : {}) } })
+  else {
+    // DOM 点击不返回 router.replace 的 Promise，先等待该次导航（含重复导航）完成。
+    const navigated = new Promise<void>(resolve => {
+      const stop = router.afterEach(() => { stop(); resolve() })
+    })
+    host.querySelector<HTMLButtonElement>(`[aria-label="${action}"]`)!.click()
+    await navigated
+  }
+  await settle()
+  const expectedPath = router.currentRoute.value.fullPath
+  const calls = replace.mock.calls.length
+  input.value = '旧关键词'
+  input.dispatchEvent(new CompositionEvent('compositionend', { bubbles: true }))
+  inputEvent(input, input.value)
+  await settle()
+  await vi.advanceTimersByTimeAsync(1000)
+  await settle()
+  expect(router.currentRoute.value.fullPath).toBe(expectedPath)
+  expect(replace).toHaveBeenCalledTimes(calls)
+  if (action === '离页') {
+    await router.push('/ledger?type=ALL&range=THIS_MONTH')
+    await settle()
+    expect(router.currentRoute.value.query.q).toBeUndefined()
+  }
+  const currentInput = host.querySelector<HTMLInputElement>('#ledger-search')!
+  inputEvent(currentInput, '后续搜索')
+  await settle()
+  await vi.advanceTimersByTimeAsync(300)
+  await settle()
+  expect(router.currentRoute.value.query.q).toBe('后续搜索')
+})
+
+it('KeepAlive 无活动状态注入时，离页也撤销 IME 续发意图', async () => {
+  const shown = ref(true)
+  const value = ref('')
+  const search = vi.fn()
+  const away = { render: () => h('p', '其他页面') }
+  const host = document.createElement('div')
+  document.body.append(host)
+  const app = createApp({ render: () => h(KeepAlive, null, () => shown.value
+    ? h(GlobalLedgerSearch, { id: 'cached-search', modelValue: value.value,
+      'onUpdate:modelValue': (next: string) => { value.value = next }, onSearch: search })
+    : h(away)) })
+  cleanup = () => { app.unmount(); host.remove() }
+  app.mount(host)
+  await settle()
+  const input = host.querySelector<HTMLInputElement>('input')!
+  inputEvent(input, '旧关键词')
+  await settle()
+  await vi.advanceTimersByTimeAsync(100)
+  input.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true }))
+  inputEvent(input, '旧关键词pin')
+  shown.value = false
+  await settle()
+  input.value = '旧关键词'
+  input.dispatchEvent(new CompositionEvent('compositionend', { bubbles: true }))
+  await vi.advanceTimersByTimeAsync(1000)
+  shown.value = true
+  await settle()
+  await vi.advanceTimersByTimeAsync(1000)
+  expect(search).not.toHaveBeenCalled()
+  inputEvent(input, '新关键词')
+  await settle()
+  await vi.advanceTimersByTimeAsync(300)
+  expect(search.mock.calls).toEqual([['新关键词']])
+})

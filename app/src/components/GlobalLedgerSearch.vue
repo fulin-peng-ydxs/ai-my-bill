@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { Search, X } from 'lucide-vue-next'
-import { ref, watch } from 'vue'
+import { onDeactivated, ref, watch } from 'vue'
 import { usePageActivity } from '../composables/usePageActivity'
 import { unicodeCodePointLength } from '../domain/text'
 
@@ -29,6 +29,7 @@ const active = usePageActivity()
 const input = ref<HTMLInputElement>()
 let accepted = props.modelValue
 let composing = false
+let resumeAfterComposition = false
 const query = useDebouncedQuery((value: string) => {
   if (active.value) emit('search', value)
 }, props.delay)
@@ -42,6 +43,7 @@ function restoreInput(target = input.value): void {
 /** 外部清除/条件替换可取消同值的待执行任务，IME 的迟到结束也不能复活旧输入。 */
 function cancelPending(): void {
   query.cancel()
+  resumeAfterComposition = false
   composing = false
   restoreInput()
 }
@@ -54,6 +56,7 @@ watch(() => props.modelValue, value => {
 }, { flush: 'sync' })
 watch(() => props.contextKey, cancelPending, { flush: 'sync' })
 watch(active, value => { if (!value) cancelPending() }, { flush: 'sync' })
+onDeactivated(cancelPending)
 defineExpose({ cancelPending })
 
 function canInsert(target: HTMLInputElement, text: string): boolean {
@@ -91,6 +94,9 @@ function onInput(event: Event): void {
   else query.schedule(value)
 }
 function compositionStart(): void {
+  if (composing) return
+  // 组合输入只暂停尚未提交的合法搜索；外部取消会同时清除续发意图。
+  resumeAfterComposition = query.isPending()
   composing = true
   query.cancel()
 }
@@ -99,8 +105,13 @@ function compositionEnd(event: CompositionEvent): void {
     restoreInput(event.target as HTMLInputElement)
     return
   }
+  const resume = resumeAfterComposition
+  resumeAfterComposition = false
   composing = false
+  const previous = accepted
   onInput(event)
+  // 取消预编辑或拒绝超限时 onInput 不调度；只补原先未提交的值，不重查已提交值。
+  if (resume && active.value && accepted === previous) query.schedule(accepted)
 }
 function onEnter(event: KeyboardEvent): void {
   if (composing || event.isComposing || !active.value) return

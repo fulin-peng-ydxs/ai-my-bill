@@ -38,7 +38,7 @@ App 的 API DTO 沿用旧接口类型维持页面兼容；字典 API 与支出�
 
 [useIncrementalLedgerQuery](../../app/src/composables/useIncrementalLedgerQuery.ts) 复用请求代次/取消，只刷新已加载深度。条件替换撤下旧数据，读取失败区分当前条件错误与适用旧结果的过期提示；旧更多响应不能解除新更多的锁。明细的编辑/调整/生命周期变更保留加载深度，刷新不重新恢复旧滚动。ledgerNavigationMemory 以数据集和精确链路保存最多 100 个位置，查询恢复只执行一次，后续查询、离页及用户新滚动使旧恢复失效。原页面和筛选布局不变；报表页面及真实跨页下钻联验由 T10 承接。
 
-App 的 GlobalLedgerSearch 对输入、粘贴、选区替换及 IME 最终提交统一按 Unicode 码点检查，保留超限操作前的有效值；不使用按 UTF-16 计数的 HTML maxlength。明细上限 200，字典维护及合并搜索显式使用服务允许的 64。useDebouncedQuery 在缓存页停用/作用域销毁时取消计时器；搜索组件同时以页面活动状态、外部 modelValue 和 contextKey 取消过时任务，普通 v-model 回显不取消正常防抖。明细清除全部条件显式取消搜索，离页回退到已提交关键词；路由写入检查当前活动页与精确链路，并明确指向 bill-details，避免隐藏实例改写其他页面。
+App 的 GlobalLedgerSearch 对输入、粘贴、选区替换及 IME 最终提交统一按 Unicode 码点检查，保留超限操作前的有效值；不使用按 UTF-16 计数的 HTML maxlength。明细上限 200，字典维护及合并搜索显式使用服务允许的 64。useDebouncedQuery 在缓存页停用/作用域销毁时取消计时器；搜索组件同时以页面活动状态、外部 modelValue 和 contextKey 取消过时任务，普通 v-model 回显不取消正常防抖。组合开始用 useDebouncedQuery.isPending 记录是否有尚未触发的防抖任务并暂停；组合结束值不变或超限回退时只恢复这份未提交任务，合法新值替换旧任务，已提交或仍在执行的查询不重发。外部取消和组件停用同时清除组合续发意图，未注入页面活动状态的 KeepAlive 也由组件自身停用钩子保护。明细清除全部条件显式取消搜索，离页回退到已提交关键词；路由写入检查当前活动页与精确链路，并明确指向 bill-details，避免隐藏实例改写其他页面。
 
 T7 的 [0005](../../app/src/data/migrations/0005_personal_state.sql) 追加按 datasetId/类型唯一的 ledger_draft，以及收入模板独立名称字段；只为真正缺失的偏好补默认，不重跑 seed。旧模板收入名称由已保存的展示名补齐，不依赖仍存在的来源。DDL、数据与迁移履历仍在原生命周期事务内提交或回滚；v1—v4 及其摘要不改写。
 
