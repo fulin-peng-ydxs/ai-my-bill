@@ -505,6 +505,8 @@ useRefreshOnReturn(() => load('refresh'))
         <div class="product-merge-flow">
           <GlobalLedgerSearch
             id="product-merge-search"
+            :context-key="String(mergeOpen)"
+            :max-length="64"
             v-model="mergeQuery"
             label="搜索保留商品"
             placeholder="输入商品名称缩小范围"

@@ -1,4 +1,4 @@
-import { onScopeDispose } from 'vue'
+import { getCurrentInstance, onDeactivated, onScopeDispose } from 'vue'
 
 export interface DebouncedQuery<T> {
   schedule: (value: T) => void
@@ -6,7 +6,7 @@ export interface DebouncedQuery<T> {
   cancel: () => void
 }
 
-/** 统一短防抖；Enter、清空等显式动作使用 submit 立即执行，作用域销毁时自动取消。 */
+/** 统一短防抖；Enter、清空等显式动作使用 submit 立即执行，缓存页停用或作用域销毁时自动取消。 */
 export function useDebouncedQuery<T>(callback: (value: T) => void, delay = 300): DebouncedQuery<T> {
   let timer: ReturnType<typeof setTimeout> | undefined
 
@@ -28,6 +28,7 @@ export function useDebouncedQuery<T>(callback: (value: T) => void, delay = 300):
     }, delay)
   }
 
+  if (getCurrentInstance()) onDeactivated(cancel)
   onScopeDispose(cancel)
   return { schedule, submit, cancel }
 }

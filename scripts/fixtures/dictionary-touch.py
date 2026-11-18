@@ -33,7 +33,7 @@ if mode == 'wait-initialized':
     raise RuntimeError('本轮模拟器的正式账本未在准备预算内初始化')
 assert database.is_file()
 # debug 数据仅由已校验会话中的全新 App 初始化；复用同一夹具，不开放任意 SQL 或路径。
-query_match = re.fullmatch(r'debug-(check-)?query-((?:3[1-3])(?:,3[1-3])*)', mode)
+query_match = re.fullmatch(r'debug-(check-)?query-((?:3[1-5])(?:,3[1-5])*)', mode)
 query_cases = [int(case) for case in query_match[2].split(',')] if query_match else []
 if query_match:
     mode = 'debug-check' if query_match[1] else 'prepare'
@@ -219,7 +219,7 @@ try:
         with connection: add_query_items(connection)
         print('LEDGER_QUERY_TOUCH_FIXTURE_PREPARED')
     elif mode == 'check-query':
-        check_query(connection, [31,32,33])
+        check_query(connection, [31,32,33,34,35])
     elif mode == 'debug-check' and lifecycle_cases:
         check_lifecycle(connection,lifecycle_cases)
     elif mode == 'prepare-lifecycle':

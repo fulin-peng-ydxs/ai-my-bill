@@ -1,5 +1,6 @@
 import XCTest
 import Vision
+import UIKit
 
 /// 外部 XCUITest runner 对 Release App 执行原生触摸/键盘；不注入 JS、不替换 API。
 @MainActor
@@ -120,17 +121,16 @@ final class DictionaryTouchTests: XCTestCase {
         tap("关闭")
     }
 
-    /// 独立搜索场景先建立原生键盘会话；取消原编辑弹窗，不新增或修改业务数据。
+    /// 直接通过现有常驻搜索建立键盘会话并清空；不绕行字典编辑，不写业务数据。
     /// 完整套件已有新增输入步骤，不选中此局部准备方法。
     func test00DebugKeyboardReady() {
-        openKind("单位")
-        tap("新增")
-        let field = nameField()
+        tap("收支明细")
+        let field = app.searchFields.firstMatch
         field.tap()
         field.typeText("Debug Ready")
         expectValue(field, "Debug Ready")
-        tap("取消")
-        disappears(field)
+        tap("清空搜索")
+        tap("记一笔")
         print("DEBUG_NATIVE_KEYBOARD_READY")
     }
 
@@ -734,6 +734,48 @@ final class DictionaryTouchTests: XCTestCase {
         expectValue(app.textViews.firstMatch, "T9 edited")
         tap("关闭")
         print("LEDGER_QUERY_TOUCH_EDIT_RETURN_VERIFIED")
+    }
+
+    func test34LedgerUnicodeInput() {
+        tap("收支明细")
+        let search = app.searchFields.firstMatch
+        search.tap()
+        let full = String(repeating: "😀", count: 200)
+        search.typeText(full)
+        expectValue(search, full)
+        search.typeText("新")
+        expectValue(search, full)
+        tap("清空搜索")
+        print("LEDGER_QUERY_TOUCH_UNICODE_INPUT_200_ACCEPTED_201_REJECTED")
+    }
+
+    private func pasteIntoSearch(_ field: XCUIElement, text: String) {
+        UIPasteboard.general.string = text
+        field.tap()
+        field.press(forDuration: 1.1)
+        // 走系统编辑菜单的真实粘贴，不使用 typeText 或 JS 模拟剪贴板。
+        let paste = app.descendants(matching: .any).matching(NSPredicate(format: "label == %@ OR label == %@", "粘贴", "Paste"))
+            .allElementsBoundByIndex.first { $0.isHittable }
+        if let paste { paste.tap() } else { tap("粘贴") }
+        let allow = app.alerts.buttons.matching(NSPredicate(format: "label CONTAINS %@ OR label CONTAINS %@", "允许粘贴", "Allow Paste")).firstMatch
+        if allow.waitForExistence(timeout: 1) { allow.tap() }
+    }
+
+    func test35LedgerUnicodePaste() {
+        tap("收支明细")
+        let search = app.searchFields.firstMatch
+        // 单用例与组合运行都从空查询开始；不依赖 test34 的结果。
+        let clear = app.buttons.matching(NSPredicate(format: "label == %@", "清空搜索")).firstMatch
+        if clear.exists { clear.tap() }
+        let full = String(repeating: "😀", count: 199) + "中"
+        pasteIntoSearch(search, text: full + "多")
+        XCTAssertTrue((search.value as? String ?? "").isEmpty || search.value as? String == "搜索账目")
+        pasteIntoSearch(search, text: full)
+        expectValue(search, full)
+        search.typeText("多")
+        expectValue(search, full)
+        tap("清空搜索")
+        print("LEDGER_QUERY_TOUCH_UNICODE_PASTE_200_ACCEPTED_201_REJECTED")
     }
 
 }

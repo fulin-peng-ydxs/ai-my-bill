@@ -55,7 +55,9 @@ export const uiCases = [
   'test30AutomaticCleanup',
   'test31LedgerPagingSearch',
   'test32LedgerFilterReset',
-  'test33LedgerEditReturn'
+  'test33LedgerEditReturn',
+  'test34LedgerUnicodeInput',
+  'test35LedgerUnicodePaste'
 ]
 
 export const recoveryPhases = ['snapshot-ready', 'migration-recorded', 'upgrade-committed']
@@ -73,7 +75,8 @@ export const uiScenarios = {
   'adjustment-cycle': [26, 27, 28],
   'lifecycle-cycle': [26, 27, 28, 29, 30],
   'cleanup-relaunch': [30],
-  'query-cycle': [31, 32, 33]
+  'query-cycle': [31, 32, 33],
+  'query-input': [34, 35]
 }
 
 /** 前置用例显式列出；只补必要环境与导航，不能暗中扩展为完整触摸套件。 */

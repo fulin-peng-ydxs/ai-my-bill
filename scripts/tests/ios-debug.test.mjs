@@ -512,13 +512,17 @@ test('T9 查询场景隔离，单用例不隐式携带其他页面验收', () =>
   const selected = selection('--scenario', 'query-cycle', [])
   assert.equal(selected.fixture, 'query-31,32,33')
   assert.equal(selected.cases.length, 4)
-  for (const [index, name] of [[31, 'test31LedgerPagingSearch'], [32, 'test32LedgerFilterReset'], [33, 'test33LedgerEditReturn']]) {
+  for (const [index, name] of [[31, 'test31LedgerPagingSearch'], [32, 'test32LedgerFilterReset'], [33, 'test33LedgerEditReturn'], [34, 'test34LedgerUnicodeInput'], [35, 'test35LedgerUnicodePaste']]) {
     const single = selection('--case', `DictionaryUITests/DictionaryTouchTests/${name}`, [])
     assert.equal(single.fixture, 'query-' + index)
     assert.equal(single.cases.length, 2)
   }
+  const input = selection('--scenario', 'query-input', [])
+  assert.equal(input.fixture, 'query-34,35')
+  assert.deepEqual(input.cases, ['DictionaryUITests/DictionaryTouchTests/test00DebugKeyboardReady',
+    'DictionaryUITests/DictionaryTouchTests/test34LedgerUnicodeInput', 'DictionaryUITests/DictionaryTouchTests/test35LedgerUnicodePaste'])
   const shell = fs.readFileSync(new URL('../lib/ios-app-full.sh', import.meta.url), 'utf8')
-  for (const name of ['test31LedgerPagingSearch', 'test32LedgerFilterReset', 'test33LedgerEditReturn']) {
+  for (const name of ['test31LedgerPagingSearch', 'test32LedgerFilterReset', 'test33LedgerEditReturn', 'test34LedgerUnicodeInput', 'test35LedgerUnicodePaste']) {
     assert.ok(shell.includes('-skip-testing:DictionaryUITests/DictionaryTouchTests/' + name))
     assert.ok(shell.includes('-only-testing:DictionaryUITests/DictionaryTouchTests/' + name))
   }
@@ -537,5 +541,18 @@ test('T9 查询夹具只准备输入，回读拒绝缺失编辑和额外写入',
     db.prepare("UPDATE ledger_entry SET amount_cents=1 WHERE id='t9-query-01'").run()
     assert.notEqual(execute('debug-check-query-33').status, 0)
     assert.notEqual(execute('debug-query-31').status, 0, '已有账本不能覆盖重建')
+  } finally { db.close() }
+})
+
+test('T9 Unicode 输入夹具独立回读，拒绝任何业务改写', (t) => {
+  const { file, execute } = touchFixture(temporary(t))
+  assert.equal(execute('debug-query-34,35').status, 0)
+  assert.equal(execute('debug-check-query-34').status, 0)
+  assert.equal(execute('debug-check-query-35').status, 0)
+  assert.equal(execute('debug-check-query-34,35').status, 0)
+  const db = new DatabaseSync(file)
+  try {
+    db.prepare("UPDATE ledger_entry SET note='unexpected',row_version=2 WHERE id='t9-query-00'").run()
+    assert.notEqual(execute('debug-check-query-34,35').status, 0)
   } finally { db.close() }
 })

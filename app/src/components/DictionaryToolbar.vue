@@ -35,6 +35,8 @@ const statusOptions = [
     <GlobalLedgerSearch
       :id="`dictionary-search-${label}`"
       v-model="query"
+      :context-key="`${label}|${status}`"
+      :max-length="64"
       :label="`搜索${label}`"
       :placeholder="`搜索${label}名称`"
       @search="emit('search', $event)"

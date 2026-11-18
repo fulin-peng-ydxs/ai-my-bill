@@ -7,7 +7,7 @@ import { usePageActivity } from '../composables/usePageActivity'
 import { useRefreshOnReturn } from '../composables/useRefreshOnReturn'
 import { LEDGER_CHANGED_EVENT } from '../api/localEntries'
 import { ArrowLeft } from 'lucide-vue-next'
-import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onDeactivated, ref, watch } from 'vue'
 import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
 
 import { upsertDailyTemplateFromLedger } from '../api/dailyTemplates'
@@ -60,6 +60,7 @@ const list = useIncrementalLedgerQuery()
 const editRequest = useLatestRequest<ExpenseResponse | IncomeResponse>()
 const adjustmentRequest = useLatestRequest<ExpenseAdjustmentResponse>()
 const searchText = ref('')
+const ledgerSearch = ref<InstanceType<typeof GlobalLedgerSearch>>()
 const filters = ref<LedgerFilters>({ query: '', type: 'ALL', lifecycle: 'ACTIVE', range: 'TODAY' })
 const draft = ref<LedgerFilters>({ ...filters.value })
 const filterOpen = ref(false)
@@ -135,8 +136,12 @@ watch([() => route.fullPath, () => preferences.status], async () => {
   if (list.status.value === 'ready' || list.status.value === 'empty') restore()
 }, { immediate: true })
 
+function isCurrentLedgerPage(): boolean {
+  return pageActive.value && router.currentRoute.value.name === 'bill-details' && router.currentRoute.value.fullPath === route.fullPath
+}
 function navigate(next: LedgerFilters): void {
-  void router.replace({ query: ledgerRouteQuery(clearIncompatibleLedgerFilters(next), drill.value) })
+  if (!isCurrentLedgerPage()) return
+  void router.replace({ name: 'bill-details', query: ledgerRouteQuery(clearIncompatibleLedgerFilters(next), drill.value) })
 }
 
 function updateSearch(value: string): void {
@@ -148,7 +153,10 @@ function updateLifecycle(value: string): void {
 }
 
 function clearFilters(): void {
-  void router.replace({ query: ledgerRouteQuery(clearedLedgerFilters(defaultRange.value, filters.value.lifecycle)) })
+  if (!isCurrentLedgerPage()) return
+  ledgerSearch.value?.cancelPending()
+  searchText.value = ''
+  void router.replace({ name: 'bill-details', query: ledgerRouteQuery(clearedLedgerFilters(defaultRange.value, filters.value.lifecycle)) })
 }
 
 function applyFilters(): void {
@@ -383,6 +391,7 @@ function refreshOverlayItems(): void {
   }
 }
 
+onDeactivated(() => { searchText.value = filters.value.query })
 onBeforeRouteLeave(() => {
   scrollRestorer.cancel()
   rememberLedgerScroll(currentScrollKey.value, pageScrollTop())
@@ -437,7 +446,9 @@ useRefreshOnReturn(() => list.refresh())
 
       <div class="list-search-controls">
         <GlobalLedgerSearch
+          ref="ledgerSearch"
           id="ledger-search"
+          :context-key="currentScrollKey"
           v-model="searchText"
           @search="updateSearch"
         />

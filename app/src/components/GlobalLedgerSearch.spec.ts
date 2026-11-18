@@ -1,0 +1,251 @@
+// @vitest-environment jsdom
+import { createApp, defineComponent, h, KeepAlive, nextTick, provide, ref } from 'vue'
+import { createMemoryHistory, createRouter, RouterView, type RouteLocationNormalizedLoaded } from 'vue-router'
+import { createPinia } from 'pinia'
+import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+import GlobalLedgerSearch from './GlobalLedgerSearch.vue'
+import CachedPageView from './CachedPageView.vue'
+import LedgerView from '../views/LedgerView.vue'
+import { pageActivityKey } from '../composables/usePageActivity'
+import { useBootstrapStore } from '../stores/bootstrap'
+import { usePreferencesStore } from '../stores/preferences'
+
+const { list } = vi.hoisted(() => ({ list: vi.fn() }))
+vi.mock('../api/ledgerEntries', () => ({ listLedgerEntries: list }))
+// 本组只操作真实页头与搜索，关闭的编辑/危险确认不参与本次链路。
+vi.mock('./AppDrawer.vue', () => ({ default: { render: () => null } }))
+vi.mock('./AppDialog.vue', () => ({ default: { render: () => null } }))
+let cleanup = () => {}
+const oldScrollTo = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'scrollTo')
+async function settle() {
+  for (let index = 0; index < 15; index++) await nextTick()
+}
+beforeEach(() => {
+  vi.useFakeTimers()
+  list.mockReset().mockResolvedValue({ items: [], hasMore: false })
+  vi.spyOn(window, 'scrollTo').mockImplementation(() => {})
+  Object.defineProperty(HTMLElement.prototype, 'scrollTo', { configurable: true, value: vi.fn() })
+})
+afterEach(() => {
+  cleanup()
+  if (oldScrollTo) Object.defineProperty(HTMLElement.prototype, 'scrollTo', oldScrollTo)
+  else delete (HTMLElement.prototype as unknown as Record<string, unknown>).scrollTo
+  vi.restoreAllMocks()
+  vi.useRealTimers()
+})
+function inputEvent(input: HTMLInputElement, value: string) {
+  input.value = value
+  input.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText' }))
+}
+async function mountLedger() {
+  const pinia = createPinia()
+  useBootstrapStore(pinia).datasetId = 'search-regression'
+  usePreferencesStore(pinia).status = 'ready'
+  const router = createRouter({ history: createMemoryHistory(), routes: [
+    { path: '/ledger', name: 'bill-details', component: LedgerView },
+    { path: '/me', name: 'profile-settings', component: { render: () => h('p', '我的') } },
+  ] })
+  await router.push('/ledger?type=ALL&range=THIS_MONTH')
+  const host = document.createElement('div')
+  host.className = 'shell-content'
+  document.body.append(host)
+  const app = createApp({ render: () => h(RouterView, null, {
+    default: ({ Component, route }: { Component: unknown; route: RouteLocationNormalizedLoaded }) =>
+      h(KeepAlive, { max: 2 }, () => h(CachedPageView, { key: String(route.name), component: Component as never, route })),
+  }) }).use(pinia).use(router)
+  cleanup = () => { app.unmount(); host.remove() }
+  app.mount(host)
+  await settle()
+  return { host, router, input: host.querySelector<HTMLInputElement>('#ledger-search')! }
+}
+
+it('清除已应用筛选时取消尚未到期的搜索，旧关键词不能复活', async () => {
+  const { host, router, input } = await mountLedger()
+  inputEvent(input, '待执行关键词')
+  await settle()
+  const clear = host.querySelector<HTMLButtonElement>('[aria-label="清除全部筛选"]')!
+  expect(clear).toBeTruthy()
+  clear.click()
+  await settle()
+  expect(router.currentRoute.value.query.q).toBeUndefined()
+  await vi.advanceTimersByTimeAsync(1000)
+  expect(router.currentRoute.value.query.q).toBeUndefined()
+  expect(input.value).toBe('')
+})
+it('外部条件替换取消待执行搜索，不能覆盖新类型与关键词', async () => {
+  const { router, input } = await mountLedger()
+  inputEvent(input, '旧关键词')
+  await settle()
+  await router.replace('/ledger?type=INCOME&range=THIS_YEAR&q=新关键词')
+  await settle()
+  await vi.advanceTimersByTimeAsync(1000)
+  expect(router.currentRoute.value.query).toMatchObject({ type: 'INCOME', q: '新关键词', range: 'THIS_YEAR' })
+  expect(input.value).toBe('新关键词')
+})
+it('真实 KeepAlive 离页取消防抖，不污染其他页面；返回仍可正常搜索', async () => {
+  const { host, router, input } = await mountLedger()
+  inputEvent(input, '隐藏页关键词')
+  await settle()
+  await router.push('/me')
+  await settle()
+  await vi.advanceTimersByTimeAsync(1000)
+  expect(router.currentRoute.value.fullPath).toBe('/me')
+  await router.push('/ledger?type=ALL&range=THIS_MONTH')
+  await settle()
+  const restored = host.querySelector<HTMLInputElement>('#ledger-search')!
+  expect(restored.value).toBe('')
+  inputEvent(restored, '返回后查询')
+  await settle()
+  await vi.advanceTimersByTimeAsync(300)
+  await settle()
+  expect(router.currentRoute.value.query.q).toBe('返回后查询')
+})
+
+async function mountSearch(maxLength = 200) {
+  const value = ref('')
+  const context = ref('first')
+  const active = ref(true)
+  const search = vi.fn()
+  const host = document.createElement('div')
+  document.body.append(host)
+  const root = defineComponent({ setup() {
+    provide(pageActivityKey, active)
+    return () => h(GlobalLedgerSearch, { id: 'unicode-search', modelValue: value.value, maxLength,
+      contextKey: context.value, 'onUpdate:modelValue': (next: string) => { value.value = next }, onSearch: search })
+  } })
+  const app = createApp(root)
+  cleanup = () => { app.unmount(); host.remove() }
+  app.mount(host)
+  await settle()
+  return { input: host.querySelector<HTMLInputElement>('input')!, value, context, active, search }
+}
+function insert(input: HTMLInputElement, text: string) {
+  const start = input.selectionStart ?? input.value.length
+  const end = input.selectionEnd ?? start
+  const before = new InputEvent('beforeinput', { bubbles: true, cancelable: true, inputType: 'insertText', data: text })
+  input.dispatchEvent(before)
+  if (!before.defaultPrevented) {
+    input.setRangeText(text, start, end, 'end')
+    input.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: text }))
+  }
+  return before
+}
+function paste(input: HTMLInputElement, text: string) {
+  const event = new Event('paste', { bubbles: true, cancelable: true })
+  Object.defineProperty(event, 'clipboardData', { value: { getData: () => text } })
+  input.dispatchEvent(event)
+  if (!event.defaultPrevented) insert(input, text)
+  return event
+}
+it.each(['长', '😀'])('可输入和粘贴 200 码点，第 201 个拒绝且保留已有内容：%s', async char => {
+  const { input, value, search } = await mountSearch()
+  expect(input.hasAttribute('maxlength')).toBe(false)
+  for (let index = 0; index < 200; index++) insert(input, char)
+  await settle()
+  const full = char.repeat(200)
+  expect(value.value).toBe(full)
+  expect(insert(input, char).defaultPrevented).toBe(true)
+  expect(input.value).toBe(full)
+  await vi.advanceTimersByTimeAsync(300)
+  expect(search.mock.calls).toEqual([[full]])
+  inputEvent(input, '')
+  await settle()
+  expect(paste(input, full).defaultPrevented).toBe(false)
+  await settle()
+  expect(value.value).toBe(full)
+  expect(paste(input, char).defaultPrevented).toBe(true)
+  expect(input.value).toBe(full)
+  // 满额时替换选中字符仍合法；UTF-16 光标不能被当成码点数量。
+  input.setSelectionRange(0, char.length)
+  expect(insert(input, '新').defaultPrevented).toBe(false)
+  await settle()
+  expect([...value.value]).toHaveLength(200)
+})
+it('共享搜索保留可配置 64 码点限制', async () => {
+  const { input, value } = await mountSearch(64)
+  expect(paste(input, '😀'.repeat(64)).defaultPrevented).toBe(false)
+  await settle()
+  expect(paste(input, '😀').defaultPrevented).toBe(true)
+  expect([...value.value]).toHaveLength(64)
+})
+
+it('条件上下文同值替换取消防抖，普通 v-model 回显保留正常搜索', async () => {
+  const { input, context, value, search } = await mountSearch()
+  insert(input, '正常搜索')
+  await settle()
+  await vi.advanceTimersByTimeAsync(300)
+  expect(search.mock.calls).toEqual([['正常搜索']])
+  insert(input, '待取消')
+  await settle()
+  context.value = 'external-filter-replacement'
+  await settle()
+  await vi.advanceTimersByTimeAsync(1000)
+  expect(search).toHaveBeenCalledTimes(1)
+  // 与当前已输入值相同的外部上下文也必须取消，不能只比较 modelValue。
+  expect(value.value).toBe('正常搜索待取消')
+})
+it('停用取消待执行和迟到输入，重新激活后 Enter 与清空各只提交一次', async () => {
+  const { input, active, value, search } = await mountSearch()
+  insert(input, '旧任务')
+  await settle()
+  active.value = false
+  await settle()
+  inputEvent(input, '隐藏页迟到输入')
+  expect(value.value).toBe('旧任务')
+  expect(input.value).toBe('旧任务')
+  await vi.advanceTimersByTimeAsync(1000)
+  expect(search).not.toHaveBeenCalled()
+  active.value = true
+  await settle()
+  inputEvent(input, '新的输入')
+  await settle()
+  input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
+  await vi.advanceTimersByTimeAsync(1000)
+  expect(search.mock.calls).toEqual([['新的输入']])
+  inputEvent(input, '')
+  await settle()
+  await vi.advanceTimersByTimeAsync(1000)
+  expect(search.mock.calls).toEqual([['新的输入'], ['']])
+})
+it('中文输入法不提交预编辑；最终 200 码点接受，201 码点回退且不误发 Enter', async () => {
+  const { input, value, search } = await mountSearch()
+  const full = '😀'.repeat(199) + '中'
+  input.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true }))
+  inputEvent(input, full)
+  input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, isComposing: true }))
+  await vi.advanceTimersByTimeAsync(1000)
+  expect(value.value).toBe('')
+  expect(search).not.toHaveBeenCalled()
+  input.dispatchEvent(new CompositionEvent('compositionend', { bubbles: true, data: '中' }))
+  await settle()
+  await vi.advanceTimersByTimeAsync(300)
+  expect(value.value).toBe(full)
+  expect(search.mock.calls).toEqual([[full]])
+  input.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true }))
+  inputEvent(input, full + '多')
+  input.dispatchEvent(new CompositionEvent('compositionend', { bubbles: true, data: '多' }))
+  await settle()
+  await vi.advanceTimersByTimeAsync(1000)
+  expect(input.value).toBe(full)
+  expect(value.value).toBe(full)
+  expect(search).toHaveBeenCalledTimes(1)
+})
+it('外部替换后的迟到输入法结束不能复活旧搜索，粘贴与非 beforeinput 输入仍受边界保护', async () => {
+  const { input, value, search } = await mountSearch()
+  input.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true }))
+  inputEvent(input, '未提交预编辑')
+  value.value = '外部替换'
+  await settle()
+  input.value = '迟到预编辑'
+  input.dispatchEvent(new CompositionEvent('compositionend', { bubbles: true }))
+  await settle()
+  await vi.advanceTimersByTimeAsync(1000)
+  expect(input.value).toBe('外部替换')
+  expect(search).not.toHaveBeenCalled()
+  input.setSelectionRange(0, input.value.length)
+  expect(paste(input, '😀'.repeat(201)).defaultPrevented).toBe(true)
+  expect(input.value).toBe('外部替换')
+  inputEvent(input, '😀'.repeat(201))
+  expect(input.value).toBe('外部替换')
+  expect(value.value).toBe('外部替换')
+})
