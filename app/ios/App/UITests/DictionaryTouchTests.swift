@@ -826,8 +826,9 @@ final class DictionaryTouchTests: XCTestCase {
         print("REPORT_TOUCH_APP_READY")
     }
 
-    // 准备与粒度断言分别受原有 60 秒预算约束；CLI 显式组合，仍走真实筛选/选择器。
-    func test36PrepareTimeReport() {
+    // XCTest 按名称排序：总览之后、test37 粒度之前准备；参数排列不能保证执行顺序。
+    // 准备与粒度断言分别受原有 60 秒预算约束，仍走真实筛选/选择器。
+    func test36ReportTimePreparation() {
         reportFixtureScope()
         selectReportControl("report-dimension", label: "维度", option: "时间趋势")
         selectReportControl("report-metric", label: "查看指标", option: "结余")
@@ -835,18 +836,45 @@ final class DictionaryTouchTests: XCTestCase {
         print("REPORT_TOUCH_TIME_PREPARED")
     }
 
+    private func reportPeriodLabel(_ grain: String, today: Date) -> String {
+        // 夹具为上海今天，筛选为本月；周桶首端须裁剪到月初，与页面实际日期标签对照。
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "Asia/Shanghai")!
+        let parts = calendar.dateComponents([.year, .month, .day, .weekday], from: today)
+        let short = "\(parts.month!)月\(parts.day!)日"
+        switch grain {
+        case "按日": return short
+        case "按周":
+            let weekStart = calendar.date(byAdding: .day, value: -((parts.weekday! + 5) % 7), to: today)!
+            let monthStart = calendar.date(from: DateComponents(year: parts.year, month: parts.month, day: 1))!
+            let start = calendar.dateComponents([.month, .day], from: max(weekStart, monthStart))
+            return "\(start.month!)月\(start.day!)日–\(short)"
+        case "按月": return "\(parts.year!)年\(parts.month!)月"
+        case "按季": return "\(parts.year!)年Q\((parts.month! - 1) / 3 + 1)"
+        case "按年": return "\(parts.year!)年"
+        default: XCTFail("未知粒度 \(grain)"); return ""
+        }
+    }
+
     private func verifyReportGrains(_ grains: [String]) {
         appears("结余趋势")
         expectValue(reportControl("report-dimension", label: "维度"), "时间趋势")
         expectValue(reportControl("report-metric", label: "查看指标"), "结余")
+        let today = Date()
         for grain in grains {
             selectReportControl("report-grain", label: "时间粒度", option: grain)
-            // 时间趋势分别呈现范围合计、所选时段当期值及累计值；不能只命中旧摘要的一个金额。
+            let expected = reportPeriodLabel(grain, today: today)
+            let period = reportControl("time-point", label: "查看时段")
+            let drill = app.buttons.matching(NSPredicate(format: "label == %@", "查看\(expected)的结余明细")).firstMatch
+            // 刷新/失败保留旧快照及相同金额：必须等对应时段发布且 fieldset 内控件重新可用。
             let amounts = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "¥988"))
-            let ready = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in amounts.count == 3 }, object: nil)
-            XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 3), .completed, "粒度 \(grain) 的范围/当期/累计结余应均为 988.00")
+            let ready = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+                period.value as? String == expected && period.isEnabled
+                    && drill.exists && drill.isEnabled && amounts.count == 3
+            }, object: nil)
+            XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 3), .completed, "粒度 \(grain) 必须发布 \(expected) 并恢复下钻，范围/当期/累计均为 988.00")
             appears("累计至该时段")
-            print("REPORT_TOUCH_GRAIN_VERIFIED \(grain) range=988.00 current=988.00 cumulative=988.00")
+            print("REPORT_TOUCH_GRAIN_VERIFIED \(grain) period=\(expected) ready=true range=988.00 current=988.00 cumulative=988.00")
         }
     }
 

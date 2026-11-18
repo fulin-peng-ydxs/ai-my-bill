@@ -8,6 +8,8 @@ import { useLatestRequest } from './useLatestRequest'
 export interface ReportSnapshot {
   filters: ReportFilters
   presentation: ReportPresentation
+  /** 本地总览/时间快照的实际范围；其他维度尚未接入该本地接口。 */
+  resolvedRange?: Pick<TimeReport, 'startDate' | 'endDate'>
   summary: ReportSummary
   time?: TimeReport
   expense?: ExpenseReport

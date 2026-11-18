@@ -596,7 +596,7 @@ test('T10 总览与时间场景隔离，CI 使用相同原生入口和只读回�
     assert.equal(single.fixture, 'report-' + [...preparation, index].join(','))
     assert.deepEqual(single.cases, [
       ...(index === 38 ? ['DictionaryUITests/DictionaryTouchTests/test00DebugKeyboardReady'] : []),
-      ...preparation.map(i => 'DictionaryUITests/DictionaryTouchTests/' + (i === 42 ? 'test00PrepareReportApp' : 'test36PrepareTimeReport')),
+      ...preparation.map(i => 'DictionaryUITests/DictionaryTouchTests/' + (i === 42 ? 'test00PrepareReportApp' : 'test36ReportTimePreparation')),
       `DictionaryUITests/DictionaryTouchTests/${name}`,
     ])
     assert.ok(shell.includes('-skip-testing:DictionaryUITests/DictionaryTouchTests/' + name))
@@ -609,7 +609,47 @@ test('T10 总览与时间场景隔离，CI 使用相同原生入口和只读回�
   assert.equal(grains.cases.length, 4)
   assert.ok(!grains.cases.some(name => name.endsWith('test00DebugKeyboardReady')))
   assert.ok(grains.cases[0].endsWith('test00PrepareReportApp'))
-  assert.ok(grains.cases[1].endsWith('test36PrepareTimeReport'))
+  assert.ok(grains.cases[1].endsWith('test36ReportTimePreparation'))
+})
+
+test('T10 组合验收按 XCTest 实际排序保持总览→时间准备→五粒度→编辑，拒绝旧准备名称', () => {
+  const assertOrder = cases => {
+    const ordered = [...cases].sort().map(name => name.split('/').at(-1))
+    const preparation = ordered.find(name => /PrepareTimeReport|ReportTimePreparation/.test(name))
+    const chain = ['test00PrepareReportApp', 'test36ReportOverview', preparation,
+      'test37ReportTimeGrains', 'test37ReportTimeGrainsQuarterYear']
+    if (ordered.includes('test38ReportDrillReturn')) chain.push('test38ReportDrillReturn', 'test39ReportComparison')
+    assert.ok(chain.every(name => ordered.includes(name)), '缺少组合前置')
+    assert.deepEqual(ordered.filter(name => chain.includes(name)), chain, 'XCTest 词典序破坏页面状态依赖')
+  }
+  const cycle = selection('--scenario', 'report-cycle', []).cases
+  assertOrder(cycle)
+  const prefix = selection('--scenario', 'report-overview-grains', [])
+  assert.equal(prefix.fixture, 'report-42,36,41,37,40')
+  assert.equal(prefix.cases.length, 5)
+  assertOrder(prefix.cases)
+  const shell = fs.readFileSync(new URL('../lib/ios-app-full.sh', import.meta.url), 'utf8')
+  const reportLine = shell.split('\n').find(line => line.includes('positive_test "${RUN_DIRECTORY}/touch-report.log"'))
+  const full = [...reportLine.matchAll(/-only-testing:([^ ]+)/g)].map(match => match[1])
+  assertOrder(full)
+  assert.deepEqual([...full].sort(), [...cycle].filter(name => !name.endsWith('test00DebugKeyboardReady')).sort())
+  const broken = cycle.map(name => name.replace('test36ReportTimePreparation', 'test36PrepareTimeReport'))
+  assert.throws(() => assertOrder(broken), /词典序/)
+})
+
+test('T10 原生粒度断言必须同时检查具体时段和结果可用，金额不能单独放行', () => {
+  const swift = fs.readFileSync(new URL('../../app/ios/App/UITests/DictionaryTouchTests.swift', import.meta.url), 'utf8')
+  const predicate = swift.slice(swift.indexOf('private func verifyReportGrains('), swift.indexOf('func test37ReportTimeGrains()'))
+  const assertFreshSnapshot = source => {
+    assert.match(source, /period\.value as\? String == expected/)
+    assert.match(source, /period\.isEnabled/)
+    assert.match(source, /drill\.exists && drill\.isEnabled/)
+    assert.match(source, /amounts\.count == 3/)
+  }
+  assertFreshSnapshot(predicate)
+  for (const guard of ['period.value as? String == expected', 'period.isEnabled', 'drill.exists && drill.isEnabled']) {
+    assert.throws(() => assertFreshSnapshot(predicate.replace(guard, 'true')), '拒绝只命中旧金额或禁用结果')
+  }
 })
 test('T10 夹具与其他阶段隔离，编辑用例必须且只能产生约定结果', t => {
   const { file, execute } = touchFixture(temporary(t))

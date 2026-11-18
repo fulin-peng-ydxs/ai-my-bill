@@ -9,7 +9,12 @@ import { fieldError } from '../dictionaries/repository'
 import { compileLedgerFilter, readbackProjection } from '../entries/querySql'
 import type { LedgerDatabase, SqlSession } from '../ledgerDatabase'
 
-export interface CoreReport { summary: ReportSummary; time?: TimeReport }
+export interface CoreReport {
+  /** 与金额共用本次查询时钟；总览下钻不能再次解析 TODAY 等相对范围。 */
+  resolvedRange: Pick<TimeReport, 'startDate' | 'endDate'>
+  summary: ReportSummary
+  time?: TimeReport
+}
 type Totals = { income: bigint; gross: bigint; adjustment: bigint; incomeCount: number; expenseCount: number; adjustmentCount: number }
 const empty = (): Totals => ({ income: 0n, gross: 0n, adjustment: 0n, incomeCount: 0, expenseCount: 0, adjustmentCount: 0 })
 const money = (value: bigint) => scaledIntegerToDecimal(value, 2)
@@ -80,7 +85,7 @@ export class ReportQueryService {
       return await this.database.read(async sql => {
         throwIfCancelled(signal)
         const totals = await this.totals(sql, ledger, now)
-        const result: CoreReport = { summary: summary(totals, scope) }
+        const result: CoreReport = { resolvedRange: { startDate: plan.start, endDate: plan.end }, summary: summary(totals, scope) }
         if (!grain) return result
         const grouped = await sql.query(`SELECT ${grainSql[grain]} AS bucket_start,entry_type,
           CAST(sum(CAST(amount_text AS INTEGER)) AS TEXT) AS amount,count(*) AS count

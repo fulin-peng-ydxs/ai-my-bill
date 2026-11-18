@@ -64,7 +64,7 @@ export const uiCases = [
   'test38ReportDrillReturn',
   'test39ReportComparison',
   'test37ReportTimeGrainsQuarterYear',
-  'test36PrepareTimeReport',
+  'test36ReportTimePreparation',
   'test00PrepareReportApp'
 ]
 
@@ -86,6 +86,7 @@ export const uiScenarios = {
   'query-cycle': [31, 32, 33],
   'query-input': [34, 35],
   'report-cycle': [42, 36, 41, 37, 40, 38, 39],
+  'report-overview-grains': [42, 36, 41, 37, 40],
   'report-grains': [42, 41, 37, 40]
 }
 

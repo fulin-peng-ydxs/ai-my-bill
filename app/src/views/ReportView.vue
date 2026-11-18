@@ -211,9 +211,12 @@ function applyFilters(): void {
 }
 
 function drill(point: ReportSummary['dataPoints'][number]): void {
-  if (!request.canDrill.value) return
+  const period = request.data.value?.resolvedRange
+  if (!request.canDrill.value || !period) return
   const ledgerFilters: LedgerFilters = {
     ...shownFilters.value, type: point.value, lifecycle: 'ACTIVE',
+    // 明细组成屏幕上的合计；跨午夜后的相对日期仅在返回报表刷新时重新解析。
+    range: 'CUSTOM', ...period,
   }
   delete (ledgerFilters as Partial<ReportFilters>).scope
   const context: LedgerDrillContext = {

@@ -11,6 +11,8 @@ import { LedgerDatabase } from '../ledgerDatabase'
 import { ReportQueryService } from './reportQueryService'
 import type { ReportFilters, ReportTimeGrain } from '../../api/reports'
 import { reportLegacyScenario, reportCalendarScenario, reportLifecycleScenario, reportUpgradeScenario, reportPrecisionScenario } from '../../../test-support/reportScenarios'
+import { entryFixture } from '../../../test-support/entryScenarios'
+import { EntryReadbackQuery } from '../entries/readbackQuery'
 let db: LedgerDatabase, serial = 0
 beforeEach(async () => { db = new LedgerDatabase(`report_${++serial}`); await db.open() })
 afterEach(() => db.close())
@@ -21,6 +23,29 @@ describe('T10 本地总览与时间', () => {
   it('生命周期变更和同一队列读快照', () => reportLifecycleScenario(db))
   it('桥接精度和真实 SQLite 溢出', () => reportPrecisionScenario(db))
   it('v6 升级后报表兼容旧快照', () => reportUpgradeScenario((suffix, chain) => new LedgerDatabase(`report_upgrade_${serial}_${suffix}`, chain)))
+})
+
+it.each([
+  ['TODAY', '2026-11-22T15:59:59Z', '2026-11-22'],
+  ['THIS_WEEK', '2026-11-22T15:59:59Z', '2026-11-16'],
+  ['THIS_MONTH', '2026-11-30T15:59:59Z', '2026-11-01'],
+  ['THIS_YEAR', '2026-12-31T15:59:59Z', '2026-01-01'],
+] as const)('总览 %s 在请求中跨午夜仍返回实际查询边界，明细组成原合计', async (range, before, startDate) => {
+  const after = new Date(Date.parse(before) + 2000)
+  const f = await entryFixture(db, after)
+  await f.service.createIncome({ ...f.income, amount: '1.00', occurredAt: before }, 'before-midnight')
+  await f.service.createIncome({ ...f.income, amount: '2.00', occurredAt: after.toISOString() }, 'after-midnight')
+  let now = new Date(before)
+  const clock = vi.fn(() => now)
+  const pending = new ReportQueryService(db, clock).snapshot({ query: '', scope: 'ALL', range })
+  now = after
+  const snapshot = await pending
+  const endDate = before.slice(0, 10)
+  expect(clock).toHaveBeenCalledTimes(1)
+  expect(snapshot).toMatchObject({ resolvedRange: { startDate, endDate }, summary: { totalIncome: '1.00' } })
+  const page = await new EntryReadbackQuery(db, () => after).list({ query: '', type: 'INCOME', lifecycle: 'ACTIVE', range: 'CUSTOM', startDate, endDate })
+  expect(page.items).toHaveLength(1)
+  expect(page.items[0].amount).toBe(snapshot.summary.totalIncome)
 })
 
 it('非法范围/专属条件、日期、粒度及取消明确拒绝', async () => {
