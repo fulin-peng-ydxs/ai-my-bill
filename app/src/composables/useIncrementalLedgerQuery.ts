@@ -11,6 +11,7 @@ export function useIncrementalLedgerQuery() {
   const activeFilters = ref<LedgerFilters>()
   const lastOperation = ref<'replace' | 'refresh' | 'more'>('replace')
   let loadedPages = 1
+  let generation = 0
   const loadingMore = ref(false)
   const request = useLatestRequest<LedgerPage>(() => {
     items.value = []
@@ -20,39 +21,45 @@ export function useIncrementalLedgerQuery() {
   })
 
   async function replace(filters: LedgerFilters): Promise<void> {
+    const current = ++generation
     lastOperation.value = 'replace'
     loadedPages = 1
     activeFilters.value = { ...filters }
     loadingMore.value = false
+    items.value = []
+    cursor.value = undefined
+    hasMore.value = false
     const result = await request.execute((signal) => listLedgerEntries(filters, undefined, signal), {
       intent: 'replace', isEmpty: (page) => page.items.length === 0,
     })
-    if (!result) return
+    if (!result || current !== generation) return
     items.value = result.items
     cursor.value = result.nextCursor
     hasMore.value = result.hasMore
   }
 
   async function more(): Promise<void> {
-    if (!activeFilters.value || !cursor.value || !hasMore.value || loadingMore.value) return
+    if (!activeFilters.value || !cursor.value || !hasMore.value || loadingMore.value || request.refreshing.value || request.status.value !== 'ready') return
+    const current = ++generation
     lastOperation.value = 'more'
     loadingMore.value = true
     const result = await request.execute(
       (signal) => listLedgerEntries(activeFilters.value!, cursor.value, signal),
       { intent: 'silent' },
     )
-    if (result) {
+    if (result && current === generation) {
       loadedPages += 1
       const known = new Set(items.value.map((item) => item.id))
       items.value = [...items.value, ...result.items.filter((item) => !known.has(item.id))]
       cursor.value = result.nextCursor
       hasMore.value = result.hasMore
     }
-    loadingMore.value = false
+    if (current === generation) loadingMore.value = false
   }
 
   async function refresh(): Promise<void> {
     if (!activeFilters.value) return
+    const current = ++generation
     lastOperation.value = 'refresh'
     const filters = { ...activeFilters.value }
     const pages = loadedPages
@@ -69,7 +76,7 @@ export function useIncrementalLedgerQuery() {
       }
       return { ...page, items: [...new Map(collected.map((item) => [item.id, item])).values()] }
     }, { intent: 'silent', isEmpty: (page) => page.items.length === 0 })
-    if (!result) return
+    if (!result || current !== generation) return
     loadedPages = refreshedPages
     items.value = result.items
     cursor.value = result.nextCursor
@@ -78,7 +85,8 @@ export function useIncrementalLedgerQuery() {
 
   return {
     items, hasMore, loadingMore, replace, more, refresh, lastOperation,
-    retry: () => lastOperation.value === 'refresh' ? refresh() : more(),
+    retry: () => lastOperation.value === 'refresh' ? refresh() : lastOperation.value === 'more' ? more()
+      : activeFilters.value ? replace(activeFilters.value) : Promise.resolve(),
     status: request.status,
     error: request.error,
     staleWarning: request.staleWarning,

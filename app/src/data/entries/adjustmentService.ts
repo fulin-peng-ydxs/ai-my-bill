@@ -7,6 +7,7 @@ import { fieldError, requireId } from '../dictionaries/repository'
 import { decimal, expectedVersion, occurredAt, operationId, text, validateWriteTime } from './writePolicy'
 import { readEntry } from './repository'
 import { assertDataset } from '../personal/datasetScope'
+import { adjustmentSearchText } from '../../domain/ledgerSearchV1'
 
 export const money = (value: unknown) => scaledIntegerToDecimal(fromSqliteInteger(value), 2)
 export const effectiveTotal = async (sql: SqlSession, source: string) => fromSqliteInteger((await sql.query(
@@ -35,8 +36,9 @@ export class AdjustmentService {
         })
       }
       const id = crypto.randomUUID()
-      await sql.run(`INSERT INTO expense_adjustment(id,original_expense_id,adjustment_type,amount_cents,business_time,business_date,note,created_at,updated_at)
-        VALUES(?,?,?,?,?,?,?,?,?)`, [id, source, input.adjustmentType, toSqliteInteger(amount), input.occurredAt, input.businessDate, input.note ?? null, now.toISOString(), now.toISOString()])
+      await sql.run(`INSERT INTO expense_adjustment(id,original_expense_id,adjustment_type,amount_cents,business_time,business_date,note,created_at,updated_at,search_text)
+        VALUES(?,?,?,?,?,?,?,?,?,?)`, [id, source, input.adjustmentType, toSqliteInteger(amount), input.occurredAt, input.businessDate, input.note ?? null, now.toISOString(), now.toISOString(),
+        adjustmentSearchText({ adjustment_type: input.adjustmentType, note: input.note })])
       return this.response(sql, id)
     })
   }

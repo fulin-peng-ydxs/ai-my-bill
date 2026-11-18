@@ -6,6 +6,7 @@ import { fieldError, requireDictionary } from '../dictionaries/repository'
 import { LocalError } from '../../domain/localError'
 import { decimalToScaledInteger, fromSqliteInteger, scaledIntegerToDecimal, toSqliteInteger } from '../../domain/money'
 import { normalizedDictionaryName } from '../../domain/text'
+import { entrySearchText, adjustmentSourceSearchText } from '../../domain/ledgerSearchV1'
 
 type Values = Record<string, string | number | null>
 export const entryProjection = `SELECT l.*, CAST(amount_cents AS TEXT) AS amount_text,
@@ -121,6 +122,7 @@ function baseValues(input: { occurredAt: string; businessDate: string; fundingCh
 
 /** 列名只来自上面的内部映射；调用方业务输入不参与 SQL 拼接。 */
 export async function storeEntry(sql: SqlSession, id: string, type: EntryType, values: Values, now: string, version?: number) {
+  values = { ...values, search_text: entrySearchText(values), adjustment_source_search_text: adjustmentSourceSearchText(values) }
   const columns = Object.keys(values)
   if (version === undefined) {
     await sql.run(`INSERT INTO ledger_entry(id,entry_type,created_at,updated_at,${columns.join(',')})

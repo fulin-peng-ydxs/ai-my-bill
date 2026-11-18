@@ -166,7 +166,7 @@ final class NativeSqliteTests: XCTestCase {
         _ = try await webView.evaluateJavaScript(String(contentsOf: script, encoding: .utf8) + ";void 0;")
         let result = try await webView.callAsyncJavaScript("return await MyBillNativeProbe.dictionaries()", arguments: [:], in: nil, contentWorld: .page)
         let evidence = try XCTUnwrap(result as? [String: Any])
-        XCTAssertEqual(evidence["schemaVersion"] as? Int, 6)
+        XCTAssertEqual(evidence["schemaVersion"] as? Int, 7)
         XCTAssertEqual((evidence["checks"] as? [String])?.count, 10)
         let prefix = try XCTUnwrap(evidence["databasePrefix"] as? String)
         try verifySnapshots(prefix: prefix, minimum: 5, cleanup: true)
@@ -179,7 +179,7 @@ final class NativeSqliteTests: XCTestCase {
         _ = try await webView.evaluateJavaScript(String(contentsOf: script, encoding: .utf8) + ";void 0;")
         let result = try await webView.callAsyncJavaScript("return await MyBillNativeProbe.entries()", arguments: [:], in: nil, contentWorld: .page)
         let evidence = try XCTUnwrap(result as? [String: Any])
-        XCTAssertEqual(evidence["schemaVersion"] as? Int, 6)
+        XCTAssertEqual(evidence["schemaVersion"] as? Int, 7)
         XCTAssertEqual((evidence["checks"] as? [String])?.count, 7)
         try verifySnapshots(prefix: XCTUnwrap(evidence["databasePrefix"] as? String), minimum: 3, cleanup: true)
         print("OFFLINE_ENTRY_EVIDENCE " + String(decoding: try JSONSerialization.data(withJSONObject: evidence, options: [.sortedKeys]), as: UTF8.self))
@@ -191,7 +191,7 @@ final class NativeSqliteTests: XCTestCase {
         _ = try await webView.evaluateJavaScript(String(contentsOf: script, encoding: .utf8) + ";void 0;")
         let result = try await webView.callAsyncJavaScript("return await MyBillNativeProbe.personal()", arguments: [:], in: nil, contentWorld: .page)
         let evidence = try XCTUnwrap(result as? [String: Any])
-        XCTAssertEqual(evidence["schemaVersion"] as? Int, 6)
+        XCTAssertEqual(evidence["schemaVersion"] as? Int, 7)
         XCTAssertEqual((evidence["checks"] as? [String])?.count, 5)
         try verifySnapshots(prefix: XCTUnwrap(evidence["databasePrefix"] as? String), minimum: 1, cleanup: true)
         print("OFFLINE_PERSONAL_EVIDENCE " + String(decoding: try JSONSerialization.data(withJSONObject: evidence, options: [.sortedKeys]), as: UTF8.self))
@@ -203,7 +203,7 @@ final class NativeSqliteTests: XCTestCase {
         _ = try await webView.evaluateJavaScript(String(contentsOf: script, encoding: .utf8) + ";void 0;")
         let result = try await webView.callAsyncJavaScript("return await MyBillNativeProbe.adjustments()", arguments: [:], in: nil, contentWorld: .page)
         let evidence = try XCTUnwrap(result as? [String: Any])
-        XCTAssertEqual(evidence["schemaVersion"] as? Int, 6)
+        XCTAssertEqual(evidence["schemaVersion"] as? Int, 7)
         XCTAssertEqual((evidence["checks"] as? [String])?.count, 5)
         try verifySnapshots(prefix: XCTUnwrap(evidence["databasePrefix"] as? String), minimum: 1, cleanup: true)
         print("OFFLINE_ADJUSTMENT_EVIDENCE " + String(decoding: try JSONSerialization.data(withJSONObject: evidence, options: [.sortedKeys]), as: UTF8.self))
@@ -215,11 +215,23 @@ final class NativeSqliteTests: XCTestCase {
         _ = try await webView.evaluateJavaScript(String(contentsOf: script, encoding: .utf8) + ";void 0;")
         let result = try await webView.callAsyncJavaScript("return await MyBillNativeProbe.cleanupFinalization()", arguments: [:], in: nil, contentWorld: .page)
         let evidence = try XCTUnwrap(result as? [String: Any])
-        XCTAssertEqual(evidence["schemaVersion"] as? Int, 6)
+        XCTAssertEqual(evidence["schemaVersion"] as? Int, 7)
         XCTAssertEqual((evidence["checks"] as? [String])?.count, 1)
         // 此场景只创建当前结构的随机库，不产生升级快照；数据库由共享探针回收。
         XCTAssertNotNil(evidence["databasePrefix"] as? String)
         print("OFFLINE_CLEANUP_FINALIZATION_EVIDENCE " + String(decoding: try JSONSerialization.data(withJSONObject: evidence, options: [.sortedKeys]), as: UTF8.self))
+    }
+
+    func testOfflineLedgerQuery() async throws {
+        let webView = try await readyWebView()
+        let script = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "sqlite-probe", withExtension: "js"))
+        _ = try await webView.evaluateJavaScript(String(contentsOf: script, encoding: .utf8) + ";void 0;")
+        let result = try await webView.callAsyncJavaScript("return await MyBillNativeProbe.ledgerQueries()", arguments: [:], in: nil, contentWorld: .page)
+        let evidence = try XCTUnwrap(result as? [String: Any])
+        XCTAssertEqual(evidence["schemaVersion"] as? Int, 7)
+        XCTAssertEqual((evidence["checks"] as? [String])?.count, 3)
+        try verifySnapshots(prefix: XCTUnwrap(evidence["databasePrefix"] as? String), minimum: 1, cleanup: true)
+        print("OFFLINE_LEDGER_QUERY_EVIDENCE " + String(decoding: try JSONSerialization.data(withJSONObject: evidence, options: [.sortedKeys]), as: UTF8.self))
     }
 
     func testNativeLifecycleDraftWindow() async throws {

@@ -14,6 +14,7 @@ export const nativeCases = [
   'testOfflineEntryWrites',
   'testOfflinePersonalState',
   'testOfflineAdjustmentLifecycle',
+  'testOfflineLedgerQuery',
   'testOfflineCleanupFinalization',
   'testOfflineCleanupForegroundState',
   'testNativeLifecycleDraftWindow',
@@ -51,7 +52,10 @@ export const uiCases = [
   'test27AdjustmentLimits',
   'test28SourceTrashRestore',
   'test29LinkedPurgeCancelConfirm',
-  'test30AutomaticCleanup'
+  'test30AutomaticCleanup',
+  'test31LedgerPagingSearch',
+  'test32LedgerFilterReset',
+  'test33LedgerEditReturn'
 ]
 
 export const recoveryPhases = ['snapshot-ready', 'migration-recorded', 'upgrade-committed']
@@ -68,7 +72,8 @@ export const uiScenarios = {
   'personal-cycle': [17, 18, 19, 20, 21, 22, 23, 24, 25],
   'adjustment-cycle': [26, 27, 28],
   'lifecycle-cycle': [26, 27, 28, 29, 30],
-  'cleanup-relaunch': [30]
+  'cleanup-relaunch': [30],
+  'query-cycle': [31, 32, 33]
 }
 
 /** 前置用例显式列出；只补必要环境与导航，不能暗中扩展为完整触摸套件。 */
@@ -119,7 +124,8 @@ function uiSelection(indices) {
   return {
     scheme: 'DictionaryTouch',
     configuration: 'Release',
-    fixture: indices.some(i => i >= 26) ? 'lifecycle-' + indices.join(',')
+    fixture: indices.some(i => i >= 31) ? 'query-' + indices.join(',')
+      : indices.some(i => i >= 26) ? 'lifecycle-' + indices.join(',')
       : indices.some(i => i >= 17) ? 'personal-' + indices.join(',')
       : indices.includes(15) && indices.includes(16) ? 'entry-cycle' : String(indices.at(-1)),
     cases: [

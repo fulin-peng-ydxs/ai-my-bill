@@ -24,3 +24,23 @@ export function readLedgerScroll(routeKey: string): number | undefined {
 export function clearLedgerScrollMemory(): void {
   positions.clear()
 }
+
+/** 查询返回只恢复一次；后续查询、离页或用户的新滚动都撤销旧恢复意图。 */
+export function createLedgerScrollRestorer(context: { key: () => string; active: () => boolean; read: () => number; write: (top: number) => void }) {
+  let generation = 0
+  return {
+    cancel: () => { generation++ },
+    prepare: (target: number) => {
+      const current = ++generation
+      const key = context.key()
+      const before = context.read()
+      let used = false
+      return () => {
+        if (used || current !== generation || !context.active() || context.key() !== key || context.read() !== before) return false
+        used = true
+        context.write(target)
+        return true
+      }
+    },
+  }
+}

@@ -243,7 +243,7 @@ export async function entrySearchUpgradeScenario(manager: (suffix: string, chain
     await rejects(() => tampered.open(), 'DATABASE_INCOMPATIBLE')
     await current.open()
     const page = await new EntryReadbackQuery(current, () => f.now).list({ query: 'ＡＰＰＬＥ', type: 'EXPENSE', lifecycle: 'ACTIVE', range: 'TODAY' })
-    check(page.items.length === 50 && page.hasMore, '升级后名称检索或分页不可用')
+    check(page.items.length === 20 && page.hasMore, '升级后名称检索或分页不可用')
     return 'v3-v4-batched-search-backfill-rollback-and-digest-protection'
   } finally {
     for (const database of [old, current, failed, tampered]) {

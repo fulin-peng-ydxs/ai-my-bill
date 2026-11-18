@@ -62,7 +62,7 @@ describe('T6 真实 SQLite 写入闭环', () => {
       await upgraded.close()
     }
   })
-  it('原明细回读有界分页、日期/类型/渠道，未接入维度明确拒绝', async () => {
+  it('原明细回读 20 笔分页，拒绝另一类型专属条件', async () => {
     const f = await entryFixture(database)
     for (let i = 0; i < 52; i++) {
       await f.service.createIncome({ ...f.income, incomeName: `测试${i}` }, `page-${i}`)
@@ -71,10 +71,12 @@ describe('T6 真实 SQLite 写入闭环', () => {
     const filter = { query: '', type: 'INCOME' as const, lifecycle: 'ACTIVE' as const, range: 'TODAY' as const }
     const first = await query.list(filter)
     const second = await query.list(filter, first.nextCursor)
-    expect(first.items).toHaveLength(50)
-    expect(second.items).toHaveLength(2)
-    expect(new Set([...first.items, ...second.items].map(item => item.id)).size).toBe(52)
-    await expect(query.list({ ...filter, primaryCategoryId: f.category.id })).rejects.toMatchObject({ code: 'FEATURE_UNAVAILABLE' })
+    expect(first.items).toHaveLength(20)
+    const third = await query.list(filter, second.nextCursor)
+    expect(second.items).toHaveLength(20)
+    expect(third.items).toHaveLength(12)
+    expect(new Set([...first.items, ...second.items, ...third.items].map(item => item.id)).size).toBe(52)
+    await expect(query.list({ ...filter, primaryCategoryId: f.category.id })).rejects.toMatchObject({ code: 'VALIDATION_FAILED' })
     await expect(query.list({ ...filter, query: '别的' }, first.nextCursor)).rejects.toMatchObject({ code: 'VALIDATION_FAILED' })
   })
   it('原 API 直连本地，只有提交后广播，失败安全回传且不联网', async () => {

@@ -205,7 +205,7 @@ function touchFixture(root) {
   const file = path.join(directory, 'ledgerSQLite.db')
   const database = new DatabaseSync(file)
   try {
-    for (const name of ['0001_initial.sql', '0002_dictionary_governance.sql', '0003_ledger_writes.sql', '0004_snapshot_search.sql', '0005_personal_state.sql', '0006_adjustment_lifecycle.sql']) {
+    for (const name of ['0001_initial.sql', '0002_dictionary_governance.sql', '0003_ledger_writes.sql', '0004_snapshot_search.sql', '0005_personal_state.sql', '0006_adjustment_lifecycle.sql', '0007_ledger_query.sql']) {
       database.exec(
         fs.readFileSync(new URL('../../app/src/data/migrations/' + name, import.meta.url), 'utf8')
       )
@@ -503,4 +503,39 @@ test('完整流程执行已校验快照，源脚本改写不影响运行且拒�
   assert.match(output, /ORIGINAL_SNAPSHOT/)
   assert.match(errors, /完整流程脚本在执行期间变化/)
   assert.equal(fs.existsSync(path.join(root, '.local/ios/tmp/ai-agent/ios-command.lock')), false)
+})
+
+
+test('T9 查询场景隔离，单用例不隐式携带其他页面验收', () => {
+  assert.deepEqual(selection('--case', 'NativeTests/NativeSqliteTests/testOfflineLedgerQuery', []).cases,
+    ['NativeTests/NativeSqliteTests/testOfflineLedgerQuery'])
+  const selected = selection('--scenario', 'query-cycle', [])
+  assert.equal(selected.fixture, 'query-31,32,33')
+  assert.equal(selected.cases.length, 4)
+  for (const [index, name] of [[31, 'test31LedgerPagingSearch'], [32, 'test32LedgerFilterReset'], [33, 'test33LedgerEditReturn']]) {
+    const single = selection('--case', `DictionaryUITests/DictionaryTouchTests/${name}`, [])
+    assert.equal(single.fixture, 'query-' + index)
+    assert.equal(single.cases.length, 2)
+  }
+  const shell = fs.readFileSync(new URL('../lib/ios-app-full.sh', import.meta.url), 'utf8')
+  for (const name of ['test31LedgerPagingSearch', 'test32LedgerFilterReset', 'test33LedgerEditReturn']) {
+    assert.ok(shell.includes('-skip-testing:DictionaryUITests/DictionaryTouchTests/' + name))
+    assert.ok(shell.includes('-only-testing:DictionaryUITests/DictionaryTouchTests/' + name))
+  }
+  assert.ok(shell.includes('prepare-query') && shell.includes('check-query'))
+})
+test('T9 查询夹具只准备输入，回读拒绝缺失编辑和额外写入', (t) => {
+  const { file, execute } = touchFixture(temporary(t))
+  const prepared = execute('debug-query-31,32,33')
+  assert.equal(prepared.status, 0, prepared.stderr)
+  assert.equal(execute('debug-check-query-31,32').status, 0)
+  assert.notEqual(execute('debug-check-query-33').status, 0)
+  const db = new DatabaseSync(file)
+  try {
+    db.prepare("UPDATE ledger_entry SET note='T9 edited',row_version=2,search_text='t9 edited' WHERE id='t9-query-00'").run()
+    assert.equal(execute('debug-check-query-31,32,33').status, 0)
+    db.prepare("UPDATE ledger_entry SET amount_cents=1 WHERE id='t9-query-01'").run()
+    assert.notEqual(execute('debug-check-query-33').status, 0)
+    assert.notEqual(execute('debug-query-31').status, 0, '已有账本不能覆盖重建')
+  } finally { db.close() }
 })

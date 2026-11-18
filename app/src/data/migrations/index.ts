@@ -15,6 +15,11 @@ import personalState from './0005_personal_state.sql?raw'
 import personalSchema from './0005_schema.json'
 import adjustmentLifecycle from './0006_adjustment_lifecycle.sql?raw'
 import adjustmentSchema from './0006_schema.json'
+import ledgerQuery from './0007_ledger_query.sql?raw'
+import querySchema from './0007_schema.json'
+import queryDataSource from './0007_ledger_query.ts?raw'
+import querySearchSource from '../../domain/ledgerSearchV1.ts?raw'
+import { backfillLedgerSearch } from './0007_ledger_query'
 
 export type Migration = Readonly<{
   version: number
@@ -31,6 +36,8 @@ export const migrations: readonly Migration[] = [
     data: { source: JSON.stringify([searchDataSource, nameV1Source]), apply: backfillSnapshotSearch } },
   { version: 5, sql: personalState, schema: personalSchema },
   { version: 6, sql: adjustmentLifecycle, schema: adjustmentSchema },
+  { version: 7, sql: ledgerQuery, schema: querySchema,
+    data: { source: JSON.stringify([queryDataSource, querySearchSource, nameV1Source]), apply: backfillLedgerSearch } },
 ]
 export const publishedSchemaVersions: readonly number[] = []
 

@@ -1,4 +1,5 @@
 import type { LocationQuery, LocationQueryRaw } from 'vue-router'
+import { unicodeCodePointLength } from './text'
 
 import type { ExpenseTimeBand, LedgerDateRange, LedgerEntryTypeFilter, LedgerFilters, LedgerLifecycleFilter } from '../api/ledgerEntries'
 
@@ -14,6 +15,21 @@ const ADVANCED_UUID_KEYS = [
   'locationLabelId', 'incomeCategoryId', 'payerId', 'entryId',
 ] as const
 const TIME_BANDS: readonly ExpenseTimeBand[] = ['NIGHT', 'MORNING', 'AFTERNOON', 'EVENING']
+
+export const expenseFilterKeys = ['primaryCategoryId', 'secondaryCategoryId', 'productId', 'unitId', 'purchaseChannelId',
+  'locationLabelId', 'missingSecondaryCategory', 'missingPurchaseChannel', 'missingLocation', 'expenseWeekday', 'expenseTimeBand'] as const
+export const incomeFilterKeys = ['incomeCategoryId', 'payerId', 'incomeName'] as const
+/** 类型切换只清除不适用的专属条件；共同日期、搜索、资金渠道和对象 ID 保持。 */
+export function clearIncompatibleLedgerFilters(filters: LedgerFilters): LedgerFilters {
+  const result = { ...filters }
+  if (!['EXPENSE', 'ADJUSTMENT', 'EXPENSE_FLOW'].includes(filters.type)) {
+    for (const key of expenseFilterKeys) delete result[key]
+  }
+  if (filters.type !== 'INCOME') {
+    for (const key of incomeFilterKeys) delete result[key]
+  }
+  return result
+}
 
 export interface LedgerDrillContext {
   scope: 'ALL' | 'EXPENSE' | 'INCOME'
@@ -55,7 +71,7 @@ export function parseLedgerRoute(query: LocationQuery, defaultRange: LedgerDateR
   const rawFunding = one(query.fundingChannelId)
   const rawSearch = one(query.q)
   const filters: LedgerFilters = {
-    query: rawSearch.length <= 200 ? rawSearch : '',
+    query: unicodeCodePointLength(rawSearch) <= 200 ? rawSearch : '',
     type,
     lifecycle,
     range,
@@ -67,7 +83,7 @@ export function parseLedgerRoute(query: LocationQuery, defaultRange: LedgerDateR
     if (UUID.test(value)) filters[key] = value
   }
   const incomeName = one(query.incomeName)
-  if (incomeName && incomeName.length <= 100) filters.incomeName = incomeName
+  if (incomeName && unicodeCodePointLength(incomeName) <= 200) filters.incomeName = incomeName
   for (const key of ['missingSecondaryCategory', 'missingPurchaseChannel', 'missingLocation'] as const) {
     if (one(query[key]) === 'true') filters[key] = true
   }
@@ -76,13 +92,14 @@ export function parseLedgerRoute(query: LocationQuery, defaultRange: LedgerDateR
   const timeBand = one(query.expenseTimeBand) as ExpenseTimeBand
   if (TIME_BANDS.includes(timeBand)) filters.expenseTimeBand = timeBand
 
-  if (one(query.from) !== 'reports') return { filters }
+  const compatible = clearIncompatibleLedgerFilters(filters)
+  if (one(query.from) !== 'reports') return { filters: compatible }
   const scope = one(query.scope)
   const dimension = one(query.dimension)
   const value = one(query.value)
   const label = one(query.label)
-  if (!DRILL_SCOPES.includes(scope as LedgerDrillContext['scope']) || !CONTEXT_TOKEN.test(dimension) || !value || value.length > 100) {
-    return { filters }
+  if (!DRILL_SCOPES.includes(scope as LedgerDrillContext['scope']) || !CONTEXT_TOKEN.test(dimension) || !value || unicodeCodePointLength(value) > 200) {
+    return { filters: compatible }
   }
   const reportScroll = Number.parseInt(one(query.reportScroll), 10)
   const reportQuery: LocationQueryRaw = {}
@@ -91,11 +108,11 @@ export function parseLedgerRoute(query: LocationQuery, defaultRange: LedgerDateR
     'reportProductId', 'reportPurchaseChannelId', 'reportLocationLabelId', 'reportIncomeCategoryId',
     'reportPayerId', 'reportIncomeName', 'reportGrain', 'reportMetric']) {
     const candidate = one(query[key])
-    if (candidate && candidate.length <= 200) reportQuery[key.replace(/^report/, '').replace(/^./, (char) => char.toLowerCase())] = candidate
+    if (candidate && unicodeCodePointLength(candidate) <= 200) reportQuery[key.replace(/^report/, '').replace(/^./, (char) => char.toLowerCase())] = candidate
   }
-  if (Number.isSafeInteger(reportScroll) && reportScroll >= 0) reportQuery.scroll = String(reportScroll)
-  return { filters, drill: { scope: scope as LedgerDrillContext['scope'], dimension, value,
-    ...(label && label.length <= 220 ? { label } : {}), reportQuery,
+  reportQuery.scroll = String(Number.isSafeInteger(reportScroll) && reportScroll >= 0 ? reportScroll : 0)
+  return { filters: compatible, drill: { scope: scope as LedgerDrillContext['scope'], dimension, value,
+    ...(label && unicodeCodePointLength(label) <= 220 ? { label } : {}), reportQuery,
     reportScroll: Number.isSafeInteger(reportScroll) && reportScroll >= 0 ? reportScroll : 0 } }
 }
 

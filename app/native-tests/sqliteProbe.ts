@@ -116,3 +116,5 @@ export { adjustments } from './adjustmentProbe'
 export { cleanupFinalization } from './adjustmentProbe'
 export { cleanupForegroundState } from './adjustmentProbe'
 export { backgroundCompletion } from './adjustmentProbe'
+
+export { ledgerQueries } from './ledgerQueryProbe'

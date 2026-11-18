@@ -33,6 +33,10 @@ if mode == 'wait-initialized':
     raise RuntimeError('本轮模拟器的正式账本未在准备预算内初始化')
 assert database.is_file()
 # debug 数据仅由已校验会话中的全新 App 初始化；复用同一夹具，不开放任意 SQL 或路径。
+query_match = re.fullmatch(r'debug-(check-)?query-((?:3[1-3])(?:,3[1-3])*)', mode)
+query_cases = [int(case) for case in query_match[2].split(',')] if query_match else []
+if query_match:
+    mode = 'debug-check' if query_match[1] else 'prepare'
 lifecycle_match = re.fullmatch(r'debug-(check-)?lifecycle-((?:2[6-9]|30)(?:,(?:2[6-9]|30))*)', mode)
 lifecycle_cases = [int(case) for case in lifecycle_match[2].split(',')] if lifecycle_match else []
 if lifecycle_match:
@@ -47,7 +51,7 @@ debug_case = 16 if debug_entry_cycle else int(debug_match[2]) if debug_match els
 debug_check = bool(debug_match and debug_match[1])
 if debug_match:
     mode = 'debug-check' if debug_check else 'prepare'
-connection = sqlite3.connect(f'file:{database}?mode={"rw" if mode in ("prepare", "prepare-paging", "prepare-entry", "prepare-personal", "prepare-lifecycle") else "ro"}', uri=True)
+connection = sqlite3.connect(f'file:{database}?mode={"rw" if mode in ("prepare", "prepare-paging", "prepare-entry", "prepare-personal", "prepare-lifecycle", "prepare-query") else "ro"}', uri=True)
 def add_paging_items(connection, ids):
     """完整和局部触摸共用相同末页数据，始终拒绝覆盖既有同名样本。"""
     assert connection.execute("SELECT count(*) FROM dictionary_item WHERE name LIKE 'PageProduct%' OR name LIKE 'PageUnit%'").fetchone()[0] == 0
@@ -97,6 +101,44 @@ def add_personal_items(connection, prefix='t7', label='日常'):
         income_name,normalized_income_name,payer_id,payer_name_snapshot,income_category_id,income_category_name_snapshot,note,updated_at)
         VALUES(?,'INCOME',100000,?,?,?,?,?,?,?,?,'61000000-0000-0000-0000-000000000001','工资','来源收入备注',?)""",
         (prefix+'-income',prefix+'-funding',label+'现金',stamp,now.date().isoformat(),label+'工资',label+'工资',prefix+'-payer',label+'公司',stamp))
+
+
+def add_query_items(connection):
+    """只准备查询样本；编辑备注、筛选和翻页结果均由真实页面产生。"""
+    assert connection.execute("SELECT count(*) FROM ledger_entry WHERE id LIKE 't9-%'").fetchone()[0] == 0
+    ids = {key: str(uuid.uuid4()) for key in ['product','category','unit','funding','payer']}
+    for key, kind, name in [('product','PRODUCT','明细苹果'),('category','EXPENSE_CATEGORY','明细水果'),
+            ('unit','UNIT','份'),('funding','FUNDING_CHANNEL','明细现金'),('payer','PAYER','明细公司')]:
+        connection.execute("INSERT INTO dictionary_item(id,kind,name,normalized_name,status) VALUES(?,?,?,?,'ACTIVE')", (ids[key],kind,name,name))
+    now = datetime.now(ZoneInfo('Asia/Shanghai'))
+    stamp = now.astimezone(ZoneInfo('UTC')).isoformat(timespec='milliseconds').replace('+00:00','Z')
+    connection.execute("""INSERT INTO ledger_entry(id,entry_type,amount_cents,funding_channel_id,funding_channel_name_snapshot,business_time,business_date,
+        product_id,product_name_snapshot,normalized_product_name_snapshot,primary_category_id,primary_category_name_snapshot,unit_id,unit_name_snapshot,
+        unit_price_scaled,quantity_scaled,calculated_amount_cents,created_at,updated_at,search_text,adjustment_source_search_text)
+        VALUES('t9-expense','EXPENSE',1500,?,'明细现金',?,?,?,?,?,?,?,?,'份',150000,1000,1500,?,?,'明细苹果 明细水果 明细现金','明细苹果 明细水果 明细现金')""",
+        (ids['funding'],stamp,now.date().isoformat(),ids['product'],'明细苹果','明细苹果',ids['category'],'明细水果',ids['unit'],stamp,stamp))
+    for index in range(23):
+        key = 't9-income' if index == 22 else f't9-query-{index:02}'
+        name = '明细工资' if index == 22 else f'查询工资{index:02}' + (' 超长名称用于检查原明细行自然换行与金额可读性' if index == 20 else '')
+        when = datetime.fromtimestamp(now.timestamp()-(86400 if index == 21 else 0),ZoneInfo('Asia/Shanghai'))
+        occurred = when.astimezone(ZoneInfo('UTC')).isoformat(timespec='milliseconds').replace('+00:00','Z')
+        connection.execute("""INSERT INTO ledger_entry(id,entry_type,amount_cents,funding_channel_id,funding_channel_name_snapshot,business_time,business_date,
+            income_name,normalized_income_name,payer_id,payer_name_snapshot,income_category_id,income_category_name_snapshot,created_at,updated_at,search_text)
+            VALUES(?,'INCOME',100000,?,'明细现金',?,?,?,?,?,'明细公司','61000000-0000-0000-0000-000000000001','工资',?,?,?)""",
+            (key,ids['funding'],occurred,when.date().isoformat(),name,name,ids['payer'],stamp,stamp,name+' 明细公司 工资 明细现金'))
+
+def check_query(connection, cases):
+    rows = connection.execute("SELECT id,amount_cents,note,row_version,search_text FROM ledger_entry WHERE id LIKE 't9-%'").fetchall()
+    assert len(rows) == 24
+    for row in rows:
+        edited = 33 in cases and row['id'] == 't9-query-00'
+        assert row['amount_cents'] == (1500 if row['id'] == 't9-expense' else 100000)
+        assert row['row_version'] == (2 if edited else 1)
+        assert row['note'] == ('T9 edited' if edited else None)
+        if edited: assert 't9 edited' in row['search_text']
+    assert connection.execute('PRAGMA quick_check').fetchone()[0] == 'ok'
+    assert connection.execute('PRAGMA foreign_key_check').fetchall() == []
+    print('LEDGER_QUERY_TOUCH_SQLITE_VERIFIED cases=' + ','.join(map(str,cases)))
 
 
 def add_lifecycle_items(connection):
@@ -171,7 +213,14 @@ connection.row_factory = sqlite3.Row
 connection.execute('PRAGMA foreign_keys=ON')
 receipt_path = Path(receipt_file)
 try:
-    if mode == 'debug-check' and lifecycle_cases:
+    if mode == 'debug-check' and query_cases:
+        check_query(connection, query_cases)
+    elif mode == 'prepare-query':
+        with connection: add_query_items(connection)
+        print('LEDGER_QUERY_TOUCH_FIXTURE_PREPARED')
+    elif mode == 'check-query':
+        check_query(connection, [31,32,33])
+    elif mode == 'debug-check' and lifecycle_cases:
         check_lifecycle(connection,lifecycle_cases)
     elif mode == 'prepare-lifecycle':
         with connection: add_lifecycle_items(connection)
@@ -270,6 +319,8 @@ try:
                 VALUES(?,'EXPENSE','触摸合并源','触摸合并源',?,'触摸合并源',?,'触摸分类',?,'触摸单位',123456,1250,1543,?,'触摸资金',
                 '2026-11-15T01:00:00.000Z','2026-11-15T01:00:00.000Z','2026-11-15T01:00:00.000Z')""",
                                (ids['template'], ids['source'], ids['category'], ids['unit'], ids['funding']))
+        if query_cases:
+            with connection: add_query_items(connection)
         if lifecycle_cases:
             with connection: add_lifecycle_items(connection)
         if personal_cases:

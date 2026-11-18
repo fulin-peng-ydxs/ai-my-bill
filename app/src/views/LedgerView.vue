@@ -39,13 +39,13 @@ import IncomeEntryForm from '../components/IncomeEntryForm.vue'
 import LedgerContextActions from '../components/LedgerContextActions.vue'
 import SegmentedControl from '../components/SegmentedControl.vue'
 import { useIncrementalLedgerQuery } from '../composables/useIncrementalLedgerQuery'
-import { ledgerScrollKey, readLedgerScroll, rememberLedgerScroll } from '../composables/ledgerNavigationMemory'
+import { createLedgerScrollRestorer, ledgerScrollKey, readLedgerScroll, rememberLedgerScroll } from '../composables/ledgerNavigationMemory'
 import { useLatestRequest } from '../composables/useLatestRequest'
 import { requestDiscardChanges } from '../composables/unsavedChanges'
 import { createIdempotencyAttemptTracker } from '../domain/idempotency'
 import { formatShanghaiDateTime } from '../domain/businessTime'
 import {
-  clearedLedgerFilters, ledgerLifecycleOptions, ledgerRangeOptions, ledgerRouteQuery, ledgerTypeOptions, optionLabel, parseLedgerRoute,
+  clearIncompatibleLedgerFilters, clearedLedgerFilters, ledgerLifecycleOptions, ledgerRangeOptions, ledgerRouteQuery, ledgerTypeOptions, optionLabel, parseLedgerRoute,
   type LedgerDrillContext,
 } from '../domain/ledgerQuery'
 import { usePreferencesStore } from '../stores/preferences'
@@ -113,6 +113,8 @@ function showFilter(key: NonNullable<typeof focusedFilter.value>): boolean {
   return filterOpen.value && (!focusedFilter.value || focusedFilter.value === key)
 }
 const currentScrollKey = computed(() => ledgerScrollKey(bootstrap.datasetId, route.fullPath))
+const scrollRestorer = createLedgerScrollRestorer({ key: () => currentScrollKey.value, active: () => pageActive.value,
+  read: pageScrollTop, write: scrollPageTo })
 const exportRequest = computed(() => ({ scope: 'CURRENT_FILTERS' as const, ...filters.value }))
 
 function showExportNotice(message: string, kind: 'success' | 'error'): void {
@@ -127,13 +129,14 @@ watch([() => route.fullPath, () => preferences.status], async () => {
   filters.value = { ...parsed.value.filters }
   searchText.value = filters.value.query
   draft.value = { ...filters.value }
+  const restore = scrollRestorer.prepare(readLedgerScroll(currentScrollKey.value) ?? 0)
   await list.replace(filters.value)
-  const saved = readLedgerScroll(currentScrollKey.value)
-  await nextTick(() => { if (pageActive.value) scrollPageTo(saved ?? 0) })
+  await nextTick()
+  if (list.status.value === 'ready' || list.status.value === 'empty') restore()
 }, { immediate: true })
 
 function navigate(next: LedgerFilters): void {
-  void router.replace({ query: ledgerRouteQuery(next, drill.value) })
+  void router.replace({ query: ledgerRouteQuery(clearIncompatibleLedgerFilters(next), drill.value) })
 }
 
 function updateSearch(value: string): void {
@@ -269,7 +272,7 @@ async function editSaved(value: ExpenseResponse | IncomeResponse): Promise<void>
   toastKind.value = 'success'
   toastMessage.value = `${'productName' in value ? '支出' : '收入'}修改已保存。`
   toastOpen.value = true
-  await list.replace(filters.value)
+  await list.refresh()
 }
 
 async function contextAction(key: string): Promise<void> {
@@ -329,7 +332,7 @@ async function runLifecycle(item: Pick<LedgerItem, 'id' | 'entryType' | 'version
       toastMessage.value = '账目已恢复，相关调整与统计已更新。'
     }
     toastKind.value = 'success'; toastOpen.value = true
-    await list.replace(filters.value)
+    await list.refresh()
   } catch (cause) {
     toastMessage.value = cause instanceof Error ? cause.message : '账目状态更新失败，请重试。'
     toastKind.value = 'error'; toastOpen.value = true
@@ -353,7 +356,7 @@ async function confirmPurge(): Promise<void> {
     closeRecordOverlays(item.id)
     pendingUndo.value = undefined
     toastKind.value = 'success'; toastMessage.value = '账目已永久删除，无法恢复。'; toastOpen.value = true
-    await list.replace(filters.value)
+    await list.refresh()
   } catch (cause) {
     toastKind.value = 'error'; toastMessage.value = cause instanceof Error ? cause.message : '永久删除失败，请重试。'; toastOpen.value = true
   } finally { lifecycleBusyId.value = '' }
@@ -380,9 +383,12 @@ function refreshOverlayItems(): void {
   }
 }
 
-onBeforeRouteLeave(() => { rememberLedgerScroll(currentScrollKey.value, pageScrollTop()) })
+onBeforeRouteLeave(() => {
+  scrollRestorer.cancel()
+  rememberLedgerScroll(currentScrollKey.value, pageScrollTop())
+})
 function ledgerChanged(): void {
-  if (pageActive.value && !editOpen.value) {
+  if (pageActive.value && !editOpen.value && !adjustmentOpen.value && !revoking.value && !lifecycleBusyId.value) {
     void list.refresh()
   }
 }

@@ -652,4 +652,88 @@ final class DictionaryTouchTests: XCTestCase {
         print("LIFECYCLE_TOUCH_AUTOMATIC_CLEANUP")
     }
 
+    private func scrollLedgerEnd() {
+        for _ in 0..<7 {
+            let more = app.buttons.matching(NSPredicate(format: "label == %@", "加载更多")).firstMatch
+            let end = matching("已显示全部结果").firstMatch
+            if more.exists && more.isHittable || end.exists && end.isHittable { return }
+            app.webViews.firstMatch.swipeUp()
+        }
+    }
+
+    func test31LedgerPagingSearch() {
+        tap("收支明细")
+        scrollLedgerEnd()
+        appears("已加载 20 笔")
+        tap("加载更多")
+        scrollLedgerEnd()
+        appears("已加载 23 笔")
+        tapLedgerRow("查询工资00", kind: "收入")
+        appears("编辑收入")
+        tap("关闭")
+        let search = app.searchFields.firstMatch
+        search.tap()
+        search.typeText("查询工资20")
+        dismissEntryKeyboard()
+        appears("已加载 1 笔")
+        appears("超长名称用于检查", containing: true)
+        tap("清空搜索")
+        print("LEDGER_QUERY_TOUCH_PAGING_SEARCH_VERIFIED")
+    }
+
+    func test32LedgerFilterReset() {
+        tap("收支明细")
+        let search = app.searchFields.firstMatch
+        search.tap()
+        search.typeText("查询工资20")
+        dismissEntryKeyboard()
+        appears("已加载 1 笔")
+        tap("筛选")
+        tapVisibleText("今天")
+        tap("本月")
+        tapVisibleText("全部")
+        tap("收入")
+        tap("不限")
+        tap("明细现金")
+        tap("应用筛选")
+        appears("已加载 1 笔")
+        tap("清空搜索")
+        search.tap()
+        search.typeText("no-matching-t9")
+        dismissEntryKeyboard()
+        appears("没有匹配的明细")
+        tap("清除筛选")
+        scrollLedgerEnd()
+        appears("已加载 20 笔")
+        print("LEDGER_QUERY_TOUCH_FILTER_RESET_VERIFIED")
+    }
+
+    func test33LedgerEditReturn() {
+        tap("收支明细")
+        scrollLedgerEnd()
+        tap("加载更多")
+        scrollLedgerEnd()
+        tapLedgerRow("查询工资00", kind: "收入")
+        appears("编辑收入")
+        tap("补充信息")
+        let note = app.textViews.firstMatch
+        XCTAssertTrue(note.waitForExistence(timeout: 3))
+        note.tap()
+        note.typeText("T9 edited")
+        dismissEntryKeyboard()
+        tap("保存修改")
+        disappears(matching("编辑收入").firstMatch)
+        appears("已加载 23 笔")
+        tap("我的")
+        appears("默认资金渠道")
+        tap("收支明细")
+        tapLedgerRow("查询工资00", kind: "收入")
+        appears("编辑收入")
+        tap("补充信息")
+        XCTAssertTrue(app.textViews.firstMatch.waitForExistence(timeout: 3))
+        expectValue(app.textViews.firstMatch, "T9 edited")
+        tap("关闭")
+        print("LEDGER_QUERY_TOUCH_EDIT_RETURN_VERIFIED")
+    }
+
 }
