@@ -1,15 +1,24 @@
 import { LedgerDatabase } from '../src/data/ledgerDatabase'
 import { AdjustmentService } from '../src/data/entries/adjustmentService'
 import { LifecycleService, DAY, retention } from '../src/data/entries/lifecycleService'
-import { CleanupService, clockDeferral, type ClockSample } from '../src/data/entries/cleanupService'
+import { CleanupService, clockDeferral, type ClockSample, type CleanupResult } from '../src/data/entries/cleanupService'
 import { EntryReadbackQuery } from '../src/data/entries/readbackQuery'
 import { LocalError } from '../src/domain/localError'
 import { migrations, type Migration } from '../src/data/migrations'
 import { entryFixture } from './entryScenarios'
 
-function check(value: unknown, message: string): asserts value { if (!value) throw new Error(message) }
+function check(value: unknown, message: string): asserts value {
+  if (!value) {
+    throw new Error(message)
+  }
+}
 async function refused(task: () => Promise<unknown>, code?: string) {
-  try { await task() } catch (error) { check(!code || error instanceof LocalError && error.code === code, `预期 ${code}，实际 ${String(error)}`); return }
+  try {
+    await task()
+  } catch (error) {
+    check(!code || error instanceof LocalError && error.code === code, `预期 ${code}，实际 ${String(error)}`)
+    return
+  }
   throw new Error('未拒绝不合法操作')
 }
 const dataset = async (db: LedgerDatabase) => String((await db.read(sql => sql.query('SELECT dataset_id FROM ledger_meta')))[0]!.dataset_id)
@@ -88,7 +97,8 @@ export async function lifecycleFailureScenario(db: LedgerDatabase) {
   const expired = new LifecycleService(db, () => new Date(f.now.getTime() + retention))
   await lifecycle.change(ds, { id: expense.id, entryType: 'EXPENSE', version: 3 }, 'trash', 'expired')
   await refused(() => expired.change(ds, { id: expense.id, entryType: 'EXPENSE', version: 4 }, 'restore', 'too-late'), 'LEDGER_LIFECYCLE_CONFLICT')
-  await db.close(); await db.open()
+  await db.close()
+  await db.open()
   check((await db.read(sql => sql.query('SELECT lifecycle_status FROM ledger_entry WHERE id=?', [expense.id])))[0]?.lifecycle_status === 'TRASHED', '重开丢失生命周期')
   return 'concurrent-cap-stale-version-receipt-rollback-restore-conflict-and-30-day-boundary'
 }
@@ -103,12 +113,16 @@ export async function cleanupScenario(db: LedgerDatabase) {
   const observations: number[] = []
   const service = new CleanupService(db, () => sample, async result => {
     observations.push(result.deleted)
-    if (result.batches === 1) controller.abort()
+    if (result.batches === 1) {
+      controller.abort()
+    }
   })
   check((await service.run(ds)).status === 'deferred', '无基线没有延期')
   await db.write(async sql => {
-    for (let i = 0; i < 205; i++) await sql.run(`INSERT INTO ledger_entry(id,entry_type,amount_cents,funding_channel_id,funding_channel_name_snapshot,business_time,business_date,lifecycle_status,deleted_at,purge_after)
+    for (let i = 0; i < 205; i++) {
+      await sql.run(`INSERT INTO ledger_entry(id,entry_type,amount_cents,funding_channel_id,funding_channel_name_snapshot,business_time,business_date,lifecycle_status,deleted_at,purge_after)
       SELECT ?,'INCOME',100,funding_channel_id,funding_channel_name_snapshot,business_time,business_date,'TRASHED',?,? FROM ledger_entry WHERE id=?`, [`due-${i}`, new Date(now - retention).toISOString(), new Date(now).toISOString(), source.id])
+    }
     await sql.run(`INSERT INTO ledger_entry(id,entry_type,amount_cents,funding_channel_id,funding_channel_name_snapshot,business_time,business_date,lifecycle_status,deleted_at,purge_after)
       SELECT 'not-yet','INCOME',100,funding_channel_id,funding_channel_name_snapshot,business_time,business_date,'TRASHED',?,? FROM ledger_entry WHERE id=?`, [new Date(now - retention + 1).toISOString(), new Date(now + 1).toISOString(), source.id])
   })
@@ -145,13 +159,18 @@ export async function lifecycleUpgradeScenario(manager: (suffix: string, chain?:
     await old.open()
     check((await old.read(sql => sql.query('SELECT schema_version FROM ledger_meta')))[0]?.schema_version === 5, '失败升级推进版本')
     check(!(await old.read(sql => sql.query("SELECT name FROM sqlite_master WHERE name='expense_adjustment'"))).length, '失败升级留下部分表')
-    await old.close(); await current.open()
+    await old.close()
+    await current.open()
     check(await dataset(current) === id, '升级改变数据集')
     check((await current.read(sql => sql.query("SELECT value FROM preference WHERE key='theme'")))[0]?.value === '"DARK"', '升级重置偏好')
     check((await current.read(sql => sql.query('SELECT data_json FROM ledger_draft')))[0]?.data_json === '{"amount":"88"}', '升级覆盖草稿')
     await adjustmentLifecycleScenario(current)
     return 'v5-v6-atomic-upgrade-user-values-and-new-lifecycle'
-  } finally { await old.close(); await current.close(); await failed.close() }
+  } finally {
+    await old.close()
+    await current.close()
+    await failed.close()
+  }
 }
 
 export async function cleanupProtectionScenario(db: LedgerDatabase) {
@@ -166,18 +185,24 @@ export async function cleanupProtectionScenario(db: LedgerDatabase) {
   await service.run(ds)
   await new LifecycleService(db, () => new Date(now - retention)).change(ds, { id: expense.id, entryType: 'EXPENSE', version: 1 }, 'trash', 'old-parent')
   await db.write(async sql => {
-    for (let i = 0; i < 205; i++) await sql.run(`INSERT INTO expense_adjustment(id,original_expense_id,adjustment_type,amount_cents,business_time,business_date,status,created_at,updated_at)
+    for (let i = 0; i < 205; i++) {
+      await sql.run(`INSERT INTO expense_adjustment(id,original_expense_id,adjustment_type,amount_cents,business_time,business_date,status,created_at,updated_at)
       VALUES(?,?,'REFUND',1,?,'2026-11-17','SOURCE_FROZEN',?,?)`, [`child-${i}`, expense.id, f.now.toISOString(), f.now.toISOString(), f.now.toISOString()])
+    }
   })
   const linked = await service.run(ds)
   check(linked.deleted === 206 && linked.batches === 3, '关联清理没有按总行数分批')
   await db.write(async sql => {
-    for (let i = 0; i < 700; i++) await sql.run(`INSERT INTO ledger_entry(id,entry_type,amount_cents,funding_channel_id,funding_channel_name_snapshot,business_time,business_date,lifecycle_status,deleted_at,purge_after)
+    for (let i = 0; i < 700; i++) {
+      await sql.run(`INSERT INTO ledger_entry(id,entry_type,amount_cents,funding_channel_id,funding_channel_name_snapshot,business_time,business_date,lifecycle_status,deleted_at,purge_after)
       SELECT ?,'INCOME',100,funding_channel_id,funding_channel_name_snapshot,business_time,business_date,'TRASHED',?,? FROM ledger_entry WHERE id=?`, [`bulk-${String(i).padStart(4, '0')}`, new Date(now - retention).toISOString(), f.now.toISOString(), income.id])
+    }
     await sql.run("CREATE TEMP TRIGGER fail_cleanup BEFORE DELETE ON ledger_entry WHEN OLD.id='bulk-0110' BEGIN SELECT RAISE(ABORT,'controlled-batch-failure'); END")
   })
   const failed = await service.run(ds)
   check(failed.status === 'failed' && failed.deleted === 100, '批次故障没有回滚本批或错误计入进度')
+  check(failed.reason?.includes('已永久清理 100 条') && !failed.reason.includes('原数据已保留'), '部分失败提示隐瞒已提交删除')
+  check(failed.error?.cause instanceof Error, '批次故障原因链丢失')
   check((await db.read(sql => sql.query("SELECT count(*) AS n FROM ledger_entry WHERE id LIKE 'bulk-%'")))[0]?.n === 600, '失败批次留下部分删除')
   await db.write(sql => sql.run('DROP TRIGGER temp.fail_cleanup'))
   const bounded = await service.run(ds)
@@ -185,4 +210,54 @@ export async function cleanupProtectionScenario(db: LedgerDatabase) {
   check((await service.run(ds)).deleted === 100, '后续前台轮次未继续处理剩余对象')
   await refused(() => service.run('another-dataset'), 'DATASET_CHANGED')
   return 'linked-row-budget-atomic-batch-failure-five-batch-cap-and-dataset-scope'
+}
+
+/** 状态写失败不回滚已提交删除，也不能阻止调用边界广播刷新；故障原因仅留在内存。 */
+export async function cleanupFinalizationScenario(db: LedgerDatabase,
+  operate: (operation: () => Promise<CleanupResult>) => Promise<CleanupResult> = operation => operation()) {
+  const f = await entryFixture(db)
+  const ds = await dataset(db)
+  const source = await f.service.createIncome(f.income, 'safe-income')
+  const now = f.now.getTime()
+  const service = new CleanupService(db, () => ({ wall: now, monotonic: 1, session: 'finalization' }))
+  await service.run(ds)
+  const due = async (id: string) => db.write(sql => sql.run(`INSERT INTO ledger_entry(id,entry_type,amount_cents,funding_channel_id,funding_channel_name_snapshot,
+    business_time,business_date,lifecycle_status,deleted_at,purge_after)
+    SELECT ?,'INCOME',100,funding_channel_id,funding_channel_name_snapshot,business_time,business_date,'TRASHED',?,? FROM ledger_entry WHERE id=?`,
+  [id, new Date(now - retention).toISOString(), f.now.toISOString(), source.id]))
+  await due('final-status-due')
+  await db.write(sql => sql.run(`CREATE TEMP TRIGGER fail_final_status BEFORE INSERT ON maintenance_state
+    WHEN NEW.key='cleanup' AND json_extract(NEW.value,'$.status')='success'
+    BEGIN SELECT RAISE(ABORT,'controlled-final-status'); END`))
+  const failed = await operate(() => service.run(ds))
+  check(failed.status === 'failed' && failed.deleted === 1 && !failed.more, '最终状态写失败丢失已提交结果')
+  check(failed.reason?.includes('已永久清理 1 条') && failed.reason.includes('状态保存失败'), '最终状态失败提示未区分已提交删除')
+  check(failed.error?.cause instanceof Error, '最终状态写失败未保留原始原因')
+  const saved = (await db.read(sql => sql.query("SELECT value FROM maintenance_state WHERE key='cleanup'")))[0]!.value
+  check(JSON.parse(String(saved)).status === 'failed' && !String(saved).includes('controlled-') && !String(saved).includes('error'), '故障状态未记录或泄露底层原因')
+  check(!(await db.read(sql => sql.query("SELECT id FROM ledger_entry WHERE id='final-status-due'"))).length, '已提交删除被误当失败回滚')
+  await db.write(sql => sql.run('DROP TRIGGER temp.fail_final_status'))
+
+  await due('both-status-due')
+  await db.write(sql => sql.run(`CREATE TEMP TRIGGER fail_all_final_status BEFORE INSERT ON maintenance_state
+    WHEN NEW.key='cleanup' AND json_extract(NEW.value,'$.status') IN ('success','failed')
+    BEGIN SELECT RAISE(ABORT,'controlled-all-final-status'); END`))
+  const bothFailed = await operate(() => service.run(ds))
+  check(bothFailed.deleted === 1 && bothFailed.error?.cause instanceof AggregateError
+    && bothFailed.error.cause.errors.length === 2, '失败状态再次写失败掩盖首错或已提交进度')
+  const interrupted = JSON.parse(String((await db.read(sql => sql.query("SELECT value FROM maintenance_state WHERE key='cleanup'")))[0]!.value))
+  check(interrupted.status === 'running' && interrupted.deleted === 1, '双重状态故障破坏批次断点')
+  await db.write(sql => sql.run('DROP TRIGGER temp.fail_all_final_status'))
+  const resumed = await operate(() => service.run(ds))
+  check(resumed.status === 'success' && resumed.deleted === 0 && resumed.previousOutcome === 'interrupted', '状态故障后续作重复删除或遗漏中断')
+
+  await due('first-batch-due')
+  await db.write(sql => sql.run(`CREATE TEMP TRIGGER fail_first_cleanup BEFORE DELETE ON ledger_entry
+    WHEN OLD.id='first-batch-due' BEGIN SELECT RAISE(ABORT,'controlled-first-batch'); END`))
+  const noCommit = await operate(() => service.run(ds))
+  check(noCommit.status === 'failed' && noCommit.deleted === 0 && noCommit.reason?.includes('未永久删除记录'), '零提交失败误报已有删除')
+  check((await db.read(sql => sql.query("SELECT id FROM ledger_entry WHERE id='first-batch-due'"))).length === 1, '未提交批次丢失原数据')
+  await db.write(sql => sql.run('DROP TRIGGER temp.fail_first_cleanup'))
+  check((await service.run(ds)).deleted === 1 && (await f.service.getIncome(source.id)).amount === '1000.00', '失败恢复改变无关收入或未清完剩余项')
+  return 'cleanup-final-state-failure-notification-partial-progress-and-bounded-recovery'
 }

@@ -18,7 +18,9 @@ export class AdjustmentService {
 
   create(dataset: string, source: string, request: CreateExpenseAdjustmentRequest, requestedKey: string) {
     requireId(source)
-    if (!['REFUND', 'REIMBURSEMENT'].includes(request.adjustmentType)) throw fieldError('adjustmentType', '请选择退款或报销。')
+    if (!['REFUND', 'REIMBURSEMENT'].includes(request.adjustmentType)) {
+      throw fieldError('adjustmentType', '请选择退款或报销。')
+    }
     const input = { adjustmentType: request.adjustmentType, amount: decimal('amount', request.amount, 2, MONEY_MAX, true),
       ...occurredAt(request.occurredAt), note: text('note', request.note, 500) }
     const key = operationId(requestedKey)
@@ -41,7 +43,10 @@ export class AdjustmentService {
 
   get(dataset: string, id: string, signal?: AbortSignal) {
     requireId(id)
-    return this.database.read(async sql => { await assertDataset(sql, dataset); return this.response(sql, id) }, signal)
+    return this.database.read(async sql => {
+      await assertDataset(sql, dataset)
+      return this.response(sql, id)
+    }, signal)
   }
 
   revoke(dataset: string, id: string, version: number, requestedKey: string) {
@@ -49,7 +54,9 @@ export class AdjustmentService {
     expectedVersion(version)
     return this.perform(dataset, 'adjustment.revoke', operationId(requestedKey), { id, version }, async sql => {
       const row = await this.response(sql, id)
-      if (row.status !== 'EFFECTIVE' || row.version !== version) throw new LocalError('ADJUSTMENT_CHANGED', '调整状态已变化，请刷新后重试。')
+      if (row.status !== 'EFFECTIVE' || row.version !== version) {
+        throw new LocalError('ADJUSTMENT_CHANGED', '调整状态已变化，请刷新后重试。')
+      }
       await sql.run("UPDATE expense_adjustment SET status='REVOKED',row_version=row_version+1,updated_at=? WHERE id=? AND row_version=?", [this.clock().toISOString(), id, version])
       return this.response(sql, id)
     })
@@ -58,11 +65,16 @@ export class AdjustmentService {
   private async perform(dataset: string, operation: string, key: string, input: unknown, work: (sql: SqlSession) => Promise<ExpenseAdjustmentResponse>) {
     const digest = await sha256(JSON.stringify({ dataset, input }))
     let response!: ExpenseAdjustmentResponse
-    await this.database.executeOnce(operation, key, digest, async sql => { await assertDataset(sql, dataset); return work(sql) }, undefined,
+    await this.database.executeOnce(operation, key, digest, async sql => {
+      await assertDataset(sql, dataset)
+      return work(sql)
+    }, undefined,
       async (sql, saved) => {
         await assertDataset(sql, dataset)
         const current = await this.response(sql, saved.id)
-        if (current.version !== saved.version || current.status !== saved.status) throw new LocalError('ADJUSTMENT_CHANGED', '调整已有后续变化，请刷新后重试。')
+        if (current.version !== saved.version || current.status !== saved.status) {
+          throw new LocalError('ADJUSTMENT_CHANGED', '调整已有后续变化，请刷新后重试。')
+        }
         response = current
       })
     return response
@@ -71,7 +83,9 @@ export class AdjustmentService {
   private async response(sql: SqlSession, id: string): Promise<ExpenseAdjustmentResponse> {
     const row = (await sql.query(`SELECT a.*,l.product_name_snapshot,CAST(a.amount_cents AS TEXT) AS amount_text,
       CAST(l.amount_cents AS TEXT) AS paid_text FROM expense_adjustment a JOIN ledger_entry l ON l.id=a.original_expense_id WHERE a.id=?`, [id]))[0]
-    if (!row) throw new LocalError('ADJUSTMENT_NOT_FOUND', '调整不存在或已被永久删除。')
+    if (!row) {
+      throw new LocalError('ADJUSTMENT_NOT_FOUND', '调整不存在或已被永久删除。')
+    }
     const total = await effectiveTotal(sql, String(row.original_expense_id))
     const paid = fromSqliteInteger(row.paid_text)
     return { id, originalExpenseId: String(row.original_expense_id), originalExpenseTitle: String(row.product_name_snapshot),

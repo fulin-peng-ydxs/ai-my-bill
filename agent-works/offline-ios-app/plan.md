@@ -849,7 +849,11 @@
 
   页面用例先局部定位：run-xdfkJp 的表单关闭断言误匹配保留的上下文按钮；run-fAjIJv 的合并金额文案识别失败。均保留失败，不记作整轮通过；实际退款已落库，改为核对表单控件移除及截图包含文本，没有改业务页面。修复后 test26 在 run-Ky7Jy0 单独通过并回读；随后 run-XUqwR4 的键盘前置及 test26—30 共 6 项通过，原明细显示实付 15/退款 3/净支出 12，超额与低实付拒绝，来源删除/恢复、关联删除取消/确认及启动清理完成。SQLite 回读核对状态/版本、原额与收入保持、无孤儿和到期范围，截图与实际页面一致。具体结论见 V8。
 
-  V8-T1/T2/B1/B2 在独立 iPhone 14 Pro Max / iOS 27.0 模拟器范围通过；原调整表单和明细模板/样式逐字保持，仅接通原有数据、字段错误和确认参数。未运行完整 ios-smoke/ios-touch，未使用真机或启动旧 Web/PG，远端 CI 及真机 Release 容量/签名交付仍未验证。T9 未开始。本轮模拟器及专用构建缓存已清理，必要日志、失败与最终页面证据保留于 .local/ios/tmp/ai-agent/ios-debug-qMaUwi 及上述 ios-check-*；最终交付稳定且不再引用后回收。
+  本次整体复查的四项问题已修复：最终成功状态写失败仍返回已提交批次及失败结果，由既有 mutateEntry 广播刷新；失败状态再次写失败保留两次原因及批次断点，不重新删除。提示区分零提交、部分永久删除、取消和状态写失败，底层原因仅留内存，不写入维护 JSON。清理入口统一检查前台、DOM 可见与账本就绪；隐藏安装和后台迟到就绪不启动，激活早于 DOM 可见不会漏跑，取消期间再退后台不复活任务。调整、生命周期、探针和共享测试的本次 T8 多语句压行已整理；页面、样式、迁移与金额规则没有改动。
+
+  修复验证先由最终状态单用例通过（ios-check-wJDDBn），再由生命周期 SQL 6/6（ios-check-DTTWJf）及平台事件 6/6（ios-check-wwFNYr）通过；脚本仅定向运行 T8 选择回归 1/1，Shell 语法通过。首次原生尝试 run-JOyLbM 在随包构建前置暴露新增测试的 TypeScript spy 类型声明错误，未执行原生测试；修正声明后 app-build 局部通过（ios-check-mtgJVe）。最终独立 iPhone 14 Pro Max / iOS 27.0 的 testOfflineCleanupFinalization 在 ios-debug-pyENJR/run-57htB9 单用例通过（约 7.1 秒），真实桥验证最终状态失败、双重状态失败、零提交失败及后续续作。最终同步/编译和资源检查通过。脚本新增该独立白名单入口，完整原生及 CI 自动发现同一测试并保留完成信号；本轮未运行远端 CI 或完整原生/页面验收，既有页面证据按未改变范围沿用。
+
+  V8-T1/T2/B1/B2 在独立 iPhone 14 Pro Max / iOS 27.0 模拟器范围通过；原调整表单和明细模板/样式逐字保持，仅接通原有数据、字段错误和确认参数。未运行完整 ios-smoke/ios-touch，未使用真机或启动旧 Web/PG，远端 CI 及真机 Release 容量/签名交付仍未验证。T9 未开始。本轮模拟器及专用构建缓存已清理，必要日志、失败与最终页面证据保留于 .local/ios/tmp/ai-agent/ios-debug-qMaUwi、ios-debug-pyENJR 及上述 ios-check-*；最终交付稳定且不再引用后回收。
 
 ### T9：明细查询与上下文返回
 
@@ -1577,7 +1581,7 @@
 | 检查点 / 关联差异 | 执行入口、命令与用例范围 | 预期结果与通过条件 | AI验证结果 / 证据 / 后续处理 |
 | --- | --- | --- | --- |
 | V8-T1 | 实际入口：lifecycleService.spec.ts、testOfflineAdjustmentLifecycle；多次退款/报销、原额编辑、撤销/恢复、累计上限和关联永久删除 | 有效调整不超实付；冻结/撤销/删除不冲减；恢复重验；任何失败不留孤儿或错误状态 | 通过：Node lifecycleService 的 5 组场景（ios-check-WOsS3H）及原生 run-T1ktU7 共享场景覆盖累计/并发上限、幂等回放、撤销、冻结/解冻、实付最低额、关联永久删除、回执故障整体回滚和 v5→v6 原子升级。App 111/111 通过；零实付且调整全撤销的标记边界由 ios-check-bQd3SA 定向复验。 |
-| V8-T2 | 实际入口：lifecycleService.spec.ts、cleanupLifecycle.spec.ts、testOfflineAdjustmentLifecycle；30 天边界、S3 已冻结的回退/墙钟与单调时钟差值/跨启动长间隔/无基线、批次中断、重启与重复执行 | 仅到期且满足联动规则者清理；异常轮次延期可观察且不重试清理，后续前台重新判定；重跑幂等、每批最多100条，其他账目保留 | 通过：Node/原生共享场景验证 30 天边界、每批百行总预算、五批上限、批次故障回滚、取消重开、遗留 running 中断、时钟延期和数据集拒绝；双通道合并及后台取消随 App 111/111 通过。原生 run-T1ktU7 及最终页面 run-XUqwR4 的回读一致。 |
+| V8-T2 | 实际入口：lifecycleService.spec.ts、cleanupLifecycle.spec.ts、testOfflineAdjustmentLifecycle、testOfflineCleanupFinalization；30 天边界、S3 已冻结的回退/墙钟与单调时钟差值/跨启动长间隔/无基线、批次中断、重启与重复执行 | 仅到期且满足联动规则者清理；异常轮次延期可观察且不重试清理，后续前台重新判定；重跑幂等、每批最多100条，其他账目保留；最终状态落盘失败仍刷新已提交删除，部分失败反馈真实，后台就绪不启动 | 通过：Node/原生共享场景验证 30 天边界、每批百行总预算、五批上限、批次故障回滚、取消重开、遗留 running 中断、时钟延期和数据集拒绝；双通道合并及后台取消的原有 App 111/111 证据保持为历史结果；本次 SQL 6/6（ios-check-DTTWJf）和事件 6/6（ios-check-wwFNYr）补齐最终状态写失败仍刷新、双重状态故障、部分失败进度、后台就绪及乱序事件。独立 testOfflineCleanupFinalization 在 ios-debug-pyENJR/run-57htB9 真实桥通过 1 项收尾场景。类型声明前置失败及修复范围见 T8 实施结果；原页面未变，run-XUqwR4 按原范围沿用。 |
 
 #### 业务验证点（真实系统交互）
 
