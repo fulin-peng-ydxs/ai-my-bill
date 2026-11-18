@@ -63,6 +63,8 @@ export function useLedgerDraft(type: Ref<EntryType>, enabled?: Ref<boolean>) {
             if (currentEpoch !== epoch || !active.value) {
               break
             }
+            // 本轮失败已接管最新输入的落盘；遗留防抖不能在续写失败后再开启一轮。
+            cancelTimer()
             // 新输入的防抖可能已在慢写期间触发；旧失败不能让最新快照静默搁置。
             // 每轮只额外续写最新快照一次，再失败保留提示，等待下一次正常落盘或重试。
             const retryLatest = pending && request !== revision && latestRetryAvailable

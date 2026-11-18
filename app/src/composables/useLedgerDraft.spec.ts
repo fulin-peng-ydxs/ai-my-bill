@@ -100,7 +100,10 @@ describe('SQLite 草稿调度', () => {
     await vi.advanceTimersByTimeAsync(1000)
     expect(api.save).toHaveBeenCalledTimes(2)
   })
-  it.each(['EXPENSE', 'INCOME'] as const)('%s 慢写及续写均失败时停止自动重试，保留提示并可重试最新输入', async type => {
+  it.each((['EXPENSE', 'INCOME'] as const).flatMap(type =>
+    [true, false].flatMap(debounceExpired =>
+      [true, false].map(editDuringRetry => ({ type, debounceExpired, editDuringRetry }))),
+  ))('$type 连续失败后停止自动重试（防抖到期=$debounceExpired，续写时再编辑=$editDuringRetry）', async ({ type, debounceExpired, editDuringRetry }) => {
     const draft = await mounted(type)
     await settle()
     let reject!: (error: Error) => void
@@ -110,23 +113,25 @@ describe('SQLite 草稿调度', () => {
     await draft.replace({ note: '在途旧输入' })
     const inFlight = flushDrafts()
     await settle()
+    await vi.advanceTimersByTimeAsync(500)
     await draft.replace({ note: '第一次续写输入' })
-    await vi.advanceTimersByTimeAsync(250)
+    if (debounceExpired) await vi.advanceTimersByTimeAsync(250)
     reject(new Error('受控慢写失败'))
     await settle()
-    // 续写期间继续输入再失败，也不能无限追加自动重试。
-    await draft.replace({ note: '最新输入' })
-    await vi.advanceTimersByTimeAsync(250)
+    // 未到期的防抖既可能来自已被续写的快照，也可能来自续写期间的新输入。
+    const latest = { note: editDuringRetry ? '最新输入' : '第一次续写输入' }
+    if (editDuringRetry) await draft.replace(latest)
+    if (debounceExpired) await vi.advanceTimersByTimeAsync(250)
     rejectLatest(new Error('受控续写失败'))
     await inFlight
     expect(api.save).toHaveBeenCalledTimes(2)
-    expect(draft.data.value).toEqual({ note: '最新输入' })
+    expect(draft.data.value).toEqual(latest)
     expect(draft.storageError.value).toBe('本地操作未完成，请保留输入后重试。')
     await vi.advanceTimersByTimeAsync(5000)
     expect(api.save).toHaveBeenCalledTimes(2)
     // 复用实际前后台落盘入口；恢复存储后只保存最新输入，成功才撤销失败提示。
     await flushDrafts()
-    expect(api.save).toHaveBeenLastCalledWith('dataset-a', type, { note: '最新输入' })
+    expect(api.save).toHaveBeenLastCalledWith('dataset-a', type, latest)
     expect(api.save).toHaveBeenCalledTimes(3)
     expect(draft.storageError.value).toBeUndefined()
   })
