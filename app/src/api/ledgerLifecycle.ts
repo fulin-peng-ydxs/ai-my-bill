@@ -1,5 +1,9 @@
 import type { components } from './generated/schema'
-import { apiRequest } from './http'
+import { LifecycleService } from '../data/entries/lifecycleService'
+import { appDatabase } from '../data/appDatabase'
+import { useBootstrapStore } from '../stores/bootstrap'
+import { mutateEntry } from './localEntries'
+const service = new LifecycleService(appDatabase)
 
 export type LedgerLifecycleResponse = components['schemas']['LedgerLifecycleResponse']
 export type LedgerLifecycleAction = 'trash' | 'restore' | 'purge'
@@ -9,9 +13,8 @@ export function changeLedgerLifecycle(
   item: { id: string, entryType: 'EXPENSE' | 'INCOME' | 'ADJUSTMENT', version: number },
   action: LedgerLifecycleAction,
   idempotencyKey: string,
+  includeAdjustments = false,
 ): Promise<LedgerLifecycleResponse | undefined> {
-  const resource = item.entryType === 'ADJUSTMENT' ? 'adjustments' : 'ledger-entries'
-  return apiRequest(`/${resource}/${encodeURIComponent(item.id)}/${action}`, {
-    method: 'POST', headers: { 'Idempotency-Key': idempotencyKey }, body: JSON.stringify({ version: item.version }),
-  })
+  const dataset = useBootstrapStore().datasetId
+  return mutateEntry(() => service.change(dataset, item, action, idempotencyKey, includeAdjustments))
 }

@@ -10,7 +10,9 @@ import { normalizedDictionaryName } from '../../domain/text'
 type Values = Record<string, string | number | null>
 export const entryProjection = `SELECT l.*, CAST(amount_cents AS TEXT) AS amount_text,
   CAST(unit_price_scaled AS TEXT) AS price_text, CAST(quantity_scaled AS TEXT) AS quantity_text,
-  CAST(calculated_amount_cents AS TEXT) AS calculated_text FROM ledger_entry l`
+  CAST(calculated_amount_cents AS TEXT) AS calculated_text,
+  CAST(COALESCE((SELECT SUM(a.amount_cents) FROM expense_adjustment a WHERE a.original_expense_id=l.id AND a.status='EFFECTIVE'),0) AS TEXT) AS adjusted_text,
+  (SELECT COUNT(*) FROM expense_adjustment a WHERE a.original_expense_id=l.id) AS linked_count FROM ledger_entry l`
 
 export function versionConflict(): LocalError {
   return new LocalError('LEDGER_VERSION_CONFLICT', '账目已发生变化，请加载最新内容或重新确认本次修改。')
@@ -49,7 +51,8 @@ export function expenseResponse(row: Record<string, unknown>): ExpenseResponse {
     unitPrice: scaledIntegerToDecimal(fromSqliteInteger(row.price_text), 4),
     quantity: scaledIntegerToDecimal(fromSqliteInteger(row.quantity_text), 3),
     calculatedAmount: scaledIntegerToDecimal(fromSqliteInteger(row.calculated_text), 2),
-    paidAmount: scaledIntegerToDecimal(fromSqliteInteger(row.amount_text), 2), effectiveAdjustmentAmount: '0.00',
+    paidAmount: scaledIntegerToDecimal(fromSqliteInteger(row.amount_text), 2),
+    effectiveAdjustmentAmount: scaledIntegerToDecimal(fromSqliteInteger(row.adjusted_text), 2),
     purchaseChannelId: optionalText(row.purchase_channel_id), purchaseChannelName: optionalText(row.purchase_channel_name_snapshot),
     locationLabelId: optionalText(row.location_label_id), locationLabelName: optionalText(row.location_label_name_snapshot),
   }

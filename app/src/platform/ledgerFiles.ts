@@ -6,7 +6,7 @@ export interface LedgerFiles {
   snapshot(options: { name: string }): Promise<{ id: string; bytes: number; sha256: string; excluded: boolean; protected: boolean; simulator: boolean }>
 }
 interface DraftLifecycle {
-  addListener(event: 'background', callback: () => void): Promise<PluginListenerHandle>
+  addListener(event: 'background' | 'foreground', callback: () => void): Promise<PluginListenerHandle>
   finishBackground(): Promise<void>
 }
 export const ledgerFiles = registerPlugin<LedgerFiles & DraftLifecycle>('LedgerFiles')

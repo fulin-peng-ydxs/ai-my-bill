@@ -88,11 +88,11 @@ final class DictionaryTouchTests: XCTestCase {
         if let box { app.coordinate(withNormalizedOffset: CGVector(dx: box.midX, dy: 1 - box.midY)).tap() }
     }
 
-    private func appears(_ label: String, timeout: TimeInterval = 10) {
+    private func appears(_ label: String, timeout: TimeInterval = 10, containing: Bool = false) {
         let ready = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
-            self.matching(label).firstMatch.exists || self.visualText(label) != nil
+            self.matching(label).firstMatch.exists || self.visualText(label, containing: containing) != nil
         }, object: nil)
-        XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: timeout), .completed, "没有显示 \(label)")
+        XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: timeout), .completed, "没有显示 \(label)\n\(app.debugDescription)")
     }
 
     private func disappears(_ element: XCUIElement) {
@@ -371,12 +371,12 @@ final class DictionaryTouchTests: XCTestCase {
             return box != nil
         }, object: nil)
         XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 5), .completed, "找不到账目行 \(title)")
-        if button.exists && button.isHittable {
+        if row.exists && row.isHittable {
+            row.tap()
+        } else if button.exists && button.isHittable {
             button.tap()
         } else if text.exists && text.isHittable {
             text.tap()
-        } else if row.exists && row.isHittable {
-            row.tap()
         } else if let box {
             app.coordinate(withNormalizedOffset: CGVector(dx: box.midX, dy: 1 - box.midY)).tap()
         }
@@ -566,6 +566,90 @@ final class DictionaryTouchTests: XCTestCase {
         tap("记一笔")
         expectValue(entryField("expense-paid-amount", "实付金额"), "77")
         print("PERSONAL_TOUCH_RESET_KEEPS_DRAFTS")
+    }
+
+    func test26AdjustmentCreate() {
+        tap("明细")
+        tap("有效账单")
+        tapLedgerRow("生命周期苹果", kind: "支出")
+        tap("更多操作")
+        tap("记录退款/报销")
+        replaceEntryField("adjustment-amount", "调整金额", "3")
+        dismissEntryKeyboard()
+        tap("保存调整")
+        disappears(app.textFields.matching(NSPredicate(format: "identifier == %@ OR label == %@", "adjustment-amount", "调整金额")).firstMatch)
+        tap("关闭")
+        tap("关闭")
+        appears("已调整", timeout: 5, containing: true)
+        print("LIFECYCLE_TOUCH_REFUND_SAVED")
+    }
+
+    func test27AdjustmentLimits() {
+        tap("明细")
+        tapLedgerRow("生命周期苹果", kind: "支出")
+        tap("更多操作")
+        tap("记录退款/报销")
+        replaceEntryField("adjustment-amount", "调整金额", "13")
+        dismissEntryKeyboard()
+        tap("保存调整")
+        appears("当前最多还可调整")
+        tap("关闭")
+        tap("放弃并离开")
+        // 关闭原上下文层，返回原编辑层；原实付保护继续生效。
+        tap("关闭")
+        replaceEntryField("expense-paid-amount", "实付金额", "2")
+        dismissEntryKeyboard()
+        tap("保存修改")
+        appears("实付金额不能低于已生效退款/报销合计")
+        tap("关闭")
+        tap("放弃并离开")
+        print("LIFECYCLE_TOUCH_LIMITS_PRESERVED")
+    }
+
+    func test28SourceTrashRestore() {
+        tap("明细")
+        tap("有效账单")
+        tapLedgerRow("生命周期苹果", kind: "支出")
+        tap("更多操作")
+        tap("移入回收站")
+        disappears(matching("编辑支出").firstMatch)
+        tap("回收站")
+        tapLedgerRow("生命周期苹果", kind: "支出")
+        tap("更多操作")
+        tap("恢复到账目")
+        tap("有效账单")
+        tapLedgerRow("生命周期苹果", kind: "支出")
+        expectValue(entryField("expense-paid-amount", "实付金额"), "15")
+        tap("更多操作")
+        tap("移入回收站")
+        tap("回收站")
+        print("LIFECYCLE_TOUCH_SOURCE_FREEZE_RESTORE")
+    }
+
+    func test29LinkedPurgeCancelConfirm() {
+        tap("明细")
+        tap("回收站")
+        tapLedgerRow("生命周期苹果", kind: "支出")
+        tap("更多操作")
+        tap("永久删除并联动清理 1 条调整")
+        appears("确认永久删除？")
+        tap("取消")
+        tap("永久删除并联动清理 1 条调整")
+        appears("确认永久删除？")
+        tap("永久删除")
+        disappears(matching("确认永久删除？").firstMatch)
+        disappears(app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "支出 生命周期苹果")).firstMatch)
+        print("LIFECYCLE_TOUCH_LINKED_PURGE_CONFIRMED")
+    }
+
+    func test30AutomaticCleanup() {
+        tap("明细")
+        tap("回收站")
+        tapLedgerRow("生命周期保留收入", kind: "收入")
+        appears("恢复期限")
+        tap("关闭")
+        XCTAssertFalse(app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "生命周期到期收入")).firstMatch.exists)
+        print("LIFECYCLE_TOUCH_AUTOMATIC_CLEANUP")
     }
 
 }

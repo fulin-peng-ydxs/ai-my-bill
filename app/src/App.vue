@@ -7,6 +7,8 @@ import AppShell from './components/AppShell.vue'
 import CachedPageView from './components/CachedPageView.vue'
 import AppStateBlock from './components/AppStateBlock.vue'
 import UnsavedChangesDialog from './components/UnsavedChangesDialog.vue'
+import AppToast from './components/AppToast.vue'
+import { cleanupNotice } from './platform/cleanupLifecycle'
 import { pageCacheKey, pageCacheLimit } from './app/pageCache'
 import { useBootstrapStore } from './stores/bootstrap'
 const bootstrap = useBootstrapStore()
@@ -31,4 +33,5 @@ void bootstrap.initialize()
     </KeepAlive></RouterView>
   </AppShell>
   <UnsavedChangesDialog />
+  <AppToast v-model:open="cleanupNotice.open" :message="cleanupNotice.message" kind="error" />
 </template>

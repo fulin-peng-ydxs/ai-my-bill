@@ -33,6 +33,10 @@ if mode == 'wait-initialized':
     raise RuntimeError('本轮模拟器的正式账本未在准备预算内初始化')
 assert database.is_file()
 # debug 数据仅由已校验会话中的全新 App 初始化；复用同一夹具，不开放任意 SQL 或路径。
+lifecycle_match = re.fullmatch(r'debug-(check-)?lifecycle-((?:2[6-9]|30)(?:,(?:2[6-9]|30))*)', mode)
+lifecycle_cases = [int(case) for case in lifecycle_match[2].split(',')] if lifecycle_match else []
+if lifecycle_match:
+    mode = 'debug-check' if lifecycle_match[1] else 'prepare'
 personal_match = re.fullmatch(r'debug-(check-)?personal-((?:1[7-9]|2[0-5])(?:,(?:1[7-9]|2[0-5]))*)', mode)
 personal_cases = [int(case) for case in personal_match[2].split(',')] if personal_match else []
 if personal_match:
@@ -43,7 +47,7 @@ debug_case = 16 if debug_entry_cycle else int(debug_match[2]) if debug_match els
 debug_check = bool(debug_match and debug_match[1])
 if debug_match:
     mode = 'debug-check' if debug_check else 'prepare'
-connection = sqlite3.connect(f'file:{database}?mode={"rw" if mode in ("prepare", "prepare-paging", "prepare-entry", "prepare-personal") else "ro"}', uri=True)
+connection = sqlite3.connect(f'file:{database}?mode={"rw" if mode in ("prepare", "prepare-paging", "prepare-entry", "prepare-personal", "prepare-lifecycle") else "ro"}', uri=True)
 def add_paging_items(connection, ids):
     """完整和局部触摸共用相同末页数据，始终拒绝覆盖既有同名样本。"""
     assert connection.execute("SELECT count(*) FROM dictionary_item WHERE name LIKE 'PageProduct%' OR name LIKE 'PageUnit%'").fetchone()[0] == 0
@@ -79,21 +83,53 @@ def check_entries(connection, case):
     print('ENTRY_TOUCH_SQLITE_VERIFIED case=' + str(case))
 
 
-def add_personal_items(connection):
-    assert connection.execute("SELECT count(*) FROM dictionary_item WHERE id LIKE 't7-%'").fetchone()[0] == 0
-    for key, kind, name in [('product', 'PRODUCT', '日常苹果'), ('category', 'EXPENSE_CATEGORY', '日常水果'),
-                            ('unit', 'UNIT', '日常份'), ('funding', 'FUNDING_CHANNEL', '日常现金'), ('payer', 'PAYER', '日常公司')]:
-        connection.execute("INSERT INTO dictionary_item(id,kind,name,normalized_name,status,sort_order) VALUES(?,?,?,?,'ACTIVE',100)", ('t7-'+key,kind,name,name))
+def add_personal_items(connection, prefix='t7', label='日常'):
+    assert connection.execute("SELECT count(*) FROM dictionary_item WHERE id LIKE ?", (prefix+'-%',)).fetchone()[0] == 0
+    for key, kind, name in [('product','PRODUCT','苹果'),('category','EXPENSE_CATEGORY','水果'),('unit','UNIT','份'),('funding','FUNDING_CHANNEL','现金'),('payer','PAYER','公司')]:
+        connection.execute("INSERT INTO dictionary_item(id,kind,name,normalized_name,status,sort_order) VALUES(?,?,?,?,'ACTIVE',100)", (prefix+'-'+key,kind,label+name,label+name))
     now = datetime.now(ZoneInfo('Asia/Shanghai'))
-    timestamp = now.isoformat(timespec='milliseconds')
+    stamp = now.astimezone(ZoneInfo('UTC')).isoformat(timespec='milliseconds').replace('+00:00','Z')
     connection.execute("""INSERT INTO ledger_entry(id,entry_type,amount_cents,funding_channel_id,funding_channel_name_snapshot,business_time,business_date,
         product_id,product_name_snapshot,normalized_product_name_snapshot,primary_category_id,primary_category_name_snapshot,unit_id,unit_name_snapshot,
-        unit_price_scaled,quantity_scaled,calculated_amount_cents,note,updated_at) VALUES('t7-expense','EXPENSE',1500,'t7-funding','日常现金',?,?,'t7-product','日常苹果','日常苹果',
-        't7-category','日常水果','t7-unit','日常份',123456,1250,1543,'来源备注',?)""", (timestamp, now.date().isoformat(), timestamp))
+        unit_price_scaled,quantity_scaled,calculated_amount_cents,note,updated_at) VALUES(?,'EXPENSE',1500,?,?,?,?,?,?,?,?,?,?,?,123456,1250,1543,'来源备注',?)""",
+        (prefix+'-expense',prefix+'-funding',label+'现金',stamp,now.date().isoformat(),prefix+'-product',label+'苹果',label+'苹果',prefix+'-category',label+'水果',prefix+'-unit',label+'份',stamp))
     connection.execute("""INSERT INTO ledger_entry(id,entry_type,amount_cents,funding_channel_id,funding_channel_name_snapshot,business_time,business_date,
         income_name,normalized_income_name,payer_id,payer_name_snapshot,income_category_id,income_category_name_snapshot,note,updated_at)
-        VALUES('t7-income','INCOME',100000,'t7-funding','日常现金',?,?,'日常工资','日常工资','t7-payer','日常公司',
-        '61000000-0000-0000-0000-000000000001','工资','来源收入备注',?)""", (timestamp,now.date().isoformat(),timestamp))
+        VALUES(?,'INCOME',100000,?,?,?,?,?,?,?,?,'61000000-0000-0000-0000-000000000001','工资','来源收入备注',?)""",
+        (prefix+'-income',prefix+'-funding',label+'现金',stamp,now.date().isoformat(),label+'工资',label+'工资',prefix+'-payer',label+'公司',stamp))
+
+
+def add_lifecycle_items(connection):
+    add_personal_items(connection, 't8', '生命周期')
+    now = datetime.now(ZoneInfo('Asia/Shanghai'))
+    for key, name, days in [('expired','生命周期到期收入',31),('retained','生命周期保留收入',1)]:
+        deleted = datetime.fromtimestamp(now.timestamp()-days*86400,ZoneInfo('UTC')).isoformat(timespec='milliseconds').replace('+00:00','Z')
+        due = datetime.fromtimestamp(now.timestamp()+(30-days)*86400,ZoneInfo('UTC')).isoformat(timespec='milliseconds').replace('+00:00','Z')
+        connection.execute("""INSERT INTO ledger_entry(id,entry_type,amount_cents,funding_channel_id,funding_channel_name_snapshot,business_time,business_date,
+            income_name,normalized_income_name,payer_id,payer_name_snapshot,income_category_id,income_category_name_snapshot,lifecycle_status,deleted_at,purge_after)
+            SELECT ?,'INCOME',100,funding_channel_id,funding_channel_name_snapshot,business_time,business_date,?,?,payer_id,payer_name_snapshot,income_category_id,income_category_name_snapshot,'TRASHED',?,?
+            FROM ledger_entry WHERE id='t8-income'""",('t8-'+key,name,name,deleted,due))
+    connection.execute("INSERT INTO maintenance_state VALUES('clock',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+        (json.dumps({'wall':int(now.timestamp()*1000),'monotonic':0,'session':'owned-touch-fixture'}),))
+
+
+def check_lifecycle(connection,cases):
+    def one(sql): return connection.execute(sql).fetchone()[0]
+    assert one("SELECT count(*) FROM ledger_entry WHERE id='t8-income' AND amount_cents=100000 AND row_version=1") == 1
+    assert one("SELECT count(*) FROM ledger_entry WHERE id='t8-expired'") == 0
+    assert one("SELECT count(*) FROM ledger_entry WHERE id='t8-retained' AND lifecycle_status='TRASHED'") == 1
+    assert one("SELECT count(*) FROM ledger_entry WHERE product_id='t8-product'") == (0 if 29 in cases else 1)
+    if 29 in cases:
+        assert one("SELECT count(*) FROM expense_adjustment WHERE original_expense_id='t8-expense'") == 0
+    elif 26 in cases:
+        rows=connection.execute("SELECT amount_cents,status,row_version FROM expense_adjustment WHERE original_expense_id='t8-expense'").fetchall()
+        assert [tuple(r) for r in rows] == [(300,'SOURCE_FROZEN' if 28 in cases else 'EFFECTIVE',4 if 28 in cases else 1)]
+        assert one("SELECT row_version FROM ledger_entry WHERE id='t8-expense'") == (4 if 28 in cases else 1)
+        assert one("SELECT amount_cents FROM ledger_entry WHERE id='t8-expense'") == 1500
+    assert one("SELECT count(*) FROM ledger_entry WHERE product_id='t8-product' OR payer_id='t8-payer'") == (2 if 29 in cases else 3)
+    assert list(connection.execute('PRAGMA foreign_key_check')) == []
+    assert connection.execute('PRAGMA quick_check').fetchone()[0] == 'ok'
+    print('LIFECYCLE_TOUCH_SQLITE_VERIFIED cases='+','.join(map(str,cases)))
 
 
 def check_personal(connection, cases):
@@ -135,7 +171,14 @@ connection.row_factory = sqlite3.Row
 connection.execute('PRAGMA foreign_keys=ON')
 receipt_path = Path(receipt_file)
 try:
-    if mode == 'debug-check' and personal_cases:
+    if mode == 'debug-check' and lifecycle_cases:
+        check_lifecycle(connection,lifecycle_cases)
+    elif mode == 'prepare-lifecycle':
+        with connection: add_lifecycle_items(connection)
+        print('LIFECYCLE_TOUCH_FIXTURE_PREPARED')
+    elif mode == 'check-lifecycle':
+        check_lifecycle(connection,list(range(26,31)))
+    elif mode == 'debug-check' and personal_cases:
         check_personal(connection, personal_cases)
     elif mode == 'prepare-personal':
         with connection:
@@ -227,6 +270,8 @@ try:
                 VALUES(?,'EXPENSE','触摸合并源','触摸合并源',?,'触摸合并源',?,'触摸分类',?,'触摸单位',123456,1250,1543,?,'触摸资金',
                 '2026-11-15T01:00:00.000Z','2026-11-15T01:00:00.000Z','2026-11-15T01:00:00.000Z')""",
                                (ids['template'], ids['source'], ids['category'], ids['unit'], ids['funding']))
+        if lifecycle_cases:
+            with connection: add_lifecycle_items(connection)
         if personal_cases:
             with connection:
                 add_personal_items(connection)

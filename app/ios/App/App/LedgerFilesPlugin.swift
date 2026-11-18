@@ -28,6 +28,11 @@ public class LedgerFilesPlugin: CAPPlugin, CAPBridgedPlugin {
             }
             backgroundObservers.append(observer)
         }
+        for event in [UIApplication.didBecomeActiveNotification, UIScene.didActivateNotification] {
+            backgroundObservers.append(NotificationCenter.default.addObserver(forName: event, object: nil, queue: .main) { [weak self] _ in
+                self?.notifyListeners("foreground", data: [:])
+            })
+        }
     }
 
     private func endBackgroundWrite() {

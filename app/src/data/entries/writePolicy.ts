@@ -11,7 +11,7 @@ export function decimal(field: string, value: string, scale: number, maximum: st
   return scaledIntegerToDecimal(decimalToScaledInteger(value, scale), scale)
 }
 
-function text(field: string, value: unknown, limit: number, required = false): string | undefined {
+export function text(field: string, value: unknown, limit: number, required = false): string | undefined {
   if (value != null && typeof value !== 'string') {
     throw fieldError(field, '请输入文本。')
   }
@@ -22,7 +22,7 @@ function text(field: string, value: unknown, limit: number, required = false): s
   return normalized
 }
 
-function occurredAt(value: string) {
+export function occurredAt(value: string) {
   // 只接受带明确偏移的真实时刻，拒绝 Date 对非法日期的自动进位。
   const match = typeof value === 'string' && /^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2}:\d{2})(?:\.(\d{1,3}))?(Z|[+-]\d{2}:\d{2})$/.exec(value)
   const date = new Date(value)

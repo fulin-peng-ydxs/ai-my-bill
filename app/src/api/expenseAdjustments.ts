@@ -1,5 +1,10 @@
 import type { components } from './generated/schema'
-import { apiRequest } from './http'
+import { AdjustmentService } from '../data/entries/adjustmentService'
+import { appDatabase } from '../data/appDatabase'
+import { useBootstrapStore } from '../stores/bootstrap'
+import { localOperation } from '../data/localOperation'
+import { mutateEntry } from './localEntries'
+const service = new AdjustmentService(appDatabase)
 
 export type CreateExpenseAdjustmentRequest = components['schemas']['CreateExpenseAdjustmentRequest']
 export type ExpenseAdjustmentResponse = components['schemas']['ExpenseAdjustmentResponse']
@@ -10,13 +15,13 @@ export function createExpenseAdjustment(
   request: CreateExpenseAdjustmentRequest,
   idempotencyKey: string,
 ): Promise<ExpenseAdjustmentResponse> {
-  return apiRequest(`/ledger-entries/${encodeURIComponent(expenseId)}/adjustments`, {
-    method: 'POST', headers: { 'Idempotency-Key': idempotencyKey }, body: JSON.stringify(request),
-  })
+  const dataset = useBootstrapStore().datasetId
+  return mutateEntry(() => service.create(dataset, expenseId, request, idempotencyKey))
 }
 
 export function getExpenseAdjustment(adjustmentId: string, signal?: AbortSignal): Promise<ExpenseAdjustmentResponse> {
-  return apiRequest(`/adjustments/${encodeURIComponent(adjustmentId)}`, { signal })
+  const dataset = useBootstrapStore().datasetId
+  return localOperation(() => service.get(dataset, adjustmentId, signal))
 }
 
 export function revokeExpenseAdjustment(
@@ -24,7 +29,6 @@ export function revokeExpenseAdjustment(
   version: number,
   idempotencyKey: string,
 ): Promise<ExpenseAdjustmentResponse> {
-  return apiRequest(`/adjustments/${encodeURIComponent(adjustmentId)}/revoke`, {
-    method: 'POST', headers: { 'Idempotency-Key': idempotencyKey }, body: JSON.stringify({ version }),
-  })
+  const dataset = useBootstrapStore().datasetId
+  return mutateEntry(() => service.revoke(dataset, adjustmentId, version, idempotencyKey))
 }

@@ -205,7 +205,7 @@ function touchFixture(root) {
   const file = path.join(directory, 'ledgerSQLite.db')
   const database = new DatabaseSync(file)
   try {
-    for (const name of ['0001_initial.sql', '0002_dictionary_governance.sql', '0003_ledger_writes.sql', '0004_snapshot_search.sql', '0005_personal_state.sql']) {
+    for (const name of ['0001_initial.sql', '0002_dictionary_governance.sql', '0003_ledger_writes.sql', '0004_snapshot_search.sql', '0005_personal_state.sql', '0006_adjustment_lifecycle.sql']) {
       database.exec(
         fs.readFileSync(new URL('../../app/src/data/migrations/' + name, import.meta.url), 'utf8')
       )
@@ -307,6 +307,14 @@ test('收支组合夹具必须同时保留两笔结果，单场景拒绝误提�
     database.close()
   }
 })
+test('T8 局部选择保留业务前置并隔离清理场景', () => {
+  const selected = selection('--scenario', 'lifecycle-cycle', [])
+  assert.equal(selected.fixture, 'lifecycle-26,27,28,29,30')
+  assert.equal(selected.cases.length, 6)
+  assert.equal(selection('--case', 'DictionaryUITests/DictionaryTouchTests/test29LinkedPurgeCancelConfirm', []).fixture, 'lifecycle-26,28,29')
+  assert.equal(selection('--scenario', 'cleanup-relaunch', []).fixture, 'lifecycle-30')
+  assert.equal(selection('--case', 'NativeTests/NativeSqliteTests/testOfflineAdjustmentLifecycle', []).cases.length, 1)
+})
 test('T7 局部选择保留必要前置，模板与重启场景不混入另一组', () => {
   const templates = selection('--scenario', 'template-cycle', [])
   assert.equal(templates.fixture, 'personal-17,18,19,20,21')
@@ -321,12 +329,13 @@ test('T7 局部选择保留必要前置，模板与重启场景不混入另一�
 })
 test('T7 夹具不替代被验收操作，回读拒绝未保存、串写和来源变动', (t) => {
   const { file, execute } = touchFixture(temporary(t))
-  assert.equal(execute('debug-personal-22,23,24').status, 0)
+  const prepared = execute('debug-personal-22,23,24')
+  assert.equal(prepared.status, 0, prepared.stderr)
   assert.notEqual(execute('debug-check-personal-22,23,24').status, 0)
   const database = new DatabaseSync(file)
   try {
     // 仅验证检查器的正反例，不作为 App 业务或页面证明。
-    database.prepare(`INSERT INTO ledger_meta VALUES(1,5,'fixture-dataset',1,1,'2026-11-17','2026-11-17')`).run()
+    database.prepare(`INSERT INTO ledger_meta VALUES(1,6,'fixture-dataset',1,1,'2026-11-17','2026-11-17')`).run()
     for (const [type, value] of [['EXPENSE', { paidAmount: '77' }], ['INCOME', { amount: '222' }]]) {
       database.prepare('INSERT INTO ledger_draft VALUES(?,?,1,?,?,?)').run('fixture-dataset', type, JSON.stringify(value), '2026-11-17', '2026-11-17')
     }
@@ -342,6 +351,23 @@ test('T7 夹具不替代被验收操作，回读拒绝未保存、串写和来�
   } finally {
     database.close()
   }
+})
+test('T8 夹具不预写调整，回读拒绝未执行清理和错误金额', (t) => {
+  const { file, execute } = touchFixture(temporary(t))
+  const prepared = execute('debug-lifecycle-26')
+  assert.equal(prepared.status, 0, prepared.stderr)
+  assert.notEqual(execute('debug-check-lifecycle-26').status, 0)
+  const db = new DatabaseSync(file)
+  try {
+    assert.equal(db.prepare('SELECT count(*) AS n FROM expense_adjustment').get().n, 0)
+    db.prepare("DELETE FROM ledger_entry WHERE id='t8-expired'").run()
+    db.prepare(`INSERT INTO expense_adjustment(id,original_expense_id,adjustment_type,amount_cents,business_time,business_date,created_at,updated_at)
+      VALUES('synthetic-refund','t8-expense','REFUND',300,'2026-11-18T00:00:00Z','2026-11-18','2026-11-18','2026-11-18')`).run()
+    const checked = execute('debug-check-lifecycle-26')
+    assert.equal(checked.status, 0, checked.stderr)
+    db.prepare("UPDATE expense_adjustment SET amount_cents=301 WHERE id='synthetic-refund'").run()
+    assert.notEqual(execute('debug-check-lifecycle-26').status, 0)
+  } finally { db.close() }
 })
 test('共享入口发现已有命令锁时拒绝执行，保留原归属记录', (t) => {
   const root = cliProject(t)

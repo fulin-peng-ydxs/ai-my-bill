@@ -5,6 +5,8 @@ import { LocalError } from '../../domain/localError'
 import { requireId, validateQuery } from '../dictionaries/repository'
 import { expectedVersion, expenseInput, incomeInput, operationId, validateWriteTime } from './writePolicy'
 import { expenseResponse, expenseValues, incomeResponse, incomeValues, readEntry, refreshRecent, storeEntry, versionConflict } from './repository'
+import { fromSqliteInteger } from '../../domain/money'
+import { fieldError } from '../dictionaries/repository'
 
 /** 字段、引用、版本、最近值和操作回执由同一事务维护；页面不直接拼接写入步骤。 */
 export class EntryService {
@@ -60,7 +62,7 @@ export class EntryService {
       const original = receipt ? JSON.parse(String(receipt.result_json)) : undefined
       const row = await readEntry(sql, id, type)
       const linked = await sql.query('SELECT id FROM daily_entry_template WHERE source_record_id=? LIMIT 1', [id])
-      if (original?.id !== id || row.row_version !== 1 || linked.length || this.clock().getTime() - new Date(String(row.created_at)).getTime() > 86_400_000) {
+      if (original?.id !== id || row.row_version !== 1 || linked.length || Number(row.linked_count) || this.clock().getTime() - new Date(String(row.created_at)).getTime() > 86_400_000) {
         throw new LocalError(`${type}_NOT_UNDOABLE`, '该账目已修改、超过撤销时限或已有后续关联，无法撤销本次保存。')
       }
       await sql.run('DELETE FROM ledger_entry WHERE id=? AND row_version=1', [id])
@@ -87,6 +89,9 @@ export class EntryService {
         throw versionConflict()
       }
       const values = await valuesFor(sql, input)
+      if (previous && type === 'EXPENSE' && fromSqliteInteger(values.amount_cents) < fromSqliteInteger(previous.adjusted_text)) {
+        throw fieldError('paidAmount', '实付金额不能低于已生效退款/报销累计金额。')
+      }
       await storeEntry(sql, id, type, values, now.toISOString(), version)
       if (version === undefined) {
         // 正式保存与消费对应草稿同事务，提交后未收到确认/进程退出也不会恢复已入账草稿。

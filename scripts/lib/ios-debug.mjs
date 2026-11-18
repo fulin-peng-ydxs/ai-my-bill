@@ -13,6 +13,7 @@ export const nativeCases = [
   'testOfflineDictionaryPages',
   'testOfflineEntryWrites',
   'testOfflinePersonalState',
+  'testOfflineAdjustmentLifecycle',
   'testOriginalShellNavigationAndOverlays',
   'testRejectUnownedTestContexts'
 ]
@@ -42,7 +43,12 @@ export const uiCases = [
   'test22PrepareDualDrafts',
   'test23SaveThemePreference',
   'test24RelaunchPersonalState',
-  'test25ResetPreferencesKeepsDrafts'
+  'test25ResetPreferencesKeepsDrafts',
+  'test26AdjustmentCreate',
+  'test27AdjustmentLimits',
+  'test28SourceTrashRestore',
+  'test29LinkedPurgeCancelConfirm',
+  'test30AutomaticCleanup'
 ]
 
 export const recoveryPhases = ['snapshot-ready', 'migration-recorded', 'upgrade-committed']
@@ -56,7 +62,10 @@ export const uiScenarios = {
   'entry-cycle': [15, 16],
   'template-cycle': [17, 18, 19, 20, 21],
   'draft-relaunch': [22, 23, 24, 25],
-  'personal-cycle': [17, 18, 19, 20, 21, 22, 23, 24, 25]
+  'personal-cycle': [17, 18, 19, 20, 21, 22, 23, 24, 25],
+  'adjustment-cycle': [26, 27, 28],
+  'lifecycle-cycle': [26, 27, 28, 29, 30],
+  'cleanup-relaunch': [30]
 }
 
 /** 前置用例显式列出；只补必要环境与导航，不能暗中扩展为完整触摸套件。 */
@@ -96,6 +105,7 @@ export function selection(kind, name, nativeScenarios) {
         return uiSelection(
           index === 10 ? [9, 10] : index === 12 ? [11, 12] : index === 14 ? [13, 14]
             : index === 18 ? [17, 18] : index === 20 ? [17, 19, 20]
+              : index === 27 ? [26, 27] : index === 28 ? [26, 28] : index === 29 ? [26, 28, 29]
               : index === 24 ? [22, 23, 24] : index === 25 ? [22, 23, 24, 25] : [index]
         )
     }
@@ -106,7 +116,8 @@ function uiSelection(indices) {
   return {
     scheme: 'DictionaryTouch',
     configuration: 'Release',
-    fixture: indices.some(i => i >= 17) ? 'personal-' + indices.join(',')
+    fixture: indices.some(i => i >= 26) ? 'lifecycle-' + indices.join(',')
+      : indices.some(i => i >= 17) ? 'personal-' + indices.join(',')
       : indices.includes(15) && indices.includes(16) ? 'entry-cycle' : String(indices.at(-1)),
     cases: [
       ...(indices.some((i) => (i >= 1 && i <= 5) || i === 11 || i === 13 || i >= 15)

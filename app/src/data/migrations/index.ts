@@ -13,6 +13,8 @@ import type { SqlSession } from '../ledgerDatabase'
 import type { SchemaObject } from './schema'
 import personalState from './0005_personal_state.sql?raw'
 import personalSchema from './0005_schema.json'
+import adjustmentLifecycle from './0006_adjustment_lifecycle.sql?raw'
+import adjustmentSchema from './0006_schema.json'
 
 export type Migration = Readonly<{
   version: number
@@ -28,6 +30,7 @@ export const migrations: readonly Migration[] = [
   { version: 4, sql: snapshotSearch, schema: searchSchema,
     data: { source: JSON.stringify([searchDataSource, nameV1Source]), apply: backfillSnapshotSearch } },
   { version: 5, sql: personalState, schema: personalSchema },
+  { version: 6, sql: adjustmentLifecycle, schema: adjustmentSchema },
 ]
 export const publishedSchemaVersions: readonly number[] = []
 

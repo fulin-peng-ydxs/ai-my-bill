@@ -3,7 +3,7 @@ import { computed, inject, onScopeDispose, reactive, ref, useId, watch } from 'v
 import { ReceiptText, SlidersHorizontal } from 'lucide-vue-next'
 
 import { createExpenseAdjustment, type ExpenseAdjustmentResponse, type ExpenseAdjustmentType } from '../api/expenseAdjustments'
-import { ApiClientError } from '../api/http'
+import { normalizeRequestError } from '../api/errors'
 import type { LedgerItem } from '../api/ledgerEntries'
 import { registerUnsavedChanges, unsavedChangeScope } from '../composables/unsavedChanges'
 import { shanghaiLocalDateTimeToIso, toShanghaiLocalDateTime } from '../domain/businessTime'
@@ -65,7 +65,7 @@ async function submit(): Promise<void> {
     Object.assign(form, JSON.parse(initial))
     emit('saved', saved)
   } catch (error) {
-    if (error instanceof ApiClientError && error.body?.fieldErrors) Object.entries(error.body.fieldErrors)
+    Object.entries(normalizeRequestError(error).fieldErrors)
       .forEach(([field, messages]) => { errors[field as keyof typeof form] = messages?.[0] })
     submitError.value = error instanceof Error ? error.message : '调整保存失败，请重试。'
   } finally { submitting.value = false }

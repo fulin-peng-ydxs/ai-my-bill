@@ -348,7 +348,7 @@ async function confirmPurge(): Promise<void> {
   lifecycleBusyId.value = item.id
   try {
     const request = { id: item.id, entryType: item.entryType, version: item.version, action: 'purge' }
-    await changeLedgerLifecycle(item, 'purge', lifecycleAttempt.keyFor(request))
+    await changeLedgerLifecycle(item, 'purge', lifecycleAttempt.keyFor(request), Boolean(item.linkedAdjustmentCount))
     lifecycleAttempt.reset(); purgeConfirmOpen.value = false; purgeTarget.value = undefined
     closeRecordOverlays(item.id)
     pendingUndo.value = undefined
