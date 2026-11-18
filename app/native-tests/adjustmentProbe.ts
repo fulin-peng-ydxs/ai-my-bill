@@ -33,3 +33,9 @@ export function cleanupFinalization() {
 export function cleanupForegroundState() {
   return ledgerFiles.getLifecycleState()
 }
+
+/** 原生完成回执按代次幂等忽略无关轮次，不更改正式数据或当前窗口。 */
+export async function backgroundCompletion() {
+  await ledgerFiles.finishBackground({ generation: 1_000_000 })
+  return true
+}

@@ -857,7 +857,11 @@
 
   反向顺序先在 ios-check-gLBy3x 复现失败，修复后两个目标分支通过（ios-check-wqoRKu）；关联自查补齐隐藏通知迟到分支（ios-check-iJQqL3 复现），最终平台事件 14/14 通过（ios-check-LUnMIw）。覆盖 DOM 可见先到、原生激活先到、后台迟到就绪、冷启动后台初态、初态响应迟到、读取/订阅失败、隐藏通知迟到、重复事件及取消后恢复。脚本仅定向 T8 选择回归 1/1、Shell 语法通过。为补齐上述同根因分支，首次原生准备 run-SYMjDC 在构建准备阶段主动中止，未执行测试；复用同一独立模拟器，最终 testOfflineCleanupForegroundState 在 ios-debug-ZvQQEp/run-OIlm0k 1/1 通过，对照 UIKit 验证原生只读初态，最终类型/随包构建、同步及源资源检查通过。该原生单用例不冒充全部事件排列实操，排列由平台事件回归证明。脚本/CI 纳入同一只读测试及完成信号，没有重跑已通过的 T8 数据库或页面套件，也未执行完整原生/页面验收。
 
-  V8-T1/T2/B1/B2 在独立 iPhone 14 Pro Max / iOS 27.0 模拟器范围通过；原调整表单和明细模板/样式逐字保持，仅接通原有数据、字段错误和确认参数。未运行完整 ios-smoke/ios-touch，未使用真机或启动旧 Web/PG，远端 CI 及真机 Release 容量/签名交付仍未验证。T9 未开始。本轮模拟器及专用构建缓存已清理，必要日志、失败与最终页面证据保留于 .local/ios/tmp/ai-agent/ios-debug-qMaUwi、ios-debug-pyENJR、ios-debug-ZvQQEp 及上述 ios-check-*；最终交付稳定且不再引用后回收。
+  原生通知来源的后续复查确认：旧草稿后台窗口未结束时会抑制新的后台通知。本次用生产 LedgerLifecycleCoordinator 分开管理 App/Scene 状态去重与窗口复用，无窗口预算也照常通知取消清理；后台状态携带递增 generation，当前代次完成才能关闭复用窗口，到期回调另绑定申请窗口的代次，旧完成、旧到期及句柄复用都不影响新窗口。JS 草稿入口拒绝重复/旧代次，新轮次仍复用每类型在途合并，不改原有有界续写策略，不引入额外重试队列。停止/销毁回收观察者和窗口。原页面布局、交互、样式、数据库及迁移未改。
+
+  新回归初版等待重复请求的编排超时（ios-check-jtKcNw），调整为先完成慢写再统一等待；随后 ios-check-aumnq5 精确复现应写 2 次却实际写 3 次，修复后支出/收入慢写快切 2/2 通过（ios-check-Z6AASg）。原草稿调度 21/21（ios-check-ASQJCb）及清理事件 14/14（ios-check-1k0g9K）通过；类型、随包构建和同步局部通过（ios-check-wt4ZNY），脚本 T8 选择回归 1/1、Shell 语法通过。独立 iPhone 14 Pro Max / iOS 27.0 的 testNativeLifecycleDraftWindow 在 ios-debug-6bcRhd/run-cr7xEu 1/1 通过，使用生产协调器、私有通知中心与可控窗口验证两次后台通知、同态去重、复用及回执/到期代次保护、无预算通知和停止回收；实际桥同时验证无关代次完成的幂等忽略。最终构建/同步及源资源检查通过。该技术场景不冒充真实系统后台时长或完整页面快切实操；脚本/CI 接入同一单用例，未重复整套原生/页面验收，也未核验远端 CI。
+
+  V8-T1/T2/B1/B2 在独立 iPhone 14 Pro Max / iOS 27.0 模拟器范围通过；原调整表单和明细模板/样式逐字保持，仅接通原有数据、字段错误和确认参数。未运行完整 ios-smoke/ios-touch，未使用真机或启动旧 Web/PG，远端 CI 及真机 Release 容量/签名交付仍未验证。T9 未开始。本轮模拟器及专用构建缓存已清理，必要日志、失败与最终页面证据保留于 .local/ios/tmp/ai-agent/ios-debug-qMaUwi、ios-debug-pyENJR、ios-debug-ZvQQEp、ios-debug-6bcRhd 及上述 ios-check-*；最终交付稳定且不再引用后回收。
 
 ### T9：明细查询与上下文返回
 
@@ -1585,7 +1589,7 @@
 | 检查点 / 关联差异 | 执行入口、命令与用例范围 | 预期结果与通过条件 | AI验证结果 / 证据 / 后续处理 |
 | --- | --- | --- | --- |
 | V8-T1 | 实际入口：lifecycleService.spec.ts、testOfflineAdjustmentLifecycle；多次退款/报销、原额编辑、撤销/恢复、累计上限和关联永久删除 | 有效调整不超实付；冻结/撤销/删除不冲减；恢复重验；任何失败不留孤儿或错误状态 | 通过：Node lifecycleService 的 5 组场景（ios-check-WOsS3H）及原生 run-T1ktU7 共享场景覆盖累计/并发上限、幂等回放、撤销、冻结/解冻、实付最低额、关联永久删除、回执故障整体回滚和 v5→v6 原子升级。App 111/111 通过；零实付且调整全撤销的标记边界由 ios-check-bQd3SA 定向复验。 |
-| V8-T2 | 实际入口：lifecycleService.spec.ts、cleanupLifecycle.spec.ts、testOfflineAdjustmentLifecycle、testOfflineCleanupFinalization；30 天边界、S3 已冻结的回退/墙钟与单调时钟差值/跨启动长间隔/无基线、批次中断、重启与重复执行 | 仅到期且满足联动规则者清理；异常轮次延期可观察且不重试清理，后续前台重新判定；重跑幂等、每批最多100条，其他账目保留；最终状态落盘失败仍刷新已提交删除，部分失败反馈真实，DOM 与原生均确认前台才启动，后台迟到就绪不绕过 | 通过：Node/原生共享场景验证 30 天边界、每批百行总预算、五批上限、批次故障回滚、取消重开、遗留 running 中断、时钟延期和数据集拒绝；双通道合并及后台取消的原有 App 111/111 证据保持为历史结果；本次 SQL 6/6（ios-check-DTTWJf）和事件 6/6（ios-check-wwFNYr）补齐最终状态写失败仍刷新、双重状态故障、部分失败进度、后台就绪及原生激活先到顺序。独立 testOfflineCleanupFinalization 在 ios-debug-pyENJR/run-57htB9 真实桥通过 1 项收尾场景。类型声明前置失败及修复范围见 T8 实施结果；原页面未变，run-XUqwR4 按原范围沿用。 最新反向顺序及初态保护已补齐，ios-check-LUnMIw 平台事件 14/14 通过；原生只读初态 testOfflineCleanupForegroundState 在 ios-debug-ZvQQEp/run-OIlm0k 1/1 通过，具体失败复现及验证边界见 T8。 |
+| V8-T2 | 实际入口：lifecycleService.spec.ts、cleanupLifecycle.spec.ts、testOfflineAdjustmentLifecycle、testOfflineCleanupFinalization、testOfflineCleanupForegroundState、testNativeLifecycleDraftWindow；30 天边界、S3 已冻结的回退/墙钟与单调时钟差值/跨启动长间隔/无基线、批次中断、重启与重复执行 | 仅到期且满足联动规则者清理；异常轮次延期可观察且不重试清理，后续前台重新判定；重跑幂等、每批最多100条，其他账目保留；最终状态落盘失败仍刷新已提交删除，部分失败反馈真实，DOM 与原生均确认前台才启动，后台迟到就绪不绕过，原生通知不受旧草稿窗口抑制且同态不重复重试 | 通过：Node/原生共享场景验证 30 天边界、每批百行总预算、五批上限、批次故障回滚、取消重开、遗留 running 中断、时钟延期和数据集拒绝；双通道合并及后台取消的原有 App 111/111 证据保持为历史结果；本次 SQL 6/6（ios-check-DTTWJf）和事件 6/6（ios-check-wwFNYr）补齐最终状态写失败仍刷新、双重状态故障、部分失败进度、后台就绪及原生激活先到顺序。独立 testOfflineCleanupFinalization 在 ios-debug-pyENJR/run-57htB9 真实桥通过 1 项收尾场景。类型声明前置失败及修复范围见 T8 实施结果；原页面未变，run-XUqwR4 按原范围沿用。 最新反向顺序及初态保护已补齐，ios-check-LUnMIw 平台事件 14/14 通过；原生只读初态 testOfflineCleanupForegroundState 在 ios-debug-ZvQQEp/run-OIlm0k 1/1 通过，具体失败复现及验证边界见 T8。 原生窗口抑制缺口已修复：慢写快切 2/2、原草稿调度 21/21、清理事件 14/14 通过；testNativeLifecycleDraftWindow 在 ios-debug-6bcRhd/run-cr7xEu 1/1 通过，验证范围见 T8。 |
 
 #### 业务验证点（真实系统交互）
 

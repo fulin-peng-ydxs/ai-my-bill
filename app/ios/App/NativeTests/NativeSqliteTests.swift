@@ -222,6 +222,81 @@ final class NativeSqliteTests: XCTestCase {
         print("OFFLINE_CLEANUP_FINALIZATION_EVIDENCE " + String(decoding: try JSONSerialization.data(withJSONObject: evidence, options: [.sortedKeys]), as: UTF8.self))
     }
 
+    func testNativeLifecycleDraftWindow() async throws {
+        // 私有 NotificationCenter 与可控窗口使慢写/快速切换确定可复现，不改变宿主 App 状态。
+        let center = NotificationCenter()
+        var expirations: [() -> Void] = []
+        var ended: [UIBackgroundTaskIdentifier] = []
+        var names: [String] = []
+        var generations: [Int] = []
+        let coordinator = LedgerLifecycleCoordinator(center: center, beginTask: { expiration in
+            expirations.append(expiration)
+            return UIBackgroundTaskIdentifier(rawValue: expirations.count == 1 ? 101 : 102)
+        }, endTask: { ended.append($0) }, notify: { event, data in
+            names.append(event)
+            if event == "background" {
+                generations.append(data["generation"] as? Int ?? -1)
+            }
+        })
+        coordinator.start()
+        coordinator.start()
+        defer { coordinator.stop() }
+        center.post(name: UIApplication.willResignActiveNotification, object: nil)
+        center.post(name: UIScene.willDeactivateNotification, object: nil)
+        center.post(name: UIApplication.didBecomeActiveNotification, object: nil)
+        center.post(name: UIScene.didActivateNotification, object: nil)
+        center.post(name: UIApplication.willResignActiveNotification, object: nil)
+        center.post(name: UIScene.willDeactivateNotification, object: nil)
+        XCTAssertEqual(names, ["background", "foreground", "background"])
+        XCTAssertEqual(generations, [1, 2])
+        XCTAssertEqual(expirations.count, 1, "慢写期间复用一个窗口，不能抑制新的后台状态")
+        coordinator.finish(generation: 1)
+        XCTAssertTrue(ended.isEmpty, "旧完成不能结束新轮次使用的窗口")
+        coordinator.finish(generation: 2)
+        XCTAssertEqual(ended, [UIBackgroundTaskIdentifier(rawValue: 101)])
+        center.post(name: UIScene.willDeactivateNotification, object: nil)
+        XCTAssertEqual(generations, [1, 2], "窗口释放后，同态通知也不能触发额外草稿重试")
+        center.post(name: UIApplication.didBecomeActiveNotification, object: nil)
+        center.post(name: UIApplication.willResignActiveNotification, object: nil)
+        XCTAssertEqual(expirations.count, 2)
+        expirations[0]()
+        XCTAssertEqual(ended.count, 1, "旧到期回调不能结束新窗口")
+        expirations[1]()
+        expirations[1]()
+        XCTAssertEqual(ended.count, 2, "当前到期只释放一次")
+        center.post(name: UIScene.willDeactivateNotification, object: nil)
+        XCTAssertEqual(expirations.count, 2, "同态通知不能循环申请已到期窗口")
+        center.post(name: UIApplication.didBecomeActiveNotification, object: nil)
+        center.post(name: UIApplication.willResignActiveNotification, object: nil)
+        expirations[1]()
+        XCTAssertEqual(ended.count, 2, "UIKit 句柄复用时，旧代次仍不能释放新窗口")
+        coordinator.stop()
+        coordinator.stop()
+        XCTAssertEqual(ended.count, 3)
+        let count = names.count
+        center.post(name: UIApplication.didBecomeActiveNotification, object: nil)
+        XCTAssertEqual(names.count, count, "停止后必须移除观察者")
+
+        let deniedCenter = NotificationCenter()
+        var deniedEvents: [String] = []
+        let denied = LedgerLifecycleCoordinator(center: deniedCenter, beginTask: { _ in .invalid },
+            endTask: { _ in XCTFail("不能释放无效窗口") }, notify: { event, _ in deniedEvents.append(event) })
+        denied.start()
+        defer { denied.stop() }
+        deniedCenter.post(name: UIApplication.willResignActiveNotification, object: nil)
+        deniedCenter.post(name: UIScene.willDeactivateNotification, object: nil)
+        XCTAssertEqual(deniedEvents, ["background"], "无后台预算时仍要通知取消清理")
+        denied.finish(generation: 1)
+
+        // 同时核验 JS→原生完成回执的代次契约；无关代次只被忽略，不释放当前窗口。
+        let webView = try await readyWebView()
+        let script = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "sqlite-probe", withExtension: "js"))
+        _ = try await webView.evaluateJavaScript(String(contentsOf: script, encoding: .utf8) + ";void 0;")
+        let result = try await webView.callAsyncJavaScript("return await MyBillNativeProbe.backgroundCompletion()", arguments: [:], in: nil, contentWorld: .page)
+        XCTAssertEqual(result as? Bool, true)
+        print("NATIVE_LIFECYCLE_DRAFT_WINDOW_VERIFIED")
+    }
+
     func testOfflineCleanupForegroundState() async throws {
         let webView = try await readyWebView()
         let script = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "sqlite-probe", withExtension: "js"))
