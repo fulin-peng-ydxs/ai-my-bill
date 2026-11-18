@@ -9,6 +9,9 @@ import LedgerView from '../views/LedgerView.vue'
 import { pageActivityKey } from '../composables/usePageActivity'
 import { useBootstrapStore } from '../stores/bootstrap'
 import { usePreferencesStore } from '../stores/preferences'
+import type { LedgerItem } from '../api/ledgerEntries'
+import { LEDGER_CHANGED_EVENT } from '../api/localEntries'
+import { LocalError } from '../domain/localError'
 
 const { list } = vi.hoisted(() => ({ list: vi.fn() }))
 vi.mock('../api/ledgerEntries', () => ({ listLedgerEntries: list }))
@@ -58,6 +61,53 @@ async function mountLedger() {
   await settle()
   return { host, router, input: host.querySelector<HTMLInputElement>('#ledger-search')! }
 }
+
+const ledgerItem = (id: string): LedgerItem => ({ id, entryType: 'INCOME', title: id, categoryName: '工资',
+  counterpartyName: '合成公司', fundingChannelName: '现金', amount: '1.00', occurredAt: '2026-11-17T01:00:00Z',
+  businessDate: '2026-11-17', createdAt: '2026-11-17T01:00:00Z', version: 1, lifecycleStatus: 'ACTIVE',
+  adjustmentType: null, originalExpenseId: null, effectiveAdjustmentAmount: null, netExpenseAmount: null,
+  fullyAdjusted: false, linkedAdjustmentCount: 0 })
+const busy = () => new LocalError('DATABASE_BUSY', '受控读取失败', { retryable: true })
+function button(host: HTMLElement, label: string) {
+  const found = [...host.querySelectorAll<HTMLButtonElement>('button')].find(item => item.textContent?.trim() === label)
+  expect(found).toBeTruthy()
+  return found!
+}
+
+it('真实明细空分页后刷新失败保留列表，原重试入口可恢复', async () => {
+  list.mockResolvedValueOnce({ items: [ledgerItem('保留的明细')], hasMore: true, nextCursor: 'next' })
+    .mockResolvedValueOnce({ items: [], hasMore: false }).mockRejectedValueOnce(busy())
+  const { host } = await mountLedger()
+  button(host, '加载更多').click()
+  await settle()
+  window.dispatchEvent(new Event(LEDGER_CHANGED_EVENT))
+  await settle()
+  expect(host.textContent).toContain('保留的明细')
+  expect(host.textContent).not.toContain('没有匹配的明细')
+  list.mockResolvedValueOnce({ items: [ledgerItem('恢复后的明细')], hasMore: false })
+  button(host, '重试').click()
+  await settle()
+  expect(host.textContent).toContain('恢复后的明细')
+  expect(host.querySelector('.status-notice')).toBeNull()
+})
+
+it('真实明细跨午夜恢复失败后原重试入口从首批重新读取', async () => {
+  list.mockResolvedValueOnce({ items: [ledgerItem('午夜前的明细')], hasMore: true, nextCursor: 'expired' })
+    .mockRejectedValueOnce(new LocalError('VALIDATION_FAILED', '分页位置无效', {
+      fieldErrors: [{ field: 'cursor', message: '分页位置无效，请重新加载。' }],
+    })).mockRejectedValueOnce(busy())
+  const { host } = await mountLedger()
+  button(host, '加载更多').click()
+  await settle()
+  expect(host.textContent).toContain('午夜前的明细')
+  list.mockResolvedValueOnce({ items: [ledgerItem('午夜后的明细')], hasMore: false })
+  button(host, '重试').click()
+  await settle()
+  expect(list.mock.calls.map(call => call[1])).toEqual([undefined, 'expired', undefined, undefined])
+  expect(host.textContent).toContain('午夜后的明细')
+  expect(host.textContent).not.toContain('午夜前的明细')
+  expect(host.querySelector('.status-notice')).toBeNull()
+})
 
 it('清除已应用筛选时取消尚未到期的搜索，旧关键词不能复活', async () => {
   const { host, router, input } = await mountLedger()
