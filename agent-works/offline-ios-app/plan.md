@@ -1135,7 +1135,7 @@
 
 - 输入与前置依赖：
 
-  T2/T3 已建立的入口、各业务任务的测试接入和 T14 结果；stock 的执行协议及当前 .github/workflows/ci.yml。
+  T2/T3 已建立的入口、各业务任务的测试接入和 T14 结果；stock 的执行协议及当前 .github/workflows/offline-ios.yml。
 
 - 任务状态：🟡 待开始
 

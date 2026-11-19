@@ -136,7 +136,14 @@ final class DictionaryTouchTests: XCTestCase {
         field.tap()
         field.typeText("Debug Ready")
         expectValue(field, "Debug Ready")
-        tap("清空搜索")
+        // 只准备键盘，不验收条件显示的清空按钮；真实退格后核对空输入，再收键盘返回导航。
+        field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: "Debug Ready".count))
+        let empty = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            let value = field.value as? String ?? ""
+            return value.isEmpty || value == field.placeholderValue
+        }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [empty], timeout: 3), .completed)
+        dismissSearchKeyboard()
         tap("记一笔")
         print("DEBUG_NATIVE_KEYBOARD_READY")
     }
@@ -271,12 +278,22 @@ final class DictionaryTouchTests: XCTestCase {
         print("DICTIONARY_TOUCH_MERGE_CANCEL_CONFIRMED_RELAUNCHED")
     }
 
-    private func searchAndGoToLastPage(kind: String, prefix: String) {
+    /// 定位指定字典项前走原搜索控件，不假设该项在未筛选列表的可见区域。
+    private func searchDictionary(kind: String, text: String) {
         openKind(kind)
         let field = app.searchFields.matching(NSPredicate(format: "label == %@", "搜索" + kind)).firstMatch
         XCTAssertTrue(field.waitForExistence(timeout: 10))
+        if let value = field.value as? String, !value.isEmpty, value != field.placeholderValue {
+            tap("清空搜索")
+        }
         field.tap()
-        field.typeText(prefix)
+        field.typeText(text)
+        expectValue(field, text)
+        dismissSearchKeyboard()
+    }
+
+    /// 搜索清空后输入仍保持焦点；离开前显式收起软键盘，不能依赖底部导航仍可触摸。
+    private func dismissSearchKeyboard() {
         if app.keyboards.firstMatch.exists {
             let buttons = app.buttons.matching(NSPredicate(format: "label IN %@", ["Done", "完成"]))
             var done: XCUIElement?
@@ -289,6 +306,10 @@ final class DictionaryTouchTests: XCTestCase {
             done?.tap()
             disappears(app.keyboards.firstMatch)
         }
+    }
+
+    private func searchAndGoToLastPage(kind: String, prefix: String) {
+        searchDictionary(kind: kind, text: prefix)
         if kind == "单位" {
             // WebKit 将 HTML radio 暴露为 Switch；不能点到列表里同名的状态文案。
             let activeFilter = app.switches.matching(NSPredicate(format: "label == '启用'")).firstMatch
@@ -478,7 +499,7 @@ final class DictionaryTouchTests: XCTestCase {
     }
 
     func test19DisableTemplateUnit() {
-        openKind("单位")
+        searchDictionary(kind: "单位", text: "日常份")
         tap("管理日常份")
         tap("停用")
         appears("停用日常份？")

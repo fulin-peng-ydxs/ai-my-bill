@@ -56,11 +56,12 @@ debug_check = bool(debug_match and debug_match[1])
 if debug_match:
     mode = 'debug-check' if debug_check else 'prepare'
 connection = sqlite3.connect(f'file:{database}?mode={"rw" if mode in ("prepare", "prepare-paging", "prepare-entry", "prepare-personal", "prepare-lifecycle", "prepare-query", "prepare-report") else "ro"}', uri=True)
-def add_paging_items(connection, ids):
+def add_paging_items(connection, ids, kinds=('PRODUCT', 'UNIT')):
     """完整和局部触摸共用相同末页数据，始终拒绝覆盖既有同名样本。"""
     assert connection.execute("SELECT count(*) FROM dictionary_item WHERE name LIKE 'PageProduct%' OR name LIKE 'PageUnit%'").fetchone()[0] == 0
     ids['paging'] = {}
     for kind, prefix in [('PRODUCT', 'PageProduct'), ('UNIT', 'PageUnit')]:
+        if kind not in kinds: continue
         for index in range(21):
             key = prefix + f'{index:02}'
             item_id = str(uuid.uuid4())
@@ -265,6 +266,8 @@ try:
         check_lifecycle(connection,list(range(26,31)))
     elif mode == 'debug-check' and personal_cases:
         check_personal(connection, personal_cases)
+        if 19 in personal_cases:
+            assert connection.execute("SELECT count(*) FROM dictionary_item WHERE kind='UNIT' AND name LIKE 'PageUnit%' AND status='ACTIVE'").fetchone()[0] == 21
     elif mode == 'prepare-personal':
         with connection:
             add_personal_items(connection)
@@ -364,6 +367,9 @@ try:
         if personal_cases:
             with connection:
                 add_personal_items(connection)
+                if 19 in personal_cases:
+                    # 还原完整流程先验收分页后留下的长列表；停用仍必须经页面操作，不能预写终态。
+                    add_paging_items(connection, ids, kinds=('UNIT',))
         if debug_case is not None:
             with connection:
                 if debug_case in [15, 16]:

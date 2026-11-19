@@ -23,7 +23,7 @@ npm run check:ios-app:simulator -- --from "$IOS_NATIVE_EVIDENCE"
 npm run check:ios-app:touch -- --from "$IOS_TOUCH_EVIDENCE"
 ```
 
-依赖由 app/package-lock.json 固定；命令来源为 [package.json](package.json) 与 [ios-app.sh](scripts/ios-app.sh)，各检查的条件和判据见[开发验证规范](agent-works/testing/guide.md#工程检查)。`check:app` 运行领域、队列、初始化状态、组件四态及设计契约测试、类型检查、随包资源构建和资源门禁；`build:ios-app` 编译未签名的真机架构 Release；模拟器入口运行实际 WKWebView → SQLite 桥测试，并删除本轮创建的模拟器。成功时构建/资源检查或 XCTest 报告通过；本地阶段结果见开发计划；远端 Actions 的实际执行结果须另行核验。
+依赖由 app/package-lock.json 固定；命令来源为 [package.json](package.json) 与 [ios-app.sh](scripts/ios-app.sh)，各检查的条件和判据见[开发验证规范](agent-works/testing/guide.md#工程检查)。`check:app` 运行领域、队列、初始化状态、组件四态及设计契约测试、类型检查、随包资源构建和资源门禁；`build:ios-app` 编译未签名的真机架构 Release；模拟器入口运行实际 WKWebView → SQLite 桥测试，并删除本轮创建的模拟器。成功时构建/资源检查或 XCTest 报告通过；本地阶段结果见开发计划；远端 Actions 的实际执行结果须另行核验。当前仅保留离线 iOS 自动 CI，旧 Web/服务端流水线及其 PostgreSQL 安装步骤已移除；旧源码和手工工具留待后续退役阶段清理，不是 App 的运行依赖。
 
 每轮原生日志位于 .local/ios/tmp/ai-agent/native-*，分阶段耗时 timings.json 位于对应的 ios-full-*、调试会话 run-* 或 common/ios-build 的 ios-command-*，分别记录构建、安装和测试；失败先查对应阶段，诊断结束后可删除不再需要的日志，工作区验证状态须保留。`ios-invocation-*` 记录包含工具链前置检查的总预算和耗时，阶段修复后的缓存恢复不解除完整失败锁；详见[局部调试流程](agent-works/testing/guide.md#原生局部调试与完整验收)。增量构建与依赖缓存在 .local/ios/DerivedData、.local/ios/SourcePackages。脚本只为本次命令选择完整 Xcode，不修改全局 xcode-select；非默认安装位置可设置 DEVELOPER_DIR。不要把凭据、真实账本或 Web 本地配置复制到这些测试目录。
 
@@ -357,7 +357,7 @@ npm run environment -- verify intranet-main
 
 ### 前后端代码更新如何发布
 
-GitHub Actions 只做检查；经授权的运维人员在干净 HEAD、已初始化的目标上执行：
+以下为保留的旧 Web/服务端手工发布入口，其自动 CI 已移除，不属于离线 iOS App 交付流程。经授权的运维人员在干净 HEAD、已初始化的目标上执行：
 
 ```bash
 npm run release -- plan intranet-main

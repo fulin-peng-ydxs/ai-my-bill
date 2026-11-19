@@ -84,6 +84,20 @@ test('CI 按场景选择：纯验证脚本双平台回归，App/构建依赖/手
   assert.equal(ciValidationScope(scripts, true, true).native, true, '手动完整候选不能被文件过滤跳过')
 })
 
+test('离线分支自动 CI 保留 App 门禁，不再运行旧 Web/服务端与 PostgreSQL 安装', () => {
+  const directory = new URL('../../.github/workflows/', import.meta.url)
+  const workflows = fs.readdirSync(directory).filter(file => /\.ya?ml$/.test(file))
+  const app = fs.readFileSync(new URL('offline-ios.yml', directory), 'utf8')
+  assert.ok(app.includes('run: bash scripts/check-secrets.sh'), '保留适用于 App 的仓库 secret 检查')
+  for (const job of ['scope:', 'app-common:', 'native-simulator:', 'app-baseline-v1:'])
+    assert.ok(app.includes(job), '保留离线 App 的有效门禁：' + job)
+  for (const file of workflows) {
+    const workflow = fs.readFileSync(new URL(file, directory), 'utf8')
+    assert.doesNotMatch(workflow, /postgresql-16|actions\/setup-java|--prefix\s+(web|server)\b|working-directory:\s*(web|server)\b/,
+      '自动流水线不得重新启用已退役旧端：' + file)
+  }
+})
+
 test('CI 分流实际入口读取 Git 变更；PR/push 同源，未知基线及手动执行不缩小', t => {
   const root = temporary(t)
   const git = write(root, 'bin/git', '#!/bin/sh\nprintf "scripts/lib/ios-cache.mjs\\0"\n')

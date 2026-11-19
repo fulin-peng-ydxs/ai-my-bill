@@ -1,5 +1,7 @@
 name: offline-ios
 
+# 离线分支唯一自动流水线；旧 Web/服务端 release-gate 已退役。
+
 on:
   push:
     paths:
@@ -17,6 +19,7 @@ on:
       - 'scripts/normalize-capacitor-spm.mjs'
       - 'scripts/verify-ios-resources.mjs'
       - 'scripts/ios-storage-policy.mjs'
+      - 'scripts/check-secrets.sh'
       - 'scripts/tests/ios-resources.test.mjs'
       - 'scripts/toolchain.sh'
       - '.nvmrc'
@@ -38,6 +41,7 @@ on:
       - 'scripts/normalize-capacitor-spm.mjs'
       - 'scripts/verify-ios-resources.mjs'
       - 'scripts/ios-storage-policy.mjs'
+      - 'scripts/check-secrets.sh'
       - 'scripts/tests/ios-resources.test.mjs'
       - 'scripts/toolchain.sh'
       - '.nvmrc'
@@ -81,6 +85,10 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: 仓库通用 secret 检查
+        run: bash scripts/check-secrets.sh
       - uses: actions/setup-node@v4
         with:
           node-version-file: .nvmrc
@@ -88,7 +96,7 @@ jobs:
           cache-dependency-path: app/package-lock.json
       - run: npm --prefix app ci --ignore-scripts
       # native:sync 先从锁定 CLI 模板准备 SPM；干净检出不依赖本机生成目录。
-      # 同一 script-tests 覆盖真实 sync、重命名分流、方案切换登记及卸载前拒绝；job 超时仍是外层限制。
+      # 同一 script-tests 覆盖真实 sync、重命名分流、方案切换登记、T7 长列表搜索定位及卸载前拒绝；job 超时仍是外层限制。
       - name: App 与脚本门禁（含 SPM、方案切换、数据隔离及 T10 强断言）
         if: needs.scope.outputs.common == 'app'
         run: npm run check:app

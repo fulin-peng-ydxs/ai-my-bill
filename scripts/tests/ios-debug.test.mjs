@@ -431,6 +431,41 @@ test('T7 夹具不替代被验收操作，回读拒绝未保存、串写和来�
     database.close()
   }
 })
+test('T7 单位停用在长列表中先搜索，夹具保留首屏外目标且拒绝修改其他单位', t => {
+  const selected = selection('--case', 'DictionaryUITests/DictionaryTouchTests/test19DisableTemplateUnit', [])
+  assert.equal(selected.fixture, 'personal-19')
+  assert.equal(selected.cases.length, 2, '仅目标和既有键盘前置')
+  const { file, execute } = touchFixture(temporary(t))
+  assert.equal(execute('debug-personal-19').status, 0)
+  const db = new DatabaseSync(file)
+  try {
+    assert.equal(db.prepare("SELECT count(*) AS n FROM dictionary_item WHERE kind='UNIT' AND name LIKE 'PageUnit%'").get().n, 21)
+    assert.ok(db.prepare("SELECT count(*) AS n FROM dictionary_item WHERE kind='UNIT' AND sort_order < (SELECT sort_order FROM dictionary_item WHERE id='t7-unit')").get().n >= 10)
+    assert.equal(db.prepare("SELECT status FROM dictionary_item WHERE id='t7-unit'").get().status, 'ACTIVE')
+    assert.notEqual(execute('debug-check-personal-19').status, 0, '未执行页面停用不能通过')
+    db.prepare("UPDATE dictionary_item SET status='INACTIVE' WHERE id='t7-unit'").run()
+    assert.equal(execute('debug-check-personal-19').status, 0)
+    db.prepare("UPDATE dictionary_item SET status='INACTIVE' WHERE name='PageUnit00'").run()
+    assert.notEqual(execute('debug-check-personal-19').status, 0, '误停用背景单位必须拒绝')
+  } finally { db.close() }
+  const swift = fs.readFileSync(new URL('../../app/ios/App/UITests/DictionaryTouchTests.swift', import.meta.url), 'utf8')
+  const assertSearch = source => {
+    const body = source.slice(source.indexOf('func test19DisableTemplateUnit()'), source.indexOf('func test20TemplateFallbackRemove()'))
+    assert.match(body, /searchDictionary\(kind: "单位", text: "日常份"\)[\s\S]*tap\("管理日常份"\)/)
+    assert.match(body, /appears\("停用日常份？"\)/)
+    assert.match(body, /disappears\(matching\("停用日常份？"\)/)
+  }
+  assertSearch(swift)
+  assert.throws(() => assertSearch(swift.replace('searchDictionary(kind: "单位", text: "日常份")', 'openKind("单位")')))
+  const assertKeyboard = source => {
+    const body = source.slice(source.indexOf('func test00DebugKeyboardReady()'), source.indexOf('private func openKind('))
+    assert.match(body, /XCUIKeyboardKey.delete.rawValue[\s\S]*XCTWaiter.wait\(for: \[empty\][\s\S]*dismissSearchKeyboard\(\)[\s\S]*tap\("记一笔"\)/)
+    const search = source.slice(source.indexOf('private func searchDictionary('), source.indexOf('private func dismissSearchKeyboard('))
+    assert.match(search, /expectValue\(field, text\)[\s\S]*dismissSearchKeyboard\(\)/)
+  }
+  assertKeyboard(swift)
+  assert.throws(() => assertKeyboard(swift.replace('XCTWaiter.wait(for: [empty], timeout: 3)', 'XCTWaiter.wait(for: [], timeout: 3)')))
+})
 test('T8 夹具不预写调整，回读拒绝未执行清理和错误金额', (t) => {
   const { file, execute } = touchFixture(temporary(t))
   const prepared = execute('debug-lifecycle-26')
