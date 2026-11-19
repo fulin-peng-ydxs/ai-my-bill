@@ -20,6 +20,7 @@
 		A10000000000000000000002 /* NativeTests/NativeSqliteTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000003 /* NativeTests/NativeSqliteTests.swift */; };
 		A10000000000000000000004 /* sqlite-probe.js in Resources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000005 /* sqlite-probe.js */; };
 		C50000000000000000000002 /* DictionaryTouchTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C50000000000000000000003; };
+		C50000000000000000000021 /* reportTouchFixture.json in Resources */ = {isa = PBXBuildFile; fileRef = C50000000000000000000022; };
 		D60000000000000000000001 /* OwnedSimulatorTestContext.swift in NativeTests Sources */ = {isa = PBXBuildFile; fileRef = D60000000000000000000003; };
 		D60000000000000000000002 /* OwnedSimulatorTestContext.swift in UITests Sources */ = {isa = PBXBuildFile; fileRef = D60000000000000000000003; };
 /* End PBXBuildFile section */
@@ -58,6 +59,7 @@
 		A10000000000000000000005 /* sqlite-probe.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; name = "sqlite-probe.js"; path = "../../.native-test/sqlite-probe.js"; sourceTree = SOURCE_ROOT; };
 		A10000000000000000000006 /* NativeTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = NativeTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		C50000000000000000000003 /* DictionaryTouchTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UITests/DictionaryTouchTests.swift; sourceTree = SOURCE_ROOT; };
+		C50000000000000000000022 /* reportTouchFixture.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = ../../test-support/reportTouchFixture.json; sourceTree = SOURCE_ROOT; };
 		C50000000000000000000006 /* DictionaryUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = DictionaryUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		D60000000000000000000003 /* OwnedSimulatorTestContext.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeTests/OwnedSimulatorTestContext.swift; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
@@ -97,6 +99,7 @@
 				A10000000000000000000003 /* NativeTests/NativeSqliteTests.swift */,
 				D60000000000000000000003 /* OwnedSimulatorTestContext.swift */,
 				C50000000000000000000003 /* DictionaryTouchTests.swift */,
+				C50000000000000000000022 /* reportTouchFixture.json */,
 				A10000000000000000000005 /* sqlite-probe.js */,
 			);
 			sourceTree = "<group>";
@@ -256,6 +259,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				C50000000000000000000021 /* reportTouchFixture.json in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

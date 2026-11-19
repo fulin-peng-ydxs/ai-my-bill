@@ -13,6 +13,8 @@ import type { ReportFilters, ReportTimeGrain } from '../../api/reports'
 import { reportLegacyScenario, reportCalendarScenario, reportLifecycleScenario, reportUpgradeScenario, reportPrecisionScenario } from '../../../test-support/reportScenarios'
 import { entryFixture } from '../../../test-support/entryScenarios'
 import { EntryReadbackQuery } from '../entries/readbackQuery'
+import { AdjustmentService } from '../entries/adjustmentService'
+import touchFixture from '../../../test-support/reportTouchFixture.json'
 let db: LedgerDatabase, serial = 0
 beforeEach(async () => { db = new LedgerDatabase(`report_${++serial}`); await db.open() })
 afterEach(() => db.close())
@@ -47,6 +49,26 @@ it.each([
   expect(page.items).toHaveLength(1)
   expect(page.items[0].amount).toBe(snapshot.summary.totalIncome)
 })
+
+it.each(['2026-11-18T15:59:59Z', '2026-11-30T15:59:59Z', '2026-12-31T15:59:59Z'])(
+  '粒度验收跨午夜执行 %s：固定夹具范围和五种时段不随执行日期漂移', async before => {
+    const after = new Date(Date.parse(before) + 2000)
+    const f = await entryFixture(db, new Date(before))
+    const source = await f.service.createExpense({ ...f.expense, occurredAt: touchFixture.occurredAt }, 'touch-expense')
+    await f.service.createIncome({ ...f.income, occurredAt: touchFixture.occurredAt }, 'touch-income')
+    const dataset = String((await db.read(sql => sql.query('SELECT dataset_id FROM ledger_meta')))[0]!.dataset_id)
+    await new AdjustmentService(db, () => new Date(before)).create(dataset, source.id,
+      { adjustmentType: 'REFUND', amount: '3.00', occurredAt: touchFixture.occurredAt }, 'touch-refund')
+    const filters: ReportFilters = { query: '', scope: 'ALL', range: 'CUSTOM',
+      startDate: touchFixture.startDate, endDate: touchFixture.endDate }
+    for (const [grain, label] of [['DAY', '按日'], ['WEEK', '按周'], ['MONTH', '按月'], ['QUARTER', '按季'], ['YEAR', '按年']] as const) {
+      const report = await new ReportQueryService(db, () => after).snapshot(filters, grain)
+      const period = report.time!.buckets.filter(bucket => bucket.itemCount > 0).at(-1)!
+      expect(report.resolvedRange).toEqual({ startDate: touchFixture.startDate, endDate: touchFixture.endDate })
+      expect(period.label).toBe(touchFixture.periods[label])
+      expect([report.summary.balance, period.balance, period.cumulativeBalance]).toEqual(['988.00', '988.00', '988.00'])
+    }
+  })
 
 it('非法范围/专属条件、日期、粒度及取消明确拒绝', async () => {
   const service = new ReportQueryService(db)

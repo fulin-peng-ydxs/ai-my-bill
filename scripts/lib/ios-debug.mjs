@@ -90,12 +90,20 @@ export const uiScenarios = {
   'report-grains': [42, 41, 37, 40]
 }
 
-/** 后续构建/安装/初始化失败不能遮住上一次未结束的自动化会话。 */
+/** 启动请求失败也可能遗留桥接会话；后续准备失败不能遮住历史故障。 */
 export function needsSimulatorRecovery(directory) {
   const previous = fs.readdirSync(directory)
     .filter(name => /^run-[A-Za-z0-9]+$/.test(name))
     .sort((a, b) => fs.statSync(path.join(directory, a)).birthtimeMs - fs.statSync(path.join(directory, b)).birthtimeMs)
-    .findLast(name => fs.existsSync(path.join(directory, name, 'test.log')))
+    .findLast(name => {
+      const run = path.join(directory, name)
+      if (fs.existsSync(path.join(run, 'test.log'))) return true
+      // 尚未进入 XCTest 的启动超时/中断同样需要恢复。夹具已开始则启动和终止已完成，
+      // 不因夹具拒绝而额外重启；仍继续追溯更早的自动化或启动故障。
+      if (!fs.existsSync(path.join(run, 'initialize-launch.log')) || fs.existsSync(path.join(run, 'fixture.log'))) return false
+      const result = path.join(run, 'result.json')
+      return !fs.existsSync(result) || JSON.parse(fs.readFileSync(result, 'utf8')).failure?.stage === 'initialize'
+    })
   if (!previous) return false
   const result = path.join(directory, previous, 'result.json')
   return !fs.existsSync(result) || JSON.parse(fs.readFileSync(result, 'utf8')).status !== 'passed'
@@ -140,7 +148,7 @@ export function selection(kind, name, nativeScenarios) {
             : index === 18 ? [17, 18] : index === 20 ? [17, 19, 20]
               : index === 27 ? [26, 27] : index === 28 ? [26, 28] : index === 29 ? [26, 28, 29]
               : index === 24 ? [22, 23, 24] : index === 25 ? [22, 23, 24, 25]
-                : index === 37 || index === 40 ? [42, 41, index] : index === 41 ? [42, 41] : [index]
+                : index === 36 ? [42, 36] : [37, 38, 39, 40].includes(index) ? [42, 41, index] : index === 41 ? [42, 41] : [index]
         )
     }
   }

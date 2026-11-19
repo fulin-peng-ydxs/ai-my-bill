@@ -59,6 +59,40 @@ test('后续准备失败不遮蔽历史自动化失败，成功测试才解除�
   await add('Unfinished', undefined, true)
   assert.equal(needsSimulatorRecovery(root), true, '未写完回执仍需恢复')
 })
+test('初始化启动失败或中断在进入 XCTest 前也恢复，后续准备失败不能遮蔽', async t => {
+  const root = temporary(t)
+  const add = async (name, result, files = []) => {
+    await new Promise(resolve => setTimeout(resolve, 5))
+    const run = path.join(root, 'run-' + name)
+    fs.mkdirSync(run)
+    for (const file of files) fs.writeFileSync(path.join(run, file), '')
+    if (result) fs.writeFileSync(path.join(run, 'result.json'), JSON.stringify(result))
+  }
+  await add('LaunchFailed', { status: 'failed', failure: { stage: 'initialize' } }, ['initialize-launch.log'])
+  assert.equal(needsSimulatorRecovery(root), true)
+  for (const stage of ['build', 'install']) {
+    await add(stage, { status: 'failed', failure: { stage } })
+    assert.equal(needsSimulatorRecovery(root), true, '保留启动故障的恢复需求')
+  }
+  await add('Passed', { status: 'passed' }, ['test.log'])
+  assert.equal(needsSimulatorRecovery(root), false)
+  await add('Interrupted', undefined, ['initialize-launch.log'])
+  assert.equal(needsSimulatorRecovery(root), true, '启动尚无最终回执不能当作未进入原生运行')
+})
+test('未启动原生 App 的准备故障和已进入夹具的拒绝不新增设备恢复需求', async t => {
+  for (const [name, stage, files] of [
+    ['BeforeLaunch', 'initialize', []],
+    ['Build', 'build', ['initialize-launch.log']],
+    ['Fixture', 'initialize', ['initialize-launch.log', 'fixture.log']]
+  ]) {
+    const root = temporary(t)
+    const run = path.join(root, 'run-' + name)
+    fs.mkdirSync(run)
+    for (const file of files) fs.writeFileSync(path.join(run, file), '')
+    fs.writeFileSync(path.join(run, 'result.json'), JSON.stringify({ status: 'failed', failure: { stage } }))
+    assert.equal(needsSimulatorRecovery(root), false, name)
+  }
+})
 test('单用例/场景选择只带显式必要前置，拒绝任意过滤器与中断半流程', () => {
   assert.deepEqual(
     selection('--case', 'NativeTests/NativeSqliteTests/testRejectUnownedTestContexts', []).cases,
@@ -243,8 +277,20 @@ function touchFixture(root) {
     database.close()
   }
   const receipt = path.join(container, 'fixture.json')
-  const execute = (mode) =>
-    spawnSync('python3', ['scripts/fixtures/dictionary-touch.py', mode, container, device, receipt], {
+  // 在测试进程边界冻结 Python 时钟；不为正式夹具增加可绕过日期的运行参数。
+  const execute = (mode, clock) =>
+    spawnSync('python3', clock ? ['-c', `
+import datetime, runpy, sys
+clock = sys.argv.pop(1)
+class FrozenDateTime(datetime.datetime):
+    @classmethod
+    def now(cls, tz=None):
+        return cls.fromisoformat(clock).astimezone(tz)
+datetime.datetime = FrozenDateTime
+sys.argv = sys.argv[1:]
+runpy.run_path(sys.argv[0], run_name='__main__')
+`, clock, 'scripts/fixtures/dictionary-touch.py', mode, container, device, receipt]
+      : ['scripts/fixtures/dictionary-touch.py', mode, container, device, receipt], {
       encoding: 'utf8'
     })
   return { file, receipt, execute }
@@ -592,7 +638,7 @@ test('T10 总览与时间场景隔离，CI 使用相同原生入口和只读回�
   const shell = fs.readFileSync(new URL('../lib/ios-app-full.sh', import.meta.url), 'utf8')
   for (const [index, name] of [[36, 'test36ReportOverview'], [37, 'test37ReportTimeGrains'], [38, 'test38ReportDrillReturn'], [39, 'test39ReportComparison'], [40, 'test37ReportTimeGrainsQuarterYear']]) {
     const single = selection('--case', `DictionaryUITests/DictionaryTouchTests/${name}`, [])
-    const preparation = index === 37 || index === 40 ? [42, 41] : []
+    const preparation = index === 36 ? [42] : [42, 41]
     assert.equal(single.fixture, 'report-' + [...preparation, index].join(','))
     assert.deepEqual(single.cases, [
       ...(index === 38 ? ['DictionaryUITests/DictionaryTouchTests/test00DebugKeyboardReady'] : []),
@@ -651,6 +697,104 @@ test('T10 原生粒度断言必须同时检查具体时段和结果可用，金�
     assert.throws(() => assertFreshSnapshot(predicate.replace(guard, 'true')), '拒绝只命中旧金额或禁用结果')
   }
 })
+
+test('T10 粒度期望与原生日期筛选共用绝对夹具，拒绝重新读取执行日期', () => {
+  const swift = fs.readFileSync(new URL('../../app/ios/App/UITests/DictionaryTouchTests.swift', import.meta.url), 'utf8')
+  const assertFixedRange = source => {
+    const grains = source.slice(source.indexOf('private func verifyReportGrains('), source.indexOf('func test37ReportTimeGrains()'))
+    assert.match(grains, /let fixture = try reportFixture\(\)/)
+    assert.match(grains, /XCTUnwrap\(fixture\.periods\[grain\]/)
+    assert.doesNotMatch(grains, /Date\(\)|reportPeriodLabel/)
+    assert.ok(source.includes('date: fixture.startDate'))
+    assert.ok(source.includes('date: fixture.endDate'))
+    assert.ok(source.includes('label: "日期范围", option: "指定日期"'))
+  }
+  assertFixedRange(swift)
+  assert.throws(() => assertFixedRange(swift.replace('fixture.periods[grain]', 'reportPeriodLabel(grain, today: Date())')))
+  for (const date of ['startDate', 'endDate']) {
+    assert.throws(() => assertFixedRange(swift.replace('date: fixture.' + date, 'date: "2026-11-19"')))
+  }
+  const project = fs.readFileSync(new URL('../../app/ios/App/App.xcodeproj/project.pbxproj', import.meta.url), 'utf8')
+  const resources = project.slice(project.indexOf('C50000000000000000000009 /* Resources */ ='), project.indexOf('/* End PBXResourcesBuildPhase'))
+  assert.match(resources, /reportTouchFixture.json in Resources/)
+  assert.match(project, /path = ..\/..\/test-support\/reportTouchFixture.json/)
+  const appResources = project.slice(project.indexOf('504EC3021FED79650016851F /* Resources */ ='), project.indexOf('A10000000000000000000009 /* Resources */ ='))
+  assert.ok(appResources.includes('public in Resources'))
+  assert.doesNotMatch(appResources, /reportTouchFixture/)
+})
+
+test('T10 原生日期控件选择实际输入并按固定年月跳过无效滚轮操作', () => {
+  const swift = fs.readFileSync(new URL('../../app/ios/App/UITests/DictionaryTouchTests.swift', import.meta.url), 'utf8')
+  const helper = swift.slice(swift.indexOf('private func setReportDate('), swift.indexOf('private func reportFixtureScope()'))
+  const assertDateInput = source => {
+    assert.ok(source.includes('let fields = app.otherElements.matching('))
+    assert.ok(source.includes('XCTUnwrap(fields.allElementsBoundByIndex.last)'))
+    assert.ok(source.includes('if heading.value as? String != "\\(parts[0])年\\(parts[1])月"'))
+    assert.ok(source.includes('year.adjust(toPickerWheelValue:'))
+    assert.ok(source.includes('month.adjust(toPickerWheelValue:'))
+    assert.doesNotMatch(source, /Date\(\)/)
+  }
+  assertDateInput(helper)
+  assert.throws(() => assertDateInput(helper.replace('allElementsBoundByIndex.last', 'allElementsBoundByIndex.first')))
+  assert.throws(() => assertDateInput(helper.replace('if heading.value as? String != "\\(parts[0])年\\(parts[1])月"', 'if false')))
+})
+
+test('T10 总览及编辑金额使用带符号的精确原生节点，不依赖通用 Any/OCR 后备', () => {
+  const swift = fs.readFileSync(new URL('../../app/ios/App/UITests/DictionaryTouchTests.swift', import.meta.url), 'utf8')
+  const assertExactMoney = source => {
+    const helper = source.slice(source.indexOf('private func expectReportAmount('), source.indexOf('func test36ReportOverview()'))
+    assert.ok(helper.includes('app.staticTexts.matching(NSPredicate(format: "label == %@", label))'))
+    assert.ok(helper.includes('amount.waitForExistence(timeout: 3)'))
+    const overview = source.slice(source.indexOf('func test36ReportOverview()'), source.indexOf('func test00PrepareReportApp()'))
+    for (const amount of ['+¥1,000', '-¥15', '+¥3', '-¥12', '+¥988']) assert.ok(overview.includes('"' + amount + '"'))
+    assert.ok(overview.includes('expectReportAmount(amount)'))
+    assert.doesNotMatch(overview, /appears\("¥/)
+    assert.ok(source.includes('expectReportAmount("-¥13")'))
+  }
+  assertExactMoney(swift)
+  for (const change of [source => source.replace('app.staticTexts.matching(NSPredicate(format: "label == %@", label))', 'app.descendants(matching: .any)'),
+    source => source.replace('"+¥988"', '"¥988"'), source => source.replace('expectReportAmount(amount)', 'appears(amount)')]) {
+    assert.throws(() => assertExactMoney(change(swift)))
+  }
+})
+
+test('T10 报表启动准备经原底栏激活并断言真实控件，不受页首提示遮挡', () => {
+  const swift = fs.readFileSync(new URL('../../app/ios/App/UITests/DictionaryTouchTests.swift', import.meta.url), 'utf8')
+  const assertReportReady = source => {
+    assert.ok(source.includes('if !name.contains("test00PrepareReportApp")'))
+    const warmup = source.slice(source.indexOf('func test00PrepareReportApp()'), source.indexOf('func test36ReportTimePreparation()'))
+    assert.ok(warmup.includes('let report = app.links.matching('))
+    assert.ok(warmup.includes('if report.waitForExistence(timeout: 10) { report.tap() }'))
+    assert.ok(warmup.includes('tapVisibleText("报表")'))
+    assert.doesNotMatch(warmup, /CGVector|web\.coordinate/)
+    assert.ok(warmup.includes('"report-dimension", "维度"'))
+    assert.ok(warmup.includes('XCTAssertTrue(dimension.waitForExistence(timeout: 3)'))
+    assert.ok(warmup.includes('XCTAssertTrue(dimension.isEnabled)'))
+    assert.doesNotMatch(warmup, /appears\("记一笔"/)
+  }
+  assertReportReady(swift)
+  for (const guard of ['if report.waitForExistence(timeout: 10) { report.tap() }', 'tapVisibleText("报表")', 'XCTAssertTrue(dimension.waitForExistence(timeout: 3)', 'XCTAssertTrue(dimension.isEnabled)']) {
+    assert.throws(() => assertReportReady(swift.replace(guard, '// omitted')))
+  }
+})
+
+for (const before of ['2026-11-18T15:59:59Z', '2026-11-30T15:59:59Z', '2026-12-31T15:59:59Z']) {
+  test(`T10 真实夹具准备/回验跨午夜、月/年边界 ${before} 仍使用绝对日期`, t => {
+    const { file, execute } = touchFixture(temporary(t))
+    const after = new Date(Date.parse(before) + 2000).toISOString()
+    assert.equal(execute('debug-report-42,41,37,40', before).status, 0)
+    assert.equal(execute('debug-check-report-42,41,37,40', after).status, 0)
+    const fixture = JSON.parse(fs.readFileSync(new URL('../../app/test-support/reportTouchFixture.json', import.meta.url)))
+    const db = new DatabaseSync(file)
+    try {
+      const dates = db.prepare("SELECT business_time,business_date FROM ledger_entry WHERE id LIKE 't10-%' UNION ALL SELECT business_time,business_date FROM expense_adjustment WHERE id='t10-refund'").all()
+      assert.equal(dates.length, 3)
+      for (const row of dates) assert.deepEqual({ ...row }, { business_time: fixture.occurredAt, business_date: fixture.endDate })
+      db.prepare("UPDATE expense_adjustment SET business_date='2026-11-19' WHERE id='t10-refund'").run()
+      assert.notEqual(execute('debug-check-report-37', after).status, 0, '拒绝调整日期漂移，即使金额/版本仍正确')
+    } finally { db.close() }
+  })
+}
 test('T10 夹具与其他阶段隔离，编辑用例必须且只能产生约定结果', t => {
   const { file, execute } = touchFixture(temporary(t))
   assert.equal(execute('debug-report-36,37,38,39').status, 0)

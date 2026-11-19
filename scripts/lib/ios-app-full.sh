@@ -269,6 +269,7 @@ JS
     stop_owned_app "${RUN_DIRECTORY}/touch-query-stop.log"
     phase check native-readback/DictionaryTouch/Release "${RUN_DIRECTORY}/touch-query-readback.log"
     python3 scripts/fixtures/dictionary-touch.py check-query "${APP_CONTAINER}" "${SIMULATOR_ID}" "${RUN_DIRECTORY}/touch-fixture.json" | tee "${RUN_DIRECTORY}/touch-query-readback.log"
+    # 与局部入口共用绝对日期 JSON；原生页面应用同一 CUSTOM 范围，不依赖准备/执行时钟。
     python3 scripts/fixtures/dictionary-touch.py prepare-report "${APP_CONTAINER}" "${SIMULATOR_ID}" "${RUN_DIRECTORY}/touch-fixture.json"
     if ! positive_test "${RUN_DIRECTORY}/touch-report.log" "${XCODE_COMMON_ARGUMENTS[@]}" -scheme DictionaryTouch -configuration Release -destination "platform=iOS Simulator,id=${SIMULATOR_ID}" -parallel-testing-enabled NO -test-timeouts-enabled YES -maximum-test-execution-time-allowance 60 -only-testing:DictionaryUITests/DictionaryTouchTests/test00PrepareReportApp -only-testing:DictionaryUITests/DictionaryTouchTests/test36ReportOverview -only-testing:DictionaryUITests/DictionaryTouchTests/test36ReportTimePreparation -only-testing:DictionaryUITests/DictionaryTouchTests/test37ReportTimeGrains -only-testing:DictionaryUITests/DictionaryTouchTests/test37ReportTimeGrainsQuarterYear -only-testing:DictionaryUITests/DictionaryTouchTests/test38ReportDrillReturn -only-testing:DictionaryUITests/DictionaryTouchTests/test39ReportComparison -resultBundlePath "${RUN_DIRECTORY}/touch-report.xcresult"; then
       tail -80 "${RUN_DIRECTORY}/touch-report.log" >&2

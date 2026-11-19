@@ -15,8 +15,10 @@ final class DictionaryTouchTests: XCTestCase {
         executionTimeAllowance = 60
         if app.state != .runningForeground {
             app.launch()
-            activateWebContent()
-            appears("记一笔", timeout: 20)
+            if !name.contains("test00PrepareReportApp") {
+                activateWebContent()
+                appears("记一笔", timeout: 20)
+            }
         }
     }
 
@@ -798,72 +800,116 @@ final class DictionaryTouchTests: XCTestCase {
         expectValue(field, option)
     }
 
-    private func reportFixtureScope() {
-        tap("收支报表")
+    /// 仅测试资源，和 Python 夹具/真实 SQLite 回归共用；生产 App 不包含该文件。
+    private struct ReportTouchFixture: Decodable {
+        let startDate: String
+        let endDate: String
+        let periods: [String: String]
+    }
+
+    private func reportFixture() throws -> ReportTouchFixture {
+        let url = try XCTUnwrap(Bundle(for: DictionaryTouchTests.self).url(forResource: "reportTouchFixture", withExtension: "json"))
+        return try JSONDecoder().decode(ReportTouchFixture.self, from: Data(contentsOf: url))
+    }
+
+    private func setReportDate(_ id: String, label: String, date: String) throws {
+        // FormField 的标签组和真正日期输入同名；选后面的输入，避免先点击标签再异步转焦点。
+        let fields = app.otherElements.matching(NSPredicate(format: "identifier == %@ OR label == %@", id, label))
+        XCTAssertTrue(fields.firstMatch.waitForExistence(timeout: 3))
+        let field = try XCTUnwrap(fields.allElementsBoundByIndex.last)
+        field.tap()
+        let parts = date.split(separator: "-").map { Int($0)! }
+        let picker = app.datePickers.firstMatch
+        XCTAssertTrue(picker.waitForExistence(timeout: 3))
+        // 直接选年/月，不按距今天的月数循环翻页；范围长期固定也不增加用例耗时。
+        let heading = picker.buttons.matching(NSPredicate(format: "identifier IN %@", ["DatePicker.Show", "DatePicker.Hide"])).firstMatch
+        // 已显示夹具的绝对年/月时只选择日；否则仍显式选年/月，不读取执行日期或循环翻页。
+        if heading.value as? String != "\(parts[0])年\(parts[1])月" {
+            heading.tap()
+            let wheels = picker.pickerWheels.allElementsBoundByIndex
+            let year = try XCTUnwrap(wheels.first { ($0.value as? String ?? "").filter(\.isNumber).count == 4 })
+            let month = try XCTUnwrap(wheels.first { $0 != year })
+            let yearValue = year.value as? String ?? ""
+            year.adjust(toPickerWheelValue: "\(parts[0])" + (yearValue.hasSuffix("年") ? "年" : ""))
+            let monthValue = month.value as? String ?? ""
+            let formatter = DateFormatter()
+            let targetMonth = monthValue.first?.isNumber == true
+                ? monthValue.replacingOccurrences(of: "[0-9]+", with: "\(parts[1])", options: .regularExpression)
+                : (formatter.shortMonthSymbols.contains(monthValue) ? formatter.shortMonthSymbols : formatter.monthSymbols)[parts[1] - 1]
+            month.adjust(toPickerWheelValue: targetMonth)
+            heading.tap()
+        }
+        picker.buttons.containing(.staticText, identifier: "\(parts[2])").firstMatch.tap()
+        app.buttons.matching(NSPredicate(format: "label IN %@", ["完成", "Done"])).firstMatch.tap()
+        XCTAssertFalse(picker.exists, "日期选择未完成")
+    }
+
+    private func reportFixtureScope() throws {
+        let fixture = try reportFixture()
+        let dimension = app.buttons.matching(NSPredicate(format: "identifier == %@ OR label == %@", "report-dimension", "维度")).firstMatch
+        if !dimension.exists { tap("收支报表") }
+        tap("全部")
+        let range = app.buttons["修改日期，当前\(fixture.startDate) 至 \(fixture.endDate)"]
+        let funding = app.buttons["修改资金渠道，当前报表现金"]
+        // 只复用真实页面已应用的同一绝对范围和专用渠道，不沿用默认或任意旧条件。
+        if range.exists && funding.exists { return }
         let clear = app.buttons.matching(NSPredicate(format: "label == %@", "清除全部筛选")).firstMatch
         if clear.exists && clear.isHittable { clear.tap() }
-        tap("全部")
         tap("筛选")
         tap("不限")
         tap("报表现金")
+        selectReportControl("report-range", label: "日期范围", option: "指定日期")
+        try setReportDate("report-start-date", label: "开始日期", date: fixture.startDate)
+        try setReportDate("report-end-date", label: "结束日期", date: fixture.endDate)
         tap("应用筛选")
+        XCTAssertTrue(range.waitForExistence(timeout: 3), "必须应用夹具的精确绝对日期范围")
     }
 
-    func test36ReportOverview() {
-        reportFixtureScope()
+    private func expectReportAmount(_ label: String) {
+        // MoneyValue 的 AX 标签包含正负号。用精确金额节点验收，不走 Any/OCR 的通用后备。
+        let amount = app.staticTexts.matching(NSPredicate(format: "label == %@", label)).firstMatch
+        XCTAssertTrue(amount.waitForExistence(timeout: 3), "报表金额必须为 \(label)")
+    }
+
+    func test36ReportOverview() throws {
+        try reportFixtureScope()
         selectReportControl("report-dimension", label: "维度", option: "收支概览")
-        appears("¥988", containing: true)
-        appears("¥1,000", containing: true)
-        appears("¥15", containing: true)
-        appears("¥3", containing: true)
-        appears("¥12", containing: true)
+        for amount in ["+¥1,000", "-¥15", "+¥3", "-¥12", "+¥988"] {
+            expectReportAmount(amount)
+        }
         print("REPORT_TOUCH_OVERVIEW_EXACT_TOTALS")
     }
 
     func test00PrepareReportApp() {
-        // 冷启动/建立原生自动化会话由 setUp 完成，不挤占后续筛选和粒度操作的单用例预算。
-        appears("记一笔")
+        // 先等真实导航链接，避免页面尚未呈现时触摸及无谓加载 OCR；冷 AX 才用既有截图后备。
+        // 只有真实维度控件出现且可用才算启动就绪，不依赖可能被既有提示挡住的页首标题。
+        let report = app.links.matching(NSPredicate(format: "label == %@ OR label BEGINSWITH %@", "收支报表", "收支报表 ")).firstMatch
+        if report.waitForExistence(timeout: 10) { report.tap() }
+        else { tapVisibleText("报表") }
+        let dimension = app.buttons.matching(NSPredicate(format: "identifier == %@ OR label == %@", "report-dimension", "维度")).firstMatch
+        XCTAssertTrue(dimension.waitForExistence(timeout: 3), "报表页面尚未就绪")
+        XCTAssertTrue(dimension.isEnabled)
         print("REPORT_TOUCH_APP_READY")
     }
 
     // XCTest 按名称排序：总览之后、test37 粒度之前准备；参数排列不能保证执行顺序。
     // 准备与粒度断言分别受原有 60 秒预算约束，仍走真实筛选/选择器。
-    func test36ReportTimePreparation() {
-        reportFixtureScope()
+    func test36ReportTimePreparation() throws {
+        try reportFixtureScope()
         selectReportControl("report-dimension", label: "维度", option: "时间趋势")
         selectReportControl("report-metric", label: "查看指标", option: "结余")
         appears("结余趋势")
         print("REPORT_TOUCH_TIME_PREPARED")
     }
 
-    private func reportPeriodLabel(_ grain: String, today: Date) -> String {
-        // 夹具为上海今天，筛选为本月；周桶首端须裁剪到月初，与页面实际日期标签对照。
-        var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = TimeZone(identifier: "Asia/Shanghai")!
-        let parts = calendar.dateComponents([.year, .month, .day, .weekday], from: today)
-        let short = "\(parts.month!)月\(parts.day!)日"
-        switch grain {
-        case "按日": return short
-        case "按周":
-            let weekStart = calendar.date(byAdding: .day, value: -((parts.weekday! + 5) % 7), to: today)!
-            let monthStart = calendar.date(from: DateComponents(year: parts.year, month: parts.month, day: 1))!
-            let start = calendar.dateComponents([.month, .day], from: max(weekStart, monthStart))
-            return "\(start.month!)月\(start.day!)日–\(short)"
-        case "按月": return "\(parts.year!)年\(parts.month!)月"
-        case "按季": return "\(parts.year!)年Q\((parts.month! - 1) / 3 + 1)"
-        case "按年": return "\(parts.year!)年"
-        default: XCTFail("未知粒度 \(grain)"); return ""
-        }
-    }
-
-    private func verifyReportGrains(_ grains: [String]) {
+    private func verifyReportGrains(_ grains: [String]) throws {
         appears("结余趋势")
         expectValue(reportControl("report-dimension", label: "维度"), "时间趋势")
         expectValue(reportControl("report-metric", label: "查看指标"), "结余")
-        let today = Date()
+        let fixture = try reportFixture()
         for grain in grains {
             selectReportControl("report-grain", label: "时间粒度", option: grain)
-            let expected = reportPeriodLabel(grain, today: today)
+            let expected = try XCTUnwrap(fixture.periods[grain], "未知粒度 \(grain)")
             let period = reportControl("time-point", label: "查看时段")
             let drill = app.buttons.matching(NSPredicate(format: "label == %@", "查看\(expected)的结余明细")).firstMatch
             // 刷新/失败保留旧快照及相同金额：必须等对应时段发布且 fieldset 内控件重新可用。
@@ -878,19 +924,19 @@ final class DictionaryTouchTests: XCTestCase {
         }
     }
 
-    func test37ReportTimeGrains() {
-        verifyReportGrains(["按日", "按周", "按月"])
+    func test37ReportTimeGrains() throws {
+        try verifyReportGrains(["按日", "按周", "按月"])
         print("REPORT_TOUCH_DAY_WEEK_MONTH_AND_CUMULATIVE")
     }
 
     // 与日/周/月分开，各自可在原有 60 秒预算内定位，不放宽全套超时。
-    func test37ReportTimeGrainsQuarterYear() {
-        verifyReportGrains(["按季", "按年"])
+    func test37ReportTimeGrainsQuarterYear() throws {
+        try verifyReportGrains(["按季", "按年"])
         print("REPORT_TOUCH_QUARTER_YEAR_AND_CUMULATIVE")
     }
 
-    func test38ReportDrillReturn() {
-        reportFixtureScope()
+    func test38ReportDrillReturn() throws {
+        try reportFixtureScope()
         selectReportControl("report-dimension", label: "维度", option: "时间趋势")
         selectReportControl("report-metric", label: "查看指标", option: "净支出")
         let detail = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "的净支出明细")).firstMatch
@@ -904,12 +950,12 @@ final class DictionaryTouchTests: XCTestCase {
         disappears(matching("编辑支出").firstMatch)
         tap("返回报表")
         appears("净支出趋势")
-        appears("¥13", containing: true)
+        expectReportAmount("-¥13")
         print("REPORT_TOUCH_NET_DRILL_EDIT_RETURN_REFRESH")
     }
 
-    func test39ReportComparison() {
-        reportFixtureScope()
+    func test39ReportComparison() throws {
+        try reportFixtureScope()
         selectReportControl("report-dimension", label: "维度", option: "时间趋势")
         tap("范围对比")
         appears("账本可信历史覆盖晚于", containing: true)

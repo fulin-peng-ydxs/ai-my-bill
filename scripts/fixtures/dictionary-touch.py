@@ -91,12 +91,12 @@ def check_entries(connection, case):
     print('ENTRY_TOUCH_SQLITE_VERIFIED case=' + str(case))
 
 
-def add_personal_items(connection, prefix='t7', label='日常', dictionary_ids=None):
+def add_personal_items(connection, prefix='t7', label='日常', dictionary_ids=None, occurred_at=None):
     item_ids = dictionary_ids or {key:prefix+'-'+key for key in ['product','category','unit','funding','payer']}
     assert connection.execute("SELECT count(*) FROM dictionary_item WHERE id LIKE ?", (prefix+'-%',)).fetchone()[0] == 0
     for key, kind, name in [('product','PRODUCT','苹果'),('category','EXPENSE_CATEGORY','水果'),('unit','UNIT','份'),('funding','FUNDING_CHANNEL','现金'),('payer','PAYER','公司')]:
         connection.execute("INSERT INTO dictionary_item(id,kind,name,normalized_name,status,sort_order) VALUES(?,?,?,?,'ACTIVE',100)", (item_ids[key],kind,label+name,label+name))
-    now = datetime.now(ZoneInfo('Asia/Shanghai'))
+    now = occurred_at or datetime.now(ZoneInfo('Asia/Shanghai'))
     stamp = now.astimezone(ZoneInfo('UTC')).isoformat(timespec='milliseconds').replace('+00:00','Z')
     connection.execute("""INSERT INTO ledger_entry(id,entry_type,amount_cents,funding_channel_id,funding_channel_name_snapshot,business_time,business_date,
         product_id,product_name_snapshot,normalized_product_name_snapshot,primary_category_id,primary_category_name_snapshot,unit_id,unit_name_snapshot,
@@ -109,12 +109,16 @@ def add_personal_items(connection, prefix='t7', label='日常', dictionary_ids=N
 
 
 def add_report_items(connection):
-    # 与其他阶段共存，以独立 UUID 资金渠道在原筛选器隔离；不清空历史测试数据。
+    # UI runner 和 SQL 回归共用绝对范围；准备与执行跨午夜/月/年不改变样本或期望。
+    fixture = report_touch_fixture()
+    now = datetime.fromisoformat(fixture['occurredAt'].replace('Z', '+00:00')).astimezone(ZoneInfo('Asia/Shanghai'))
     dictionary_ids = {key:str(uuid.uuid4()) for key in ['product','category','unit','funding','payer']}
-    add_personal_items(connection, 't10', '报表', dictionary_ids)
-    now = datetime.now(ZoneInfo('Asia/Shanghai'))
+    add_personal_items(connection, 't10', '报表', dictionary_ids, now)
     stamp = now.astimezone(ZoneInfo('UTC')).isoformat(timespec='milliseconds').replace('+00:00','Z')
     connection.execute("INSERT INTO expense_adjustment(id,original_expense_id,adjustment_type,amount_cents,business_time,business_date,note,created_at,updated_at,search_text) VALUES('t10-refund','t10-expense','REFUND',300,?,?,'报表退款',?,?,'退款 报表退款')",(stamp,now.date().isoformat(),stamp,stamp))
+
+def report_touch_fixture():
+    return json.loads((Path(__file__).resolve().parents[2] / 'app/test-support/reportTouchFixture.json').read_text())
 
 def check_reports(connection, cases):
     rows = connection.execute("SELECT id,amount_cents,row_version,note FROM ledger_entry WHERE id LIKE 't10-%' ORDER BY id").fetchall()
@@ -123,6 +127,9 @@ def check_reports(connection, cases):
     assert [tuple(row) for row in rows] == expected
     row = connection.execute("SELECT amount_cents,status,row_version,original_expense_id FROM expense_adjustment WHERE id='t10-refund'").fetchone()
     assert tuple(row) == (300,'EFFECTIVE',1,'t10-expense')
+    fixture = report_touch_fixture()
+    dates = connection.execute("SELECT business_time,business_date FROM ledger_entry WHERE id LIKE 't10-%' UNION ALL SELECT business_time,business_date FROM expense_adjustment WHERE id='t10-refund'").fetchall()
+    assert [tuple(row) for row in dates] == [(fixture['occurredAt'],fixture['endDate'])] * 3
     print('REPORT_TOUCH_SQLITE_VERIFIED cases=' + ','.join(map(str,cases)))
 
 def add_query_items(connection):
