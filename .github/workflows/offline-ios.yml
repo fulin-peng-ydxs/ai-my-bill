@@ -56,9 +56,13 @@ jobs:
   scope:
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
     outputs:
       common: ${{ steps.scope.outputs.common }}
       native: ${{ steps.scope.outputs.native }}
+      baseline: ${{ steps.scope.outputs.baseline }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -67,6 +71,8 @@ jobs:
         with:
           node-version-file: .nvmrc
       - id: scope
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: node scripts/lib/ios-ci.mjs
 
   app-common:
@@ -202,3 +208,16 @@ jobs:
             .local/ios/tmp/ai-agent/native-*/*.xcresult
           retention-days: 7
           if-no-files-found: error
+
+  # 供后续提交读取的版本化质量标记；失败、取消或跳过必需 job 时绝不产生成功标记。
+  app-baseline-v1:
+    needs: [scope, app-common, script-macos, native-simulator]
+    if: >-
+      always() && needs.scope.result == 'success' && needs['app-common'].result == 'success' &&
+      ((needs.scope.outputs.native == 'true' && needs['native-simulator'].result == 'success') ||
+       (needs.scope.outputs.native == 'false' && needs.scope.outputs.baseline == 'true' &&
+        needs['script-macos'].result == 'success'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - run: echo 'App baseline verified for this commit'

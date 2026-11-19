@@ -5,7 +5,7 @@ import path from 'node:path'
 import os from 'node:os'
 import { randomUUID } from 'node:crypto'
 import { spawnSync } from 'node:child_process'
-import { selection, APP_ID } from '../lib/ios-debug.mjs'
+import { selection, APP_ID, RUNTIME, DEVICE_TYPE } from '../lib/ios-debug.mjs'
 import {
   controlInputs,
   createDeadline,
@@ -145,7 +145,12 @@ function project(t) {
   executable(
     'xcrun',
     `#!/bin/sh
-if [ \"$3\" = \"devices\" ]; then printf '%s\\n' '${devices}'; elif [ \"$1\" = \"simctl\" ]; then printf '%s\\n' '{"runtimes":[{"identifier":"com.apple.CoreSimulator.SimRuntime.iOS-27-0","isAvailable":true,"buildversion":"TEST"}]}'; else printf '27.0\\n'; fi
+if [ "$2" = get_app_container ]; then
+  if [ "$5" = app ]; then
+    if [ "$4" = "${APP_ID}" ]; then bundle=App.app; else bundle=DictionaryUITests-Runner.app; fi
+    find "$PWD/.local/ios/tmp/ai-agent" -type d -name "$bundle" -print
+  else printf '%s/sandbox\\n' "$PWD"; fi
+elif [ \"$3\" = \"devices\" ]; then printf '%s\\n' '${devices}'; elif [ \"$1\" = \"simctl\" ]; then printf '%s\\n' '{"runtimes":[{"identifier":"com.apple.CoreSimulator.SimRuntime.iOS-27-0","isAvailable":true,"buildversion":"TEST"}]}'; else printf '27.0\\n'; fi
 `
   )
   executable('xcodebuild', '#!/bin/sh\nprintf "Xcode 27.0\\n"\n')
@@ -212,6 +217,64 @@ function clock(t) {
   let time = 100000
   t.mock.method(Date, 'now', () => ++time)
 }
+
+/** 受控安装器保留实际目录和安装状态；只验证 CLI 编排，不调用宿主 Xcode 或模拟器。 */
+function runnerProject(t) {
+  const p = project(t)
+  const npmFile = path.join(p.root, 'bin/npm')
+  fs.writeFileSync(npmFile, fs.readFileSync(npmFile, 'utf8')
+    .replace("fs.writeFileSync('dist/index.html', 'controlled assets')",
+      "fs.writeFileSync('dist/index.html', fs.readFileSync('src/view.vue'))")
+    .replace("fs.writeFileSync(name, 'controlled sync')",
+      "fs.writeFileSync(name, name.endsWith('public/index.html') ? fs.readFileSync('dist/index.html') : 'controlled sync')"))
+  const context = JSON.parse(fs.readFileSync(path.join(p.session, 'test-context.json')))
+  const trace = path.join(p.root, 'installation-trace.json'), state = path.join(p.root, 'installed.json')
+  const container = path.join(p.root, 'CoreSimulator/Devices', context.simulatorId,
+    'data/Containers/Data/Application', randomUUID())
+  fs.mkdirSync(container, { recursive: true })
+  const executable = (name, body) => {
+    const file = p.write('bin/' + name, '#!' + process.execPath + '\n' + body)
+    fs.chmodSync(file, 0o755)
+  }
+  const devices = { devices: { [RUNTIME]: [{ udid: context.simulatorId, name: context.name,
+    isAvailable: true, deviceTypeIdentifier: DEVICE_TYPE, state: 'Booted' }] } }
+  executable('xcrun', `
+const fs=require('node:fs'),a=process.argv.slice(2),state=${JSON.stringify(state)},trace=${JSON.stringify(trace)}
+const installed=fs.existsSync(state)?JSON.parse(fs.readFileSync(state)):{}
+function log(x){const list=fs.existsSync(trace)?JSON.parse(fs.readFileSync(trace)):[];list.push(x);fs.writeFileSync(trace,JSON.stringify(list))}
+if(a[0]!=='simctl')console.log('27.0')
+else if(a[1]==='list')console.log(JSON.stringify(a[2]==='devices'?${JSON.stringify(devices)}:{runtimes:[{identifier:${JSON.stringify(RUNTIME)},isAvailable:true,buildversion:'TEST'}]}))
+else if(a[1]==='listapps')console.log(JSON.stringify(installed))
+else if(a[1]==='get_app_container')console.log(a[4]==='data'?${JSON.stringify(container)}:installed[a[3]].bundle)
+else if(a[1]==='install'){
+ const app=a[3].endsWith('/App.app'),id=app?'${APP_ID}':'fixture.runner'
+ log(app?'install-App':'install-runner')
+ if(!app&&fs.existsSync(${JSON.stringify(path.join(p.root, 'fail-runner'))}))process.exit(9)
+ const snapshot=${JSON.stringify(path.join(p.root, 'installed-bundles'))}+'/'+id+'.app'
+ fs.rmSync(snapshot,{recursive:true,force:true});fs.cpSync(a[3],snapshot,{recursive:true})
+ installed[id]={bundle:snapshot};fs.writeFileSync(state,JSON.stringify(installed))
+}else if(a[1]==='uninstall'){log('uninstall-App');delete installed[a[3]];fs.writeFileSync(state,JSON.stringify(installed))}
+`)
+  executable('plutil', `if(process.argv.includes('-extract'))console.log('fixture.runner');else{let s='';process.stdin.on('data',x=>s+=x);process.stdin.on('end',()=>process.stdout.write(s))}`)
+  executable('python3', `console.log('controlled fixture boundary')`)
+  executable('xcodebuild', `
+const fs=require('node:fs'),path=require('node:path'),a=process.argv.slice(2)
+if(a.includes('-version'))console.log('Xcode 27.0')
+else if(a[0]==='build-for-testing'){
+ const products=path.join(a[a.indexOf('-derivedDataPath')+1],'Build/Products')
+ for(const name of ['App.app','DictionaryUITests-Runner.app']){
+  fs.mkdirSync(path.join(products,'Release-iphonesimulator',name),{recursive:true})
+  fs.writeFileSync(path.join(products,'Release-iphonesimulator',name,'binary'),
+   name==='App.app'?fs.readFileSync('app/src/view.vue'):'controlled runner')
+ }
+ fs.writeFileSync(path.join(products,'DictionaryTouch.xctestrun'),'controlled plan')
+}else{
+ console.log("Test Case '-[DictionaryUITests.DictionaryTouchTests test00PrepareReportApp]' passed (0.1 seconds).")
+ console.log('Executed 1 test, with 0 failures')
+}
+`)
+  return { ...p, trace, args: ['debug', 'run', '--session', p.session, '--case', ui('test00PrepareReportApp')] }
+}
 function finishAttempt(p, hash, proof, failed = true, required = [target]) {
   const a = beginFull(p.root, 'ios-touch', proof, hash, process.pid, p.context())
   finishFull(p.root, a, failed ? new Error('controlled failure') : undefined, failed ? required : [])
@@ -240,6 +303,22 @@ test('当前局部证据校验：失败/旧输入/错误环境/范围/符号链�
   assert.equal(read(good.run).run, good.run)
   fs.appendFileSync(path.join(p.root, 'scripts/fixtures/dictionary-touch.py'), '# changed')
   assert.throws(() => read(good.run), /版本不符/)
+})
+
+test('Vitest 配置变更使旧证据和完整输入失效，新配置局部通过后正常复验', t => {
+  clock(t)
+  const p = project(t)
+  p.write('app/vitest.config.ts', 'export default { test: { include: ["src/**/*.spec.ts"] } }')
+  const previous = p.evidence(), before = p.hash()
+  finishAttempt(p, before, previous, false)
+  p.write('app/vitest.config.ts', 'export default { test: { include: ["src/domain/money.spec.ts"] } }')
+  assert.notEqual(p.hash(), before)
+  assert.throws(() => requireEvidence(p.root, previous.run, inputHash(p.root), environment), /版本不符/)
+  const current = p.evidence()
+  assert.doesNotThrow(() => requireEvidence(p.root, current.run, inputHash(p.root), environment))
+  const attempt = beginFull(p.root, 'ios-touch', current, p.hash(), process.pid, p.context())
+  finishFull(p.root, attempt)
+  assert.equal(readState(p.root).history.length, 2, '旧输入历史保留，不清除锁和次数')
 })
 
 test('A→B→A 保留 A 的初验/复验次数，已通过 A→B→A 也不重复', (t) => {
@@ -969,6 +1048,64 @@ else if (args[0] === 'build-for-testing') {
     const run = result.stdout.match(/^EVIDENCE=(.+)$/m)[1]
     assert.equal(JSON.parse(fs.readFileSync(path.join(run, 'result.json'))).executedCases.length, 1)
   })
+
+test('runner 安装失败后 App 回执仍有效，重试只装 runner；旧整体安装失败仍保留完整锁',
+  { timeout: 30000, skip: process.platform !== 'darwin' }, t => {
+    const p = runnerProject(t), key = 'native-install/DictionaryTouch/Release'
+    p.write('fail-runner', 'controlled runner failure')
+    const failed = p.run(p.args)
+    assert.notEqual(failed.status, 0)
+    const failedRun = fs.readdirSync(p.session).find(n => n.startsWith('run-'))
+    const receipt = JSON.parse(fs.readFileSync(path.join(p.session, failedRun, 'result.json')))
+    assert.deepEqual(receipt.failure.required, [key + '/runner'])
+    assert.ok(fs.existsSync(path.join(p.session, 'ui-install.json')), 'App 已成功，不因 runner 失败丢回执')
+    fs.unlinkSync(path.join(p.root, 'fail-runner'))
+    const fixed = p.run(p.args)
+    assert.equal(fixed.status, 0, fixed.stderr)
+    const run = fixed.stdout.match(/^EVIDENCE=(.+)$/m)[1]
+    const proof = requireEvidence(p.root, run, inputHash(p.root), environment)
+    assert.equal(proof.result.installationReused, true)
+    assert.equal(proof.result.runnerInstallationReused, false)
+    assert.ok(proof.result.coverage.includes(key + '/runner'))
+    assert.ok(!proof.result.coverage.includes(key + '/app'))
+    assert.ok(!proof.result.coverage.includes(key), '只修 runner 不冒充完整安装修复')
+    assert.deepEqual(JSON.parse(fs.readFileSync(p.trace)), ['install-App', 'install-runner', 'install-runner'])
+    const full = beginFull(p.root, 'ios-touch', proof, p.hash(), process.pid, p.context())
+    startPhase(full.run, { stage: 'install', coverage: [key] })
+    finishFull(p.root, full, new Error('legacy install failure'))
+    const legacy = p.run(p.args)
+    assert.equal(legacy.status, 0, legacy.stderr)
+    const legacyRun = legacy.stdout.match(/^EVIDENCE=(.+)$/m)[1]
+    assert.ok(requireEvidence(p.root, legacyRun, inputHash(p.root), environment).result.coverage.includes(key))
+    assert.equal(readState(p.root).attempts['ios-touch'].status, 'failed')
+    const cached = p.run(p.args)
+    assert.equal(cached.status, 0, cached.stderr)
+    assert.match(cached.stdout, /INSTALL_APP_HIT; RUNNER_HIT/)
+    const trace = JSON.parse(fs.readFileSync(p.trace))
+    assert.equal(trace.filter(x => x === 'install-App').length, 2, '整体失败修复后再次恢复缓存')
+    assert.ok(!trace.includes('uninstall-App'))
+    p.write(path.relative(p.root, path.join(p.session, 'ui-reset.json')), 'old-install-reset')
+    p.write('app/src/view.vue', 'new App candidate')
+    const changed = p.run(p.args)
+    assert.equal(changed.status, 0, changed.stderr)
+    assert.equal(fs.existsSync(path.join(p.session, 'ui-reset.json')), false, '冷安装不继承旧包的重置断点')
+    assert.ok(JSON.parse(fs.readFileSync(p.trace)).includes('uninstall-App'))
+  })
+
+test('App 与 runner 分开计时仍共用两分钟安装预算，不因换组件延长', t => {
+  const p = project(t), run = fs.mkdtempSync(path.join(p.base, 'ios-full-'))
+  let time = 0
+  t.mock.method(Date, 'now', () => time)
+  const observer = observeFull({ run, root: p.root }, { now: () => time })
+  startPhase(run, { stage: 'install', coverage: ['native-install/DictionaryTouch/Release/app'] })
+  time = 70000
+  observer.poll()
+  startPhase(run, { stage: 'install', coverage: ['native-install/DictionaryTouch/Release/runner'], budgetMs: 50000 })
+  time = 120001
+  assert.throws(() => observer.poll(), /install 阶段超时/)
+  startPhase(run, { stage: 'install', coverage: ['native-install/DictionaryTouch/Release/runner'], budgetMs: 120001 })
+  assert.throws(() => observer.poll(), /预算不合法/)
+})
 
 for (const phase of ['build', 'install', 'initialize']) {
   test(`完整 ${phase} 失败后的相关局部成功恢复缓存，失败锁和复验次数仍保留`, (t) => {

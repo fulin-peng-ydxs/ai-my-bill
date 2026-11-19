@@ -48,7 +48,8 @@ def owned_context(context_file, container, app_hash, rebind=False):
     assert all(lease.get(k) == v for k, v in identity.items() if k != 'container')
     if not rebind: assert lease == identity
     ledger = container / 'Library/OfflineLedger'
-    assert ledger.resolve() == ledger and ledger.is_dir()
+    # 恢复中断可能暂时没有正式目录；先核验归属，再依据受限日志恢复，不能在此提前拒绝。
+    assert ledger.resolve() == ledger and (ledger.is_dir() or not ledger.exists())
     assert not any(p.is_symlink() for p in ledger.rglob('*'))
     return session, ledger, identity
 
@@ -72,11 +73,57 @@ def checksum(file):
     return hashlib.sha256(file.read_bytes()).hexdigest()
 
 
+def write_json(file, value):
+    pending = file.with_name(file.name + '-' + str(uuid.uuid4()) + '.tmp')
+    try:
+        with open(pending, 'x') as output:
+            os.chmod(pending, 0o600)
+            json.dump(value, output)
+            output.flush()
+            os.fsync(output.fileno())
+        pending.replace(file)
+    finally:
+        if pending.exists(): pending.unlink()
+
+
+def recover_reset(session, ledger, identity, receipt):
+    """日志先于目录移动落盘；缺正式目录时回滚，有正式目录时完成清理，重入不依赖进程存活。"""
+    journal = session / 'ui-reset.json'
+    if not journal.exists():
+        assert not journal.is_symlink()
+        return
+    stat = journal.lstat()
+    assert journal.is_file() and not journal.is_symlink()
+    assert stat.st_uid == os.getuid() and stat.st_mode & 0o077 == 0 and stat.st_size <= 4096
+    record = json.loads(journal.read_text())
+    assert record['schema'] == 1
+    assert all(record.get(k) == v for k, v in identity.items())
+    assert all(record.get(k) == receipt[k] for k in ['sha256', 'schemaVersion', 'datasetId'])
+    operation = str(uuid.UUID(record['operation']))
+    assert operation == record['operation']
+    previous = ledger.with_name('offline-previous-' + operation)
+    staging = ledger.with_name('offline-reset-' + operation)
+    meta = {k: receipt[k] for k in ['schemaVersion', 'datasetId']}
+    for folder in [ledger, previous, staging]:
+        assert folder.resolve() == folder
+        assert not any(p.is_symlink() for p in folder.rglob('*'))
+    if not ledger.exists():
+        assert previous.is_dir(), '缺少本次重置的原目录，保留断点拒绝猜测'
+        assert validate_database(previous / 'ledgerSQLite.db') == meta
+        previous.rename(ledger)
+    assert validate_database(ledger / 'ledgerSQLite.db') == meta
+    # 正式目录已有效时，previous 可能已清理一半；仅删除日志绑定的唯一操作目录。
+    for folder in [previous, staging]:
+        if folder.exists(): shutil.rmtree(folder)
+    journal.unlink()
+
+
 def run(mode, context_file, container, app_hash):
     session, ledger, identity = owned_context(context_file, container, app_hash, mode == 'rebind')
     baseline = session / 'ui-baseline'
     database = ledger / 'ledgerSQLite.db'
     if mode == 'capture':
+        assert ledger.is_dir()
         assert not baseline.exists(), '基线存在时拒绝覆盖'
         meta = validate_database(database, empty=True)
         staging = Path(tempfile.mkdtemp(prefix='ui-baseline-', dir=session))
@@ -99,33 +146,33 @@ def run(mode, context_file, container, app_hash):
         source = baseline / 'ledgerSQLite.db'
         assert checksum(source) == receipt['sha256']
         assert validate_database(source, empty=True) == {k: receipt[k] for k in ['schemaVersion', 'datasetId']}
+        if mode == 'restore': recover_reset(session, ledger, identity, receipt)
         if mode in ['restore', 'rebind']:
             assert validate_database(database) == {k: receipt[k] for k in ['schemaVersion', 'datasetId']}
         if mode == 'rebind':
-            lease_file = session / 'ui-install.json'
-            pending = lease_file.with_name('ui-install-' + str(uuid.uuid4()) + '.tmp')
-            try:
-                with open(pending, 'x') as output:
-                    os.chmod(pending, 0o600)
-                    json.dump(identity, output)
-                pending.replace(lease_file)
-            finally:
-                if pending.exists(): pending.unlink()
+            assert not (session / 'ui-reset.json').exists(), '待恢复重置不能先搬迁沙盒'
+            write_json(session / 'ui-install.json', identity)
         if mode == 'restore':
-            # 先完整校验，准备同文件系统替换目录；失败回滚原目录，不留下半份账本。
-            staging = Path(tempfile.mkdtemp(prefix='offline-reset-', dir=ledger.parent))
-            previous = ledger.with_name('offline-previous-' + str(uuid.uuid4()))
+            operation = str(uuid.uuid4())
+            staging = ledger.with_name('offline-reset-' + operation)
+            previous = ledger.with_name('offline-previous-' + operation)
+            journal = session / 'ui-reset.json'
+            assert not previous.exists() and not staging.exists()
+            staging.mkdir(mode=0o700)
             try:
                 shutil.copy2(source, staging / 'ledgerSQLite.db')
-                ledger.rename(previous)
+                write_json(journal, {**identity, 'schema': 1, 'operation': operation,
+                    **{k: receipt[k] for k in ['sha256', 'schemaVersion', 'datasetId']}})
                 try:
+                    ledger.rename(previous)
                     staging.rename(ledger)
                 except BaseException:
-                    previous.rename(ledger)
+                    recover_reset(session, ledger, identity, receipt)
                     raise
-                shutil.rmtree(previous)
+                recover_reset(session, ledger, identity, receipt)
             finally:
-                if staging.exists(): shutil.rmtree(staging)
+                # 超时/进程终止后保留日志绑定目录；下一轮恢复，不能提前清掉唯一原目录。
+                if not journal.exists() and staging.exists(): shutil.rmtree(staging)
     else:
         raise ValueError('unknown baseline operation')
     print('UI_BASELINE_' + mode.upper() + '_VERIFIED')

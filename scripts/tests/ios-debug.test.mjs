@@ -223,6 +223,7 @@ test('缓存以内容而非时间判断；生产/探针/工程/锁定依赖/工�
     'app/package-lock.json',
     'app/capacitor.config.ts',
     'app/vite.config.ts',
+    'app/vitest.config.ts',
     'app/tsconfig.json',
     'app/tsconfig.tools.json',
     'scripts/normalize-capacitor-spm.mjs'

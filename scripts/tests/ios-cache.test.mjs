@@ -8,7 +8,7 @@ import { spawnSync } from 'node:child_process'
 import { DatabaseSync } from 'node:sqlite'
 import { cachedLayer, layerInputs, installationMatches, readInstallationLease } from '../lib/ios-cache.mjs'
 import { APP_ID, hashPaths } from '../lib/ios-debug.mjs'
-import { ciValidationScope } from '../lib/ios-ci.mjs'
+import { ciValidationScope, verifiedBaseline, baselineJob } from '../lib/ios-ci.mjs'
 
 function temporary(t) {
   const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'ios-cache-test-')))
@@ -26,12 +26,13 @@ test('CI 按场景选择：纯验证脚本双平台回归，App/构建依赖/手
   const scripts = ['scripts/lib/ios-cache.mjs', 'scripts/ios-app.mjs', 'scripts/fixtures/ios-ui-baseline.py',
     'scripts/tests/ios-cache.test.mjs', '.github/workflows/offline-ios.yml', 'agent-works/testing/guide.md',
     'agent-works/offline-ios-app/plan.md', 'README.md']
-  assert.deepEqual(ciValidationScope(scripts), { common: 'scripts', native: false })
+  assert.deepEqual(ciValidationScope(scripts, false, true), { common: 'scripts', native: false })
+  assert.equal(ciValidationScope(scripts).native, true, '未核验或失败的基线不能只跑脚本')
   for (const file of ['app/src/view.vue', 'app/ios/App/UITests/Test.swift', 'app/package-lock.json',
     '.nvmrc', 'package.json', 'DESIGN.md', 'scripts/toolchain.sh', 'scripts/normalize-capacitor-spm.mjs', 'unknown'])
-    assert.deepEqual(ciValidationScope([...scripts, file]), { common: 'app', native: true }, file)
+    assert.deepEqual(ciValidationScope([...scripts, file], false, true), { common: 'app', native: true }, file)
   assert.equal(ciValidationScope([]).native, true, '不能确定基线时不缩小')
-  assert.equal(ciValidationScope(scripts, true).native, true, '手动完整候选不能被文件过滤跳过')
+  assert.equal(ciValidationScope(scripts, true, true).native, true, '手动完整候选不能被文件过滤跳过')
 })
 
 test('CI 分流实际入口读取 Git 变更；PR/push 同源，未知基线及手动执行不缩小', t => {
@@ -40,8 +41,8 @@ test('CI 分流实际入口读取 Git 变更；PR/push 同源，未知基线及�
   fs.chmodSync(git, 0o755)
   const eventFile = write(root, 'event.json', '{}'), output = path.join(root, 'output')
   for (const [name, event, native, missing] of [
-    ['push', { before: 'a'.repeat(40) }, false],
-    ['pull_request', { pull_request: { base: { sha: 'b'.repeat(40) } } }, false],
+    ['push', { before: 'a'.repeat(40) }, true],
+    ['pull_request', { pull_request: { base: { sha: 'b'.repeat(40) } } }, true],
     ['push', { before: '0'.repeat(40) }, true],
     ['workflow_dispatch', { before: 'a'.repeat(40) }, true],
     ['push', { before: 'a'.repeat(40) }, true, true]
@@ -51,11 +52,71 @@ test('CI 分流实际入口读取 Git 变更；PR/push 同源，未知基线及�
     fs.rmSync(output, { force: true })
     const result = spawnSync(process.execPath, [new URL('../lib/ios-ci.mjs', import.meta.url).pathname], {
       cwd: root, encoding: 'utf8', env: { ...process.env, PATH: path.join(root, 'bin') + path.delimiter + process.env.PATH,
-        GITHUB_EVENT_PATH: eventFile, GITHUB_EVENT_NAME: name, GITHUB_OUTPUT: output }
+        GITHUB_EVENT_PATH: eventFile, GITHUB_EVENT_NAME: name, GITHUB_OUTPUT: output, GH_TOKEN: '', GITHUB_RUN_ATTEMPT: '1' }
     })
     assert.equal(result.status, 0, result.stderr)
     if (missing) assert.match(result.stderr, /保留完整门禁/)
     assert.match(fs.readFileSync(output, 'utf8'), new RegExp(`native=${native}\\n`))
+  }
+})
+
+test('CI 只继承最新成功标记，失败/取消/进行中/旧工作流及失败重跑不能被旧绿遮蔽', async () => {
+  const base = 'a'.repeat(40), env = { GITHUB_REPOSITORY: 'fixture/offline', GH_TOKEN: 'fixture-token' }
+  const passed = { id: 10, head_sha: base, status: 'completed', conclusion: 'success', run_attempt: 2,
+    updated_at: '2026-11-19T01:00:00Z' }
+  for (const [runs, jobs, expected] of [
+    [[passed], [{ name: baselineJob, status: 'completed', conclusion: 'success' }], true],
+    [[passed], [], false],
+    [[passed], ['app-common', 'native-simulator'].map(name => ({ name, status: 'completed', conclusion: 'success' })), true],
+    [[passed], [{ name: 'app-common', status: 'completed', conclusion: 'success' },
+      { name: 'native-simulator', status: 'completed', conclusion: 'skipped' }], false],
+    [[passed], [{ name: baselineJob, status: 'completed', conclusion: 'failure' }], false],
+    [[passed], [{ name: baselineJob, status: 'completed', conclusion: 'skipped' }], false],
+    [[passed, { ...passed, id: 11, conclusion: 'failure' }], [], false],
+    [[passed, { ...passed, id: 11, conclusion: 'cancelled' }], [], false],
+    [[passed, { ...passed, id: 11, status: 'in_progress', conclusion: null }], [], false],
+    [[{ ...passed, run_attempt: 3, conclusion: 'failure' }], [], false],
+    [[{ ...passed, head_sha: 'b'.repeat(40) }], [], false],
+    [[passed, { ...passed, id: 9, run_attempt: 3, conclusion: 'failure', updated_at: '2026-11-19T02:00:00Z' }], [], false]
+  ]) {
+    const urls = []
+    const fetch = async (url, options) => {
+      urls.push(url)
+      assert.equal(options.headers.Authorization, 'Bearer fixture-token')
+      return { ok: true, json: async () => url.includes('/workflows/') ? { workflow_runs: runs } : { jobs, total_count: jobs.length } }
+    }
+    assert.equal(await verifiedBaseline(base, env, fetch), expected)
+    if (expected) assert.match(urls[1], /\/runs\/10\/attempts\/2\/jobs/)
+  }
+  assert.equal(await verifiedBaseline(base, env, async () => ({ ok: false })), false)
+  assert.equal(await verifiedBaseline(base, env, async () => { throw new Error('offline') }), false)
+  assert.equal(await verifiedBaseline(base, { ...env, GH_TOKEN: '' }, () => { throw new Error('must not call') }), false)
+  for (const url of ['not-a-url', 'http://example.invalid'])
+    assert.equal(await verifiedBaseline(base, { ...env, GITHUB_API_URL: url }, () => { throw new Error('must not call') }), false)
+})
+
+test('CI 实际入口仅在成功基线下缩小，失败基线保留 App 和原生门禁', t => {
+  const root = temporary(t), base = 'a'.repeat(40)
+  const git = write(root, 'bin/git', '#!/bin/sh\nprintf "scripts/lib/ios-cache.mjs\\0"\n')
+  fs.chmodSync(git, 0o755)
+  const event = write(root, 'event.json', JSON.stringify({ before: base }))
+  const stub = write(root, 'http.mjs', `
+globalThis.fetch = async url => ({ok:true,json:async()=>url.includes('/workflows/')
+ ? {workflow_runs:[{id:1,head_sha:'${base}',status:'completed',conclusion:process.env.FIXTURE_CONCLUSION,run_attempt:1}]}
+ : {total_count:1,jobs:[{name:'${baselineJob}',status:'completed',conclusion:'success'}]}})
+`)
+  for (const [conclusion, attempt] of [['failure', '1'], ['cancelled', '1'], ['success', '1'], ['success', '2']]) {
+    const output = path.join(root, 'output-' + conclusion + attempt)
+    const result = spawnSync(process.execPath, ['--import', stub, new URL('../lib/ios-ci.mjs', import.meta.url).pathname], {
+      cwd: root, encoding: 'utf8', env: { ...process.env, PATH: path.join(root, 'bin') + path.delimiter + process.env.PATH,
+        GITHUB_EVENT_PATH: event, GITHUB_EVENT_NAME: 'push', GITHUB_OUTPUT: output,
+        GITHUB_REPOSITORY: 'fixture/offline', GH_TOKEN: 'fixture-token', FIXTURE_CONCLUSION: conclusion, GITHUB_RUN_ATTEMPT: attempt }
+    })
+    assert.equal(result.status, 0, result.stderr)
+    const scope = JSON.parse(result.stdout)
+    const reuse = conclusion === 'success' && attempt === '1'
+    assert.equal(scope.native, !reuse)
+    assert.equal(scope.common, reuse ? 'scripts' : 'app')
   }
 })
 
@@ -320,4 +381,58 @@ module['run']('restore', *sys.argv[2:])
   assert.match(result.stderr, /controlled replacement failure/)
   assert.equal(hashPaths(path.dirname(p.file), ['.']), original)
   assert.deepEqual(fs.readdirSync(path.join(p.container, 'Library')), ['OfflineLedger'])
+})
+
+for (const phase of ['before-move', 'old-moved', 'new-moved', 'partial-cleanup']) {
+  test(`UI 基线替换 ${phase} 被终止后同一会话可恢复，连续中断仍不丢原目录`, t => {
+    const p = baselineFixture(t)
+    assert.equal(p.execute('capture').status, 0)
+    assert.equal(p.fixture('debug-report-42').status, 0)
+    const kill = stage => spawnSync('python3', ['-I', '-c', `
+import os, runpy, shutil, signal, sys
+from pathlib import Path
+module = runpy.run_path(sys.argv[1])
+stage = sys.argv[2]
+rename = Path.rename
+remove = shutil.rmtree
+def move(self, target):
+    if stage == 'before-move' and self.name == 'OfflineLedger': os.kill(os.getpid(), signal.SIGTERM)
+    value = rename(self, target)
+    if (stage == 'old-moved' and self.name == 'OfflineLedger') or (stage == 'new-moved' and self.name.startswith('offline-reset-')):
+        os.kill(os.getpid(), signal.SIGTERM)
+    return value
+def cleanup(folder, *args, **kwargs):
+    if stage == 'partial-cleanup' and Path(folder).name.startswith('offline-previous-'):
+        (Path(folder) / 'ledgerSQLite.db').unlink()
+        os.kill(os.getpid(), signal.SIGTERM)
+    return remove(folder, *args, **kwargs)
+Path.rename = move
+shutil.rmtree = cleanup
+module['run']('restore', *sys.argv[3:])
+`, p.script, stage, p.contextFile, p.container, p.appHash], { cwd: p.root, encoding: 'utf8' })
+    assert.equal(kill(phase).signal, 'SIGTERM')
+    const journal = path.join(p.session, 'ui-reset.json')
+    assert.equal(fs.existsSync(journal), true)
+    // 同一失败会话再次恢复途中被终止，不能靠重建模拟器或丢弃数据解围。
+    assert.equal(kill('new-moved').signal, 'SIGTERM')
+    const result = p.execute('restore')
+    assert.equal(result.status, 0, result.stderr)
+    assert.deepEqual(fs.readFileSync(p.file), fs.readFileSync(path.join(p.session, 'ui-baseline/ledgerSQLite.db')))
+    assert.equal(fs.existsSync(journal), false)
+    assert.deepEqual(fs.readdirSync(path.join(p.container, 'Library')), ['OfflineLedger'])
+  })
+}
+
+test('UI 重置断点篡改/跨数据集拒绝恢复，不清除原目录和日志', t => {
+  const p = baselineFixture(t)
+  assert.equal(p.execute('capture').status, 0)
+  const original = hashPaths(path.dirname(p.file), ['.'])
+  const receipt = JSON.parse(fs.readFileSync(path.join(p.session, 'ui-baseline/receipt.json')))
+  const journal = path.join(p.session, 'ui-reset.json')
+  for (const patch of [{ datasetId: randomUUID() }, { container: '/other' }, { operation: '../outside' }]) {
+    fs.writeFileSync(journal, JSON.stringify({ ...receipt, schema: 1, operation: randomUUID(), ...patch }), { mode: 0o600 })
+    assert.notEqual(p.execute('restore').status, 0)
+    assert.equal(hashPaths(path.dirname(p.file), ['.']), original)
+    assert.equal(fs.existsSync(journal), true)
+  }
 })

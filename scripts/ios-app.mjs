@@ -424,8 +424,9 @@ async function runPartial(session, selected, toolchain, requested) {
     result = { ...result, sourceHash: build.sourceHash, cacheHit: build.cacheHit, buildLayers: build.buildLayers }
     session.context.scenario = selected.scenario
     writeContext(session)
+    const installDeadline = createDeadline(budgets.install)
     startPhase(run, {
-      stage: 'install', coverage: [`native-install/${selected.scheme}/${selected.configuration}`],
+      stage: 'install', coverage: [`native-install/${selected.scheme}/${selected.configuration}/app`],
       log: path.join(run, 'install.log')
     })
     const installed = JSON.parse((await command('plutil', ['-convert', 'json', '-o', '-', '-'], {
@@ -460,25 +461,41 @@ async function runPartial(session, selected, toolchain, requested) {
       }
       fs.rmSync(baseline, { recursive: true, force: true })
       fs.rmSync(leaseFile, { force: true })
+      // 旧安装已卸载，其重置断点不能套用到新包/新数据集。
+      fs.rmSync(path.join(session.directory, 'ui-reset.json'), { force: true })
     }
-    const repairInstall = needsRepair(`native-install/${selected.scheme}/${selected.configuration}`, toolchain)
-    if (!reuseInstallation || repairInstall) await command('xcrun', ['simctl', 'install', device.udid, app],
-      { log: path.join(run, 'install.log') })
+    const installKey = `native-install/${selected.scheme}/${selected.configuration}`
+    // 旧完整回执只有整体安装键，仍重做两项；新的局部故障精确到 App/runner。
+    const repairLegacyInstall = needsRepair(installKey, toolchain)
+    const repairApp = repairLegacyInstall || needsRepair(installKey + '/app', toolchain)
+    if (!reuseInstallation || repairApp) {
+      await command('xcrun', ['simctl', 'install', device.udid, app], { log: path.join(run, 'install.log') })
+      const actual = (await simctl('get_app_container', device.udid, APP_ID, 'app')).text.trim()
+      if (!installationMatches(app, actual)) throw new Error('已安装 App 与当前制品不一致，拒绝登记。')
+    }
+    container = (await simctl('get_app_container', device.udid, APP_ID, 'data')).text.trim()
+    // App 成功立即登记；之后 runner 失败不会丢掉已验证安装或触发卸载。
+    if (ui) writeJson(leaseFile, identity())
+    result.installationReused = reuseInstallation && !repairApp
     let runnerReused = true
     if (ui) {
+      startPhase(run, { stage: 'install', coverage: [installKey + '/runner'], budgetMs: installDeadline.remaining(),
+        log: path.join(run, 'install-runner.log') })
       const runner = path.join(build.products, `${selected.configuration}-iphonesimulator/DictionaryUITests-Runner.app`)
       const runnerId = (await command('plutil', ['-extract', 'CFBundleIdentifier', 'raw', '-o', '-',
         path.join(runner, 'Info.plist')])).text.trim()
       runnerReused = Boolean(installed[runnerId]) && installationMatches(runner,
         (await simctl('get_app_container', device.udid, runnerId, 'app')).text.trim())
-      if (!runnerReused || repairInstall) await command('xcrun', ['simctl', 'install', device.udid, runner],
-        { log: path.join(run, 'install-runner.log') })
+      const repairRunner = repairLegacyInstall || needsRepair(installKey + '/runner', toolchain)
+      if (!runnerReused || repairRunner) {
+        await command('xcrun', ['simctl', 'install', device.udid, runner],
+          { log: path.join(run, 'install-runner.log') })
+        const actual = (await simctl('get_app_container', device.udid, runnerId, 'app')).text.trim()
+        if (!installationMatches(runner, actual)) throw new Error('已安装 runner 与当前制品不一致。')
+      }
+      result.runnerInstallationReused = runnerReused && !repairRunner
     }
-    container = (await simctl('get_app_container', device.udid, APP_ID, 'data')).text.trim()
-    if (ui) writeJson(leaseFile, identity())
-    result.installationReused = reuseInstallation && !repairInstall
-    result.runnerInstallationReused = ui ? runnerReused && !repairInstall : undefined
-    console.log(`INSTALL_APP_${result.installationReused ? 'HIT' : 'MISS'}; RUNNER_${runnerReused && !repairInstall ? 'HIT' : 'MISS'}`)
+    console.log(`INSTALL_APP_${result.installationReused ? 'HIT' : 'MISS'}; RUNNER_${!ui || result.runnerInstallationReused ? 'HIT' : 'MISS'}`)
     const fixture = path.join(run, 'fixture.json')
     startPhase(run, {
       stage: 'initialize', coverage: [`native-initialize/${selected.scheme}/${selected.configuration}`],
@@ -587,11 +604,13 @@ async function runPartial(session, selected, toolchain, requested) {
       .flatMap((p) => p.coverage)
       .filter(
         (k) =>
-          !((result.installationReused && (!ui || result.runnerInstallationReused)) && k.startsWith('native-install/')) &&
+          !(result.installationReused && k === installKey + '/app') &&
+          !(result.runnerInstallationReused && k === installKey + '/runner') &&
           !(initialized && k.startsWith('native-initialize/'))
       )
     result.coverage = [
       ...new Set([
+        ...(!result.installationReused && (!ui || !result.runnerInstallationReused) ? [installKey] : []),
         ...selectedCoverage(selected),
         `native-startup/${selected.scheme}/${selected.configuration}`,
         ...successful
@@ -806,6 +825,7 @@ async function main(args) {
     fs.rmSync(path.join(session.directory, 'DerivedData'), { recursive: true, force: true })
     fs.rmSync(path.join(session.directory, 'ui-baseline'), { recursive: true, force: true })
     fs.rmSync(path.join(session.directory, 'ui-install.json'), { force: true })
+    fs.rmSync(path.join(session.directory, 'ui-reset.json'), { force: true })
     console.log('本轮调试设备和构建缓存已清理，证据保留。')
     return
   }

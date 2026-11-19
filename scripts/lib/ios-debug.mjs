@@ -238,7 +238,7 @@ export function sourceHash(root, toolchain) {
     root,
     [
       'app/src',
-      ...['app/index.html', 'app/public'].filter(p => fs.existsSync(path.join(root, p))),
+      ...['app/index.html', 'app/public', 'app/vitest.config.ts'].filter(p => fs.existsSync(path.join(root, p))),
       'app/native-tests',
       'app/test-support',
       'app/ios/App',

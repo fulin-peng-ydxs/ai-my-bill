@@ -307,6 +307,9 @@ export function requireEvidence(root, input, currentInput, environment) {
       'check/app-build',
       'check/probe-build',
       'check/resources/source',
+      `native-install/${selected.scheme}/${selected.configuration}/app`,
+      ...(selected.scheme === 'DictionaryTouch'
+        ? [`native-install/${selected.scheme}/${selected.configuration}/runner`] : []),
       ...['native-build', 'native-install', 'native-initialize', 'native-startup', 'native-readback'].map(
         (k) => `${k}/${selected.scheme}/${selected.configuration}`
       )
@@ -608,7 +611,10 @@ export function observeFull(attempt, { now = Date.now, limits = budgets } = {}) 
       )
         throw new Error('执行阶段元数据不合法。')
       if (phase.stage !== 'test') {
-        if (now() - phase.startedAt > limits[phase.stage])
+        if (phase.budgetMs !== undefined &&
+          (!Number.isSafeInteger(phase.budgetMs) || phase.budgetMs < 1 || phase.budgetMs > limits[phase.stage]))
+          throw new Error('阶段剩余预算不合法。')
+        if (now() - phase.startedAt > (phase.budgetMs ?? limits[phase.stage]))
           throw new Error(`${phase.stage} 阶段超时，停止并保留对应局部目标：${phase.coverage.join(', ')}`)
         return
       }
