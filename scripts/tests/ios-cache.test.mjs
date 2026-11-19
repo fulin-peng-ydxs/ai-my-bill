@@ -6,7 +6,8 @@ import path from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { execFileSync, spawnSync } from 'node:child_process'
 import { DatabaseSync } from 'node:sqlite'
-import { cachedLayer, layerInputs, installationMatches, readInstallationLease } from '../lib/ios-cache.mjs'
+import { cachedLayer, layerInputs, installationMatches, readInstallationLease,
+  inspectInstallation, recordInstallation, forgetInstallation } from '../lib/ios-cache.mjs'
 import { APP_ID, hashPaths } from '../lib/ios-debug.mjs'
 import { ciValidationScope, verifiedBaseline, baselineJob } from '../lib/ios-ci.mjs'
 
@@ -359,6 +360,54 @@ test('UI 基线安全复用：重复和跨场景均从空账本重铺，偏好/�
     clean.close()
     assert.equal(fs.readFileSync(sentinel, 'utf8'), 'outside scope')
   }
+})
+
+test('受管方案切换隔离真实 SQLite 数据集，跨数据集在卸载前拒绝，新包捕获新基线', async t => {
+  const p = baselineFixture(t), session = { directory: p.session, context: p.context }
+  const empty = fs.readFileSync(p.file), seenDatasets = new Set()
+  let currentHash = p.appHash
+  const capture = () => {
+    const result = p.execute('capture', { appHash: currentHash })
+    assert.equal(result.status, 0, result.stderr)
+    const receipt = JSON.parse(fs.readFileSync(path.join(p.session, 'ui-baseline/receipt.json')))
+    assert.ok(!seenDatasets.has(receipt.datasetId))
+    seenDatasets.add(receipt.datasetId)
+  }
+  const inspect = () => inspectInstallation(session, p.container, currentHash, async (lease, mode) => {
+    const checked = p.execute(mode, { appHash: lease.appHash })
+    if (checked.status !== 0) throw new Error('拒绝跨数据集替换')
+  }, true)
+  capture()
+  for (const nextHash of ['b'.repeat(64), p.appHash]) {
+    assert.equal(p.fixture('debug-report-42').status, 0)
+    const db = new DatabaseSync(p.file)
+    const original = db.prepare('SELECT dataset_id AS id FROM ledger_meta').get().id
+    db.prepare('UPDATE ledger_meta SET dataset_id=?').run(randomUUID())
+    db.close()
+    const before = hashPaths(p.container, ['.'])
+    await assert.rejects(inspect(), /拒绝跨数据集/)
+    assert.equal(hashPaths(p.container, ['.']), before, '拒绝时不更改账本')
+    assert.ok(fs.existsSync(p.leaseFile))
+    assert.ok(fs.existsSync(path.join(p.session, 'ui-baseline/receipt.json')))
+    const repaired = new DatabaseSync(p.file)
+    repaired.prepare('UPDATE ledger_meta SET dataset_id=?').run(original)
+    repaired.close()
+    await inspect()
+    // 只模拟本临时工程的受管卸载和正式初始化；不把旧终态当作新包基线。
+    fs.rmSync(path.dirname(p.file), { recursive: true })
+    forgetInstallation(session)
+    write(p.root, path.relative(p.root, p.file), empty)
+    const fresh = new DatabaseSync(p.file)
+    fresh.prepare('UPDATE ledger_meta SET dataset_id=?').run(randomUUID())
+    assert.equal(fresh.prepare('SELECT count(*) AS n FROM ledger_entry').get().n, 0)
+    assert.equal(fresh.prepare('SELECT count(*) AS n FROM ledger_draft').get().n, 0)
+    fresh.close()
+    currentHash = nextHash
+    recordInstallation(session, p.container, currentHash)
+    assert.equal(readInstallationLease(session).appHash, currentHash)
+    capture()
+  }
+  assert.equal(seenDatasets.size, 3)
 })
 
 test('UI 基线拒绝污染初态、错误安装/会话/沙盒、篡改和符号链接，拒绝时不改现有数据', t => {

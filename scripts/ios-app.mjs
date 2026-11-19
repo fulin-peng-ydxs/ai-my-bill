@@ -41,7 +41,8 @@ import {
 } from './lib/ios-verification.mjs'
 
 import { checkNames, checkDefinition } from './lib/ios-checks.mjs'
-import { cachedLayer, layerInputs, assetOutputs, installationMatches, readInstallationLease, assertOwnedContainer } from './lib/ios-cache.mjs'
+import { cachedLayer, layerInputs, assetOutputs, installationMatches,
+  inspectInstallation, recordInstallation, forgetInstallation } from './lib/ios-cache.mjs'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const temporary = path.join(root, '.local/ios/tmp/ai-agent')
@@ -439,41 +440,25 @@ async function runPartial(session, selected, toolchain, requested) {
     let container = installed[APP_ID]
       ? (await simctl('get_app_container', device.udid, APP_ID, 'data')).text.trim() : undefined
     const ui = selected.scheme === 'DictionaryTouch'
-    const leaseFile = path.join(session.directory, 'ui-install.json')
     const baseline = path.join(session.directory, 'ui-baseline')
-    const identity = () => ({ runId: session.context.runId, simulatorId: device.udid,
-      appId: APP_ID, container: assertOwnedContainer(session.context, container), appHash })
-    let oldLease = ui ? readInstallationLease(session) : undefined
     const actualApp = installed[APP_ID]
       ? (await simctl('get_app_container', device.udid, APP_ID, 'app')).text.trim() : undefined
     const installedHash = actualApp ? hashPaths(actualApp, ['.']) : undefined
     const bundleMatches = installedHash === appHash
-    if (ui && oldLease && installedHash && installedHash !== oldLease.appHash)
-      throw new Error('安装回执与已安装 App 不匹配，拒绝卸载或重置。')
-    // 新候选包也须先证明旧安装的沙盒迁移，不能因候选摘要不同跳过归属校验再卸载。
-    if (ui && installedHash && oldLease && oldLease.container !== container) {
-      assertOwnedContainer(session.context, container)
-      if (!fs.existsSync(baseline)) throw new Error('安装回执沙盒变化但缺少基线，拒绝卸载或重置。')
-      await stopApp(device.udid, path.join(run, 'stop-rebind.log'))
-      await command('python3', ['-I', 'scripts/fixtures/ios-ui-baseline.py', 'rebind', session.file,
-        container, oldLease.appHash], { log: path.join(run, 'container-rebind.log') })
-      oldLease = readInstallationLease(session)
-      if (oldLease?.container !== container || oldLease.appHash !== installedHash)
-        throw new Error('沙盒重绑未确认，拒绝卸载或重置。')
-      result.containerRebound = true
-    }
-    const ownedInstallation = oldLease && Object.entries(identity()).every(([key, value]) => oldLease[key] === value)
-    const reuseInstallation = bundleMatches && (!ui || ownedInstallation)
-    // 新包/新沙盒或旧版本未登记的安装走一次冷安装；初始化失败本身不撤销正确安装。
-    if (ui && !reuseInstallation) {
+    const { lease: oldLease, rebound } = await inspectInstallation(session, container, installedHash, async (lease, mode) => {
+      await stopApp(device.udid, path.join(run, `stop-install-${mode}.log`))
+      await command('python3', ['-I', 'scripts/fixtures/ios-ui-baseline.py', mode, session.file,
+        container, lease.appHash], { log: path.join(run, `installation-${mode}.log`) })
+    }, !bundleMatches)
+    if (rebound) result.containerRebound = true
+    const reuseInstallation = bundleMatches && oldLease?.container === container
+    // 包切换包括 UI/Release ↔ App/Debug；冷安装隔离宿主账本，构建层仍各自复用。
+    if (!reuseInstallation) {
       if (installed[APP_ID]) {
         await stopApp(device.udid, path.join(run, 'stop-reinstall.log'))
         await simctl('uninstall', device.udid, APP_ID)
       }
-      fs.rmSync(baseline, { recursive: true, force: true })
-      fs.rmSync(leaseFile, { force: true })
-      // 旧安装已卸载，其重置断点不能套用到新包/新数据集。
-      fs.rmSync(path.join(session.directory, 'ui-reset.json'), { force: true })
+      forgetInstallation(session)
     }
     const installKey = `native-install/${selected.scheme}/${selected.configuration}`
     // 旧完整回执只有整体安装键，仍重做两项；新的局部故障精确到 App/runner。
@@ -486,7 +471,7 @@ async function runPartial(session, selected, toolchain, requested) {
     }
     container = (await simctl('get_app_container', device.udid, APP_ID, 'data')).text.trim()
     // App 成功立即登记；之后 runner 失败不会丢掉已验证安装或触发卸载。
-    if (ui) writeJson(leaseFile, identity())
+    recordInstallation(session, container, appHash)
     result.installationReused = reuseInstallation && !repairApp
     let runnerReused = true
     if (ui) {
@@ -515,7 +500,7 @@ async function runPartial(session, selected, toolchain, requested) {
     const baselineCommand = (mode, log) => command('python3', ['-I', 'scripts/fixtures/ios-ui-baseline.py',
       mode, session.file, container, appHash], { log: path.join(run, log) })
     // 停止宿主后才替换合成账本；恢复默认配置、草稿、维护状态及内部快照，不延续上轮终态。
-    if (ui && fs.existsSync(baseline)) {
+    if (fs.existsSync(baseline)) {
       await stopApp(device.udid, path.join(run, 'stop-reset.log'))
       await baselineCommand('restore', 'baseline-restore.log')
       result.fixtureBaselineReused = true
@@ -530,7 +515,7 @@ async function runPartial(session, selected, toolchain, requested) {
     await command('python3', ['scripts/fixtures/dictionary-touch.py', 'wait-initialized', container, device.udid, fixture],
       { log: path.join(run, 'initialize.log') })
     await stopApp(device.udid, path.join(run, 'stop-initialize.log'))
-    if (ui && !fs.existsSync(baseline)) {
+    if (!fs.existsSync(baseline)) {
       await baselineCommand('capture', 'baseline-capture.log')
       result.fixtureBaselineReused = false
     }
@@ -834,9 +819,7 @@ async function main(args) {
     writeContext(session)
     // 缓存只属于本会话，关闭时回收；日志和 xcresult 按证据生命周期保留。
     fs.rmSync(path.join(session.directory, 'DerivedData'), { recursive: true, force: true })
-    fs.rmSync(path.join(session.directory, 'ui-baseline'), { recursive: true, force: true })
-    fs.rmSync(path.join(session.directory, 'ui-install.json'), { force: true })
-    fs.rmSync(path.join(session.directory, 'ui-reset.json'), { force: true })
+    forgetInstallation(session)
     console.log('本轮调试设备和构建缓存已清理，证据保留。')
     return
   }

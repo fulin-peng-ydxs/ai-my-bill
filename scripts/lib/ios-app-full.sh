@@ -150,7 +150,28 @@ JS
     if [[ "${SIMULATOR_STATE}" == Shutdown ]]; then xcrun simctl boot "${SIMULATOR_ID}"; fi
     xcrun simctl bootstatus "${SIMULATOR_ID}" -b > "${RUN_DIRECTORY}/boot.log" 2>&1
     INSTALLED="$(xcrun simctl listapps "${SIMULATOR_ID}" | plutil -convert json -o - - | node -e 'let s=""; process.stdin.on("data",c=>s+=c);process.stdin.on("end",()=>console.log(Boolean(JSON.parse(s)["com.mybill.offline"])))')"
-    if [[ "${INSTALLED}" == true ]]; then xcrun simctl uninstall "${SIMULATOR_ID}" com.mybill.offline; fi
+    # 与局部入口共用归属校验；完整流程明确冷重置，卸载成功后失效旧登记，不能留下误拦后续调试的回执。
+    node --input-type=module - "${MYBILL_FULL_SESSION}" "${SIMULATOR_ID}" "${INSTALLED}" <<'JS'
+import { execFileSync, spawnSync } from 'node:child_process'
+import { readSession, APP_ID, hashPaths } from './scripts/lib/ios-debug.mjs'
+import { inspectInstallation, forgetInstallation } from './scripts/lib/ios-cache.mjs'
+import path from 'node:path'
+const session = readSession(path.resolve('.local/ios/tmp/ai-agent'), process.argv[2])
+if (session.context.simulatorId !== process.argv[3]) throw new Error('安装登记设备归属不符。')
+const sim = (...args) => execFileSync('xcrun', ['simctl', ...args], { encoding: 'utf8', timeout: 30_000 }).trim()
+const installed = process.argv[4] === 'true'
+const container = installed ? sim('get_app_container', session.context.simulatorId, APP_ID, 'data') : undefined
+const hash = installed ? hashPaths(sim('get_app_container', session.context.simulatorId, APP_ID, 'app'), ['.']) : undefined
+await inspectInstallation(session, container, hash, async (lease, mode) => {
+  const stopped = spawnSync('xcrun', ['simctl', 'terminate', session.context.simulatorId, APP_ID], { encoding: 'utf8', timeout: 30_000 })
+  if (stopped.error || stopped.status !== 0 && !(stopped.status === 3 && (stopped.stdout + stopped.stderr).includes('found nothing to terminate')))
+    throw new Error('结束本轮 App 失败，拒绝重绑或卸载。')
+  execFileSync('python3', ['-I', 'scripts/fixtures/ios-ui-baseline.py', mode, session.file, container, lease.appHash],
+    { stdio: 'inherit', timeout: 30_000 })
+}, true)
+if (installed) sim('uninstall', session.context.simulatorId, APP_ID)
+forgetInstallation(session)
+JS
     echo "完整验收借用本轮设备 ${SIMULATOR_ID}；重置合成 App 数据，退出时关闭设备运行并保留会话。"
   else
     SIMULATOR_ID="$(xcrun simctl create '我的账单离线原生测试' com.apple.CoreSimulator.SimDeviceType.iPhone-14-Pro-Max com.apple.CoreSimulator.SimRuntime.iOS-27-0)"
@@ -186,6 +207,8 @@ JS
         cat "${stop_log}" >&2
         return "${termination_status}"
       fi
+      # XCTest 安装校验/重启可能搬迁沙盒；每组回读和下一组夹具都使用停止后的实际路径。
+      APP_CONTAINER="$(xcrun simctl get_app_container "${SIMULATOR_ID}" com.mybill.offline data)"
     }
     stop_owned_app "${RUN_DIRECTORY}/touch-stop.log"
     # 在本轮空模拟器上证明两个直接测试入口没有清单时会拒绝，且不会写入业务数据。
@@ -225,7 +248,6 @@ JS
     fi
     # UI 用例共用一个交互会话，最后验证一次重新启动；结束 App 后才回读文件。
     stop_owned_app "${RUN_DIRECTORY}/touch-final-stop.log"
-    APP_CONTAINER="$(xcrun simctl get_app_container "${SIMULATOR_ID}" com.mybill.offline data)"
     phase check native-readback/DictionaryTouch/Release "${RUN_DIRECTORY}/touch-readback.log"
     python3 scripts/fixtures/dictionary-touch.py check "${APP_CONTAINER}" "${SIMULATOR_ID}" "${RUN_DIRECTORY}/touch-fixture.json" | tee "${RUN_DIRECTORY}/touch-readback.log"
     python3 scripts/fixtures/dictionary-touch.py prepare-paging "${APP_CONTAINER}" "${SIMULATOR_ID}" "${RUN_DIRECTORY}/touch-fixture.json"
@@ -234,7 +256,6 @@ JS
       exit 1
     fi
     stop_owned_app "${RUN_DIRECTORY}/touch-paging-stop.log"
-    APP_CONTAINER="$(xcrun simctl get_app_container "${SIMULATOR_ID}" com.mybill.offline data)"
     phase check native-readback/DictionaryTouch/Release "${RUN_DIRECTORY}/touch-paging-readback.log"
     python3 scripts/fixtures/dictionary-touch.py check-paging "${APP_CONTAINER}" "${SIMULATOR_ID}" "${RUN_DIRECTORY}/touch-fixture.json" | tee "${RUN_DIRECTORY}/touch-paging-readback.log"
     python3 scripts/fixtures/dictionary-touch.py prepare-entry "${APP_CONTAINER}" "${SIMULATOR_ID}" "${RUN_DIRECTORY}/touch-fixture.json"

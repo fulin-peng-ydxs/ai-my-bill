@@ -249,11 +249,16 @@ else if(a[1]==='get_app_container')console.log(a[4]==='data'?${JSON.stringify(co
 else if(a[1]==='install'){
  const app=a[3].endsWith('/App.app'),id=app?'${APP_ID}':'fixture.runner'
  log(app?'install-App':'install-runner')
+ if(app&&fs.existsSync(${JSON.stringify(path.join(p.root, 'fail-app'))}))process.exit(9)
  if(!app&&fs.existsSync(${JSON.stringify(path.join(p.root, 'fail-runner'))}))process.exit(9)
  const snapshot=${JSON.stringify(path.join(p.root, 'installed-bundles'))}+'/'+id+'.app'
  fs.rmSync(snapshot,{recursive:true,force:true});fs.cpSync(a[3],snapshot,{recursive:true})
  installed[id]={bundle:snapshot};fs.writeFileSync(state,JSON.stringify(installed))
-}else if(a[1]==='uninstall'){log('uninstall-App');delete installed[a[3]];fs.writeFileSync(state,JSON.stringify(installed))}
+}else if(a[1]==='uninstall'){
+ log('uninstall-App')
+ if(fs.existsSync(${JSON.stringify(path.join(p.root, 'fail-uninstall'))}))process.exit(9)
+ delete installed[a[3]];fs.writeFileSync(state,JSON.stringify(installed))
+}
 `)
   executable('plutil', `if(process.argv.includes('-extract'))console.log('fixture.runner');else{let s='';process.stdin.on('data',x=>s+=x);process.stdin.on('end',()=>process.stdout.write(s))}`)
   executable('python3', `console.log('controlled fixture boundary')`)
@@ -262,18 +267,20 @@ const fs=require('node:fs'),path=require('node:path'),a=process.argv.slice(2)
 if(a.includes('-version'))console.log('Xcode 27.0')
 else if(a[0]==='build-for-testing'){
  const products=path.join(a[a.indexOf('-derivedDataPath')+1],'Build/Products')
- for(const name of ['App.app','DictionaryUITests-Runner.app']){
-  fs.mkdirSync(path.join(products,'Release-iphonesimulator',name),{recursive:true})
-  fs.writeFileSync(path.join(products,'Release-iphonesimulator',name,'binary'),
-   name==='App.app'?fs.readFileSync('app/src/view.vue'):'controlled runner')
+ const config=a[a.indexOf('-configuration')+1],scheme=a[a.indexOf('-scheme')+1]
+ for(const name of ['App.app',...(scheme==='DictionaryTouch'?['DictionaryUITests-Runner.app']:[])]){
+  fs.mkdirSync(path.join(products,config+'-iphonesimulator',name),{recursive:true})
+  fs.writeFileSync(path.join(products,config+'-iphonesimulator',name,'binary'),
+   name==='App.app'?config+'|'+fs.readFileSync('app/src/view.vue'):'controlled runner')
  }
- fs.writeFileSync(path.join(products,'DictionaryTouch.xctestrun'),'controlled plan')
+ fs.writeFileSync(path.join(products,scheme+'.xctestrun'),'controlled plan')
 }else{
- console.log("Test Case '-[DictionaryUITests.DictionaryTouchTests test00PrepareReportApp]' passed (0.1 seconds).")
- console.log('Executed 1 test, with 0 failures')
+ const cases=a.filter(x=>x.startsWith('-only-testing:')).map(x=>x.slice(14))
+ for(const id of cases){const [bundle,klass,method]=id.split('/');console.log("Test Case '-["+bundle+'.'+klass+' '+method+"]' passed (0.1 seconds).")}
+ console.log('Executed '+cases.length+' test'+(cases.length===1?'':'s')+', with 0 failures')
 }
 `)
-  return { ...p, trace, args: ['debug', 'run', '--session', p.session, '--case', ui('test00PrepareReportApp')] }
+  return { ...p, trace, container, args: ['debug', 'run', '--session', p.session, '--case', ui('test00PrepareReportApp')] }
 }
 function finishAttempt(p, hash, proof, failed = true, required = [target]) {
   const a = beginFull(p.root, 'ios-touch', proof, hash, process.pid, p.context())
@@ -1141,6 +1148,126 @@ if(a[2]==='rebind'){
     assert.equal(JSON.parse(fs.readFileSync(p.trace)).filter(x => x === 'uninstall-App').length, 1,
       '确认同一旧安装的合法搬迁后允许新包冷安装')
   })
+
+for (const failProbe of [false, true]) {
+  test(`同会话 UI/Release→App/Debug→UI/Release 统一登记且热缓存恢复，探针安装失败=${failProbe}`,
+    { timeout: 30000, skip: process.platform !== 'darwin' }, t => {
+      const p = runnerProject(t), leaseFile = path.join(p.session, 'ui-install.json')
+      const probeArgs = ['debug', 'run', '--session', p.session, '--case',
+        'NativeTests/NativeSqliteTests/testLedgerLifecycleAndProtection']
+      const run = args => {
+        const result = p.run(args)
+        assert.equal(result.status, 0, result.stderr)
+        return JSON.parse(fs.readFileSync(path.join(result.stdout.match(/^EVIDENCE=(.+)$/m)[1], 'result.json')))
+      }
+      run(p.args)
+      const release = JSON.parse(fs.readFileSync(leaseFile))
+      if (failProbe) {
+        p.write('fail-app', 'controlled failed install after owned uninstall')
+        const failed = p.run(probeArgs)
+        assert.notEqual(failed.status, 0)
+        assert.equal(fs.existsSync(leaseFile), false, '已卸载的旧 App 不留错误登记')
+        fs.unlinkSync(path.join(p.root, 'fail-app'))
+      }
+      const probe = run(probeArgs), debug = JSON.parse(fs.readFileSync(leaseFile))
+      assert.notEqual(debug.appHash, release.appHash, 'Debug 与 Release 为真实不同的受控包')
+      assert.equal(debug.container, p.container)
+      assert.equal(probe.fixtureBaselineReused, false, '新包重新捕获空基线')
+      const returned = run(p.args)
+      assert.equal(JSON.parse(fs.readFileSync(leaseFile)).appHash, release.appHash)
+      assert.equal(returned.buildLayers.native, true, '返回 UI 复用 Release 原生产物')
+      assert.equal(returned.fixtureBaselineReused, false, '不继承 Debug 数据初态')
+      const hot = run(p.args)
+      assert.equal(hot.installationReused, true)
+      for (const key of ['types', 'assets', 'native']) assert.equal(hot.buildLayers[key], true)
+      const before = fs.readFileSync(p.trace, 'utf8')
+      fs.writeFileSync(leaseFile, JSON.stringify({ ...release, container: '/wrong-scope' }))
+      for (const args of [probeArgs, p.args]) {
+        const rejected = p.run(args)
+        assert.notEqual(rejected.status, 0)
+        assert.match(rejected.stderr, /安装回执沙盒路径.*拒绝/)
+        assert.equal(fs.readFileSync(p.trace, 'utf8'), before, '两种方案均在安装/卸载前拒绝')
+      }
+    })
+}
+
+test('完整入口借用会话共用安装校验，只有卸载成功才失效登记，不误拦返回局部',
+  { timeout: 20000, skip: process.platform !== 'darwin' }, t => {
+    const p = runnerProject(t)
+    assert.equal(p.run(p.args).status, 0)
+    const leaseFile = path.join(p.session, 'ui-install.json'), lease = JSON.parse(fs.readFileSync(leaseFile))
+    const context = JSON.parse(fs.readFileSync(path.join(p.session, 'test-context.json')))
+    // 仅执行实际完整脚本中的借用重置块，不编译或运行完整验收。
+    const shell = fs.readFileSync(path.join(p.root, 'scripts/lib/ios-app-full.sh'), 'utf8')
+    const code = shell.split('node --input-type=module - "${MYBILL_FULL_SESSION}" "${SIMULATOR_ID}" "${INSTALLED}" <<\'JS\'\n')[1]?.split('\nJS')[0]
+    assert.ok(code)
+    const reset = () => spawnSync(process.execPath, ['--input-type=module', '-', p.session, context.simulatorId, 'true'], {
+      cwd: p.root, input: code, encoding: 'utf8', env: { ...process.env,
+        PATH: path.join(p.root, 'bin') + path.delimiter + process.env.PATH }
+    })
+    const marker = p.write(path.relative(p.root, path.join(p.session, 'ui-baseline/marker')), 'old baseline')
+    const journal = p.write(path.relative(p.root, path.join(p.session, 'ui-reset.json')), 'pending reset')
+    const stateFile = path.join(p.base, 'ios-verification-state.json'), state = fs.readFileSync(stateFile)
+    const before = fs.readFileSync(p.trace, 'utf8')
+    fs.writeFileSync(leaseFile, JSON.stringify({ ...lease, appHash: 'f'.repeat(64) }))
+    const invalid = reset()
+    assert.notEqual(invalid.status, 0)
+    assert.match(invalid.stderr, /安装回执与已安装 App 不匹配/)
+    assert.equal(fs.readFileSync(p.trace, 'utf8'), before)
+    assert.equal(fs.readFileSync(marker, 'utf8'), 'old baseline')
+    fs.writeFileSync(leaseFile, JSON.stringify(lease))
+    p.write('fail-uninstall', 'controlled uninstall failure')
+    assert.notEqual(reset().status, 0)
+    assert.deepEqual(JSON.parse(fs.readFileSync(leaseFile)), lease)
+    assert.equal(fs.readFileSync(marker, 'utf8'), 'old baseline')
+    assert.equal(fs.readFileSync(journal, 'utf8'), 'pending reset')
+    fs.unlinkSync(path.join(p.root, 'fail-uninstall'))
+    const accepted = reset()
+    assert.equal(accepted.status, 0, accepted.stderr)
+    for (const file of [leaseFile, path.dirname(marker), journal]) assert.equal(fs.existsSync(file), false)
+    assert.deepEqual(fs.readFileSync(stateFile), state, '不清除完整失败锁与历史')
+    assert.equal(p.run(p.args).status, 0, '返回局部按冷路径建立新登记')
+  })
+
+test('完整触摸每组停止后重新查询沙盒，迁移不沿用旧回读路径，停止/查询失败均阻断', t => {
+  const p = project(t), shell = fs.readFileSync(path.join(p.root, 'scripts/lib/ios-app-full.sh'), 'utf8')
+  const body = shell.match(/    stop_owned_app\(\) \{([\s\S]*?)\n    \}/)?.[1]
+  assert.ok(body)
+  const xcrun = p.write('bin/xcrun', '#!/bin/sh\n' + `
+if [ "$2" = terminate ]; then
+ if [ -f fail-stop ]; then exit 9; fi
+ if [ -f no-host ]; then echo 'found nothing to terminate' >&2; exit 3; fi
+elif [ "$2" = get_app_container ]; then
+ if [ -f fail-query ]; then exit 9; fi
+ cat current-container
+fi
+`)
+  fs.chmodSync(xcrun, 0o755)
+  const run = () => spawnSync('bash', ['-s'], { cwd: p.root, encoding: 'utf8', env: { ...process.env,
+    PATH: path.join(p.root, 'bin') + path.delimiter + process.env.PATH }, input: `set -euo pipefail
+SIMULATOR_ID=owned-test-device
+APP_CONTAINER=old-container
+stop_owned_app() {${body}
+}
+stop_owned_app stop.log
+printf 'READBACK=%s\\n' "$APP_CONTAINER"
+` })
+  for (const group of ['entry', 'personal', 'lifecycle', 'query', 'report']) {
+    p.write('current-container', 'migrated-' + group)
+    const result = run()
+    assert.equal(result.status, 0, result.stderr)
+    assert.match(result.stdout, new RegExp('READBACK=migrated-' + group))
+  }
+  p.write('no-host', '')
+  assert.equal(run().status, 0, '已结束宿主的明确 ESRCH 仍可回读当前路径')
+  for (const flag of ['fail-stop', 'fail-query']) {
+    p.write(flag, '')
+    const rejected = run()
+    assert.notEqual(rejected.status, 0)
+    assert.doesNotMatch(rejected.stdout, /READBACK=/)
+    fs.unlinkSync(path.join(p.root, flag))
+  }
+})
 
 test('App 与 runner 分开计时仍共用两分钟安装预算，不因换组件延长', t => {
   const p = project(t), run = fs.mkdtempSync(path.join(p.base, 'ios-full-'))

@@ -88,8 +88,8 @@ jobs:
           cache-dependency-path: app/package-lock.json
       - run: npm --prefix app ci --ignore-scripts
       # native:sync 先从锁定 CLI 模板准备 SPM；干净检出不依赖本机生成目录。
-      # 同一 script-tests 覆盖真实 sync、双向重命名分流及卸载前回执拒绝；job 超时仍是外层限制。
-      - name: App 与脚本门禁（含干净检出 SPM、缓存隔离、安装保护及 T10 强断言）
+      # 同一 script-tests 覆盖真实 sync、重命名分流、方案切换登记及卸载前拒绝；job 超时仍是外层限制。
+      - name: App 与脚本门禁（含 SPM、方案切换、数据隔离及 T10 强断言）
         if: needs.scope.outputs.common == 'app'
         run: npm run check:app
       - name: 验证工具局部回归
@@ -122,7 +122,8 @@ jobs:
           cache: npm
           cache-dependency-path: app/package-lock.json
       - run: npm --prefix app ci --ignore-scripts
-      # 覆盖 macOS 条件分支的受控 CLI 和卸载前拒绝；SPM 场景只同步资源，不编译 App、不启动模拟器。
+      # 覆盖 UI/Release→App/Debug→UI/Release、安装失败重试及完整借用重置的受控 CLI。
+      # SPM 场景只同步资源；本 job 不编译 App、不启动模拟器。
       - run: npm run debug:ios-app -- check --check script-tests
       - uses: actions/upload-artifact@v4
         if: always()

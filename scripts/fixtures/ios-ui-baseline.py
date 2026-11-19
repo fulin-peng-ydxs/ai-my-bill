@@ -146,8 +146,8 @@ def run(mode, context_file, container, app_hash):
         source = baseline / 'ledgerSQLite.db'
         assert checksum(source) == receipt['sha256']
         assert validate_database(source, empty=True) == {k: receipt[k] for k in ['schemaVersion', 'datasetId']}
-        if mode == 'restore': recover_reset(session, ledger, identity, receipt)
-        if mode in ['restore', 'rebind']:
+        if mode in ['restore', 'validate']: recover_reset(session, ledger, identity, receipt)
+        if mode in ['restore', 'rebind', 'validate']:
             assert validate_database(database) == {k: receipt[k] for k in ['schemaVersion', 'datasetId']}
         if mode == 'rebind':
             assert not (session / 'ui-reset.json').exists(), '待恢复重置不能先搬迁沙盒'

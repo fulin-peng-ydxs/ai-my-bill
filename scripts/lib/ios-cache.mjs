@@ -2,6 +2,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { createHash } from 'node:crypto'
 import { hashPaths } from './ios-debug.mjs'
+import { writeJson } from './ios-verification.mjs'
 
 const digest = value => createHash('sha256').update(value).digest('hex')
 const generated = p => p.includes('/CapApp-SPM') || p.includes('/App/public') ||
@@ -106,4 +107,42 @@ export function readInstallationLease(session) {
     throw new Error('安装回执与本会话不匹配，拒绝重装或重置。')
   assertOwnedContainer(session.context, lease.container)
   return lease
+}
+
+/** UI 与 hosted 探针共用安装归属；只有已核验的实际安装和同数据集迁移才能接管。 */
+export async function inspectInstallation(session, container, installedHash, verifyLedger, reset = false) {
+  let lease = readInstallationLease(session)
+  let rebound = false
+  if (lease && installedHash && installedHash !== lease.appHash)
+    throw new Error('安装回执与已安装 App 不匹配，拒绝卸载或重置。')
+  if (lease && installedHash && lease.container !== container) {
+    assertOwnedContainer(session.context, container)
+    if (!fs.existsSync(path.join(session.directory, 'ui-baseline')))
+      throw new Error('安装回执沙盒变化但缺少基线，拒绝卸载或重置。')
+    await verifyLedger(lease, 'rebind')
+    lease = readInstallationLease(session)
+    if (lease?.container !== container || lease.appHash !== installedHash)
+      throw new Error('沙盒重绑未确认，拒绝卸载或重置。')
+    rebound = true
+  } else if (lease && installedHash && reset && fs.existsSync(path.join(session.directory, 'ui-baseline'))) {
+    // 同一路径的新包切换同样检查数据集，不能把别的账本当成旧夹具卸载。
+    await verifyLedger(lease, 'validate')
+  }
+  return { lease, rebound }
+}
+
+/** 历史文件名保留兼容；两种方案在 App 核验成功后立即登记，不等待 runner 或测试结果。 */
+export function recordInstallation(session, container, appHash) {
+  if (!/^[a-f0-9]{64}$/.test(appHash)) throw new Error('不能登记无效 App 摘要。')
+  const { runId, simulatorId, appId } = session.context
+  writeJson(path.join(session.directory, 'ui-install.json'), {
+    runId, simulatorId, appId, container: assertOwnedContainer(session.context, container), appHash
+  })
+}
+
+/** 仅在已验证的受管 App 卸载成功后失效；不清理失败锁、构建缓存或其他会话。 */
+export function forgetInstallation(session) {
+  fs.rmSync(path.join(session.directory, 'ui-baseline'), { recursive: true, force: true })
+  fs.rmSync(path.join(session.directory, 'ui-install.json'), { force: true })
+  fs.rmSync(path.join(session.directory, 'ui-reset.json'), { force: true })
 }
