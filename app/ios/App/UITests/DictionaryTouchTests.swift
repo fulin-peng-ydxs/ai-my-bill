@@ -111,7 +111,8 @@ final class DictionaryTouchTests: XCTestCase {
     private func expectValue(_ field: XCUIElement, _ value: String) {
         // WKWebView 的 AX 值可短暂落后于已完成的原生输入；等精确值，不重放输入或改写页面。
         let ready = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", value), object: field)
-        XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 3), .completed, "输入值未就绪：\(value)")
+        XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 3), .completed,
+                       "输入值未就绪：期望 \(value)，实际 \(String(describing: field.value))，类型 \(field.value.map { String(reflecting: type(of: $0)) } ?? "nil")")
     }
 
     private func openIndex() {
@@ -365,13 +366,16 @@ final class DictionaryTouchTests: XCTestCase {
     private func replaceEntryField(_ id: String, _ label: String, _ value: String) {
         let field = entryField(id, label)
         field.tap()
-        if let old = field.value as? String, !old.isEmpty, old != field.placeholderValue {
-            field.press(forDuration: 1.2)
-            let selectAll = app.descendants(matching: .any).matching(NSPredicate(format: "label IN %@", ["全选", "Select All"])).firstMatch
-            XCTAssertTrue(selectAll.waitForExistence(timeout: 3))
-            selectAll.tap()
+        guard let old = field.value as? String else {
+            XCTFail("无法读取\(label)的原值")
+            return
         }
+        // 右端内侧的原生点按将光标放到末尾；空框的占位值也可安全退格，不依赖编辑菜单。
+        field.coordinate(withNormalizedOffset: CGVector(dx: 0.99, dy: 0.5)).tap()
+        field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: max(1, old.count)))
         field.typeText(value)
+        // 结束原生编辑后再核对 AX 值，避免编辑中的 WebKit 快照仍显示旧值；不重复输入。
+        dismissEntryKeyboard()
         expectValue(field, value)
     }
 
@@ -546,8 +550,11 @@ final class DictionaryTouchTests: XCTestCase {
     func test22PrepareDualDrafts() {
         tap("记一笔")
         tap("支出")
+        // 空输入/零值与小数旧值都必须完整替换，最终草稿仍分别为 77 和 222。
+        replaceEntryField("expense-paid-amount", "实付金额", "0")
         replaceEntryField("expense-paid-amount", "实付金额", "77")
         tap("收入")
+        replaceEntryField("income-amount", "收入金额", "1234.56")
         replaceEntryField("income-amount", "收入金额", "222")
         dismissEntryKeyboard()
         // 真实 Home/终止 App；不派发 JS 或直接写库来代替后台落盘。

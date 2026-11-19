@@ -96,7 +96,7 @@ jobs:
           cache-dependency-path: app/package-lock.json
       - run: npm --prefix app ci --ignore-scripts
       # native:sync 先从锁定 CLI 模板准备 SPM；干净检出不依赖本机生成目录。
-      # 同一 script-tests 覆盖真实 sync、重命名分流、方案切换登记、T7 长列表搜索定位及卸载前拒绝；job 超时仍是外层限制。
+      # 同一 script-tests 覆盖真实 sync、重命名分流、方案切换登记、T7 金额替换/双草稿及卸载前拒绝；job 超时仍是外层限制。
       - name: App 与脚本门禁（含 SPM、方案切换、数据隔离及 T10 强断言）
         if: needs.scope.outputs.common == 'app'
         run: npm run check:app
@@ -192,6 +192,7 @@ jobs:
           IOS_LOCAL_EVIDENCE: ${{ steps.touch-local.outputs.evidence }}
         # T10 共用绝对日期 JSON 夹具及已校验词典序；原生筛选固定范围，断言等待具体时段及下钻可用。
         # 完整 touch 覆盖字典及 T6—T10，整轮 40 分钟；局部/smoke 仍为 15 分钟，单例仍为 60 秒。
+        # test22 用原生键盘替换零值/小数；test24/25 核对双草稿重启与重置后保持，结束后回读 SQLite。
         # job 的全部步骤仍共用外层 45 分钟；完整 touch 共用夹具与 SQLite 回读，不自动重试。
         run: npm run check:ios-app:touch -- --session "$IOS_DEBUG_SESSION" --from "$IOS_LOCAL_EVIDENCE"
       - if: always() && steps.ios-session.outputs.session != ''

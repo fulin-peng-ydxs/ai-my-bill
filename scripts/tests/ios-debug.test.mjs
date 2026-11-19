@@ -466,6 +466,54 @@ test('T7 单位停用在长列表中先搜索，夹具保留首屏外目标且�
   assertKeyboard(swift)
   assert.throws(() => assertKeyboard(swift.replace('XCTWaiter.wait(for: [empty], timeout: 3)', 'XCTWaiter.wait(for: [], timeout: 3)')))
 })
+test('T7 金额替换定位末尾并原生退格，双草稿覆盖零值和小数替换', () => {
+  const swift = fs.readFileSync(new URL('../../app/ios/App/UITests/DictionaryTouchTests.swift', import.meta.url), 'utf8')
+  const validate = source => {
+    const helper = source.slice(source.indexOf('private func replaceEntryField('), source.indexOf('private func dismissEntryKeyboard('))
+    assert.match(helper, /guard let old = field.value as\? String/)
+    assert.match(helper, /field.coordinate\(withNormalizedOffset: CGVector\(dx: 0.99, dy: 0.5\)\).tap\(\)[\s\S]*field.typeText\(String\(repeating: XCUIKeyboardKey.delete.rawValue, count: max\(1, old.count\)\)\)/)
+    assert.match(helper, /field.tap\(\)[\s\S]*field.coordinate/)
+    assert.match(helper, /old.count\)\)\)[\s\S]*field.typeText\(value\)[\s\S]*dismissEntryKeyboard\(\)[\s\S]*expectValue\(field, value\)/)
+    assert.doesNotMatch(helper, /press\(forDuration:|Select All|全选|typeKey\(|evaluateJavaScript/)
+    const draft = source.slice(source.indexOf('func test22PrepareDualDrafts()'), source.indexOf('func test23SaveThemePreference()'))
+    assert.match(draft, /replaceEntryField\("expense-paid-amount", "实付金额", "0"\)[\s\S]*replaceEntryField\("expense-paid-amount", "实付金额", "77"\)/)
+    assert.match(draft, /replaceEntryField\("income-amount", "收入金额", "1234.56"\)[\s\S]*replaceEntryField\("income-amount", "收入金额", "222"\)/)
+    assert.match(draft, /XCUIDevice.shared.press\(\.home\)[\s\S]*app.terminate\(\)/)
+  }
+  validate(swift)
+  for (const [before, after] of [
+    ['CGVector(dx: 0.99, dy: 0.5)', 'CGVector(dx: 0.5, dy: 0.5)'],
+    ['field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: max(1, old.count)))', ''],
+    ['expectValue(field, value)', '']
+  ]) assert.throws(() => validate(swift.replace(before, after)), '缺少替换步骤或结果断言必须拒绝')
+})
+for (const [type, key, invalid] of [['EXPENSE', 'paidAmount', '077'], ['INCOME', 'amount', '1234.56222']]) {
+  test(`T7 双草稿回读拒绝 ${type} 旧金额残留、单类型和跨数据集结果`, t => {
+    const selected = selection('--case', 'DictionaryUITests/DictionaryTouchTests/test22PrepareDualDrafts', [])
+    assert.equal(selected.fixture, 'personal-22')
+    assert.equal(selected.cases.length, 2, '只带目标与必要键盘前置')
+    const { file, execute } = touchFixture(temporary(t))
+    assert.equal(execute('debug-personal-22').status, 0)
+    const db = new DatabaseSync(file)
+    try {
+      assert.equal(db.prepare('SELECT count(*) AS n FROM ledger_draft').get().n, 0, '夹具不预写被验收草稿')
+      db.prepare("INSERT INTO ledger_meta VALUES(1,7,'draft-dataset',1,1,'2026-11-17','2026-11-17')").run()
+      db.prepare("UPDATE preference SET value='\"INCOME\"' WHERE key='recentEntryType'").run()
+      for (const [entryType, value] of [['EXPENSE', { paidAmount: '77' }], ['INCOME', { amount: '222' }]]) {
+        db.prepare('INSERT INTO ledger_draft VALUES(?,?,1,?,?,?)').run('draft-dataset', entryType, JSON.stringify(value), '2026-11-17', '2026-11-17')
+        if (entryType === 'EXPENSE') assert.notEqual(execute('debug-check-personal-22').status, 0, '缺收入草稿不能通过')
+      }
+      const verified = execute('debug-check-personal-22')
+      assert.equal(verified.status, 0, verified.stderr)
+      const update = db.prepare('UPDATE ledger_draft SET data_json=? WHERE entry_type=?')
+      update.run(JSON.stringify({ [key]: invalid }), type)
+      assert.notEqual(execute('debug-check-personal-22').status, 0, '拼接旧金额不能通过')
+      update.run(JSON.stringify({ [key]: type === 'EXPENSE' ? '77' : '222' }), type)
+      db.prepare("UPDATE ledger_draft SET dataset_id='other-dataset' WHERE entry_type=?").run(type)
+      assert.notEqual(execute('debug-check-personal-22').status, 0, '另一数据集的草稿不能补足当前类型')
+    } finally { db.close() }
+  })
+}
 test('T8 夹具不预写调整，回读拒绝未执行清理和错误金额', (t) => {
   const { file, execute } = touchFixture(temporary(t))
   const prepared = execute('debug-lifecycle-26')
