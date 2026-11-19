@@ -1,59 +1,30 @@
 name: offline-ios
 
-# 离线分支唯一自动流水线；旧 Web/服务端 release-gate 已退役。
-
+# 日常 push/PR 留在本地局部验证；远端仅接受显式请求。
+# ios-ci 标签允许尚未合入默认分支的工作流按需运行，范围由标签绑定，不能混记完整验收。
 on:
   push:
-    paths:
-      - 'app/**'
-      - 'DESIGN.md'
-      - 'scripts/ios-app.sh'
-      - 'scripts/ios-app.mjs'
-      - 'scripts/lib/ios-*.mjs'
-      - 'scripts/lib/ios-app-full.sh'
-      - 'scripts/tests/ios-debug.test.mjs'
-      - 'scripts/tests/ios-verification.test.mjs'
-      - 'scripts/fixtures/dictionary-touch.py'
-      - 'scripts/fixtures/ios-ui-baseline.py'
-      - 'scripts/tests/ios-cache.test.mjs'
-      - 'scripts/normalize-capacitor-spm.mjs'
-      - 'scripts/verify-ios-resources.mjs'
-      - 'scripts/ios-storage-policy.mjs'
-      - 'scripts/check-secrets.sh'
-      - 'scripts/tests/ios-resources.test.mjs'
-      - 'scripts/toolchain.sh'
-      - '.nvmrc'
-      - 'package.json'
-      - '.github/workflows/offline-ios.yml'
-  pull_request:
-    paths:
-      - 'app/**'
-      - 'DESIGN.md'
-      - 'scripts/ios-app.sh'
-      - 'scripts/ios-app.mjs'
-      - 'scripts/lib/ios-*.mjs'
-      - 'scripts/lib/ios-app-full.sh'
-      - 'scripts/tests/ios-debug.test.mjs'
-      - 'scripts/tests/ios-verification.test.mjs'
-      - 'scripts/fixtures/dictionary-touch.py'
-      - 'scripts/fixtures/ios-ui-baseline.py'
-      - 'scripts/tests/ios-cache.test.mjs'
-      - 'scripts/normalize-capacitor-spm.mjs'
-      - 'scripts/verify-ios-resources.mjs'
-      - 'scripts/ios-storage-policy.mjs'
-      - 'scripts/check-secrets.sh'
-      - 'scripts/tests/ios-resources.test.mjs'
-      - 'scripts/toolchain.sh'
-      - '.nvmrc'
-      - 'package.json'
-      - '.github/workflows/offline-ios.yml'
+    tags:
+      - 'ios-ci/scripts/**'
+      - 'ios-ci/app/**'
+      - 'ios-ci/final/**'
   workflow_dispatch:
+    inputs:
+      verification:
+        description: 'scripts=脚本双平台；app=工程与原生集成；final=完整候选（含页面）'
+        required: true
+        default: scripts
+        type: choice
+        options:
+          - scripts
+          - app
+          - final
 
 permissions:
   contents: read
 
 concurrency:
-  group: offline-ios-${{ github.workflow }}-${{ github.ref }}
+  group: offline-ios-${{ github.workflow }}-${{ github.ref }}-${{ github.event.inputs.verification || 'tag' }}
   cancel-in-progress: true
 
 jobs:
@@ -62,11 +33,10 @@ jobs:
     timeout-minutes: 5
     permissions:
       contents: read
-      actions: read
     outputs:
       common: ${{ steps.scope.outputs.common }}
       native: ${{ steps.scope.outputs.native }}
-      baseline: ${{ steps.scope.outputs.baseline }}
+      final: ${{ steps.scope.outputs.final }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -75,8 +45,6 @@ jobs:
         with:
           node-version-file: .nvmrc
       - id: scope
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: node scripts/lib/ios-ci.mjs
 
   app-common:
@@ -182,12 +150,14 @@ jobs:
           IOS_LOCAL_EVIDENCE: ${{ steps.native-local.outputs.evidence }}
         run: npm run check:ios-app:simulator -- --session "$IOS_DEBUG_SESSION" --from "$IOS_LOCAL_EVIDENCE"
       - id: touch-local
+        if: needs.scope.outputs.final == 'true'
         run: |
           npm run debug:ios-app -- check --check app-tests --file src/views/me/dictionaries/DictionaryDetailView.spec.ts | tee .local/ios/tmp/ai-agent/ci-touch-local.log
           proof="$(sed -n 's/^EVIDENCE=//p' .local/ios/tmp/ai-agent/ci-touch-local.log)"
           test -n "$proof"
           printf 'evidence=%s\n' "$proof" >> "$GITHUB_OUTPUT"
-      - env:
+      - if: needs.scope.outputs.final == 'true'
+        env:
           IOS_DEBUG_SESSION: ${{ steps.ios-session.outputs.session }}
           IOS_LOCAL_EVIDENCE: ${{ steps.touch-local.outputs.evidence }}
         # T10 共用绝对日期 JSON 夹具及已校验词典序；原生筛选固定范围，断言等待具体时段及下钻可用。
@@ -221,15 +191,13 @@ jobs:
           retention-days: 7
           if-no-files-found: error
 
-  # 供后续提交读取的版本化质量标记；失败、取消或跳过必需 job 时绝不产生成功标记。
+  # 仅最终范围全部成功才生成完整候选标记；脚本/集成绿色不继承或覆盖完整验收结论。
   app-baseline-v1:
-    needs: [scope, app-common, script-macos, native-simulator]
+    needs: [scope, app-common, native-simulator]
     if: >-
-      always() && needs.scope.result == 'success' && needs['app-common'].result == 'success' &&
-      ((needs.scope.outputs.native == 'true' && needs['native-simulator'].result == 'success') ||
-       (needs.scope.outputs.native == 'false' && needs.scope.outputs.baseline == 'true' &&
-        needs['script-macos'].result == 'success'))
+      always() && needs.scope.result == 'success' && needs.scope.outputs.final == 'true' &&
+      needs['app-common'].result == 'success' && needs['native-simulator'].result == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - run: echo 'App baseline verified for this commit'
+      - run: echo 'Full App candidate verified for this commit; device acceptance remains separate'

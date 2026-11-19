@@ -9,7 +9,7 @@ import { DatabaseSync } from 'node:sqlite'
 import { cachedLayer, layerInputs, installationMatches, readInstallationLease,
   inspectInstallation, recordInstallation, forgetInstallation } from '../lib/ios-cache.mjs'
 import { APP_ID, hashPaths } from '../lib/ios-debug.mjs'
-import { ciValidationScope, verifiedBaseline, baselineJob } from '../lib/ios-ci.mjs'
+import { ciValidationScope, requestedScope } from '../lib/ios-ci.mjs'
 
 function temporary(t) {
   const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'ios-cache-test-')))
@@ -71,153 +71,102 @@ test('SPM 干净检出经真实 native:sync 初始化，重复同步及缺失骨
   assert.equal(fs.readFileSync(sentinel, 'utf8'), 'existing project source')
 })
 
-test('CI 按场景选择：纯验证脚本双平台回归，App/构建依赖/手动候选保留完整门禁', () => {
-  const scripts = ['scripts/lib/ios-cache.mjs', 'scripts/ios-app.mjs', 'scripts/fixtures/ios-ui-baseline.py',
-    'scripts/tests/ios-cache.test.mjs', '.github/workflows/offline-ios.yml', 'agent-works/testing/guide.md',
-    'agent-works/offline-ios-app/plan.md', 'README.md']
-  assert.deepEqual(ciValidationScope(scripts, false, true), { common: 'scripts', native: false })
-  assert.equal(ciValidationScope(scripts).native, true, '未核验或失败的基线不能只跑脚本')
-  for (const file of ['app/src/view.vue', 'app/ios/App/UITests/Test.swift', 'app/package-lock.json',
-    '.nvmrc', 'package.json', 'DESIGN.md', 'scripts/toolchain.sh', 'scripts/normalize-capacitor-spm.mjs', 'unknown'])
-    assert.deepEqual(ciValidationScope([...scripts, file], false, true), { common: 'app', native: true }, file)
-  assert.equal(ciValidationScope([]).native, true, '不能确定基线时不缩小')
-  assert.equal(ciValidationScope(scripts, true, true).native, true, '手动完整候选不能被文件过滤跳过')
+test('CI 显式选择脚本、集成与最终范围，局部绿色不能声称完整验收', () => {
+  const scopes = {
+    scripts: { level: 'scripts', common: 'scripts', native: false, final: false },
+    app: { level: 'app', common: 'app', native: true, final: false },
+    final: { level: 'final', common: 'app', native: true, final: true }
+  }
+  assert.deepEqual(ciValidationScope(), scopes.scripts)
+  for (const [level, expected] of Object.entries(scopes)) {
+    assert.deepEqual(ciValidationScope(level), expected)
+    assert.deepEqual(requestedScope('workflow_dispatch', { inputs: { verification: level } }), expected)
+    assert.deepEqual(requestedScope('push', { ref: `refs/tags/ios-ci/${level}/candidate-700bcc9` }), expected)
+  }
+  assert.deepEqual(requestedScope('workflow_dispatch', {}), scopes.scripts)
+  for (const level of ['', 'auto', 'full', true, null, 'final\ncommon=scripts']) {
+    assert.throws(() => ciValidationScope(level), /只允许/)
+    assert.throws(() => requestedScope('workflow_dispatch', { inputs: { verification: level } }), /只允许/)
+  }
 })
 
-test('离线分支自动 CI 保留 App 门禁，不再运行旧 Web/服务端与 PostgreSQL 安装', () => {
+test('CI 拒绝日常 push/PR、普通或非法标签与删除事件，不启动或扩大远端工作', () => {
+  for (const [name, event] of [
+    ['push', { ref: 'refs/heads/codex/offline-ios-app' }],
+    ['pull_request', { inputs: { verification: 'final' } }],
+    ['schedule', {}], ['push', {}],
+    ['push', { ref: 'refs/tags/v1.0.0' }],
+    ['push', { ref: 'refs/tags/ios-ci/unknown/candidate' }],
+    ['push', { ref: 'refs/tags/ios-ci/final/' }],
+    ['push', { ref: 'refs/tags/ios-ci/final/candidate', deleted: true }]
+  ]) assert.throws(() => requestedScope(name, event), /仅接受/)
+})
+
+test('CI 实际入口无凭据或网络仍按请求分流，重跑不升级范围且不改本地失败锁', t => {
+  const root = temporary(t)
+  const eventFile = write(root, 'event.json', '{}'), output = path.join(root, 'output')
+  const state = write(root, '.local/ios/tmp/ai-agent/ios-verification-state.json', '{"failed":"preserve"}')
+  const marker = path.join(root, 'network-called')
+  const stub = write(root, 'no-network.mjs', `import fs from 'node:fs';
+    globalThis.fetch=()=>{fs.writeFileSync(${JSON.stringify(marker)},'unexpected');throw new Error('billing blocked')}`)
+  for (const level of ['scripts', 'app', 'final']) {
+    for (const name of ['workflow_dispatch', 'push']) {
+      fs.writeFileSync(eventFile, JSON.stringify(name === 'workflow_dispatch'
+        ? { inputs: { verification: level } } : { ref: `refs/tags/ios-ci/${level}/candidate` }))
+      fs.rmSync(output, { force: true })
+      const result = spawnSync(process.execPath, ['--import', stub, new URL('../lib/ios-ci.mjs', import.meta.url).pathname], {
+        cwd: root, encoding: 'utf8', env: { ...process.env,
+          GITHUB_EVENT_PATH: eventFile, GITHUB_EVENT_NAME: name, GITHUB_OUTPUT: output,
+          GH_TOKEN: '', GITHUB_RUN_ATTEMPT: '2', GITHUB_API_URL: 'https://unavailable.invalid' }
+      })
+      assert.equal(result.status, 0, result.stderr)
+      const expected = ciValidationScope(level)
+      assert.deepEqual(JSON.parse(result.stdout), expected)
+      assert.equal(fs.readFileSync(output, 'utf8'),
+        `common=${expected.common}\nnative=${expected.native}\nfinal=${expected.final}\n`)
+      assert.equal(fs.readFileSync(state, 'utf8'), '{"failed":"preserve"}')
+      assert.equal(fs.existsSync(marker), false, '范围选择不查询远端基线或计费')
+    }
+  }
+  fs.writeFileSync(eventFile, JSON.stringify({ inputs: { verification: 'invalid' } }))
+  fs.rmSync(output, { force: true })
+  const invalid = spawnSync(process.execPath, [new URL('../lib/ios-ci.mjs', import.meta.url).pathname], {
+    encoding: 'utf8', env: { ...process.env, GITHUB_EVENT_PATH: eventFile,
+      GITHUB_EVENT_NAME: 'workflow_dispatch', GITHUB_OUTPUT: output }
+  })
+  assert.notEqual(invalid.status, 0)
+  assert.equal(fs.existsSync(output), false, '非法范围不得留下可供下游消费的输出')
+})
+
+test('CI 工作流仅按需触发，最终标记及触摸步骤受范围约束，保留原生失败与超时门禁', () => {
   const directory = new URL('../../.github/workflows/', import.meta.url)
   const workflows = fs.readdirSync(directory).filter(file => /\.ya?ml$/.test(file))
   const app = fs.readFileSync(new URL('offline-ios.yml', directory), 'utf8')
-  assert.ok(app.includes('run: bash scripts/check-secrets.sh'), '保留适用于 App 的仓库 secret 检查')
-  for (const job of ['scope:', 'app-common:', 'native-simulator:', 'app-baseline-v1:'])
-    assert.ok(app.includes(job), '保留离线 App 的有效门禁：' + job)
+  const triggers = app.slice(app.indexOf('on:\n'), app.indexOf('\npermissions:'))
+  assert.match(triggers, /push:\n    tags:/)
+  for (const level of ['scripts', 'app', 'final']) assert.ok(triggers.includes(`'ios-ci/${level}/**'`))
+  assert.match(triggers, /workflow_dispatch:/)
+  assert.match(triggers, /default: scripts/)
+  assert.doesNotMatch(triggers, /pull_request:|branches:|paths:|schedule:/)
+  assert.doesNotMatch(app, /GH_TOKEN:|actions: read|verified-baseline/)
+  assert.ok(app.includes('run: bash scripts/check-secrets.sh'))
+  assert.ok(app.includes("if: needs.scope.outputs.native == 'false'"))
+  assert.ok(app.includes("if: needs.scope.outputs.native == 'true'"))
+  assert.ok(app.includes("- id: touch-local\n        if: needs.scope.outputs.final == 'true'"))
+  assert.match(app, /- if: needs\.scope\.outputs\.final == 'true'\n        env:[\s\S]*?run: npm run check:ios-app:touch/)
+  assert.ok(app.includes('npm run check:ios-app:simulator -- --session "$IOS_DEBUG_SESSION" --from "$IOS_LOCAL_EVIDENCE"'))
+  assert.ok(app.includes('npm run check:ios-app:touch -- --session "$IOS_DEBUG_SESSION" --from "$IOS_LOCAL_EVIDENCE"'))
+  assert.ok(app.includes("if: always() && steps.ios-session.outputs.session != ''"))
+  assert.ok(app.includes('timeout-minutes: 45'))
+  const marker = app.slice(app.indexOf('  app-baseline-v1:'))
+  for (const guard of ["needs.scope.result == 'success'", "needs.scope.outputs.final == 'true'",
+    "needs['app-common'].result == 'success'", "needs['native-simulator'].result == 'success'"])
+    assert.ok(marker.includes(guard), '最终标记必须检查：' + guard)
+  assert.doesNotMatch(marker, /baseline ==|script-macos.*success/)
   for (const file of workflows) {
     const workflow = fs.readFileSync(new URL(file, directory), 'utf8')
     assert.doesNotMatch(workflow, /postgresql-16|actions\/setup-java|--prefix\s+(web|server)\b|working-directory:\s*(web|server)\b/,
-      '自动流水线不得重新启用已退役旧端：' + file)
-  }
-})
-
-test('CI 分流实际入口读取 Git 变更；PR/push 同源，未知基线及手动执行不缩小', t => {
-  const root = temporary(t)
-  const git = write(root, 'bin/git', '#!/bin/sh\nprintf "scripts/lib/ios-cache.mjs\\0"\n')
-  fs.chmodSync(git, 0o755)
-  const eventFile = write(root, 'event.json', '{}'), output = path.join(root, 'output')
-  for (const [name, event, native, missing] of [
-    ['push', { before: 'a'.repeat(40) }, true],
-    ['pull_request', { pull_request: { base: { sha: 'b'.repeat(40) } } }, true],
-    ['push', { before: '0'.repeat(40) }, true],
-    ['workflow_dispatch', { before: 'a'.repeat(40) }, true],
-    ['push', { before: 'a'.repeat(40) }, true, true]
-  ]) {
-    fs.writeFileSync(git, missing ? '#!/bin/sh\nexit 1\n' : '#!/bin/sh\nprintf "scripts/lib/ios-cache.mjs\\0"\n')
-    fs.writeFileSync(eventFile, JSON.stringify(event))
-    fs.rmSync(output, { force: true })
-    const result = spawnSync(process.execPath, [new URL('../lib/ios-ci.mjs', import.meta.url).pathname], {
-      cwd: root, encoding: 'utf8', env: { ...process.env, PATH: path.join(root, 'bin') + path.delimiter + process.env.PATH,
-        GITHUB_EVENT_PATH: eventFile, GITHUB_EVENT_NAME: name, GITHUB_OUTPUT: output, GH_TOKEN: '', GITHUB_RUN_ATTEMPT: '1' }
-    })
-    assert.equal(result.status, 0, result.stderr)
-    if (missing) assert.match(result.stderr, /保留完整门禁/)
-    assert.match(fs.readFileSync(output, 'utf8'), new RegExp(`native=${native}\\n`))
-  }
-})
-
-test('CI 只继承最新成功标记，失败/取消/进行中/旧工作流及失败重跑不能被旧绿遮蔽', async () => {
-  const base = 'a'.repeat(40), env = { GITHUB_REPOSITORY: 'fixture/offline', GH_TOKEN: 'fixture-token' }
-  const passed = { id: 10, head_sha: base, status: 'completed', conclusion: 'success', run_attempt: 2,
-    updated_at: '2026-11-19T01:00:00Z' }
-  for (const [runs, jobs, expected] of [
-    [[passed], [{ name: baselineJob, status: 'completed', conclusion: 'success' }], true],
-    [[passed], [], false],
-    [[passed], ['app-common', 'native-simulator'].map(name => ({ name, status: 'completed', conclusion: 'success' })), true],
-    [[passed], [{ name: 'app-common', status: 'completed', conclusion: 'success' },
-      { name: 'native-simulator', status: 'completed', conclusion: 'skipped' }], false],
-    [[passed], [{ name: baselineJob, status: 'completed', conclusion: 'failure' }], false],
-    [[passed], [{ name: baselineJob, status: 'completed', conclusion: 'skipped' }], false],
-    [[passed, { ...passed, id: 11, conclusion: 'failure' }], [], false],
-    [[passed, { ...passed, id: 11, conclusion: 'cancelled' }], [], false],
-    [[passed, { ...passed, id: 11, status: 'in_progress', conclusion: null }], [], false],
-    [[{ ...passed, run_attempt: 3, conclusion: 'failure' }], [], false],
-    [[{ ...passed, head_sha: 'b'.repeat(40) }], [], false],
-    [[passed, { ...passed, id: 9, run_attempt: 3, conclusion: 'failure', updated_at: '2026-11-19T02:00:00Z' }], [], false]
-  ]) {
-    const urls = []
-    const fetch = async (url, options) => {
-      urls.push(url)
-      assert.equal(options.headers.Authorization, 'Bearer fixture-token')
-      return { ok: true, json: async () => url.includes('/workflows/') ? { workflow_runs: runs } : { jobs, total_count: jobs.length } }
-    }
-    assert.equal(await verifiedBaseline(base, env, fetch), expected)
-    if (expected) assert.match(urls[1], /\/runs\/10\/attempts\/2\/jobs/)
-  }
-  assert.equal(await verifiedBaseline(base, env, async () => ({ ok: false })), false)
-  assert.equal(await verifiedBaseline(base, env, async () => { throw new Error('offline') }), false)
-  assert.equal(await verifiedBaseline(base, { ...env, GH_TOKEN: '' }, () => { throw new Error('must not call') }), false)
-  for (const url of ['not-a-url', 'http://example.invalid'])
-    assert.equal(await verifiedBaseline(base, { ...env, GITHUB_API_URL: url }, () => { throw new Error('must not call') }), false)
-})
-
-test('CI 实际入口仅在成功基线下缩小，失败基线保留 App 和原生门禁', t => {
-  const root = temporary(t), base = 'a'.repeat(40)
-  const git = write(root, 'bin/git', '#!/bin/sh\nprintf "scripts/lib/ios-cache.mjs\\0"\n')
-  fs.chmodSync(git, 0o755)
-  const event = write(root, 'event.json', JSON.stringify({ before: base }))
-  const stub = write(root, 'http.mjs', `
-globalThis.fetch = async url => ({ok:true,json:async()=>url.includes('/workflows/')
- ? {workflow_runs:[{id:1,head_sha:'${base}',status:'completed',conclusion:process.env.FIXTURE_CONCLUSION,run_attempt:1}]}
- : {total_count:1,jobs:[{name:'${baselineJob}',status:'completed',conclusion:'success'}]}})
-`)
-  for (const [conclusion, attempt] of [['failure', '1'], ['cancelled', '1'], ['success', '1'], ['success', '2']]) {
-    const output = path.join(root, 'output-' + conclusion + attempt)
-    const result = spawnSync(process.execPath, ['--import', stub, new URL('../lib/ios-ci.mjs', import.meta.url).pathname], {
-      cwd: root, encoding: 'utf8', env: { ...process.env, PATH: path.join(root, 'bin') + path.delimiter + process.env.PATH,
-        GITHUB_EVENT_PATH: event, GITHUB_EVENT_NAME: 'push', GITHUB_OUTPUT: output,
-        GITHUB_REPOSITORY: 'fixture/offline', GH_TOKEN: 'fixture-token', FIXTURE_CONCLUSION: conclusion, GITHUB_RUN_ATTEMPT: attempt }
-    })
-    assert.equal(result.status, 0, result.stderr)
-    const scope = JSON.parse(result.stdout)
-    const reuse = conclusion === 'success' && attempt === '1'
-    assert.equal(scope.native, !reuse)
-    assert.equal(scope.common, reuse ? 'scripts' : 'app')
-  }
-})
-
-test('CI 真实 Git 跨目录重命名双向检查旧新路径，纯脚本改名仍可缩小', t => {
-  for (const [from, to, native] of [
-    ['app/src/main.ts', 'scripts/lib/ios-old-entry.mjs', true],
-    ['scripts/lib/ios-old-entry.mjs', 'app/src/main.ts', true],
-    ['scripts/normalize-capacitor-spm.mjs', 'scripts/lib/ios-old-normalize.mjs', true],
-    ['scripts/lib/ios-old-normalize.mjs', 'scripts/normalize-capacitor-spm.mjs', true],
-    ['scripts/lib/ios-before.mjs', 'scripts/lib/ios-after.mjs', false]
-  ]) {
-    const root = temporary(t)
-    const git = (...args) => execFileSync('git', ['-c', 'core.hooksPath=/dev/null', ...args], { cwd: root, encoding: 'utf8' }).trim()
-    git('init', '-q')
-    git('config', 'user.name', 'fixture')
-    git('config', 'user.email', 'fixture@example.invalid')
-    git('config', 'diff.renames', 'true')
-    write(root, from, 'unchanged content moved across directories')
-    git('add', '.')
-    git('-c', 'commit.gpgsign=false', 'commit', '-qm', 'base')
-    const base = git('rev-parse', 'HEAD')
-    fs.mkdirSync(path.dirname(path.join(root, to)), { recursive: true })
-    git('mv', from, to)
-    git('-c', 'commit.gpgsign=false', 'commit', '-qam', 'rename')
-    const stub = write(root, 'http.mjs', `globalThis.fetch=async url=>({ok:true,json:async()=>url.includes('/workflows/')
-      ?{workflow_runs:[{id:1,head_sha:'${base}',status:'completed',conclusion:'success',run_attempt:1}]}
-      :{total_count:1,jobs:[{name:'${baselineJob}',status:'completed',conclusion:'success'}]}})`)
-    for (const eventName of ['push', 'pull_request']) {
-      const event = write(root, 'event.json', JSON.stringify(eventName === 'push' ? { before: base } : { pull_request: { base: { sha: base } } }))
-      const output = path.join(root, eventName + '.output')
-      const result = spawnSync(process.execPath, ['--import', stub, new URL('../lib/ios-ci.mjs', import.meta.url).pathname], {
-        cwd: root, encoding: 'utf8', env: { ...process.env, GITHUB_EVENT_PATH: event, GITHUB_EVENT_NAME: eventName,
-          GITHUB_OUTPUT: output, GITHUB_REPOSITORY: 'fixture/offline', GH_TOKEN: 'fixture-token', GITHUB_RUN_ATTEMPT: '1' }
-      })
-      assert.equal(result.status, 0, result.stderr)
-      assert.equal(JSON.parse(result.stdout).native, native, `${eventName}: ${from} -> ${to}`)
-      assert.match(fs.readFileSync(output, 'utf8'), new RegExp(`native=${native}\\n`))
-    }
+      '不得重新启用已退役旧端：' + file)
   }
 })
 
