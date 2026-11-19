@@ -149,7 +149,7 @@ if [ "$2" = get_app_container ]; then
   if [ "$5" = app ]; then
     if [ "$4" = "${APP_ID}" ]; then bundle=App.app; else bundle=DictionaryUITests-Runner.app; fi
     find "$PWD/.local/ios/tmp/ai-agent" -type d -name "$bundle" -print
-  else printf '%s/sandbox\\n' "$PWD"; fi
+  else printf '%s/CoreSimulator/Devices/${simulatorId}/data/Containers/Data/Application/11111111-1111-1111-1111-111111111111\\n' "$PWD"; fi
 elif [ \"$3\" = \"devices\" ]; then printf '%s\\n' '${devices}'; elif [ \"$1\" = \"simctl\" ]; then printf '%s\\n' '{"runtimes":[{"identifier":"com.apple.CoreSimulator.SimRuntime.iOS-27-0","isAvailable":true,"buildversion":"TEST"}]}'; else printf '27.0\\n'; fi
 `
   )
@@ -1090,6 +1090,56 @@ test('runner 安装失败后 App 回执仍有效，重试只装 runner；旧整�
     assert.equal(changed.status, 0, changed.stderr)
     assert.equal(fs.existsSync(path.join(p.session, 'ui-reset.json')), false, '冷安装不继承旧包的重置断点')
     assert.ok(JSON.parse(fs.readFileSync(p.trace)).includes('uninstall-App'))
+  })
+
+test('新候选 App 在卸载前拒绝错误沙盒回执，保留有效安装、基线和中断日志',
+  { timeout: 30000, skip: process.platform !== 'darwin' }, t => {
+    const p = runnerProject(t)
+    const initial = p.run(p.args)
+    assert.equal(initial.status, 0, initial.stderr)
+    const leaseFile = path.join(p.session, 'ui-install.json')
+    const lease = JSON.parse(fs.readFileSync(leaseFile))
+    p.write('app/src/view.vue', 'new candidate requiring cold installation')
+    const baseline = p.write(path.relative(p.root, path.join(p.session, 'ui-baseline/keep')), 'baseline sentinel')
+    const journal = p.write(path.relative(p.root, path.join(p.session, 'ui-reset.json')), 'pending reset sentinel')
+    const before = fs.readFileSync(p.trace, 'utf8')
+    for (const patch of [
+      { container: '/foreign-container' },
+      { container: lease.container.replace(lease.simulatorId, randomUUID()) },
+      { appHash: 'f'.repeat(64) }
+    ]) {
+      const invalid = JSON.stringify({ ...lease, ...patch })
+      fs.writeFileSync(leaseFile, invalid)
+      const rejected = p.run(p.args)
+      assert.notEqual(rejected.status, 0)
+      assert.match(rejected.stderr, /安装回执.*拒绝/)
+      assert.equal(fs.readFileSync(leaseFile, 'utf8'), invalid)
+      assert.equal(fs.readFileSync(p.trace, 'utf8'), before, '卸载/安装前拒绝')
+      assert.equal(fs.readFileSync(baseline, 'utf8'), 'baseline sentinel')
+      assert.equal(fs.readFileSync(journal, 'utf8'), 'pending reset sentinel')
+    }
+    // 同设备另一 UUID 也不能凭路径形状通过：须实际完成基线重绑。
+    fs.writeFileSync(leaseFile, JSON.stringify({ ...lease, container: path.join(path.dirname(lease.container), randomUUID()) }))
+    const unbound = p.run(p.args)
+    assert.notEqual(unbound.status, 0)
+    assert.match(unbound.stderr, /沙盒重绑未确认/)
+    assert.equal(fs.readFileSync(p.trace, 'utf8'), before)
+    // 模拟基线工具已核实同一数据集的合法搬迁；必须使用旧安装摘要，而非新候选摘要。
+    const python = p.write('bin/python3', '#!' + process.execPath + '\n' + `
+const fs=require('node:fs'),a=process.argv.slice(2)
+if(a[2]==='rebind'){
+ if(a[5]!==${JSON.stringify(lease.appHash)})process.exit(9)
+ const file=${JSON.stringify(leaseFile)},value=JSON.parse(fs.readFileSync(file))
+ fs.writeFileSync(file,JSON.stringify({...value,container:a[4]}))
+}
+`)
+    fs.chmodSync(python, 0o755)
+    const accepted = p.run(p.args)
+    assert.equal(accepted.status, 0, accepted.stderr)
+    const acceptedRun = accepted.stdout.match(/^EVIDENCE=(.+)$/m)[1]
+    assert.equal(JSON.parse(fs.readFileSync(path.join(acceptedRun, 'result.json'))).containerRebound, true)
+    assert.equal(JSON.parse(fs.readFileSync(p.trace)).filter(x => x === 'uninstall-App').length, 1,
+      '确认同一旧安装的合法搬迁后允许新包冷安装')
   })
 
 test('App 与 runner 分开计时仍共用两分钟安装预算，不因换组件延长', t => {

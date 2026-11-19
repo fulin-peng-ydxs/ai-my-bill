@@ -4,7 +4,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { randomUUID } from 'node:crypto'
-import { spawnSync } from 'node:child_process'
+import { execFileSync, spawnSync } from 'node:child_process'
 import { DatabaseSync } from 'node:sqlite'
 import { cachedLayer, layerInputs, installationMatches, readInstallationLease } from '../lib/ios-cache.mjs'
 import { APP_ID, hashPaths } from '../lib/ios-debug.mjs'
@@ -21,6 +21,54 @@ function write(root, file, value = 'original') {
   fs.writeFileSync(target, value, { mode: 0o600 })
   return target
 }
+
+test('SPM 干净检出经真实 native:sync 初始化，重复同步及缺失骨架恢复不覆盖项目', { timeout: 30000 }, t => {
+  const root = temporary(t), repository = new URL('../../', import.meta.url).pathname
+  const app = path.join(root, 'app'), native = path.join(app, 'ios/App')
+  fs.mkdirSync(native, { recursive: true })
+  for (const relative of ['scripts/normalize-capacitor-spm.mjs', 'app/capacitor.config.ts',
+    'app/ios/App/App.xcodeproj/project.pbxproj', 'app/ios/App/App/Info.plist'])
+    write(root, relative, fs.readFileSync(path.join(repository, relative)))
+  const pkg = JSON.parse(fs.readFileSync(path.join(repository, 'app/package.json')))
+  // 只替代未受影响的前端编译；SPM 准备、锁定 CLI 的 sync 与兼容适配均走真实脚本。
+  pkg.scripts.build = 'node prepare-assets.cjs'
+  write(root, 'app/package.json', JSON.stringify(pkg))
+  write(root, 'app/prepare-assets.cjs', "require('node:fs').mkdirSync('dist',{recursive:true});require('node:fs').writeFileSync('dist/index.html','<html>fixture</html>')")
+  const dependencies = path.join(repository, 'app/node_modules'), modules = path.join(app, 'node_modules')
+  fs.mkdirSync(modules)
+  for (const entry of fs.readdirSync(dependencies)) {
+    if (entry === '@capacitor-community') {
+      fs.mkdirSync(path.join(modules, entry))
+      // sync 会更新插件 Package.swift；复制插件，避免改动宿主依赖。
+      fs.cpSync(path.join(dependencies, entry, 'sqlite'), path.join(modules, entry, 'sqlite'), { recursive: true })
+    } else fs.symlinkSync(path.join(dependencies, entry), path.join(modules, entry))
+  }
+  const sentinel = write(root, 'app/ios/App/App/AppDelegate.swift', 'existing project source')
+  const spm = path.join(native, 'CapApp-SPM'), target = path.join(spm, 'Sources/CapApp-SPM/CapApp-SPM.swift')
+  assert.equal(fs.existsSync(spm), false)
+  assert.equal(fs.existsSync(path.join(native, 'Podfile')), false)
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const result = spawnSync('npm', ['--prefix', app, 'run', 'native:sync'], { cwd: root, encoding: 'utf8', timeout: 12000,
+      env: { ...process.env, CI: 'true', PATH: path.dirname(process.execPath) + path.delimiter + process.env.PATH } })
+    assert.equal(result.status, 0, result.stdout + result.stderr)
+    assert.doesNotMatch(result.stdout + result.stderr, /pod install/)
+    const manifest = fs.readFileSync(path.join(spm, 'Package.swift'), 'utf8')
+    assert.match(manifest, /platforms: \[\.iOS\("27\.0"\)\]/)
+    assert.match(manifest, /CapacitorCommunitySqlite/)
+    assert.match(fs.readFileSync(target, 'utf8'), /isCapacitorApp = true/)
+    assert.equal(fs.readFileSync(sentinel, 'utf8'), 'existing project source')
+  }
+  const manifest = fs.readFileSync(path.join(spm, 'Package.swift'))
+  fs.unlinkSync(target)
+  const script = path.join(root, 'scripts/normalize-capacitor-spm.mjs')
+  assert.equal(spawnSync(process.execPath, [script, '--prepare']).status, 0)
+  assert.deepEqual(fs.readFileSync(path.join(spm, 'Package.swift')), manifest, '准备阶段不覆写现有清单')
+  assert.match(fs.readFileSync(target, 'utf8'), /isCapacitorApp = true/)
+  fs.unlinkSync(target)
+  fs.symlinkSync(sentinel, target)
+  assert.notEqual(spawnSync(process.execPath, [script, '--prepare']).status, 0, '拒绝向链接目标写入')
+  assert.equal(fs.readFileSync(sentinel, 'utf8'), 'existing project source')
+})
 
 test('CI 按场景选择：纯验证脚本双平台回归，App/构建依赖/手动候选保留完整门禁', () => {
   const scripts = ['scripts/lib/ios-cache.mjs', 'scripts/ios-app.mjs', 'scripts/fixtures/ios-ui-baseline.py',
@@ -117,6 +165,44 @@ globalThis.fetch = async url => ({ok:true,json:async()=>url.includes('/workflows
     const reuse = conclusion === 'success' && attempt === '1'
     assert.equal(scope.native, !reuse)
     assert.equal(scope.common, reuse ? 'scripts' : 'app')
+  }
+})
+
+test('CI 真实 Git 跨目录重命名双向检查旧新路径，纯脚本改名仍可缩小', t => {
+  for (const [from, to, native] of [
+    ['app/src/main.ts', 'scripts/lib/ios-old-entry.mjs', true],
+    ['scripts/lib/ios-old-entry.mjs', 'app/src/main.ts', true],
+    ['scripts/normalize-capacitor-spm.mjs', 'scripts/lib/ios-old-normalize.mjs', true],
+    ['scripts/lib/ios-old-normalize.mjs', 'scripts/normalize-capacitor-spm.mjs', true],
+    ['scripts/lib/ios-before.mjs', 'scripts/lib/ios-after.mjs', false]
+  ]) {
+    const root = temporary(t)
+    const git = (...args) => execFileSync('git', ['-c', 'core.hooksPath=/dev/null', ...args], { cwd: root, encoding: 'utf8' }).trim()
+    git('init', '-q')
+    git('config', 'user.name', 'fixture')
+    git('config', 'user.email', 'fixture@example.invalid')
+    git('config', 'diff.renames', 'true')
+    write(root, from, 'unchanged content moved across directories')
+    git('add', '.')
+    git('-c', 'commit.gpgsign=false', 'commit', '-qm', 'base')
+    const base = git('rev-parse', 'HEAD')
+    fs.mkdirSync(path.dirname(path.join(root, to)), { recursive: true })
+    git('mv', from, to)
+    git('-c', 'commit.gpgsign=false', 'commit', '-qam', 'rename')
+    const stub = write(root, 'http.mjs', `globalThis.fetch=async url=>({ok:true,json:async()=>url.includes('/workflows/')
+      ?{workflow_runs:[{id:1,head_sha:'${base}',status:'completed',conclusion:'success',run_attempt:1}]}
+      :{total_count:1,jobs:[{name:'${baselineJob}',status:'completed',conclusion:'success'}]}})`)
+    for (const eventName of ['push', 'pull_request']) {
+      const event = write(root, 'event.json', JSON.stringify(eventName === 'push' ? { before: base } : { pull_request: { base: { sha: base } } }))
+      const output = path.join(root, eventName + '.output')
+      const result = spawnSync(process.execPath, ['--import', stub, new URL('../lib/ios-ci.mjs', import.meta.url).pathname], {
+        cwd: root, encoding: 'utf8', env: { ...process.env, GITHUB_EVENT_PATH: event, GITHUB_EVENT_NAME: eventName,
+          GITHUB_OUTPUT: output, GITHUB_REPOSITORY: 'fixture/offline', GH_TOKEN: 'fixture-token', GITHUB_RUN_ATTEMPT: '1' }
+      })
+      assert.equal(result.status, 0, result.stderr)
+      assert.equal(JSON.parse(result.stdout).native, native, `${eventName}: ${from} -> ${to}`)
+      assert.match(fs.readFileSync(output, 'utf8'), new RegExp(`native=${native}\\n`))
+    }
   }
 })
 
@@ -346,10 +432,21 @@ test('损坏或跨会话安装回执拒绝降级重装，缺失才允许首次�
   const p = baselineFixture(t), session = { directory: p.session, context: p.context }
   assert.deepEqual(readInstallationLease(session), p.lease)
   for (const patch of [{ runId: randomUUID() }, { simulatorId: randomUUID() }, { appId: 'other.app' },
-    { appHash: 'invalid' }, { container: 'relative' }]) {
+    { appHash: 'invalid' }, { container: 'relative' }, { container: '/foreign-container' },
+    { container: p.container.replace(p.context.simulatorId, randomUUID()) },
+    { container: p.container + '/child' }, { container: path.dirname(p.container) + '/not-a-uuid' }]) {
     fs.writeFileSync(p.leaseFile, JSON.stringify({ ...p.lease, ...patch }))
     assert.throws(() => readInstallationLease(session))
   }
+  const moved = path.join(path.dirname(p.container), randomUUID())
+  fs.writeFileSync(p.leaseFile, JSON.stringify({ ...p.lease, container: moved }))
+  assert.equal(readInstallationLease(session).container, moved, '允许已搬走但仍属本设备的旧路径，交由基线校验迁移')
+  fs.symlinkSync(p.container, moved)
+  assert.throws(() => readInstallationLease(session), /路径含链接/)
+  fs.unlinkSync(moved)
+  fs.symlinkSync(path.join(p.container, 'missing'), moved)
+  assert.throws(() => readInstallationLease(session), /路径含链接/, '悬空沙盒链接也拒绝')
+  fs.unlinkSync(moved)
   fs.writeFileSync(p.leaseFile, '{broken')
   assert.throws(() => readInstallationLease(session))
   fs.writeFileSync(p.leaseFile, JSON.stringify(p.lease))

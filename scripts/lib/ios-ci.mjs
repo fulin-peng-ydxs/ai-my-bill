@@ -73,7 +73,8 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   let files = []
   if (/^[a-f0-9]{40}$/i.test(base ?? '') && !/^0+$/.test(base)) {
     try {
-      files = execFileSync('git', ['diff', '--name-only', '-z', base, 'HEAD'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
+      // 重命名按删除+新增统计；只取新路径会漏掉从 App/工具链移走的原文件。
+      files = execFileSync('git', ['diff', '--no-renames', '--name-only', '-z', base, 'HEAD'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
         .split('\0').filter(Boolean)
     } catch {
       console.warn('无法核实 Git 基线，保留完整门禁。')

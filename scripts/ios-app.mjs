@@ -41,7 +41,7 @@ import {
 } from './lib/ios-verification.mjs'
 
 import { checkNames, checkDefinition } from './lib/ios-checks.mjs'
-import { cachedLayer, layerInputs, assetOutputs, installationMatches, readInstallationLease } from './lib/ios-cache.mjs'
+import { cachedLayer, layerInputs, assetOutputs, installationMatches, readInstallationLease, assertOwnedContainer } from './lib/ios-cache.mjs'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const temporary = path.join(root, '.local/ios/tmp/ai-agent')
@@ -318,6 +318,8 @@ async function prepareBuild(session, selected, run, toolchain) {
   hits.assets = await use('assets', assetOutputs, async () => {
     await tracked(run, 'build', ['check/app-build'], 'npm', ['exec', '--', 'vite', 'build'],
       { log: path.join(run, 'assets.log'), cwd: path.join(root, 'app') })
+    await tracked(run, 'build', ['check/app-build'], 'node', ['scripts/normalize-capacitor-spm.mjs', '--prepare'],
+      { log: path.join(run, 'spm-prepare.log') })
     await tracked(run, 'build', ['check/app-build'], 'npm', ['exec', '--', 'cap', 'sync', 'ios'],
       { log: path.join(run, 'sync.log'), cwd: path.join(root, 'app') })
     await tracked(run, 'build', ['check/app-build'], 'node', ['scripts/normalize-capacitor-spm.mjs'],
@@ -440,15 +442,24 @@ async function runPartial(session, selected, toolchain, requested) {
     const leaseFile = path.join(session.directory, 'ui-install.json')
     const baseline = path.join(session.directory, 'ui-baseline')
     const identity = () => ({ runId: session.context.runId, simulatorId: device.udid,
-      appId: APP_ID, container, appHash })
+      appId: APP_ID, container: assertOwnedContainer(session.context, container), appHash })
     let oldLease = ui ? readInstallationLease(session) : undefined
-    const bundleMatches = Boolean(installed[APP_ID]) && installationMatches(app,
-      (await simctl('get_app_container', device.udid, APP_ID, 'app')).text.trim())
-    if (ui && bundleMatches && oldLease && oldLease.container !== container) {
+    const actualApp = installed[APP_ID]
+      ? (await simctl('get_app_container', device.udid, APP_ID, 'app')).text.trim() : undefined
+    const installedHash = actualApp ? hashPaths(actualApp, ['.']) : undefined
+    const bundleMatches = installedHash === appHash
+    if (ui && oldLease && installedHash && installedHash !== oldLease.appHash)
+      throw new Error('安装回执与已安装 App 不匹配，拒绝卸载或重置。')
+    // 新候选包也须先证明旧安装的沙盒迁移，不能因候选摘要不同跳过归属校验再卸载。
+    if (ui && installedHash && oldLease && oldLease.container !== container) {
+      assertOwnedContainer(session.context, container)
+      if (!fs.existsSync(baseline)) throw new Error('安装回执沙盒变化但缺少基线，拒绝卸载或重置。')
       await stopApp(device.udid, path.join(run, 'stop-rebind.log'))
       await command('python3', ['-I', 'scripts/fixtures/ios-ui-baseline.py', 'rebind', session.file,
-        container, appHash], { log: path.join(run, 'container-rebind.log') })
-      oldLease = JSON.parse(fs.readFileSync(leaseFile, 'utf8'))
+        container, oldLease.appHash], { log: path.join(run, 'container-rebind.log') })
+      oldLease = readInstallationLease(session)
+      if (oldLease?.container !== container || oldLease.appHash !== installedHash)
+        throw new Error('沙盒重绑未确认，拒绝卸载或重置。')
       result.containerRebound = true
     }
     const ownedInstallation = oldLease && Object.entries(identity()).every(([key, value]) => oldLease[key] === value)

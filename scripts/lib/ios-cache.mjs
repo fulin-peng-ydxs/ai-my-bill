@@ -64,6 +64,29 @@ export function installationMatches(built, installed) {
   return Boolean(installed && fs.existsSync(installed) && hashPaths(built, ['.']) === hashPaths(installed, ['.']))
 }
 
+/** 旧沙盒可已被 XCTest 搬走，但路径必须属于本设备且现存祖先不能经链接越界。 */
+export function assertOwnedContainer(context, container) {
+  const parent = typeof container === 'string' ? path.dirname(container) : ''
+  const suffix = path.join('CoreSimulator', 'Devices', context.simulatorId, 'data/Containers/Data/Application')
+  const uuid = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i
+  if (typeof container !== 'string' || !path.isAbsolute(container) || path.normalize(container) !== container ||
+    !parent.endsWith(path.sep + suffix) || !uuid.test(path.basename(container)))
+    throw new Error('安装回执沙盒路径不属于本会话设备，拒绝重装或重置。')
+  let ancestor = container
+  while (true) {
+    try {
+      const stat = fs.lstatSync(ancestor)
+      if (!stat.isDirectory() || fs.realpathSync(ancestor) !== ancestor)
+        throw new Error('安装回执沙盒路径含链接或无效目录，拒绝重装或重置。')
+      break
+    } catch (error) {
+      if (error.code !== 'ENOENT') throw error
+      ancestor = path.dirname(ancestor)
+    }
+  }
+  return container
+}
+
 /** 已登记但损坏/跨会话的安装不能降级为冷安装，否则会绕过拒绝并清除现有合成数据。 */
 export function readInstallationLease(session) {
   const file = path.join(session.directory, 'ui-install.json')
@@ -81,5 +104,6 @@ export function readInstallationLease(session) {
     ['runId', 'simulatorId', 'appId'].some(k => lease[k] !== session.context[k]) ||
     !/^[a-f0-9]{64}$/.test(lease.appHash) || typeof lease.container !== 'string' || !path.isAbsolute(lease.container))
     throw new Error('安装回执与本会话不匹配，拒绝重装或重置。')
+  assertOwnedContainer(session.context, lease.container)
   return lease
 }
