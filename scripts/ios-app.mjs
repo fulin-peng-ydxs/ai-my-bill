@@ -33,7 +33,7 @@ import {
   readVitest,
   caseKey,
   budgets,
-  totalBudgets,
+  totalBudgetFor,
   createDeadline,
   writeJson,
   needsPhaseRepair,
@@ -682,7 +682,7 @@ async function main(args) {
       if (invocation) invocation.phase = 'execution'
       if (guarded) console.log(`完整验收记录：${attempt.run}`)
       await command('bash', ['-s', '--', args[0]], {
-        timeout: guarded ? totalBudgets.acceptance : totalBudgets.engineering,
+        timeout: totalBudgetFor(args[0]),
         inherit: true,
         input: script,
         observer,
@@ -845,7 +845,7 @@ try {
   const args = process.argv.slice(2)
   const mode = args[0] ?? 'common'
   if (mode !== 'debug' || args[1] !== 'list') {
-    const budget = ['common', 'ios-build'].includes(mode) ? totalBudgets.engineering : totalBudgets.acceptance
+    const budget = totalBudgetFor(mode)
     deadline = createDeadline(budget)
     invocation = {
       scope: 'invocation',

@@ -191,7 +191,8 @@ jobs:
           IOS_DEBUG_SESSION: ${{ steps.ios-session.outputs.session }}
           IOS_LOCAL_EVIDENCE: ${{ steps.touch-local.outputs.evidence }}
         # T10 共用绝对日期 JSON 夹具及已校验词典序；原生筛选固定范围，断言等待具体时段及下钻可用。
-        # 连续执行 T6—T9 的既有范围；不为局部调试重复全套。完整 touch 共用夹具与 SQLite 回读。
+        # 完整 touch 覆盖字典及 T6—T10，整轮 40 分钟；局部/smoke 仍为 15 分钟，单例仍为 60 秒。
+        # job 的全部步骤仍共用外层 45 分钟；完整 touch 共用夹具与 SQLite 回读，不自动重试。
         run: npm run check:ios-app:touch -- --session "$IOS_DEBUG_SESSION" --from "$IOS_LOCAL_EVIDENCE"
       - if: always() && steps.ios-session.outputs.session != ''
         env:

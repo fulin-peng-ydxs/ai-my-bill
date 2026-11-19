@@ -33,7 +33,13 @@ export const budgets = {
   testCase: 60_000,
   interruption: 120_000
 }
-export const totalBudgets = { acceptance: 900_000, engineering: 2_400_000 }
+export const totalBudgets = { acceptance: 900_000, touch: 2_400_000, engineering: 2_400_000 }
+
+/** 完整触摸覆盖字典及 T6—T10，不能沿用单场景预算；阶段、单用例和失败锁仍独立生效。 */
+export function totalBudgetFor(mode) {
+  if (mode === 'ios-touch') return totalBudgets.touch
+  return ['common', 'ios-build'].includes(mode) ? totalBudgets.engineering : totalBudgets.acceptance
+}
 
 /** 单调时钟从入口累计；子命令只能消费剩余预算，不能重新获得一整轮时间。 */
 export function createDeadline(budgetMs, { now = () => performance.now() } = {}) {

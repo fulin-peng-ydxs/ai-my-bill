@@ -10,6 +10,8 @@ import {
   controlInputs,
   createDeadline,
   totalBudgets,
+  totalBudgetFor,
+  budgets,
   inputHash,
   verificationHash,
   requireEvidence,
@@ -1335,6 +1337,26 @@ for (const phase of ['build', 'install', 'initialize']) {
   })
 }
 
+test('完整触摸与局部预算分开，入口与子流程同源，阶段和 CI 外层仍有界', () => {
+  for (const mode of ['debug', 'ios-smoke', 'ios-recovery'])
+    assert.equal(totalBudgetFor(mode), 900_000)
+  for (const mode of ['ios-touch', 'common', 'ios-build'])
+    assert.equal(totalBudgetFor(mode), 2_400_000)
+  assert.deepEqual(budgets, {
+    build: 600_000, install: 120_000, boot: 120_000, initialize: 60_000,
+    check: 300_000, startup: 180_000, testCase: 60_000, interruption: 120_000
+  })
+  const entry = fs.readFileSync(new URL('../ios-app.mjs', import.meta.url), 'utf8')
+  assert.match(entry, /timeout: totalBudgetFor\(args\[0\]\)/)
+  assert.match(entry, /createDeadline\(budget\)/)
+  assert.match(entry, /const budget = totalBudgetFor\(mode\)/)
+  const workflow = fs.readFileSync(new URL('../../.github/workflows/offline-ios.yml', import.meta.url), 'utf8')
+  const native = workflow.slice(workflow.indexOf('  native-simulator:'), workflow.indexOf('  app-baseline-v1:'))
+  const minutes = Number(native.match(/timeout-minutes: (\d+)/)[1])
+  assert.equal(minutes, 45, 'CI job 的所有步骤仍共用原有外层上限')
+  assert.ok(totalBudgetFor('ios-touch') < minutes * 60_000)
+})
+
 test('单调整轮截止时间累计工具链及执行耗时，不受系统日期回拨影响', (t) => {
   let elapsed = 0
   const deadline = createDeadline(totalBudgets.acceptance, { now: () => elapsed })
@@ -1415,6 +1437,36 @@ for (const kind of ['preflight', 'execution', 'within-budget']) {
       )
     } else {
       assert.equal(readState(p.root).attempts['ios-smoke'].status, passed ? 'passed' : 'failed')
+    }
+  })
+}
+
+for (const passed of [true, false]) {
+  test(`真实 CLI 完整触摸使用独立总预算，含前置累计后通过=${passed}`, { timeout: 15000 }, t => {
+    const p = project(t)
+    p.write('scripts/lib/ios-app-full.sh', '#!/bin/bash\nexit 0\n')
+    const proof = p.evidence(target)
+    const preload = virtualClock(p, passed
+      ? { syntax: 240000, toolchain: 240000, body: 1000000 }
+      : { syntax: 240000, toolchain: 240000, body: 1600000 })
+    const result = p.run(['ios-touch', '--from', proof.run], {
+      DEVELOPER_DIR: '/controlled/sdk', NODE_OPTIONS: '--import=' + preload
+    })
+    assert.equal(result.status, passed ? 0 : 1, result.stderr)
+    const directory = fs.readdirSync(p.base).find(name => name.startsWith('ios-invocation-'))
+    const receipt = JSON.parse(fs.readFileSync(path.join(p.base, directory, 'result.json')))
+    assert.equal(receipt.deadline.budgetMs, 2_400_000)
+    assert.ok(receipt.deadline.elapsedMs > 900_000, '实际越过原单场景预算，不能只证明短路径')
+    assert.equal(receipt.status, passed ? 'passed' : 'failed')
+    assert.equal(receipt.phase, 'execution')
+    assert.equal(fs.existsSync(path.join(p.base, 'ios-command.lock')), false)
+    const state = readState(p.root)
+    assert.equal(state.attempts['ios-touch'].status, passed ? 'passed' : 'failed')
+    if (!passed) {
+      assert.match(result.stderr, /整轮执行超时/)
+      assert.ok(receipt.deadline.elapsedMs >= receipt.deadline.budgetMs)
+      assert.throws(() => beginFull(p.root, 'ios-touch', proof, p.hash(), process.pid, p.context()), /局部|证据/,
+        '超时后原成功回执不能解除完整失败锁')
     }
   })
 }
