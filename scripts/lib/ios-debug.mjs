@@ -100,7 +100,8 @@ export function needsSimulatorRecovery(directory) {
       if (fs.existsSync(path.join(run, 'test.log'))) return true
       // 尚未进入 XCTest 的启动超时/中断同样需要恢复。夹具已开始则启动和终止已完成，
       // 不因夹具拒绝而额外重启；仍继续追溯更早的自动化或启动故障。
-      if (!fs.existsSync(path.join(run, 'initialize-launch.log')) || fs.existsSync(path.join(run, 'fixture.log'))) return false
+      const uiLaunch = fs.existsSync(path.join(run, 'ui-launch.log'))
+      if (!uiLaunch && (!fs.existsSync(path.join(run, 'initialize-launch.log')) || fs.existsSync(path.join(run, 'fixture.log')))) return false
       const result = path.join(run, 'result.json')
       return !fs.existsSync(result) || JSON.parse(fs.readFileSync(result, 'utf8')).failure?.stage === 'initialize'
     })
@@ -237,6 +238,7 @@ export function sourceHash(root, toolchain) {
     root,
     [
       'app/src',
+      ...['app/index.html', 'app/public'].filter(p => fs.existsSync(path.join(root, p))),
       'app/native-tests',
       'app/test-support',
       'app/ios/App',

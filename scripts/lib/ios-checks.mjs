@@ -39,6 +39,7 @@ export function checkDefinition(root, run, name, options = {}) {
       args: [
         '--test',
         'scripts/tests/ios-debug.test.mjs',
+        'scripts/tests/ios-cache.test.mjs',
         'scripts/tests/ios-verification.test.mjs',
         'scripts/tests/ios-resources.test.mjs'
       ],

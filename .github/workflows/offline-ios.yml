@@ -12,6 +12,8 @@ on:
       - 'scripts/tests/ios-debug.test.mjs'
       - 'scripts/tests/ios-verification.test.mjs'
       - 'scripts/fixtures/dictionary-touch.py'
+      - 'scripts/fixtures/ios-ui-baseline.py'
+      - 'scripts/tests/ios-cache.test.mjs'
       - 'scripts/normalize-capacitor-spm.mjs'
       - 'scripts/verify-ios-resources.mjs'
       - 'scripts/ios-storage-policy.mjs'
@@ -31,6 +33,8 @@ on:
       - 'scripts/tests/ios-debug.test.mjs'
       - 'scripts/tests/ios-verification.test.mjs'
       - 'scripts/fixtures/dictionary-touch.py'
+      - 'scripts/fixtures/ios-ui-baseline.py'
+      - 'scripts/tests/ios-cache.test.mjs'
       - 'scripts/normalize-capacitor-spm.mjs'
       - 'scripts/verify-ios-resources.mjs'
       - 'scripts/ios-storage-policy.mjs'
@@ -49,7 +53,24 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  scope:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      common: ${{ steps.scope.outputs.common }}
+      native: ${{ steps.scope.outputs.native }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+      - id: scope
+        run: node scripts/lib/ios-ci.mjs
+
   app-common:
+    needs: scope
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -61,8 +82,12 @@ jobs:
           cache-dependency-path: app/package-lock.json
       - run: npm --prefix app ci --ignore-scripts
       # 共享入口从前置检查累计整轮预算，并对每个阶段计时；job 的 10 分钟是外层汇总预算。
-      - name: App 与脚本门禁（含初始化恢复、T10 绝对日期及强断言正反例）
+      - name: App 与脚本门禁（含分层缓存、UI 基线隔离、初始化恢复及 T10 强断言）
+        if: needs.scope.outputs.common == 'app'
         run: npm run check:app
+      - name: 验证工具局部回归
+        if: needs.scope.outputs.common == 'scripts'
+        run: npm run debug:ios-app -- check --check script-tests
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -70,13 +95,42 @@ jobs:
           path: |
             .local/ios/tmp/ai-agent/ios-invocation-*/*.json
             .local/ios/tmp/ai-agent/ios-command-*/*.json
+            .local/ios/tmp/ai-agent/ios-check-*/*.json
+            .local/ios/tmp/ai-agent/ios-check-*/*.log
             .local/ios/tmp/ai-agent/native-*/*.log
             .local/ios/tmp/ai-agent/native-*/*.json
           retention-days: 7
           if-no-files-found: warn
 
+  script-macos:
+    needs: [scope, app-common]
+    if: needs.scope.outputs.native == 'false'
+    runs-on: xcode-27
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - run: npm --prefix app ci --ignore-scripts
+      # 覆盖 macOS 条件分支的受控 CLI；不编译 App、不启动模拟器。
+      - run: npm run debug:ios-app -- check --check script-tests
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: offline-ios-scripts-macos-${{ github.sha }}
+          path: |
+            .local/ios/tmp/ai-agent/ios-invocation-*/*.json
+            .local/ios/tmp/ai-agent/ios-check-*/*.json
+            .local/ios/tmp/ai-agent/ios-check-*/*.log
+          retention-days: 7
+          if-no-files-found: error
+
   native-simulator:
-    needs: app-common
+    needs: [scope, app-common]
+    if: needs.scope.outputs.native == 'true'
     # 官方 Xcode 27 preview 镜像；实际 SDK/runtime 不符时脚本失败，不能降级通过。
     runs-on: xcode-27
     timeout-minutes: 45
@@ -88,7 +142,8 @@ jobs:
           cache: npm
           cache-dependency-path: app/package-lock.json
       - run: npm --prefix app ci --ignore-scripts
-      # ios-build 的前置检查包含在整轮预算；阶段预算仍为构建 10 分钟/检查 5 分钟。
+      # 冷候选工程检查保持；局部缓存/安装/夹具复用回归由 common 的同一脚本测试覆盖，
+      # 不为命中检查重复完整验收。前置检查计入整轮预算；构建/检查仍为 10/5 分钟。
       - run: npm run build:ios-app
       - id: ios-session
         shell: bash
@@ -140,6 +195,7 @@ jobs:
             .local/ios/tmp/ai-agent/ios-debug-*/run-*/*.json
             .local/ios/tmp/ai-agent/ios-debug-*/run-*/*.log
             .local/ios/tmp/ai-agent/ios-debug-*/run-*/*.xcresult
+            .local/ios/tmp/ai-agent/ios-debug-*/layer-*.json
             .local/ios/tmp/ai-agent/native-*/*.log
             .local/ios/tmp/ai-agent/native-*/*.json
             .local/ios/tmp/ai-agent/native-*/*-receipt.txt

@@ -107,7 +107,7 @@ run_phase build check/app-build "${RUN_DIRECTORY}/app-build.log" '' npm --prefix
 run_phase build check/probe-build "${RUN_DIRECTORY}/probe-build.log" '' npm --prefix app run probe:bundle
 if [[ "${MODE}" != ios-recovery ]]; then
   run_phase check check/app-tests "${RUN_DIRECTORY}/app-tests.log" "${RUN_DIRECTORY}/app-tests.json" npm --prefix app test -- --bail=1 --reporter=json --outputFile="${RUN_DIRECTORY}/app-tests.json"
-  run_phase check check/script-tests "${RUN_DIRECTORY}/script-tests.log" '' node --test scripts/tests/ios-resources.test.mjs scripts/tests/ios-debug.test.mjs scripts/tests/ios-verification.test.mjs
+  run_phase check check/script-tests "${RUN_DIRECTORY}/script-tests.log" '' node --test scripts/tests/ios-resources.test.mjs scripts/tests/ios-cache.test.mjs scripts/tests/ios-debug.test.mjs scripts/tests/ios-verification.test.mjs
 fi
 run_phase check check/resources/source "${RUN_DIRECTORY}/resources.log" '' node scripts/verify-ios-resources.mjs
 if [[ "${MODE}" == common ]]; then exit 0; fi

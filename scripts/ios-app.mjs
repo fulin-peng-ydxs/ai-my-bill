@@ -41,6 +41,7 @@ import {
 } from './lib/ios-verification.mjs'
 
 import { checkNames, checkDefinition } from './lib/ios-checks.mjs'
+import { cachedLayer, layerInputs, assetOutputs, installationMatches, readInstallationLease } from './lib/ios-cache.mjs'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const temporary = path.join(root, '.local/ios/tmp/ai-agent')
@@ -79,6 +80,7 @@ async function command(
     accept = [0],
     input,
     inherit = false,
+    cwd = root,
     env = process.env,
     observer = phaseObserver
   } = {}
@@ -103,7 +105,7 @@ async function command(
   try {
     const status = await new Promise((resolve, reject) => {
       child = spawn(program, args, {
-        cwd: root,
+        cwd,
         env,
         detached: true,
         stdio: [
@@ -300,67 +302,52 @@ function needsRepair(key, environment) {
 async function prepareBuild(session, selected, run, toolchain) {
   const derived = path.join(session.directory, 'DerivedData', selected.configuration)
   const products = path.join(derived, 'Build/Products')
-  const receiptFile = path.join(session.directory, `build-${selected.configuration}.json`)
   const fingerprint = sourceHash(root, toolchain)
-  let receipt
-  if (fs.existsSync(receiptFile)) receipt = JSON.parse(fs.readFileSync(receiptFile, 'utf8'))
-  if (
-    !needsRepair(`native-build/${selected.scheme}/${selected.configuration}`, toolchain) &&
-    receipt?.sourceHash === fingerprint &&
-    fs.existsSync(products) &&
-    receipt.productHash === hashPaths(products, ['.'])
-  ) {
-    console.log('BUILD_CACHE_HIT：源码、工具链和测试产物摘要一致；使用 test-without-building。')
-    return { ...receipt, cacheHit: true, products }
+  const layers = {}
+  const use = async (name, outputs, build, force = false) => {
+    const receipt = await cachedLayer({ root, directory: session.directory,
+      name: name === 'native' ? `native-${selected.scheme}-${selected.configuration}` : name,
+      input: () => layerInputs(root, toolchain, selected, layers)[name], outputs, build, force })
+    layers[name] = receipt.output
+    console.log(`BUILD_LAYER_${receipt.hit ? 'HIT' : 'MISS'} ${name}`)
+    return receipt.hit
   }
-  // 失败先使旧凭据失效，未完整生成的产物不能在下次命令里被当作缓存。
-  fs.rmSync(receiptFile, { force: true })
-  console.log('BUILD_CACHE_MISS：生成当前资源及所选测试 target。')
-  await tracked(run, 'build', ['check/app-build'], 'npm', ['--prefix', 'app', 'run', 'native:sync'], {
-    log: path.join(run, 'sync.log')
+  const hits = {}
+  hits.types = await use('types', [], () => tracked(run, 'build', ['check/app-build'], 'npm',
+    ['--prefix', 'app', 'run', 'typecheck'], { log: path.join(run, 'typecheck.log') }))
+  hits.assets = await use('assets', assetOutputs, async () => {
+    await tracked(run, 'build', ['check/app-build'], 'npm', ['exec', '--', 'vite', 'build'],
+      { log: path.join(run, 'assets.log'), cwd: path.join(root, 'app') })
+    await tracked(run, 'build', ['check/app-build'], 'npm', ['exec', '--', 'cap', 'sync', 'ios'],
+      { log: path.join(run, 'sync.log'), cwd: path.join(root, 'app') })
+    await tracked(run, 'build', ['check/app-build'], 'node', ['scripts/normalize-capacitor-spm.mjs'],
+      { log: path.join(run, 'normalize.log') })
   })
-  await tracked(run, 'build', ['check/probe-build'], 'npm', ['--prefix', 'app', 'run', 'probe:bundle'], {
-    log: path.join(run, 'probe.log')
-  })
+  // DictionaryTouch 不加载 hosted 探针；只在 App scheme 编译资源需要时准备。
+  if (selected.scheme === 'App')
+    hits.probe = await use('probe', ['app/.native-test/sqlite-probe.js'], () =>
+      tracked(run, 'build', ['check/probe-build'], 'npm', ['--prefix', 'app', 'run', 'probe:bundle'],
+        { log: path.join(run, 'probe.log') }))
   await tracked(run, 'check', ['check/resources/source'], 'node', ['scripts/verify-ios-resources.mjs'], {
     log: path.join(run, 'resources.log')
   })
-  await tracked(
-    run,
-    'build',
-    [`native-build/${selected.scheme}/${selected.configuration}`],
-    'xcodebuild',
-    [
-      'build-for-testing',
-      '-project',
-      'app/ios/App/App.xcodeproj',
-      '-scheme',
-      selected.scheme,
-      '-configuration',
-      selected.configuration,
-      '-destination',
-      `platform=iOS Simulator,id=${session.context.simulatorId}`,
-      '-derivedDataPath',
-      derived,
-      '-clonedSourcePackagesDirPath',
-      '.local/ios/SourcePackages',
-      '-disableAutomaticPackageResolution',
-      'CODE_SIGNING_ALLOWED=NO',
-      `MYBILL_TEST_CONTEXT_FILE=${session.file}`
-    ],
-    { log: path.join(run, 'build.log'), timeout: budgets.build }
-  )
-  const plans = fs.readdirSync(products).filter((name) => name.endsWith('.xctestrun'))
+  hits.native = await use('native', [path.relative(root, products)], () => tracked(
+    run, 'build', [`native-build/${selected.scheme}/${selected.configuration}`], 'xcodebuild', [
+      'build-for-testing', '-project', 'app/ios/App/App.xcodeproj', '-scheme', selected.scheme,
+      '-configuration', selected.configuration, '-destination',
+      `platform=iOS Simulator,id=${session.context.simulatorId}`, '-derivedDataPath', derived,
+      '-clonedSourcePackagesDirPath', '.local/ios/SourcePackages', '-disableAutomaticPackageResolution',
+      'CODE_SIGNING_ALLOWED=NO', `MYBILL_TEST_CONTEXT_FILE=${session.file}`
+    ], { log: path.join(run, 'build.log'), timeout: budgets.build }
+  ), needsRepair(`native-build/${selected.scheme}/${selected.configuration}`, toolchain))
+  console.log(hits.native ? 'BUILD_CACHE_HIT：复用已核验原生产物。' : 'BUILD_CACHE_MISS：已构建原生测试。')
+  const plans = fs.readdirSync(products).filter(name => name.endsWith('.xctestrun'))
   if (plans.length !== 1) throw new Error('未找到唯一的本轮测试运行清单。')
-  receipt = {
-    sourceHash: sourceHash(root, toolchain),
-    productHash: hashPaths(products, ['.']),
-    plan: path.join(products, plans[0])
-  }
-  if (receipt.sourceHash !== fingerprint)
+  if (sourceHash(root, toolchain) !== fingerprint)
     throw new Error('构建期间源码或配置发生变化，拒绝复用或验证混合版本。')
-  fs.writeFileSync(receiptFile, JSON.stringify(receipt))
-  return { ...receipt, cacheHit: false, products }
+  return { sourceHash: fingerprint, plan: path.join(products, plans[0]),
+    cacheHit: hits.native, buildLayers: hits, products }
+
 }
 
 async function runPartial(session, selected, toolchain, requested) {
@@ -434,72 +421,91 @@ async function runPartial(session, selected, toolchain, requested) {
     if (device.state !== 'Booted') await simctl('boot', device.udid)
     await command('xcrun', ['simctl', 'bootstatus', device.udid, '-b'], { log: path.join(run, 'boot.log') })
     const build = await prepareBuild(session, selected, run, toolchain)
-    result = { ...result, sourceHash: build.sourceHash, cacheHit: build.cacheHit }
+    result = { ...result, sourceHash: build.sourceHash, cacheHit: build.cacheHit, buildLayers: build.buildLayers }
     session.context.scenario = selected.scenario
     writeContext(session)
-    // 每轮 UI 夹具使用新建的本会话合成账本；只卸载清单绑定设备上的本 App。
-    // 原生领域探针自行使用随机数据库，不需要重置账本。
     startPhase(run, {
-      stage: 'install',
-      coverage: [`native-install/${selected.scheme}/${selected.configuration}`],
-      log: path.join(run, 'initialize.log')
+      stage: 'install', coverage: [`native-install/${selected.scheme}/${selected.configuration}`],
+      log: path.join(run, 'install.log')
     })
-    const installed = JSON.parse(
-      (
-        await command('plutil', ['-convert', 'json', '-o', '-', '-'], {
-          input: (await simctl('listapps', device.udid)).text
-        })
-      ).text
-    )
-    const freshInitialize = needsRepair(
-      `native-initialize/${selected.scheme}/${selected.configuration}`,
-      toolchain
-    )
-    if ((selected.scheme === 'DictionaryTouch' || freshInitialize) && installed[APP_ID])
-      await simctl('uninstall', device.udid, APP_ID)
+    const installed = JSON.parse((await command('plutil', ['-convert', 'json', '-o', '-', '-'], {
+      input: (await simctl('listapps', device.udid)).text
+    })).text)
     const app = path.join(build.products, `${selected.configuration}-iphonesimulator/App.app`)
-    let reuseInstallation = false
-    if (
-      selected.scheme === 'App' &&
-      installed[APP_ID] &&
-      !freshInitialize &&
-      !needsRepair(`native-install/${selected.scheme}/${selected.configuration}`, toolchain)
-    ) {
-      const bundle = (await simctl('get_app_container', device.udid, APP_ID, 'app')).text.trim()
-      reuseInstallation = hashPaths(bundle, ['.']) === hashPaths(app, ['.'])
+    const appHash = hashPaths(app, ['.'])
+    let container = installed[APP_ID]
+      ? (await simctl('get_app_container', device.udid, APP_ID, 'data')).text.trim() : undefined
+    const ui = selected.scheme === 'DictionaryTouch'
+    const leaseFile = path.join(session.directory, 'ui-install.json')
+    const baseline = path.join(session.directory, 'ui-baseline')
+    const identity = () => ({ runId: session.context.runId, simulatorId: device.udid,
+      appId: APP_ID, container, appHash })
+    let oldLease = ui ? readInstallationLease(session) : undefined
+    const bundleMatches = Boolean(installed[APP_ID]) && installationMatches(app,
+      (await simctl('get_app_container', device.udid, APP_ID, 'app')).text.trim())
+    if (ui && bundleMatches && oldLease && oldLease.container !== container) {
+      await stopApp(device.udid, path.join(run, 'stop-rebind.log'))
+      await command('python3', ['-I', 'scripts/fixtures/ios-ui-baseline.py', 'rebind', session.file,
+        container, appHash], { log: path.join(run, 'container-rebind.log') })
+      oldLease = JSON.parse(fs.readFileSync(leaseFile, 'utf8'))
+      result.containerRebound = true
     }
-    if (!reuseInstallation) await simctl('install', device.udid, app)
-    if (selected.scheme === 'DictionaryTouch')
-      await simctl(
-        'install',
-        device.udid,
-        path.join(build.products, 'Release-iphonesimulator/DictionaryUITests-Runner.app')
-      )
-    const container = (await simctl('get_app_container', device.udid, APP_ID, 'data')).text.trim()
+    const ownedInstallation = oldLease && Object.entries(identity()).every(([key, value]) => oldLease[key] === value)
+    const reuseInstallation = bundleMatches && (!ui || ownedInstallation)
+    // 新包/新沙盒或旧版本未登记的安装走一次冷安装；初始化失败本身不撤销正确安装。
+    if (ui && !reuseInstallation) {
+      if (installed[APP_ID]) {
+        await stopApp(device.udid, path.join(run, 'stop-reinstall.log'))
+        await simctl('uninstall', device.udid, APP_ID)
+      }
+      fs.rmSync(baseline, { recursive: true, force: true })
+      fs.rmSync(leaseFile, { force: true })
+    }
+    const repairInstall = needsRepair(`native-install/${selected.scheme}/${selected.configuration}`, toolchain)
+    if (!reuseInstallation || repairInstall) await command('xcrun', ['simctl', 'install', device.udid, app],
+      { log: path.join(run, 'install.log') })
+    let runnerReused = true
+    if (ui) {
+      const runner = path.join(build.products, `${selected.configuration}-iphonesimulator/DictionaryUITests-Runner.app`)
+      const runnerId = (await command('plutil', ['-extract', 'CFBundleIdentifier', 'raw', '-o', '-',
+        path.join(runner, 'Info.plist')])).text.trim()
+      runnerReused = Boolean(installed[runnerId]) && installationMatches(runner,
+        (await simctl('get_app_container', device.udid, runnerId, 'app')).text.trim())
+      if (!runnerReused || repairInstall) await command('xcrun', ['simctl', 'install', device.udid, runner],
+        { log: path.join(run, 'install-runner.log') })
+    }
+    container = (await simctl('get_app_container', device.udid, APP_ID, 'data')).text.trim()
+    if (ui) writeJson(leaseFile, identity())
+    result.installationReused = reuseInstallation && !repairInstall
+    result.runnerInstallationReused = ui ? runnerReused && !repairInstall : undefined
+    console.log(`INSTALL_APP_${result.installationReused ? 'HIT' : 'MISS'}; RUNNER_${runnerReused && !repairInstall ? 'HIT' : 'MISS'}`)
     const fixture = path.join(run, 'fixture.json')
-    const initialized =
-      reuseInstallation && fs.existsSync(path.join(container, 'Library/OfflineLedger/ledgerSQLite.db'))
-    result.installationReused = reuseInstallation
-    console.log(
-      reuseInstallation
-        ? 'INSTALL_CACHE_HIT：已安装 App 与当前产物逐字节一致。'
-        : 'INSTALL_CACHE_MISS：安装本轮 App。'
-    )
     startPhase(run, {
-      stage: 'initialize',
-      coverage: [`native-initialize/${selected.scheme}/${selected.configuration}`],
+      stage: 'initialize', coverage: [`native-initialize/${selected.scheme}/${selected.configuration}`],
       log: path.join(run, 'initialize.log')
     })
+    const baselineCommand = (mode, log) => command('python3', ['-I', 'scripts/fixtures/ios-ui-baseline.py',
+      mode, session.file, container, appHash], { log: path.join(run, log) })
+    // 停止宿主后才替换合成账本；恢复默认配置、草稿、维护状态及内部快照，不延续上轮终态。
+    if (ui && fs.existsSync(baseline)) {
+      await stopApp(device.udid, path.join(run, 'stop-reset.log'))
+      await baselineCommand('restore', 'baseline-restore.log')
+      result.fixtureBaselineReused = true
+    }
+    const initialized = reuseInstallation &&
+      !needsRepair(`native-initialize/${selected.scheme}/${selected.configuration}`, toolchain) &&
+      fs.existsSync(path.join(container, 'Library/OfflineLedger/ledgerSQLite.db'))
     if (!initialized)
       await command('xcrun', ['simctl', 'launch', device.udid, APP_ID], {
         log: path.join(run, 'initialize-launch.log')
       })
-    await command(
-      'python3',
-      ['scripts/fixtures/dictionary-touch.py', 'wait-initialized', container, device.udid, fixture],
-      { log: path.join(run, 'initialize.log') }
-    )
+    await command('python3', ['scripts/fixtures/dictionary-touch.py', 'wait-initialized', container, device.udid, fixture],
+      { log: path.join(run, 'initialize.log') })
     await stopApp(device.udid, path.join(run, 'stop-initialize.log'))
+    if (ui && !fs.existsSync(baseline)) {
+      await baselineCommand('capture', 'baseline-capture.log')
+      result.fixtureBaselineReused = false
+    }
     if (selected.fixture)
       await command(
         'python3',
@@ -512,7 +518,11 @@ async function runPartial(session, selected, toolchain, requested) {
         ],
         { log: path.join(run, 'fixture.log') }
       )
-    // 与完整入口一致：夹具完成后由 XCUITest 启动并建立 App 自动化会话。
+    // 局部夹具已落盘且连接已关闭；让首屏与 runner 准备并行，避免重复冷启动挤占业务用例。
+    // XCTest 仍建立原生自动化会话并执行原断言；不把预启动记为冷启动/正式初始化通过。
+    if (ui) await command('xcrun', ['simctl', 'launch', device.udid, APP_ID], {
+      log: path.join(run, 'ui-launch.log')
+    })
     const testLog = path.join(run, 'test.log')
     await tracked(
       run,
@@ -577,7 +587,7 @@ async function runPartial(session, selected, toolchain, requested) {
       .flatMap((p) => p.coverage)
       .filter(
         (k) =>
-          !(reuseInstallation && k.startsWith('native-install/')) &&
+          !((result.installationReused && (!ui || result.runnerInstallationReused)) && k.startsWith('native-install/')) &&
           !(initialized && k.startsWith('native-initialize/'))
       )
     result.coverage = [
@@ -794,6 +804,8 @@ async function main(args) {
     writeContext(session)
     // 缓存只属于本会话，关闭时回收；日志和 xcresult 按证据生命周期保留。
     fs.rmSync(path.join(session.directory, 'DerivedData'), { recursive: true, force: true })
+    fs.rmSync(path.join(session.directory, 'ui-baseline'), { recursive: true, force: true })
+    fs.rmSync(path.join(session.directory, 'ui-install.json'), { force: true })
     console.log('本轮调试设备和构建缓存已清理，证据保留。')
     return
   }

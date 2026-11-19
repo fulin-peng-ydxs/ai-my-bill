@@ -28,6 +28,7 @@ function cliProject(t) {
   for (const file of [
     'scripts/ios-app.mjs',
     'scripts/lib/ios-debug.mjs',
+    'scripts/lib/ios-cache.mjs',
     'scripts/lib/ios-verification.mjs',
     'scripts/lib/ios-checks.mjs',
     'app/native-tests/scenarios.json'
@@ -78,6 +79,9 @@ test('初始化启动失败或中断在进入 XCTest 前也恢复，后续准备
   assert.equal(needsSimulatorRecovery(root), false)
   await add('Interrupted', undefined, ['initialize-launch.log'])
   assert.equal(needsSimulatorRecovery(root), true, '启动尚无最终回执不能当作未进入原生运行')
+  await add('PassedAgain', { status: 'passed' }, ['test.log'])
+  await add('UiLaunchFailed', { status: 'failed', failure: { stage: 'initialize' } }, ['fixture.log', 'ui-launch.log'])
+  assert.equal(needsSimulatorRecovery(root), true, '夹具后的 UI 预启动失败同样需要恢复')
 })
 test('未启动原生 App 的准备故障和已进入夹具的拒绝不新增设备恢复需求', async t => {
   for (const [name, stage, files] of [

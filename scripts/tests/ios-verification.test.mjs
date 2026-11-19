@@ -166,10 +166,24 @@ if (output) {
   fs.writeFileSync(output.slice('--outputFile='.length), JSON.stringify({ testResults: [suite] }))
   process.exit(failed ? 1 : 0)
 }
+if (process.argv.includes('vite')) {
+  fs.mkdirSync('dist', { recursive: true })
+  fs.writeFileSync('dist/index.html', 'controlled assets')
+}
+if (process.argv.includes('cap')) {
+  for (const name of ['ios/App/App/public', 'ios/App/CapApp-SPM']) fs.mkdirSync(name, { recursive: true })
+  for (const name of ['ios/App/App/public/index.html', 'ios/App/App/capacitor.config.json', 'ios/App/App/config.xml'])
+    fs.writeFileSync(name, 'controlled sync')
+}
+if (process.argv.includes('probe:bundle')) {
+  fs.mkdirSync('app/.native-test', { recursive: true })
+  fs.writeFileSync('app/.native-test/sqlite-probe.js', 'controlled probe')
+}
 process.exit(0)
 `
   )
   write('scripts/verify-ios-resources.mjs', "console.log('resources verified')\n")
+  write('scripts/normalize-capacitor-spm.mjs', "console.log('controlled normalize')\n")
   const env = {
     ...process.env,
     PATH: bin + path.delimiter + process.env.PATH,
@@ -884,8 +898,77 @@ if (args.includes('-version')) {
     const cachedRun = second.stdout.match(/^EVIDENCE=(.+)$/m)[1]
     assert.equal(requireEvidence(p.root, cachedRun, inputHash(p.root), environment).result.cacheHit, true)
     assert.equal(readState(p.root).attempts['ios-smoke'].status, 'failed')
+    // 只使启动请求失败；缓存与设备归属不变，下一次修复不得重编或新建设备。
+    executable('xcrun', `#!/bin/sh
+if [ "$2" = launch ] && [ -f "${p.root}/fail-initialize" ]; then exit 9; fi
+${originalXcrun.replace(/^#![^\n]*\n/, '')}`)
+    p.write('fail-initialize', 'controlled launch failure')
+    const launchFailure = p.run(['debug', 'run', '--session', p.session, '--scenario', 'crud'])
+    assert.notEqual(launchFailure.status, 0)
+    assert.match(launchFailure.stdout, /BUILD_LAYER_HIT native/)
+    fs.unlinkSync(path.join(p.root, 'fail-initialize'))
+    const repaired = p.run(['debug', 'run', '--session', p.session, '--scenario', 'crud'])
+    assert.equal(repaired.status, 0, repaired.stderr)
+    for (const layer of ['types', 'assets', 'probe', 'native'])
+      assert.match(repaired.stdout, new RegExp('BUILD_LAYER_HIT ' + layer))
+    const repairedRun = repaired.stdout.match(/^EVIDENCE=(.+)$/m)[1]
+    assert.equal(fs.existsSync(path.join(repairedRun, 'build.log')), false)
+    assert.equal(readState(p.root).attempts['ios-smoke'].status, 'failed', '局部修复不清除完整失败锁')
   }
 )
+
+test('UI 局部 CLI 只在夹具关闭后预启动，runner 准备复用前台 App，不扩大用例',
+  { timeout: 15000, skip: process.platform !== 'darwin' }, t => {
+    const p = project(t)
+    const executable = (name, source) => {
+      const file = p.write('bin/' + name, source)
+      fs.chmodSync(file, 0o755)
+    }
+    const trace = path.join(p.root, 'ui-order.log')
+    const originalXcrun = fs.readFileSync(path.join(p.root, 'bin/xcrun'), 'utf8')
+    executable('xcrun', `#!/bin/sh
+printf 'sim:%s\\n' "$2" >> "${trace}"
+${originalXcrun.replace(/^#![^\n]*\n/, '')}`)
+    executable('plutil', '#!/bin/sh\nprintf "{}"\n')
+    executable('python3', `#!/bin/sh\nprintf 'python:%s\\n' "$2" >> "${trace}"\n`)
+    executable('xcodebuild', `#!${process.execPath}
+const fs = require('node:fs'), path = require('node:path'), args = process.argv.slice(2)
+if (args.includes('-version')) console.log('Xcode 27.0')
+else if (args[0] === 'build-for-testing') {
+  const products = path.join(args[args.indexOf('-derivedDataPath') + 1], 'Build/Products')
+  for (const name of ['App.app', 'DictionaryUITests-Runner.app']) {
+    fs.mkdirSync(path.join(products, 'Release-iphonesimulator', name), { recursive: true })
+    fs.writeFileSync(path.join(products, 'Release-iphonesimulator', name, 'binary'), 'controlled bundle')
+  }
+  fs.writeFileSync(path.join(products, 'DictionaryTouch.xctestrun'), 'controlled plan')
+} else if (args[0] === 'test-without-building') {
+  fs.appendFileSync(${JSON.stringify(trace)}, 'test\\n')
+  console.log("Test Case '-[DictionaryUITests.DictionaryTouchTests test00PrepareReportApp]' passed (0.1 seconds).")
+  console.log('Executed 1 test, with 0 failures')
+} else process.exit(9)
+`)
+    const leaseFile = path.join(p.session, 'ui-install.json')
+    const context = JSON.parse(fs.readFileSync(path.join(p.session, 'test-context.json')))
+    const invalidLease = JSON.stringify({ runId: randomUUID(), simulatorId: context.simulatorId,
+      appId: APP_ID, container: '/other-scope', appHash: 'a'.repeat(64) })
+    fs.writeFileSync(leaseFile, invalidLease, { mode: 0o600 })
+    const rejected = p.run(['debug', 'run', '--session', p.session, '--case', ui('test00PrepareReportApp')])
+    assert.notEqual(rejected.status, 0)
+    assert.match(rejected.stderr, /安装回执与本会话不匹配/)
+    assert.equal(fs.readFileSync(leaseFile, 'utf8'), invalidLease)
+    assert.doesNotMatch(fs.readFileSync(trace, 'utf8'), /sim:(uninstall|install)/,
+      '坏归属不能降级成冷安装并清除数据')
+    fs.unlinkSync(leaseFile)
+    const result = p.run(['debug', 'run', '--session', p.session, '--case', ui('test00PrepareReportApp')])
+    assert.equal(result.status, 0, result.stderr)
+    const lines = fs.readFileSync(trace, 'utf8').trim().split('\n')
+    const fixture = lines.indexOf('python:debug-report-42')
+    assert.ok(fixture >= 0)
+    assert.deepEqual(lines.slice(fixture + 1, lines.indexOf('test')), ['sim:launch'],
+      '夹具完成后启动且保持前台，不在 runner 之前再次终止')
+    const run = result.stdout.match(/^EVIDENCE=(.+)$/m)[1]
+    assert.equal(JSON.parse(fs.readFileSync(path.join(run, 'result.json'))).executedCases.length, 1)
+  })
 
 for (const phase of ['build', 'install', 'initialize']) {
   test(`完整 ${phase} 失败后的相关局部成功恢复缓存，失败锁和复验次数仍保留`, (t) => {
