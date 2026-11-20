@@ -4,6 +4,7 @@ import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { uiScenarios, uiCases, selection } from './ios-debug.mjs'
 import { contentHash, generated } from './ios-cache.mjs'
+import { scriptSkipPolicy } from './ios-test-reports.mjs'
 
 export const digest = (value) =>
   createHash('sha256')
@@ -23,6 +24,7 @@ export function registry(root) {
   const r = JSON.parse(fs.readFileSync(path.join(root, registryPath), 'utf8'))
   if (r.schema !== 1 || !r.suites || !r.profiles || !Array.isArray(r.rules))
     throw new Error('CI 登记结构无效。')
+  scriptSkipPolicy(r)
   const names = Object.keys(r.suites)
   const validateNames = (values) => {
     if (

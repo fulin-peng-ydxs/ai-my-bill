@@ -2,6 +2,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { spawnSync } from 'node:child_process'
+import { assertScriptReport } from './ios-test-reports.mjs'
 
 /** App 工具测试同源自动发现；新增普通用例不再维护调试/完整入口两份文件清单。 */
 export function scriptTestFiles(root) {
@@ -65,7 +66,7 @@ export function checkDefinition(root, run, name, options = {}) {
   if (name === 'script-tests')
     return {
       program: process.execPath,
-      args: ['--test', ...scriptTestFiles(root)],
+      args: ['scripts/lib/ios-checks.mjs', 'run-script-tests'],
       stage: 'check',
       coverage: ['check/script-tests'],
       log
@@ -142,11 +143,23 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     // 独立 runner 不继承上层 node:test 的内部上下文，否则 Node 会静默跳过嵌套执行。
     const env = { ...process.env }
     delete env.NODE_TEST_CONTEXT
-    const result = spawnSync(process.execPath, ['--test', ...scriptTestFiles(root)], {
+    const result = spawnSync(process.execPath, ['--test', '--test-reporter=tap', ...scriptTestFiles(root)], {
       cwd: root,
       env,
-      stdio: 'inherit'
+      encoding: 'utf8',
+      maxBuffer: 16 * 1024 * 1024
     })
-    process.exitCode = result.status ?? 1
+    process.stdout.write(result.stdout ?? '')
+    process.stderr.write(result.stderr ?? '')
+    process.exitCode = result.error ? 1 : result.status ?? 1
+    if (result.error) console.error(result.error.message)
+    if (!result.error && result.status === 0) {
+      try {
+        assertScriptReport(root, result.stdout, process.platform)
+      } catch (error) {
+        console.error(error.message)
+        process.exitCode = 1
+      }
+    }
   }
 }

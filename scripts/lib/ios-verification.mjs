@@ -6,6 +6,7 @@ import { release } from 'node:os'
 import { performance } from 'node:perf_hooks'
 import { readSession, sourceHash, hashPaths, selection } from './ios-debug.mjs'
 import { checkDefinition, scriptTestFiles } from './ios-checks.mjs'
+import { assertScriptReport } from './ios-test-reports.mjs'
 
 export const controlInputs = [
   'scripts/ios-app.sh',
@@ -364,6 +365,8 @@ export function requireEvidence(root, input, currentInput, environment) {
       JSON.stringify(result.coverage) !== JSON.stringify(definition.coverage)
     )
       throw new Error('局部检查证据层次不符。')
+    if (result.check === 'script-tests')
+      assertScriptReport(root, fs.readFileSync(path.join(run, 'check.log'), 'utf8'), process.platform)
     if (result.check === 'app-tests') {
       const parsed = readVitest(path.join(run, 'vitest.json'), root)
       if (

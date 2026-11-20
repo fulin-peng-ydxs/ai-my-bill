@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { execFileSync, spawnSync } from 'node:child_process'
+import { execFileSync, spawnSync, spawn } from 'node:child_process'
 import {
   createPlan,
   assertPlan,
@@ -14,8 +14,118 @@ import {
 import { resultsDirectory, executeGroup, reconcile, runCommand } from '../lib/ios-ci-run.mjs'
 import { requestedScope } from '../lib/ios-ci.mjs'
 import { audit, auditDependencies, swiftLock } from '../lib/ios-audit.mjs'
+import { assertScriptReport, assertModePhases, requiredModePhases } from '../lib/ios-test-reports.mjs'
+import { checkDefinition } from '../lib/ios-checks.mjs'
+import { requireEvidence } from '../lib/ios-verification.mjs'
 
 const repository = new URL('../../', import.meta.url).pathname
+
+test('CI 必需阶段逐项缺失、错误阶段、原始日志缺失及无构建成功信号均拒绝，合法模式不误拦', () => {
+  for (const mode of ['common', 'ios-build', 'ios-smoke', 'ios-touch']) {
+    const phases = requiredModePhases(mode).map(([stage, coverage, basename], i) => ({
+      stage, coverage: [coverage], status: 'passed', log: basename ?? 'phase-' + i
+    }))
+    const logs = new Map(phases.map((p) => [p.log, '** TEST BUILD SUCCEEDED **\nphase completed\n']))
+    const raw = (file) => {
+      if (!logs.has(file)) throw new Error('missing raw log')
+      return logs.get(file)
+    }
+    assert.doesNotThrow(() => assertModePhases(mode, phases, raw), mode)
+    for (const missing of phases) {
+      assert.throws(() => assertModePhases(mode, phases.filter((p) => p !== missing), raw), /必需阶段/)
+      assert.throws(() => assertModePhases(mode, phases.map((p) => p === missing ? { ...p, stage: 'other' } : p), raw), /必需阶段/)
+      const saved = logs.get(missing.log)
+      logs.delete(missing.log)
+      assert.throws(() => assertModePhases(mode, phases, raw), /missing raw log/)
+      logs.set(missing.log, saved)
+    }
+    assert.throws(() => assertModePhases(mode, phases.map((p, i) => i ? p : { ...p, status: 'running' }), raw), /未完整/)
+    const native = phases.find((p) => p.coverage[0].startsWith('native-build/'))
+    if (native) {
+      logs.set(native.log, 'command started but no build completed')
+      assert.throws(() => assertModePhases(mode, phases, raw), /构建缺少实际成功/)
+    }
+  }
+})
+
+test('CI 启动入口与共享消费者选择必要专项，测试文件和局部产品控件不扩大到完整触摸', (t) => {
+  const r = registry(fixture(t).root)
+  const selected = (file) => selectSuites(r, 'change', [file]).map((s) => s.name)
+  for (const file of ['app/index.html', 'app/src/main.ts', 'app/src/App.vue', 'app/src/stores/bootstrap.ts']) {
+    const names = selected(file)
+    assert.ok(names.includes('native-sqlite') && names.includes('ui-dictionary-0'), file)
+    assert.ok(!names.includes('touch') && !names.includes('ui-reports'), file)
+  }
+  for (const name of ['ComboboxField', 'DictionaryCombobox', 'AppStateBlock', 'AppAsyncRegion', 'AppRequestError', 'CachedPageView', 'AppToast']) {
+    const names = selected(`app/src/components/${name}.vue`)
+    for (const suite of ['ui-entry', 'ui-personal', 'ui-query', 'ui-reports', 'ui-dictionary-0'])
+      assert.ok(names.includes(suite), name + '/' + suite)
+    assert.ok(!names.includes('touch'))
+  }
+  for (const name of ['ProductCombobox', 'NameSuggestionCombobox'])
+    assert.deepEqual(selected(`app/src/components/${name}.vue`), ['secrets', 'app-common', 'ui-entry', 'ui-personal'])
+  assert.deepEqual(selected('app/src/components/DictionaryFilterPicker.vue'), ['secrets', 'app-common', 'ui-query', 'ui-reports'])
+  assert.deepEqual(selected('app/src/components/ComboboxField.spec.ts'), ['secrets', 'app-common'])
+  assert.deepEqual(selected('app/src/stores/bootstrap.spec.ts'), ['secrets', 'app-common'])
+})
+
+test('CI 脚本报告拒绝 TODO、非法/重复/错误平台跳过及计数缺口，保留登记的 Linux 缺口', (t) => {
+  const p = fixture(t), allowed = registry(p.root).scriptSkips.linux[0]
+  const report = (names = [], todo = 0) =>
+    names.map((name, i) => `ok ${i + 2} - ${name} # SKIP`).join('\n') +
+    `\n# tests ${1 + names.length + todo}\n# pass 1\n# fail 0\n# cancelled 0\n# skipped ${names.length}\n# todo ${todo}\n`
+  for (const platform of ['linux', 'darwin']) {
+    assert.doesNotThrow(() => assertScriptReport(p.root, report(), platform))
+    assert.throws(() => assertScriptReport(p.root, report([], 1), platform), /TODO/)
+    assert.throws(() => assertScriptReport(p.root, report(['unregistered']), platform), /跳过/)
+    assert.throws(() => assertScriptReport(p.root, report([allowed, allowed]), platform), /跳过/)
+    assert.throws(() => assertScriptReport(p.root, report().replace('# tests 1', '# tests 2'), platform), /计数/)
+    assert.throws(() => assertScriptReport(p.root, report() + '# pass 1\n', platform), /计数/)
+  }
+  assert.doesNotThrow(() => assertScriptReport(p.root, report([allowed]), 'linux'))
+  assert.throws(() => assertScriptReport(p.root, report([allowed]), 'darwin'), /跳过/)
+  assert.throws(() => assertScriptReport(p.root, report([allowed]).replace(/^ok .+\n/m, ''), 'linux'), /跳过/)
+  const policy = JSON.parse(fs.readFileSync(path.join(p.root, 'config/ios-ci.json')))
+  policy.scriptSkips.linux.push(allowed)
+  p.write('config/ios-ci.json', policy)
+  assert.throws(() => registry(p.root), /跳过登记/)
+})
+
+test('CI 同源局部脚本回执也核验实际报告，TODO 和非法跳过不能成为完整验收的前置证据', (t) => {
+  const p = fixture(t)
+  p.write('scripts/tests/ios-only.test.mjs', "import {test} from 'node:test';test('actual',()=>{});\n")
+  const run = path.join(p.root, '.local/ios/tmp/ai-agent/ios-check-proof')
+  const definition = checkDefinition(p.root, run, 'script-tests')
+  const hash = 'caller-verified-input'
+  p.write(path.relative(p.root, path.join(run, 'result.json')), {
+    scope: 'partial', status: 'passed', check: 'script-tests', inputHash: hash,
+    coverage: definition.coverage, options: {}, completedAt: Date.now(),
+    command: { program: path.basename(definition.program), args: definition.args, exit: 0 }
+  })
+  const passed = '# tests 1\n# pass 1\n# fail 0\n# cancelled 0\n# skipped 0\n# todo 0\n'
+  const log = p.write(path.relative(p.root, path.join(run, 'check.log')), passed)
+  assert.doesNotThrow(() => requireEvidence(p.root, run, hash))
+  fs.writeFileSync(log, passed.replace('# tests 1', '# tests 2').replace('# todo 0', '# todo 1'))
+  assert.throws(() => requireEvidence(p.root, run, hash), /TODO/)
+  fs.writeFileSync(log, 'ok 2 - unregistered # SKIP\n' + passed.replace('# tests 1', '# tests 2').replace('# skipped 0', '# skipped 1'))
+  assert.throws(() => requireEvidence(p.root, run, hash), /跳过/)
+})
+
+test('CI Linux 登记的 macOS 专用跳过与真实 TAP 用例名称一致，不误拦合法平台报告', (t) => {
+  const p = fixture(t), names = registry(p.root).scriptSkips.linux
+  const override = p.write('.local/linux-platform.mjs', "Object.defineProperty(process,'platform',{value:'linux'});\n")
+  const sentinel = p.write('.local/sentinel.test.mjs', "import {test} from 'node:test';test('linux sentinel',()=>{});\n")
+  const pattern = [...names, 'linux sentinel'].map((name) => name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')
+  const env = { ...process.env }
+  delete env.NODE_TEST_CONTEXT
+  // 只读取并跳过已登记的 Mac 用例，外加一条纯 Node 哨兵；不执行其原生 CLI 测试体。
+  const result = spawnSync(process.execPath, ['--import', override, '--test', '--test-reporter=tap',
+    '--test-name-pattern', pattern, path.join(repository, 'scripts/tests/ios-verification.test.mjs'), sentinel],
+  { encoding: 'utf8', env })
+  assert.equal(result.status, 0, result.stderr)
+  assert.match(result.stdout, new RegExp('^# skipped ' + names.length + '$', 'm'))
+  assert.doesNotThrow(() => assertScriptReport(p.root, result.stdout, 'linux'))
+})
 function fixture(t) {
   const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'ios-ci-test-')))
   t.after(() => fs.rmSync(root, { recursive: true, force: true }))
@@ -345,6 +455,50 @@ test('CI 命令超时终止子进程并保留失败，不能被空输出记为�
   assert.ok(fs.existsSync(log))
 })
 
+test('CI 超时及取消后组长提前退出，忽略 TERM 的后代仍被清理且正常完成不误杀', { timeout: 15000 }, async (t) => {
+  const waitFor = async (condition) => {
+    const until = Date.now() + 2500
+    while (!condition()) {
+      if (Date.now() >= until) throw new Error('controlled process did not reach expected state')
+      await new Promise((resolve) => setTimeout(resolve, 20))
+    }
+  }
+  const running = (pid) => {
+    const result = spawnSync('ps', ['-p', String(pid), '-o', 'stat='], { encoding: 'utf8' })
+    return result.status === 0 && !result.stdout.trim().startsWith('Z')
+  }
+  for (const mode of ['timeout', 'SIGTERM']) {
+    await t.test(mode, async (t) => {
+      const p = fixture(t), ready = path.join(p.root, 'child.pid'), leaderFile = path.join(p.root, 'leader.pid')
+      const descendant = `process.on('SIGTERM',()=>{});require('node:fs').writeFileSync(${JSON.stringify(ready)},String(process.pid));setInterval(()=>{},1000)`
+      const leader = `require('node:fs').writeFileSync(${JSON.stringify(leaderFile)},String(process.pid));require('node:child_process').spawn(process.execPath,['-e',${JSON.stringify(descendant)}],{stdio:'ignore'});setInterval(()=>{},1000)`
+      const workerSource = `import {runCommand} from ${JSON.stringify(new URL('../lib/ios-ci-run.mjs', import.meta.url).href)};try{await runCommand(${JSON.stringify(p.root)},process.execPath,['-e',${JSON.stringify(leader)}],${JSON.stringify(path.join(p.root, 'timeout.log'))},${mode === 'timeout' ? 900 : 10000});process.exitCode=2}catch{process.exitCode=1}`
+      const workerFile = p.write('worker.mjs', workerSource)
+      const worker = spawn(process.execPath, [workerFile], { stdio: 'ignore' })
+      const ended = new Promise((resolve, reject) => { worker.once('error', reject); worker.once('close', resolve) })
+      const cleanup = () => {
+        worker.kill('SIGKILL')
+        if (fs.existsSync(leaderFile)) {
+          try { process.kill(-Number(fs.readFileSync(leaderFile)), 'SIGKILL') } catch (e) { if (e.code !== 'ESRCH') throw e }
+        }
+      }
+      try {
+        await waitFor(() => fs.existsSync(ready))
+        const child = Number(fs.readFileSync(ready))
+        assert.ok(running(child), '后代实际进入忽略 TERM 的等待')
+        if (mode === 'SIGTERM') worker.kill('SIGTERM')
+        assert.equal(await ended, 1)
+        await waitFor(() => !running(child))
+      } finally {
+        cleanup()
+        await ended
+      }
+    })
+  }
+  const p = fixture(t), log = path.join(p.root, 'normal.log')
+  assert.equal(await runCommand(p.root, process.execPath, ['-e', "console.log('NORMAL_COMPLETED')"], log, 1000), 'NORMAL_COMPLETED\n')
+})
+
 test('CI 正式 CLI 本地 plan→run→result 与非法参数回归，不访问旧端或远端', (t) => {
   const p = fixture(t)
   fs.cpSync(path.join(repository, 'scripts/lib'), path.join(p.root, 'scripts/lib'), {
@@ -400,16 +554,19 @@ test('CI 原报告语义对账拒绝空单测、跳过、阶段缺失，即使�
   })
   p.write(
     path.relative(p.root, scriptLog),
-    'ℹ tests 1\nℹ pass 1\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\n'
+    '# tests 1\n# pass 1\n# fail 0\n# cancelled 0\n# skipped 0\n# todo 0\n'
   )
+  const phases = requiredModePhases('common').map(([stage, coverage], i) => {
+    const log = coverage === 'check/script-tests' ? scriptLog :
+      p.write(path.relative(p.root, path.join(proof, `phase-${i}.log`)), 'phase completed\n')
+    return { stage, coverage: [coverage], log, status: 'passed',
+      ...(coverage === 'check/app-tests' ? { report: appReport } : {}) }
+  })
   p.write(path.relative(p.root, path.join(proof, 'result.json')), {
     scope: 'engineering',
     status: 'passed',
     mode: 'common',
-    timings: [
-      { stage: 'check', coverage: ['check/app-tests'], report: appReport, status: 'passed' },
-      { stage: 'check', coverage: ['check/script-tests'], log: scriptLog, status: 'passed' }
-    ]
+    timings: phases
   })
   await executeGroup(p.root, directory, 'linux')
   assert.equal(reconcile(p.root, directory).status, 'passed')
@@ -419,6 +576,27 @@ test('CI 原报告语义对账拒绝空单测、跳过、阶段缺失，即使�
     (r) => r.role === 'primary' && r.path.endsWith('-app-tests.json')
   )
   const { digest } = await import('../lib/ios-ci-plan.mjs')
+  const primaryReport = receipt.reports.find((r) => r.primary && r.role === 'primary')
+  const primaryFile = path.join(directory, 'app-common', primaryReport.path)
+  const original = JSON.parse(fs.readFileSync(primaryFile))
+  const proofFile = path.join(proof, 'result.json')
+  fs.writeFileSync(proofFile, JSON.stringify({ ...original, timings: phases.slice(1) }))
+  const incomplete = prepare(p, 'app-common', 'incomplete-phase')
+  await assert.rejects(executeGroup(p.root, incomplete.directory, 'linux'), /缺少必需阶段/)
+  assert.equal(JSON.parse(fs.readFileSync(path.join(incomplete.directory, 'group-linux.json'))).status, 'failed')
+  fs.writeFileSync(proofFile, JSON.stringify(original))
+  for (const missing of phases) {
+    const bytes = Buffer.from(JSON.stringify({ ...original, timings: phases.filter((p) => p !== missing) }))
+    fs.writeFileSync(primaryFile, bytes)
+    primaryReport.hash = digest(bytes)
+    fs.writeFileSync(receiptFile, JSON.stringify(receipt))
+    assert.equal(reconcile(p.root, directory).status, 'incomplete', missing.coverage[0])
+  }
+  const restored = Buffer.from(JSON.stringify(original))
+  fs.writeFileSync(primaryFile, restored)
+  primaryReport.hash = digest(restored)
+  fs.writeFileSync(receiptFile, JSON.stringify(receipt))
+  assert.equal(reconcile(p.root, directory).status, 'passed')
   for (const mutation of [
     { success: true, numTotalTests: 0, numPassedTests: 0, numFailedTests: 0, numPendingTests: 0 },
     { success: true, numTotalTests: 2, numPassedTests: 1, numFailedTests: 0, numPendingTests: 1 }
@@ -628,6 +806,7 @@ test('CI 普通 iOS 工具测试自动接入，同一叶子入口实际执行，
     'scripts/lib/ios-checks.mjs',
     fs.readFileSync(path.join(repository, 'scripts/lib/ios-checks.mjs'), 'utf8')
   )
+  p.write('scripts/lib/ios-test-reports.mjs', fs.readFileSync(path.join(repository, 'scripts/lib/ios-test-reports.mjs'), 'utf8'))
   p.write(
     'scripts/tests/ios-added.test.mjs',
     "import {test} from 'node:test';test('auto registered',()=>{});\n"
@@ -639,6 +818,16 @@ test('CI 普通 iOS 工具测试自动接入，同一叶子入口实际执行，
   })
   assert.equal(result.status, 0, result.stderr)
   assert.match(result.stdout, /auto registered/)
+  const definition = checkDefinition(p.root, p.root, 'script-tests')
+  assert.deepEqual(definition.args, ['scripts/lib/ios-checks.mjs', 'run-script-tests'])
+  p.write('scripts/tests/ios-added.test.mjs', "import {test} from 'node:test';test('runs',()=>{});test.todo('required regression');\n")
+  const pending = spawnSync(process.execPath, definition.args, { cwd: p.root, encoding: 'utf8' })
+  assert.notEqual(pending.status, 0)
+  assert.match(pending.stderr, /TODO/)
+  p.write('scripts/tests/ios-added.test.mjs', "import {test} from 'node:test';test('runs',()=>{});test.skip('unregistered skip');\n")
+  const skipped = spawnSync(process.execPath, definition.args, { cwd: p.root, encoding: 'utf8' })
+  assert.notEqual(skipped.status, 0)
+  assert.match(skipped.stderr, /跳过/)
   fs.symlinkSync(
     path.join(p.root, 'scripts/tests/ios-added.test.mjs'),
     path.join(p.root, 'scripts/tests/ios-link.test.mjs')

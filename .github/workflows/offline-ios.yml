@@ -49,7 +49,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version-file: .nvmrc
-      - id: plan
+      - name: Validate registry and plan required suites
+        id: plan
         run: npm run ci:ios-app -- prepare
       - uses: actions/upload-artifact@v4
         with:
@@ -136,6 +137,7 @@ jobs:
           pattern: ios-ci-executed-*
           path: ${{ needs.plan.outputs.directory }}/archives
           merge-multiple: true
+      # 同一对账器核验必需阶段/构建成功记录及 TAP 的 TODO、平台跳过，不只检查退出码。
       # 各组复制原报告及摘要；结果目录与源码一致，不从历史绿色继承结果。
       - name: Reconcile required and executed checks
         id: result

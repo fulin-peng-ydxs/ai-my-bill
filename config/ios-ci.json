@@ -238,6 +238,37 @@
     },
     {
       "paths": [
+        "app/index.html",
+        "app/src/main.ts",
+        "app/src/App.vue",
+        "app/src/stores/bootstrap.ts"
+      ],
+      "suites": [
+        "native-sqlite",
+        "ui-dictionary-0"
+      ]
+    },
+    {
+      "paths": [
+        "app/src/components/ProductCombobox.vue",
+        "app/src/components/NameSuggestionCombobox.vue"
+      ],
+      "suites": [
+        "ui-entry",
+        "ui-personal"
+      ]
+    },
+    {
+      "paths": [
+        "app/src/components/DictionaryFilterPicker.vue"
+      ],
+      "suites": [
+        "ui-query",
+        "ui-reports"
+      ]
+    },
+    {
+      "paths": [
         "app/src/views/EntryView*",
         "app/src/views/Expense*",
         "app/src/views/Income*",
@@ -348,7 +379,8 @@
         "ui-dictionary-7"
       ],
       "exclude": [
-        "**/*.spec.ts"
+        "**/*.spec.ts",
+        "app/src/components/DictionaryFilterPicker.vue"
       ]
     },
     {
@@ -363,7 +395,14 @@
         "app/src/components/FundingChannelPicker.vue",
         "app/src/components/UnsavedChangesDialog.vue",
         "app/src/styles/**",
-        "app/ios/App/UITests/**"
+        "app/ios/App/UITests/**",
+        "app/src/components/AppStateBlock.vue",
+        "app/src/components/AppAsyncRegion.vue",
+        "app/src/components/AppRequestError.vue",
+        "app/src/components/CachedPageView.vue",
+        "app/src/components/AppToast.vue",
+        "app/src/components/ComboboxField.vue",
+        "app/src/components/DictionaryCombobox.vue"
       ],
       "suites": [
         "ui-entry",
@@ -424,6 +463,19 @@
       "ui-dictionary-5",
       "ui-dictionary-6",
       "ui-dictionary-7"
+    ]
+  },
+  "scriptSkips": {
+    "linux": [
+      "真实 CLI 成对恢复局部入口只接受受管阶段，结束后回收活动许可并生成可用证据",
+      "原生场景 CLI 把具体场景传入测试阶段及最终回执，受控工具替身不启动设备",
+      "UI 局部 CLI 只在夹具关闭后预启动，runner 准备复用前台 App，不扩大用例",
+      "runner 安装失败后 App 回执仍有效，重试只装 runner；旧整体安装失败仍保留完整锁",
+      "新候选 App 在卸载前拒绝错误沙盒回执，保留有效安装、基线和中断日志",
+      "同会话 UI/Release→App/Debug→UI/Release 统一登记且热缓存恢复，探针安装失败=false",
+      "同会话 UI/Release→App/Debug→UI/Release 统一登记且热缓存恢复，探针安装失败=true",
+      "完整入口借用会话共用安装校验，只有卸载成功才失效登记，不误拦返回局部",
+      "创建失败补偿共享 10 秒清理预算，耗尽时不再叠加一次强杀宽限"
     ]
   }
 }

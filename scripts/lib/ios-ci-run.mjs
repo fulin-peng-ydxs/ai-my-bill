@@ -7,6 +7,7 @@ import { audit, auditDependencies } from './ios-audit.mjs'
 import { inputHash, requireEvidence, writeJson } from './ios-verification.mjs'
 import { contentHash } from './ios-cache.mjs'
 import { selection, nativeCases, uiCases } from './ios-debug.mjs'
+import { assertScriptReport, assertModePhases } from './ios-test-reports.mjs'
 
 const read = (file) => JSON.parse(plainFile(file))
 
@@ -77,10 +78,22 @@ export async function runCommand(root, program, args, log, timeoutMs = 2_700_000
     return data.toString('utf8')
   } finally {
     clearTimeout(timer)
-    clearTimeout(killTimer)
-    process.removeListener('SIGINT', stop)
-    process.removeListener('SIGTERM', stop)
-    fs.closeSync(fd)
+    // close 只证明组长退出；其提前响应 TERM 时，仍须回收忽略 TERM 的后代。
+    // 组长尚在清理时由上面的 10 秒宽限负责；已退出则不再取消清理后遗留子进程。
+    try {
+      if (cancelled && child?.pid) {
+        try {
+          process.kill(-child.pid, 'SIGKILL')
+        } catch (e) {
+          if (e.code !== 'ESRCH') throw e
+        }
+      }
+    } finally {
+      clearTimeout(killTimer)
+      process.removeListener('SIGINT', stop)
+      process.removeListener('SIGTERM', stop)
+      fs.closeSync(fd)
+    }
   }
 }
 
@@ -262,6 +275,8 @@ export async function executeGroup(root, directory, group, { command = runComman
           })
         if (performance.now() - started > 2_700_000) throw new Error('套件整轮超时。')
         assertPlan(root, plan)
+        // 执行组内即拒绝不完整报告，避免在已知缺口后继续启动其他专项；汇总仍独立复核。
+        validateReports(root, dest, suite, receipt)
         remaining()
         receipt.status = 'passed'
         receipt.exit = 0
@@ -351,19 +366,7 @@ function validateReports(root, directory, suite, receipt) {
     if (!file?.includes(marker)) throw new Error('原阶段报告路径无效。')
     return raw(file.slice(file.lastIndexOf(marker) + marker.length))
   }
-  const scriptSummary = (log) => {
-    const metric = (name) =>
-      Number(log.match(new RegExp('^(?:#|ℹ) ' + name + ' (\\d+)\\s*$', 'm'))?.[1] ?? NaN)
-    if (
-      !(metric('tests') > 0) ||
-      !(metric('pass') > 0) ||
-      metric('fail') !== 0 ||
-      metric('cancelled') !== 0 ||
-      !(metric('skipped') >= 0) ||
-      (receipt.platform === 'darwin' && metric('skipped') !== 0)
-    )
-      throw new Error('脚本回归为空、失败、取消或存在未说明的跳过。')
-  }
+  const scriptSummary = (log) => assertScriptReport(root, log, receipt.platform)
   if (
     suite.kind === 'check' &&
     (result.scope !== 'partial' || result.check !== suite.check || result.command?.exit !== 0)
@@ -398,8 +401,7 @@ function validateReports(root, directory, suite, receipt) {
       throw new Error('完整验收缺少同输入的实际局部前置回执。')
   }
   if (['engineering', 'full'].includes(suite.kind)) {
-    if (!result.timings?.length || result.timings.some((p) => p.status !== 'passed'))
-      throw new Error('阶段未完整通过。')
+    assertModePhases(suite.mode, result.timings, phaseRaw)
     const tests = result.timings.find((p) => p.coverage?.includes('check/app-tests'))
     const scripts = result.timings.find((p) => p.coverage?.includes('check/script-tests'))
     const vitest = JSON.parse(phaseRaw(tests?.report))
