@@ -41,35 +41,23 @@ import {
 } from './lib/ios-verification.mjs'
 
 import { checkNames, checkDefinition } from './lib/ios-checks.mjs'
+import { processCleanup } from './lib/ios-processes.mjs'
 import { cachedLayer, layerInputs, assetOutputs, installationMatches,
   inspectInstallation, recordInstallation, forgetInstallation } from './lib/ios-cache.mjs'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const temporary = path.join(root, '.local/ios/tmp/ai-agent')
 const scenarios = JSON.parse(fs.readFileSync(path.join(root, 'app/native-tests/scenarios.json'), 'utf8'))
-let child
+let activeCleanup
 let phaseObserver
 let deadline
 let invocation
 let interrupted
-let cancellationTimer
 let terminationGraceMs = 10_000
-function killGroup(pid, signal) {
-  try {
-    process.kill(-pid, signal)
-  } catch (error) {
-    if (error.code !== 'ESRCH') throw error
-  }
-}
 for (const signal of ['SIGINT', 'SIGTERM'])
   process.on(signal, () => {
     interrupted = signal
-    if (child) {
-      const pid = child.pid
-      killGroup(pid, signal)
-      clearTimeout(cancellationTimer)
-      cancellationTimer = setTimeout(() => killGroup(pid, 'SIGKILL'), terminationGraceMs)
-    }
+    activeCleanup?.stop(signal)
   })
 
 async function command(
@@ -96,12 +84,11 @@ async function command(
   let timer
   let watching
   let observationError
+  let child, cleanup
   const stop = (error) => {
     if (observationError) return
     observationError = error
-    const pid = child.pid
-    killGroup(pid, 'SIGTERM')
-    cancellationTimer = setTimeout(() => killGroup(pid, 'SIGKILL'), terminationGraceMs)
+    cleanup?.stop()
   }
   try {
     const status = await new Promise((resolve, reject) => {
@@ -115,6 +102,8 @@ async function command(
           inherit ? 'inherit' : (output ?? 'pipe')
         ]
       })
+      cleanup = processCleanup(child.pid, { graceMs: terminationGraceMs })
+      activeCleanup = cleanup
       if (input !== undefined) {
         child.stdin.on('error', (error) => {
           inputError = error
@@ -127,7 +116,7 @@ async function command(
             text += data.toString()
             if (text.length > 1_048_576) {
               timedOut = true
-              killGroup(child.pid, 'SIGKILL')
+              cleanup.stop('SIGKILL')
             }
           })
       timer = setTimeout(() => {
@@ -171,9 +160,12 @@ async function command(
   } finally {
     clearTimeout(timer)
     clearInterval(watching)
-    clearTimeout(cancellationTimer)
-    child = undefined
-    if (output !== undefined) fs.closeSync(output)
+    try {
+      cleanup?.finish()
+    } finally {
+      if (activeCleanup === cleanup) activeCleanup = undefined
+      if (output !== undefined) fs.closeSync(output)
+    }
   }
 }
 const simctl = (...args) => command('xcrun', ['simctl', ...args])

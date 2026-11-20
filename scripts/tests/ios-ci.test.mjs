@@ -17,8 +17,25 @@ import { audit, auditDependencies, swiftLock } from '../lib/ios-audit.mjs'
 import { assertScriptReport, assertModePhases, requiredModePhases } from '../lib/ios-test-reports.mjs'
 import { checkDefinition } from '../lib/ios-checks.mjs'
 import { requireEvidence } from '../lib/ios-verification.mjs'
+import { processCleanup } from '../lib/ios-processes.mjs'
 
 const repository = new URL('../../', import.meta.url).pathname
+
+async function waitForProcessState(condition) {
+  const until = Date.now() + 3500
+  while (!condition()) {
+    if (Date.now() >= until) throw new Error('controlled process did not reach expected state')
+    await new Promise((resolve) => setTimeout(resolve, 20))
+  }
+}
+function isRunningProcess(pid) {
+  const result = spawnSync('ps', ['-p', String(pid), '-o', 'stat='], { encoding: 'utf8' })
+  return result.status === 0 && !result.stdout.trim().startsWith('Z')
+}
+function killOwnedGroup(pid) {
+  if (!Number.isSafeInteger(pid) || pid <= 1) return
+  try { process.kill(-pid, 'SIGKILL') } catch (e) { if (e.code !== 'ESRCH') throw e }
+}
 
 test('CI 必需阶段逐项缺失、错误阶段、原始日志缺失及无构建成功信号均拒绝，合法模式不误拦', () => {
   for (const mode of ['common', 'ios-build', 'ios-smoke', 'ios-touch']) {
@@ -51,11 +68,16 @@ test('CI 必需阶段逐项缺失、错误阶段、原始日志缺失及无构�
 test('CI 启动入口与共享消费者选择必要专项，测试文件和局部产品控件不扩大到完整触摸', (t) => {
   const r = registry(fixture(t).root)
   const selected = (file) => selectSuites(r, 'change', [file]).map((s) => s.name)
-  for (const file of ['app/index.html', 'app/src/main.ts', 'app/src/App.vue', 'app/src/stores/bootstrap.ts']) {
+  for (const file of ['app/index.html', 'app/src/main.ts', 'app/src/stores/bootstrap.ts']) {
     const names = selected(file)
     assert.ok(names.includes('native-sqlite') && names.includes('ui-dictionary-0'), file)
     assert.ok(!names.includes('touch') && !names.includes('ui-reports'), file)
   }
+  // 根组件还装配缓存、路由出口、全局撤销和通知；不能将它降为仅首屏启动检查。
+  const root = selected('app/src/App.vue')
+  for (const suite of ['native-sqlite', 'ui-dictionary-0', 'ui-entry', 'ui-personal',
+    'ui-query', 'ui-reports', 'ui-lifecycle']) assert.ok(root.includes(suite), 'App.vue/' + suite)
+  assert.ok(!root.includes('touch'))
   for (const name of ['ComboboxField', 'DictionaryCombobox', 'AppStateBlock', 'AppAsyncRegion', 'AppRequestError', 'CachedPageView', 'AppToast']) {
     const names = selected(`app/src/components/${name}.vue`)
     for (const suite of ['ui-entry', 'ui-personal', 'ui-query', 'ui-reports', 'ui-dictionary-0'])
@@ -181,6 +203,14 @@ function prepare(p, profile = 'secrets', suffix = 'result', range) {
   const directory = resultsDirectory(p.root, '.local/ios/tmp/ai-agent/ios-ci-' + suffix, true)
   fs.writeFileSync(path.join(directory, 'ci-plan.json'), JSON.stringify(plan))
   return { plan, directory }
+}
+
+function processFixture(t) {
+  const p = fixture(t)
+  fs.cpSync(path.join(repository, 'scripts/lib'), path.join(p.root, 'scripts/lib'), { recursive: true })
+  p.write('scripts/ios-app.mjs', fs.readFileSync(path.join(repository, 'scripts/ios-app.mjs'), 'utf8'))
+  p.write('app/native-tests/scenarios.json', fs.readFileSync(path.join(repository, 'app/native-tests/scenarios.json'), 'utf8'))
+  return p
 }
 
 test('CI 登记复用现有执行器与专项；固定范围、按需触发和非法请求拒绝', (t) => {
@@ -456,17 +486,6 @@ test('CI 命令超时终止子进程并保留失败，不能被空输出记为�
 })
 
 test('CI 超时及取消后组长提前退出，忽略 TERM 的后代仍被清理且正常完成不误杀', { timeout: 15000 }, async (t) => {
-  const waitFor = async (condition) => {
-    const until = Date.now() + 2500
-    while (!condition()) {
-      if (Date.now() >= until) throw new Error('controlled process did not reach expected state')
-      await new Promise((resolve) => setTimeout(resolve, 20))
-    }
-  }
-  const running = (pid) => {
-    const result = spawnSync('ps', ['-p', String(pid), '-o', 'stat='], { encoding: 'utf8' })
-    return result.status === 0 && !result.stdout.trim().startsWith('Z')
-  }
   for (const mode of ['timeout', 'SIGTERM']) {
     await t.test(mode, async (t) => {
       const p = fixture(t), ready = path.join(p.root, 'child.pid'), leaderFile = path.join(p.root, 'leader.pid')
@@ -483,12 +502,12 @@ test('CI 超时及取消后组长提前退出，忽略 TERM 的后代仍被清�
         }
       }
       try {
-        await waitFor(() => fs.existsSync(ready))
+        await waitForProcessState(() => fs.existsSync(ready))
         const child = Number(fs.readFileSync(ready))
-        assert.ok(running(child), '后代实际进入忽略 TERM 的等待')
+        assert.ok(isRunningProcess(child), '后代实际进入忽略 TERM 的等待')
         if (mode === 'SIGTERM') worker.kill('SIGTERM')
         assert.equal(await ended, 1)
-        await waitFor(() => !running(child))
+        await waitForProcessState(() => !isRunningProcess(child))
       } finally {
         cleanup()
         await ended
@@ -497,6 +516,110 @@ test('CI 超时及取消后组长提前退出，忽略 TERM 的后代仍被清�
   }
   const p = fixture(t), log = path.join(p.root, 'normal.log')
   assert.equal(await runCommand(p.root, process.execPath, ['-e', "console.log('NORMAL_COMPLETED')"], log, 1000), 'NORMAL_COMPLETED\n')
+})
+
+test('CI 真实内外层命令统一清理嵌套独立进程组，超时/取消及外层先强杀不遗留、不误杀其他任务',
+  { timeout: 20000 }, async (t) => {
+    const sentinel = spawn(process.execPath, ['-e', 'setInterval(()=>{},1000)'], { detached: true, stdio: 'ignore' })
+    const sentinelEnded = new Promise((resolve) => sentinel.once('close', resolve))
+    try {
+      for (const mode of ['outer-timeout', 'outer-SIGTERM', 'outer-SIGINT', 'outer-force',
+        'inner-timeout', 'inner-SIGTERM', 'inner-SIGINT']) {
+        await t.test(mode, async (t) => {
+          const p = processFixture(t), ready = path.join(p.root, 'child.pid'), leaderFile = path.join(p.root, 'leader.json')
+          const descendant = `process.on('SIGTERM',()=>{});process.on('SIGINT',()=>{});require('node:fs').writeFileSync(${JSON.stringify(ready)},String(process.pid));setInterval(()=>{},1000)`
+          p.write('leader.cjs', `require('node:fs').writeFileSync(${JSON.stringify(leaderFile)},JSON.stringify({pid:process.pid,parent:process.ppid}));${mode === 'outer-force' ? "process.on('SIGTERM',()=>{});" : ''}require('node:child_process').spawn(process.execPath,['-e',${JSON.stringify(descendant)}],{detached:true,stdio:'ignore'});setInterval(()=>{},1000)`)
+          // 使用真实 ios-app.mjs 的 command/信号处理，只替换本轮工程检查体；不构建、不接触模拟器。
+          p.write('scripts/lib/ios-app-full.sh', 'exec node leader.cjs\n')
+          const env = { ...process.env, PATH: path.dirname(process.execPath) + path.delimiter + process.env.PATH }
+          delete env.NODE_TEST_CONTEXT
+          const direct = mode.startsWith('inner-')
+          let args
+          if (direct) {
+            const clock = p.write('.local/short-check-clock.mjs', `const original=globalThis.setTimeout;globalThis.setTimeout=(fn,ms,...args)=>original(fn,ms>60000?900:ms,...args);\n`)
+            args = [...(mode === 'inner-timeout' ? ['--import', clock] : []), 'scripts/ios-app.mjs', 'common']
+          } else {
+            const worker = p.write('worker.mjs', `import {runCommand} from ${JSON.stringify(new URL('../lib/ios-ci-run.mjs', import.meta.url).href)};${mode === 'outer-force' ? 'const original=globalThis.setTimeout;globalThis.setTimeout=(fn,ms,...args)=>original(fn,ms>9000&&ms<=10000?60:ms,...args);' : ''}try{await runCommand(${JSON.stringify(p.root)},process.execPath,['scripts/ios-app.mjs','common'],${JSON.stringify(path.join(p.root, 'outer.log'))},${mode.endsWith('timeout') || mode === 'outer-force' ? 900 : 10000});process.exitCode=2}catch{process.exitCode=1}`)
+            args = [worker]
+          }
+          const worker = spawn(process.execPath, args, { cwd: p.root, env, detached: true, stdio: 'ignore' })
+          const ended = new Promise((resolve, reject) => { worker.once('error', reject); worker.once('close', resolve) })
+          try {
+            await waitForProcessState(() => fs.existsSync(ready))
+            const child = Number(fs.readFileSync(ready)), leader = JSON.parse(fs.readFileSync(leaderFile))
+            assert.ok(isRunningProcess(child))
+            assert.equal(Number(spawnSync('ps', ['-p', String(child), '-o', 'pgid='], { encoding: 'utf8' }).stdout.trim()), child,
+              '后代实际另起进程组')
+            if (mode.endsWith('SIGTERM')) worker.kill('SIGTERM')
+            if (mode.endsWith('SIGINT')) worker.kill('SIGINT')
+            assert.equal(await ended, direct && mode.endsWith('SIGTERM') ? 143 : direct && mode.endsWith('SIGINT') ? 130 : 1)
+            await waitForProcessState(() => !isRunningProcess(child))
+            assert.ok(isRunningProcess(sentinel.pid), '其他任务未被清理')
+            const base = path.join(p.root, '.local/ios/tmp/ai-agent')
+            const results = fs.readdirSync(base).filter((name) => /^ios-(?:command|invocation)-/.test(name))
+              .map((name) => path.join(base, name, 'result.json')).filter((f) => fs.existsSync(f))
+            assert.ok(results.length)
+            for (const file of results) assert.notEqual(JSON.parse(fs.readFileSync(file)).status, 'passed')
+          } finally {
+            worker.kill('SIGKILL')
+            if (fs.existsSync(ready)) killOwnedGroup(Number(fs.readFileSync(ready)))
+            if (fs.existsSync(leaderFile)) {
+              const leader = JSON.parse(fs.readFileSync(leaderFile))
+              killOwnedGroup(leader.pid)
+              killOwnedGroup(leader.parent)
+            }
+            killOwnedGroup(worker.pid)
+            await ended
+          }
+        })
+      }
+    } finally {
+      killOwnedGroup(sentinel.pid)
+      await sentinelEnded
+    }
+  })
+
+test('CI 正常内外层命令不扫描进程树、不误拦成功或触发额外清理', async (t) => {
+  const p = processFixture(t), marker = path.join(p.root, 'unexpected-ps')
+  const ps = p.write('bin/ps', `#!/bin/sh\ntouch '${marker}'\nexit 1\n`)
+  fs.chmodSync(ps, 0o755)
+  p.write('scripts/lib/ios-app-full.sh', "printf 'NESTED_NORMAL_COMPLETED\\n'\n")
+  const envPath = path.join(p.root, 'bin') + path.delimiter + process.env.PATH
+  const output = await runCommand(p.root, '/usr/bin/env', ['PATH=' + envPath, process.execPath,
+    'scripts/ios-app.mjs', 'common'], path.join(p.root, 'normal.log'), 3000)
+  assert.match(output, /NESTED_NORMAL_COMPLETED/)
+  assert.match(output, /^CI_RESULT=/m)
+  assert.equal(fs.existsSync(marker), false)
+})
+
+test('CI 共享清理器不延长重复停止的宽限，完成后旧回调失效，进程树读取失败不伪报成功', (t) => {
+  const p = fixture(t), ps = p.write('bin/ps', '#!/bin/sh\nexit 1\n')
+  fs.chmodSync(ps, 0o755)
+  const originalKill = process.kill, originalTimer = globalThis.setTimeout, originalPath = process.env.PATH
+  try {
+    for (const failSnapshot of [false, true]) {
+      const signals = [], callbacks = []
+      process.env.PATH = failSnapshot ? path.join(p.root, 'bin') + path.delimiter + originalPath : originalPath
+      process.kill = (pid, signal) => { signals.push([pid, signal]); return true }
+      globalThis.setTimeout = (fn) => { callbacks.push(fn); return undefined }
+      const cleanup = processCleanup(Number.MAX_SAFE_INTEGER)
+      cleanup.stop()
+      cleanup.stop('SIGINT')
+      assert.equal(callbacks.length, 1, '重复停止不重新计算宽限')
+      if (failSnapshot) assert.throws(() => cleanup.finish(), /无法读取受管进程树/)
+      else cleanup.finish()
+      const completed = signals.length
+      cleanup.finish()
+      callbacks[0]()
+      cleanup.stop()
+      assert.equal(signals.length, completed, '迟到回调和重复收尾不能重新发信号')
+    }
+  } finally {
+    process.kill = originalKill
+    globalThis.setTimeout = originalTimer
+    if (originalPath === undefined) delete process.env.PATH
+    else process.env.PATH = originalPath
+  }
 })
 
 test('CI 正式 CLI 本地 plan→run→result 与非法参数回归，不访问旧端或远端', (t) => {

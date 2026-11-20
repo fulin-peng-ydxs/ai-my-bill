@@ -8,6 +8,7 @@ import { inputHash, requireEvidence, writeJson } from './ios-verification.mjs'
 import { contentHash } from './ios-cache.mjs'
 import { selection, nativeCases, uiCases } from './ios-debug.mjs'
 import { assertScriptReport, assertModePhases } from './ios-test-reports.mjs'
+import { processCleanup } from './ios-processes.mjs'
 
 const read = (file) => JSON.parse(plainFile(file))
 
@@ -36,20 +37,11 @@ export async function runCommand(root, program, args, log, timeoutMs = 2_700_000
   const fd = fs.openSync(log, 'wx', 0o600)
   let child,
     timer,
-    killTimer,
+    cleanup,
     cancelled = false
   const stop = () => {
     cancelled = true
-    try {
-      process.kill(-child.pid, 'SIGTERM')
-    } catch (e) {
-      if (e.code !== 'ESRCH') throw e
-    }
-    killTimer ??= setTimeout(() => {
-      try {
-        process.kill(-child.pid, 'SIGKILL')
-      } catch {}
-    }, 10_000)
+    cleanup?.stop()
   }
   try {
     const code = await new Promise((resolve, reject) => {
@@ -59,6 +51,7 @@ export async function runCommand(root, program, args, log, timeoutMs = 2_700_000
         detached: true,
         stdio: ['ignore', fd, fd]
       })
+      cleanup = processCleanup(child.pid)
       child.once('error', reject)
       child.once('close', (code) => resolve(code))
       timer = setTimeout(stop, timeoutMs)
@@ -78,18 +71,9 @@ export async function runCommand(root, program, args, log, timeoutMs = 2_700_000
     return data.toString('utf8')
   } finally {
     clearTimeout(timer)
-    // close 只证明组长退出；其提前响应 TERM 时，仍须回收忽略 TERM 的后代。
-    // 组长尚在清理时由上面的 10 秒宽限负责；已退出则不再取消清理后遗留子进程。
     try {
-      if (cancelled && child?.pid) {
-        try {
-          process.kill(-child.pid, 'SIGKILL')
-        } catch (e) {
-          if (e.code !== 'ESRCH') throw e
-        }
-      }
+      cleanup?.finish()
     } finally {
-      clearTimeout(killTimer)
       process.removeListener('SIGINT', stop)
       process.removeListener('SIGTERM', stop)
       fs.closeSync(fd)

@@ -385,6 +385,7 @@
     },
     {
       "paths": [
+        "app/src/App.vue",
         "app/src/components/AppShell.vue",
         "app/src/components/AppDialog.vue",
         "app/src/components/BottomNavigation.vue",

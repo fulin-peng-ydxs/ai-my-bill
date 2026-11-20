@@ -66,7 +66,7 @@ jobs:
       fail-fast: false
       matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
     runs-on: ${{ matrix.runner }}
-    # 同组顺序执行、独立模拟器复用；原有构建/安装/测试及整轮内层预算继续独立生效。
+    # 同组顺序执行、独立模拟器复用；内外层命令共用进程组清理，既有阶段/整轮预算继续生效。
     timeout-minutes: ${{ matrix.timeout }}
     steps:
       - uses: actions/checkout@v4
