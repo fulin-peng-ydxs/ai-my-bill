@@ -31,6 +31,7 @@
     "ops": "bash scripts/operations.sh",
     "release": "bash scripts/release.sh",
     "contracts:generate": "bash scripts/run-frontend.sh contract:generate",
-    "debug:ios-app": "bash scripts/ios-app.sh debug"
+    "debug:ios-app": "bash scripts/ios-app.sh debug",
+    "ci:ios-app": "bash scripts/ios-ci.sh"
   }
 }

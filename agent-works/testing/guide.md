@@ -144,21 +144,43 @@ UI 重置在移动目录前以权限 600 写入本会话 ui-reset.json，绑定�
 
 局部 UI 夹具完成且连接关闭后，以 simctl 预启动 App 并保持前台，使首屏渲染与 runner 准备并行；XCUITest 仍建立真实会话、执行原用例和断言，不延长单例 60 秒预算。正式初始化前的启动与该次预启动分别保留 initialize-launch.log、ui-launch.log；预启动失败同样恢复原 UUID，不撤销有效构建和安装。完整入口和用例内部主动重启保持原路径；预启动不计为首次安装或冷启动性能通过。installationReused 仅指跳过脚本显式安装，XCTest 自己的安装校验仍计入测试准备，不承诺消除系统开销。
 
-局部 result.json 的 buildLayers 逐层记录命中；installationReused、runnerInstallationReused、fixtureBaselineReused 分别记录 App、runner 和空账本基线复用，containerRebound 记录已核验的沙盒搬迁，未执行的能力不计入本轮覆盖。会话 layer-*.json 仅保存准备层摘要，close 回收本会话 DerivedData、基线和安装回执，保留日志、xcresult 及工作区失败锁。缓存与数据隔离优先执行 `node --test scripts/tests/ios-cache.test.mjs`，覆盖失败 CI 基线与最新 attempt、输入/产物缺失与篡改、失败不缓存、依赖传播、App/runner 独立核验、跨场景重铺、偏好/草稿/快照隔离、归属/摘要/链接拒绝、沙盒搬迁、替换失败回滚与四处终止后的连续恢复；统一 CLI 的初始化失败后缓存恢复、卸载前错误回执拒绝与合法新包迁移、UI/Release→App/Debug→UI/Release 切换及安装失败重试、完整借用重置/卸载失败、跨组沙盒迁移后回读路径刷新及完整失败锁回归位于 ios-verification.test.mjs。真实 SQLite 的新包数据集隔离及冷替换前跨数据集拒绝位于 ios-cache.test.mjs。CI common 与 `debug check --check script-tests` 纳入同一文件，Actions 路径覆盖新基线工具和回归，原生 job 归档分层回执。不为脚本回归额外启动完整原生验收。
+局部 result.json 的 buildLayers 逐层记录命中；installationReused、runnerInstallationReused、fixtureBaselineReused 分别记录 App、runner 和空账本基线复用，containerRebound 记录已核验的沙盒搬迁，未执行的能力不计入本轮覆盖。会话 layer-*.json 仅保存准备层摘要，close 回收本会话 DerivedData、基线和安装回执，保留日志、xcresult 及工作区失败锁。缓存与数据隔离优先执行 `node --test scripts/tests/ios-cache.test.mjs`，覆盖输入/产物缺失与篡改、失败不缓存、依赖传播、App/runner 独立核验、跨场景重铺、偏好/草稿/快照隔离、归属/摘要/链接拒绝、沙盒搬迁、替换失败回滚与四处终止后的连续恢复；统一 CLI 的初始化失败后缓存恢复、卸载前错误回执拒绝与合法新包迁移、UI/Release→App/Debug→UI/Release 切换及安装失败重试、完整借用重置/卸载失败、跨组沙盒迁移后回读路径刷新及完整失败锁回归位于 ios-verification.test.mjs。真实 SQLite 的新包数据集隔离及冷替换前跨数据集拒绝位于 ios-cache.test.mjs。登记的工具回归和 App 工程套件与 `debug check --check script-tests` 纳入同一文件，原生 job 归档分层回执。不为脚本回归额外启动完整原生验收。
 
 SPM 准备机制见[构建架构](../architecture/architecture-decisions.md#离线-ios-原生入口)。ios-cache.test.mjs 的干净检出场景在临时工程中使用真实 native:sync、锁定 Capacitor CLI 和独立插件副本；仅将未受影响的 Vue 编译替换为最小资源准备，不调用 Xcode、模拟器或网络包解析。断言首次无 CapApp-SPM/Podfile 时同步成功、生成 Swift target 源与 iOS 27.0 清单、重复同步与缺失骨架恢复不覆盖项目，并拒绝链接写入。该结果证明 SPM 初始化和同步，不代表原生编译或页面验收。统一 script-tests 在 Linux/macOS 消费同一场景；局部分层构建在 sync 前另记录 spm-prepare.log，沿用原构建阶段预算。
 
-#### 远端按需与最终集中验收
+#### 统一套件、按需 CI 与最终验收
 
-[CI 范围入口](../../scripts/lib/ios-ci.mjs)只消费显式请求，不查询历史成功基线、账号计费或 Git 文件差异，不因缺少 token、失败基线或网络不可达自动升级为完整验收。日常本地命令不依赖 GitHub，原有局部证据要求、完整失败锁、缓存隔离与分阶段超时继续生效；远端受阻不能清除这些约束，也不能标为远端通过。
+[套件登记](../../config/ios-ci.json)统一维护本项目已有检查的执行类型、Linux/macOS 归属、固定范围、专项影响路径、测试文件排除及确有覆盖关系的去重。登记只接入离线 App 的现有执行器，不注册旧 Web、Java、PostgreSQL、服务器部署或尚未实现的真机性能能力。[CI 规划器](../../scripts/lib/ios-ci-plan.mjs)、[执行与对账](../../scripts/lib/ios-ci-run.mjs)由本地和远端同一入口调用；不查询历史绿色或计费，不继承旧提交的验收结论。
 
-| 请求范围 | 适用场景与实际运行 | 结论边界 |
-| --- | --- | --- |
-| `scripts`（默认） | 验证工具或 CI 编排需跨平台复核；Linux/macOS 执行同一 `script-tests`，保留 secret 检查，不编译 App、不启动模拟器 | 仅脚本回归，不证明 App 集成或完整候选通过 |
-| `app` | 构建、依赖、SPM 或原生桥需远端环境复核；执行 App 工程检查、未签名 Release 构建与原生 SQLite 完整集成，不运行完整页面触摸 | 仅工程与原生集成，不产生完整候选标记 |
-| `final` | 最终候选集中验收或明确需要完整回归；执行 App 工程、Release 构建、原生 SQLite 集成及完整页面触摸 | 所有必需 job 成功才产生 `app-baseline-v1`；仍不替代目标真机验收 |
+| 范围 | 实际覆盖与使用条件 |
+| --- | --- |
+| `change` | 显式 base/head 的变更验收：基础 secret 检查，按登记追加 App 工程、原生、具体 UI 场景及依赖审计；同一专项合并多条理由，不自动运行完整 touch |
+| `scripts` | Linux/macOS 验证工具回归与 secret 检查；不编译 App、不启动模拟器 |
+| `app` | App 工程、未签名 iPhone Release 构建及原生 SQLite 集成；不包含完整页面触摸 |
+| `final` | App 工程、Release 构建、原生 SQLite、完整原页面触摸及依赖审计；固定最小门禁不能被登记删除或由局部替代 |
+| `dependency-audit` 或其他登记套件名 | 本地可只规划单套件；远端除上述范围外仅提供独立依赖审计，避免引入多套入口 |
 
-当前分支可通过保留前缀的标签按需触发；普通分支 push、PR 和普通标签不启动工作流。先完成相应本地局部验证，再在仓库根目录为待测提交创建唯一请求标签，例如仅运行脚本：
+日常定位仍先使用上面的 `debug check --file/--name`、原生单用例或小场景，不为取得新登记回执重复测试。需要有固定范围与正式报告的集中检查时，在仓库根目录执行：
+
+```bash
+npm run ci:ios-app -- check
+npm run ci:ios-app -- list
+npm run ci:ios-app -- plan change --base "$(git rev-parse HEAD^)"
+# 使用 plan 输出的 directory；只执行其中实际存在的组，先 Linux/通用检查，再按必要性执行 macOS。
+npm run ci:ios-app -- run --results "$IOS_CI_RESULTS" --group linux
+npm run ci:ios-app -- run --results "$IOS_CI_RESULTS" --group macos
+npm run ci:ios-app -- result --results "$IOS_CI_RESULTS"
+```
+
+`IOS_CI_RESULTS` 是本次 `plan` 输出的 `directory`（`.local/ios/tmp/ai-agent/ios-ci-*`），不是旧运行目录。固定或单套件范围如 `plan scripts`、`plan dependency-audit` 不要求 base；`change` 必须使用可核实的完整 SHA，head 默认且必须等于当前检出提交。规划按 `git diff --no-renames` 同时检查重命名旧、新路径，并包含本地未提交和新文件；已删除路径仍参与影响选择。范围未知时明确拒绝，不猜空变更、不强制扩大为全量。普通说明文档和旧端变更仅运行 App 适用的基础检查；作为程序或执行规则输入的 README、DESIGN、测试规范及 CI 配置按登记保留相关门禁。App 单测及纯数据/组合函数变化优先保留工程或必要原生集成，不因命中业务路径而额外启动所有 UI 场景。新增共享入口、业务消费者或独立场景时须维护影响路径；自动选择不替代影响分析或页面呈现验收。
+
+机器计划 `ci-plan.json`绑定源码内容、提交、登记、变更范围、必跑套件和命中理由；执行前后及总对账重新规划，拒绝删减必跑项、旧版本、参数变化或执行中修改源码。执行器复用原命令、受管模拟器和证据锁，同一 macOS 组复用其新建的独立设备，结束时关闭自己的会话。每套件保存运行/失败/完成回执和原报告副本与摘要，不能覆盖已有运行或失败现场；组清理失败也使整体未完成。跨主机只核验携带的原报告，不读取另一台机器的绝对沙盒路径。远端每组按 attempt 独立归档，重跑失败作业沿用原计划制品名；汇总仅采用每组最新 attempt，最新失败/缺失/错误计划不能回退旧绿色。未重跑的组保留同计划有效报告；job 本身失败或取消仍使整体未完成，历史归档不覆盖。
+
+`result`逐项对账必跑与实际，生成 `ci-result.json/md`：缺项、失败、取消、额外套件、错误环境/版本/范围、原报告缺失或被篡改均不能通过。原生实际用例、App 单测数量和脚本回归摘要须与原报告对应，空执行或跳过不能伪装通过；Linux 中既有 macOS 专用分支仍按平台边界处理，macOS 不接受被跳过的脚本回归。单组通过不代表整体完成；只有 `final` 全部必需项及组清理通过才输出完整候选标记。JSON/Markdown 是工具本轮产物，不新增开发计划或阶段报告。
+
+依赖审计复用 [OSV querybatch](https://google.github.io/osv.dev/post-v1-querybatch/)，仅收集 `app/package-lock.json` 的 npm 直接/传递/开发/可选依赖及 Xcode 提交的 `Package.resolved` 中 Swift URL+版本（无版本时使用锁定 revision）。锁损坏、空集合、不支持项、网络/HTTP/格式错误、返回缺项、循环分页或超出预算均保留未通过，已知漏洞直接阻断该套件；不自动升级依赖、接受风险或添加豁免。审计报告列出全部受检锁项、时间和发现；不证明操作系统、未锁定外部制品或所有原生代码无漏洞。依赖输入变化自动加入 `change`，`final`必跑，也可单独按需执行；不新增每日或定时远端任务。
+
+[远端工作流](../../.github/workflows/offline-ios.yml)仅手动或专用标签触发，普通分支 push/PR 和普通标签不启动。计划生成 Linux/macOS 分组矩阵；各组读取同一计划并归档原报告，总结果 job 合并并对账，失败/取消 job 不能被报告绿色遮蔽。通用/脚本组沿用 10 分钟、原生组沿用 45 分钟外层预算；本地组执行也从前置检查累计同一预算，各阶段及单用例上限继续独立生效。普通请求标签为 `ios-ci/<scripts|app|final|dependency-audit>/<唯一名称>`；`change` 标签须写明起点：`ios-ci/change/<完整 base SHA>/<唯一名称>`。例如仅请求脚本回归：
 
 ```bash
 IOS_CI_TAG="ios-ci/scripts/$(date +%Y%m%d-%H%M%S)-$(git rev-parse --short HEAD)"
@@ -166,9 +188,11 @@ git tag "$IOS_CI_TAG" HEAD
 git push origin "refs/tags/$IOS_CI_TAG"
 ```
 
-需要集成或最终范围时，将标签中的 `scripts` 改为 `app` 或 `final`；标签固定被测 SHA，不删除或重写既有请求标签。工作流位于默认分支后，也可在 GitHub Actions → offline-ios → Run workflow 中选择待测分支和 `verification`（同样为 `scripts/app/final`，默认 `scripts`）。本地不自动创建标签、发送 dispatch 或等待远端；推送代码也不隐式启动远端。范围非法、普通 push/PR、删除标签事件均由入口拒绝，不留下有效范围输出。回归位于 `ios-cache.test.mjs` 的 `CI` 用例，覆盖三个范围、两种入口、非法请求、缺凭据/网络、重跑范围不扩大及本地失败锁不变；CI 的 script-tests 消费同一文件。
+标签固定被测 SHA，不删除或重写既有请求标签。工作流位于默认分支后，也可在 Actions → offline-ios → Run workflow 选择分支及 `verification`（默认 `scripts`）；选择 `change` 时提供 `base_revision`。本地命令不会创建标签、发送 dispatch 或等待远端；远端计费、额度、排队或平台故障单独保留受阻/待验，不阻塞已有本地证据支持的开发、提交和推送，也不自动重跑或扩大范围。原有完整失败锁、缓存隔离和阶段/整轮超时继续生效，受阻不等于通过。
 
-最终候选稳定后，完整自动套件集中到一次 `final` 请求，不因提交、推送再在本地重复全跑；远端受阻时可用本地必需完整验证继续交付准备，远端运行能力仍保留待验。首次完整或真实新故障复验仍按上面的证据锁进入，失败先缩回相关局部用例，修复后才复验受影响范围，没有新证据不重复完整验收。远端结果按 SHA、请求范围、attempt 和实际 job 核验，脚本/集成绿色不能继承或覆盖完整结论。最终交付还须完成指定 iPhone 的 Release 签名安装、断网冷启动、升级和 D07 容量性能等既定检查；远端最终范围受阻时可以继续本地开发，但完整 CI 能力及最终交付保留待验，不提前宣布全部验收通过。
+最终候选稳定后集中到一次 `final` 请求，不因提交、推送再本地全跑；远端受阻时可完成本地必需验证继续交付准备，远端运行能力仍待验。完整失败先回到相关局部修复，没有新证据不重复完整验收。指定 iPhone 的 Release 签名安装、断网冷启动、升级及 D07 容量性能仍独立验收，模拟器或完整候选标记不替代真机条件；未完成前不宣布最终交付通过。
+
+普通工具回归按 `scripts/tests/ios-*.test.mjs` 自动发现，局部和完整入口共用同一叶子执行器与文件集合；新增文件同时使输入证据失效，不接入旧端测试。新增 UI 用例须同时接入现有选择器与单例/场景登记；未接入的 Swift UI 测试会被 check 拒绝。新增/调整套件须同步登记与影响路径、原执行器和报告语义，并先执行 `npm run ci:ios-app -- check` 和 `node --test scripts/tests/ios-ci.test.mjs`；只有实际原生编排变化才补相关独立模拟器局部场景。该回归经既有 `script-tests`、App common 及按需 CI 同源消费，覆盖改名双向路径、范围隔离、计划篡改、失败/缺失/空报告、跨目录对账、失败锁保护与依赖审计故障，不用受控执行器测试冒充 App 页面或远端验收。
 
 非原生局部检查保存于 ios-check-*；原生局部运行在会话的 run-* 下保存独立日志、xcresult、SQLite 回读和 `result.json`，标明 scope=partial、所选/实际用例、构建与执行输入摘要、完成时间、缓存命中、状态及耗时，成功时输出 EVIDENCE=路径；局部绿色不更新完整验收状态。[脚本回归](../../scripts/tests/ios-debug.test.mjs) 经 check:app 执行，覆盖选择/前置、会话与设备拒绝、内容摘要失效、夹具拒绝与回读、命令锁与脚本快照边界；[执行约束回归](../../scripts/tests/ios-verification.test.mjs) 经同一入口检查缺少/失效证据、跨会话及跨版本/跨套件失败锁、A→B→A 历史次数、多份跨层证据及逐目标时序、具体场景隔离、common/ios-build 实际 CLI 阶段超时与许可、真实新故障复验、无关修复/空匹配拒绝、分阶段及入口累计时钟、前置检查超时/活动进程取消/创建失败补偿上限、修复后缓存恢复且失败锁仍保留、成对恢复、内部入口许可、首败取消与清理；测试使用隔离临时工程与可控子进程，不冒充 App 页面验收；成对恢复、普通场景、UI 安装/预启动及创建补偿 CLI 的受管模拟器分支回归仅在 macOS 执行，使用受控工具替身验证编排，Linux 的 common 检查明确跳过这些受管分支，macOS 验证 job 再执行。真实原生运行、设备复用及关闭仍需通过 CLI 在独立模拟器验证。新增入口及完整入口变更纳入同一 Actions 触发路径；不放宽原超时、断言或真机 Release 性能要求。
 
@@ -206,7 +230,7 @@ T10 页面入口为 `--scenario report-cycle`（启动准备、总览、时间�
 
 复用本轮独立模拟器；[报表触摸夹具](../../app/test-support/reportTouchFixture.json)是 Python 准备、XCUITest 资源与 SQL 回归共用的唯一日期来源：业务时间固定为 2026-11-18T04:00:00.000Z，范围为 2026-11-01 至 2026-11-18。原生测试通过既有“指定日期”和起止日期控件应用 CUSTOM 范围，选择实际输入而非同名标签组；控件已显示夹具指定年月时直接选日，否则通过原生滚轮选择绝对年/月，不按执行日期翻月循环，也不再取 Date() 或“本月”；日、周、月、季、年标签均从同一资源读取，测试资源只进入 UI 测试包。夹具准备 1000.00 收入、15.00 支出和 3.00 退款，以独立 UUID 资金渠道“报表现金”经原筛选抽屉隔离其他阶段样本，不清空其他数据、不预写报表结果或编辑终态。原页面核对总览五项金额，使用 staticTexts 的精确带符号标签 +¥1,000、-¥15、+¥3、-¥12、+¥988；编辑返回核对 -¥13，均不使用通用 Any 文本或 OCR 金额后备，以免正负号导致误拦。逐个切日/周/月/季/年，分别断言范围合计、所选时段当期及累计三处结余均为 988.00；日/周/月为 test37ReportTimeGrains，季/年为 test37ReportTimeGrainsQuarterYear，`report-grains` 只组合上述两项准备与两组粒度断言，分别受原有 60 秒用例预算约束；季/年方法排在 test38 改金额之前，避免组合运行读取已编辑终态；不放宽每项 60 秒预算；当前项检查原生 select 的 value；随后必须等“查看时段”精确匹配共享绝对范围按上海日历裁剪后的桶标签，同时确认时段选择器和该桶下钻按钮均 enabled，才断言三处原生可访问金额。只改选择器值、刷新中的旧金额或失败保留快照均不能放行；不得放宽等待预算或向生产页注入测试标记。净支出时间点下钻看到来源与调整两笔，原编辑表单将实付改为 16.00 后返回应刷新为 13.00，并保留原趋势上下文；对比弹窗明确提示历史不完整。App 停止后只读回验两笔来源账目及调整的金额/状态/版本，test38 未执行时不得出现编辑结果，执行后必须且仅有约定修改，拒绝错误退款或重复准备。CI 原生自动发现单场景，完整 touch 明确排除首次字典段的 T10 用例及其准备项，再单独准备/执行/回读 T10；脚本选择/夹具先用 `node --test --test-name-pattern T10 scripts/tests/ios-debug.test.mjs` 和 Shell 语法检查；需要回归先前阶段时再扩大到 `'T[789]|T10'`。跨午夜回归在测试进程边界冻结 Python 夹具的准备/回读时钟，并在真实 SQLite 统计中将查询时钟推进至午夜后，覆盖普通日界、月界和年界；必须保持两笔来源及退款的同一业务日期、五种时段标签和三处 988.00。回读须拒绝仅日期漂移但金额/版本不变的反例，原生筛选不得回退为相对范围。排序回归按实际词典序检查局部场景及 CI 完整 touch 的同一前置链，旧准备名称作为拒绝反例；就绪守卫回归拒绝移除时段或 enabled 检查；金额定位回归拒绝改回 Any/OCR、去掉符号或跳过精确金额节点调用；启动守卫拒绝跳过真实导航等待或省略维度控件存在、enabled 断言；日期定位回归拒绝选回同名标签及无条件跳过绝对年月选择。原生触摸先选择 Button/Link 及有效 frame，再读取 isHittable，避免冷启动的同名 Any 占位节点使 XCTest 在截图定位后备之前直接失败；报表原生 select 按 Button 和精确 value 定位，不在启动时无条件输出整个 AX 树。失败立即缩至目标用例，不重复已通过项或完整验收；T11 多维报表保持未实施。模拟器证明随包本地统计与原交互，不声称执行 iPhone 蜂窝飞行模式；最终真机断网、签名与 Release 性能仍按 T14/T17 验证。
 
-App 的 [Actions 工作流](../../.github/workflows/offline-ios.yml) 是本分支唯一保留的远端流水线，按[远端请求范围](#远端按需与最终集中验收)调用同一本地验证脚本；触发、范围及最终完成条件以该节为准，历史运行不代表当前候选通过。旧 Web/服务端流水线已移除，离线 App 的工程、原生、资源及失败锁门禁保留。真实 iPhone 的签名安装、飞行模式冷启动及 Release 性能另验；当前骨架已在指定真机完成签名安装与图标离线冷启动，正式业务及 Release 容量性能尚未验收。模拟器、小样本耗时或 common 绿色不能替代这些条件，当前也未实现完整性能交付门禁。
+App 的 [Actions 工作流](../../.github/workflows/offline-ios.yml) 是本分支唯一保留的远端流水线，按[远端请求范围](#统一套件按需-ci-与最终验收)调用同一本地验证脚本；触发、范围及最终完成条件以该节为准，历史运行不代表当前候选通过。旧 Web/服务端流水线已移除，离线 App 的工程、原生、资源及失败锁门禁保留。真实 iPhone 的签名安装、飞行模式冷启动及 Release 性能另验；当前骨架已在指定真机完成签名安装与图标离线冷启动，正式业务及 Release 容量性能尚未验收。模拟器、小样本耗时或 common 绿色不能替代这些条件，当前也未实现完整性能交付门禁。
 
 ## 变更维护与验证
 

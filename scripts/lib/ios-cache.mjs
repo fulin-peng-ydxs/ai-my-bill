@@ -5,7 +5,7 @@ import { hashPaths } from './ios-debug.mjs'
 import { writeJson } from './ios-verification.mjs'
 
 const digest = value => createHash('sha256').update(value).digest('hex')
-const generated = p => p.includes('/CapApp-SPM') || p.includes('/App/public') ||
+export const generated = p => p.includes('/CapApp-SPM') || p.includes('/App/public') ||
   p.includes('/xcuserdata') || p.endsWith('/capacitor.config.json') || p.endsWith('/config.xml') ||
   path.basename(p) === '.DS_Store'
 const specs = p => p.endsWith('.spec.ts') || p.includes('/__tests__/')

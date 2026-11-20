@@ -6,6 +6,7 @@ import os from 'node:os'
 import { randomUUID } from 'node:crypto'
 import { spawnSync } from 'node:child_process'
 import { selection, APP_ID, RUNTIME, DEVICE_TYPE } from '../lib/ios-debug.mjs'
+import { executionMatrix, registry, selectSuites } from '../lib/ios-ci-plan.mjs'
 import {
   controlInputs,
   createDeadline,
@@ -1351,8 +1352,10 @@ test('完整触摸与局部预算分开，入口与子流程同源，阶段和 C
   assert.match(entry, /createDeadline\(budget\)/)
   assert.match(entry, /const budget = totalBudgetFor\(mode\)/)
   const workflow = fs.readFileSync(new URL('../../.github/workflows/offline-ios.yml', import.meta.url), 'utf8')
-  const native = workflow.slice(workflow.indexOf('  native-simulator:'), workflow.indexOf('  app-baseline-v1:'))
-  const minutes = Number(native.match(/timeout-minutes: (\d+)/)[1])
+  assert.ok(workflow.includes('timeout-minutes: ${{ matrix.timeout }}'))
+  const repo = new URL('../../', import.meta.url).pathname
+  const minutes = executionMatrix({ suites: selectSuites(registry(repo), 'final') })
+    .include.find(group => group.group === 'macos').timeout
   assert.equal(minutes, 45, 'CI job 的所有步骤仍共用原有外层上限')
   assert.ok(totalBudgetFor('ios-touch') < minutes * 60_000)
 })

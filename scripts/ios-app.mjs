@@ -714,6 +714,8 @@ async function main(args) {
         })
         fs.rmSync(path.join(attempt.run, 'active.json'), { force: true })
       }
+      // 子命令最后一行可能没有换行；机器回执必须独占一行，供 CI 读取原始报告。
+      console.log(`\nCI_RESULT=${attempt.run}`)
     }
     return
   }

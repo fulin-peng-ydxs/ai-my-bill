@@ -1,0 +1,429 @@
+{
+  "schema": 1,
+  "suites": {
+    "secrets": {
+      "kind": "secrets",
+      "runner": "linux",
+      "description": "仓库 secret 检查"
+    },
+    "scripts": {
+      "kind": "check",
+      "check": "script-tests",
+      "runner": "linux",
+      "description": "验证工具回归"
+    },
+    "scripts-macos": {
+      "kind": "check",
+      "check": "script-tests",
+      "runner": "macos",
+      "description": "macOS 编排与隔离回归"
+    },
+    "app-common": {
+      "kind": "engineering",
+      "mode": "common",
+      "runner": "linux",
+      "description": "App 单测、类型、随包构建与资源门禁"
+    },
+    "native-build": {
+      "kind": "engineering",
+      "mode": "ios-build",
+      "runner": "macos",
+      "description": "未签名 iPhone Release 构建"
+    },
+    "native-sqlite": {
+      "kind": "full",
+      "mode": "ios-smoke",
+      "runner": "macos",
+      "description": "原生 SQLite、升级与桥接集成"
+    },
+    "touch": {
+      "kind": "full",
+      "mode": "ios-touch",
+      "runner": "macos",
+      "description": "完整原页面触摸与 SQLite 回读"
+    },
+    "dependency-audit": {
+      "kind": "audit",
+      "runner": "linux",
+      "description": "App npm 与 Swift 锁定依赖 OSV 审计"
+    },
+    "ui-entry": {
+      "kind": "ui",
+      "scenario": "entry-cycle",
+      "runner": "macos",
+      "description": "复用原生局部场景 entry-cycle"
+    },
+    "ui-personal": {
+      "kind": "ui",
+      "scenario": "personal-cycle",
+      "runner": "macos",
+      "description": "复用原生局部场景 personal-cycle"
+    },
+    "ui-lifecycle": {
+      "kind": "ui",
+      "scenario": "lifecycle-cycle",
+      "runner": "macos",
+      "description": "复用原生局部场景 lifecycle-cycle"
+    },
+    "ui-query": {
+      "kind": "ui",
+      "scenario": "query-cycle",
+      "runner": "macos",
+      "description": "复用原生局部场景 query-cycle"
+    },
+    "ui-query-input": {
+      "kind": "ui",
+      "scenario": "query-input",
+      "runner": "macos",
+      "description": "复用原生局部场景 query-input"
+    },
+    "ui-reports": {
+      "kind": "ui",
+      "scenario": "report-cycle",
+      "runner": "macos",
+      "description": "复用原生局部场景 report-cycle"
+    },
+    "ui-merge": {
+      "kind": "ui",
+      "scenario": "merge-cycle",
+      "runner": "macos",
+      "description": "复用原生局部场景 merge-cycle"
+    },
+    "ui-paging": {
+      "kind": "ui",
+      "scenario": "paging-merge",
+      "runner": "macos",
+      "description": "复用原生局部场景 paging-merge"
+    },
+    "ui-unit-paging": {
+      "kind": "ui",
+      "scenario": "paging-disable",
+      "runner": "macos",
+      "description": "复用原生局部场景 paging-disable"
+    },
+    "ui-dictionary-0": {
+      "kind": "ui",
+      "case": "DictionaryUITests/DictionaryTouchTests/test00EightOriginalEntries",
+      "runner": "macos",
+      "description": "原字典单用例 test00EightOriginalEntries"
+    },
+    "ui-dictionary-1": {
+      "kind": "ui",
+      "case": "DictionaryUITests/DictionaryTouchTests/test01CreateProduct",
+      "runner": "macos",
+      "description": "原字典单用例 test01CreateProduct"
+    },
+    "ui-dictionary-2": {
+      "kind": "ui",
+      "case": "DictionaryUITests/DictionaryTouchTests/test02RenameProduct",
+      "runner": "macos",
+      "description": "原字典单用例 test02RenameProduct"
+    },
+    "ui-dictionary-3": {
+      "kind": "ui",
+      "case": "DictionaryUITests/DictionaryTouchTests/test03CreateCategory",
+      "runner": "macos",
+      "description": "原字典单用例 test03CreateCategory"
+    },
+    "ui-dictionary-4": {
+      "kind": "ui",
+      "case": "DictionaryUITests/DictionaryTouchTests/test04CreateUnit",
+      "runner": "macos",
+      "description": "原字典单用例 test04CreateUnit"
+    },
+    "ui-dictionary-5": {
+      "kind": "ui",
+      "case": "DictionaryUITests/DictionaryTouchTests/test05CreateFunding",
+      "runner": "macos",
+      "description": "原字典单用例 test05CreateFunding"
+    },
+    "ui-dictionary-6": {
+      "kind": "ui",
+      "case": "DictionaryUITests/DictionaryTouchTests/test06DisableCandidates",
+      "runner": "macos",
+      "description": "原字典单用例 test06DisableCandidates"
+    },
+    "ui-dictionary-7": {
+      "kind": "ui",
+      "case": "DictionaryUITests/DictionaryTouchTests/test07RestoreCandidates",
+      "runner": "macos",
+      "description": "原字典单用例 test07RestoreCandidates"
+    }
+  },
+  "profiles": {
+    "scripts": [
+      "secrets",
+      "scripts",
+      "scripts-macos"
+    ],
+    "app": [
+      "secrets",
+      "app-common",
+      "native-build",
+      "native-sqlite"
+    ],
+    "final": [
+      "secrets",
+      "app-common",
+      "native-build",
+      "native-sqlite",
+      "touch",
+      "dependency-audit"
+    ]
+  },
+  "changeBase": [
+    "secrets"
+  ],
+  "rules": [
+    {
+      "paths": [
+        "scripts/**",
+        ".github/**",
+        "config/ios-ci.json",
+        "package.json",
+        ".nvmrc",
+        "AGENTS.md",
+        "README.md",
+        "agent-works/testing/**",
+        "agent-works/architecture/environment-configuration.md"
+      ],
+      "suites": [
+        "scripts",
+        "scripts-macos"
+      ]
+    },
+    {
+      "paths": [
+        "app/**",
+        "DESIGN.md"
+      ],
+      "suites": [
+        "app-common"
+      ]
+    },
+    {
+      "paths": [
+        "app/package*.json",
+        "app/**/Package.resolved",
+        "app/capacitor.config.ts",
+        "app/ios/**",
+        "scripts/normalize-capacitor-spm.mjs",
+        "scripts/ios-storage-policy.mjs",
+        "scripts/toolchain.sh"
+      ],
+      "suites": [
+        "native-build",
+        "native-sqlite"
+      ],
+      "exclude": [
+        "**/*.spec.ts"
+      ]
+    },
+    {
+      "paths": [
+        "app/data/**",
+        "app/src/data/**",
+        "app/src/platform/**",
+        "app/native-tests/**",
+        "app/test-support/**",
+        "app/src/app/**",
+        "app/src/router/**"
+      ],
+      "suites": [
+        "native-sqlite"
+      ],
+      "exclude": [
+        "**/*.spec.ts"
+      ]
+    },
+    {
+      "paths": [
+        "app/src/views/EntryView*",
+        "app/src/views/Expense*",
+        "app/src/views/Income*",
+        "app/src/components/entry*",
+        "app/src/components/ExpenseEntryForm.vue",
+        "app/src/components/IncomeEntryForm.vue",
+        "app/src/components/Entry*.vue",
+        "app/src/components/AmountField.vue",
+        "app/src/api/expenses.ts",
+        "app/src/api/incomes.ts",
+        "app/src/api/localEntries.ts"
+      ],
+      "suites": [
+        "ui-entry"
+      ],
+      "exclude": [
+        "**/*.spec.ts"
+      ]
+    },
+    {
+      "paths": [
+        "app/src/views/ProfileView*",
+        "app/src/stores/preferences*",
+        "app/src/components/*Template*",
+        "app/src/components/*Draft*",
+        "app/src/views/LedgerEntryPreferenceView.vue",
+        "app/src/components/DailyEntryPicker.vue",
+        "app/src/stores/theme.ts",
+        "app/src/components/ExpenseEntryForm.vue",
+        "app/src/components/IncomeEntryForm.vue",
+        "app/src/api/preferences.ts",
+        "app/src/api/dailyTemplates.ts"
+      ],
+      "suites": [
+        "ui-personal"
+      ],
+      "exclude": [
+        "**/*.spec.ts"
+      ]
+    },
+    {
+      "paths": [
+        "app/src/views/Adjustment*",
+        "app/src/views/Recycle*",
+        "app/src/components/Adjustment*.vue",
+        "app/src/components/Recycle*.vue",
+        "app/src/components/ExpenseAdjustment*.vue",
+        "app/src/views/LedgerView.vue",
+        "app/src/components/LedgerContextActions.vue",
+        "app/src/api/expenseAdjustments.ts",
+        "app/src/api/ledgerLifecycle.ts"
+      ],
+      "suites": [
+        "ui-lifecycle"
+      ],
+      "exclude": [
+        "**/*.spec.ts"
+      ]
+    },
+    {
+      "paths": [
+        "app/src/views/LedgerView*",
+        "app/src/components/Filter*",
+        "app/src/components/*Search*",
+        "app/src/components/Ledger*.vue",
+        "app/src/components/GlobalLedgerSearch.vue",
+        "app/src/api/ledgerEntries.ts"
+      ],
+      "suites": [
+        "ui-query",
+        "ui-query-input"
+      ],
+      "exclude": [
+        "**/*.spec.ts"
+      ]
+    },
+    {
+      "paths": [
+        "app/src/views/Report*",
+        "app/test-support/report*",
+        "app/src/components/Report*.vue",
+        "app/src/api/reports.ts"
+      ],
+      "suites": [
+        "ui-reports"
+      ],
+      "exclude": [
+        "**/*.spec.ts"
+      ]
+    },
+    {
+      "paths": [
+        "app/src/views/me/dictionaries/**",
+        "app/src/components/Dictionary*",
+        "app/src/api/dictionaries.ts"
+      ],
+      "suites": [
+        "ui-merge",
+        "ui-paging",
+        "ui-unit-paging",
+        "ui-dictionary-0",
+        "ui-dictionary-1",
+        "ui-dictionary-2",
+        "ui-dictionary-3",
+        "ui-dictionary-4",
+        "ui-dictionary-5",
+        "ui-dictionary-6",
+        "ui-dictionary-7"
+      ],
+      "exclude": [
+        "**/*.spec.ts"
+      ]
+    },
+    {
+      "paths": [
+        "app/src/components/AppShell.vue",
+        "app/src/components/AppDialog.vue",
+        "app/src/components/BottomNavigation.vue",
+        "app/src/components/ScrollRegion.vue",
+        "app/src/components/CompactSelect.vue",
+        "app/src/components/DateTimeControl.vue",
+        "app/src/components/DictionaryPicker.vue",
+        "app/src/components/FundingChannelPicker.vue",
+        "app/src/components/UnsavedChangesDialog.vue",
+        "app/src/styles/**",
+        "app/ios/App/UITests/**"
+      ],
+      "suites": [
+        "ui-entry",
+        "ui-personal",
+        "ui-lifecycle",
+        "ui-query",
+        "ui-query-input",
+        "ui-reports",
+        "ui-merge",
+        "ui-paging",
+        "ui-unit-paging",
+        "ui-dictionary-0",
+        "ui-dictionary-1",
+        "ui-dictionary-2",
+        "ui-dictionary-3",
+        "ui-dictionary-4",
+        "ui-dictionary-5",
+        "ui-dictionary-6",
+        "ui-dictionary-7"
+      ],
+      "exclude": [
+        "**/*.spec.ts"
+      ]
+    },
+    {
+      "paths": [
+        "app/package*.json",
+        "app/**/Package.resolved",
+        "scripts/lib/ios-audit.mjs"
+      ],
+      "suites": [
+        "dependency-audit"
+      ]
+    }
+  ],
+  "supersedes": {
+    "app-common": [
+      "scripts"
+    ],
+    "native-build": [
+      "scripts-macos"
+    ],
+    "touch": [
+      "ui-entry",
+      "ui-personal",
+      "ui-lifecycle",
+      "ui-query",
+      "ui-query-input",
+      "ui-reports",
+      "ui-merge",
+      "ui-paging",
+      "ui-unit-paging",
+      "ui-dictionary-0",
+      "ui-dictionary-1",
+      "ui-dictionary-2",
+      "ui-dictionary-3",
+      "ui-dictionary-4",
+      "ui-dictionary-5",
+      "ui-dictionary-6",
+      "ui-dictionary-7"
+    ]
+  }
+}

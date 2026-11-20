@@ -1,5 +1,26 @@
 import fs from 'node:fs'
 import path from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { spawnSync } from 'node:child_process'
+
+/** App 工具测试同源自动发现；新增普通用例不再维护调试/完整入口两份文件清单。 */
+export function scriptTestFiles(root) {
+  const files = fs
+    .readdirSync(path.join(root, 'scripts/tests'))
+    .filter((name) => /^ios-.*\.test\.mjs$/.test(name))
+    .sort()
+    .map((name) => 'scripts/tests/' + name)
+  if (
+    !files.length ||
+    files.some(
+      (file) =>
+        !fs.lstatSync(path.join(root, file)).isFile() ||
+        fs.realpathSync(path.join(root, file)) !== path.join(root, file)
+    )
+  )
+    throw new Error('工具测试为空或含链接/非普通文件。')
+  return files
+}
 
 export const checkNames = [
   'app-tests',
@@ -18,7 +39,15 @@ export function checkDefinition(root, run, name, options = {}) {
   const log = path.join(run, 'check.log')
   if (name === 'app-tests') {
     const report = path.join(run, 'vitest.json')
-    const args = ['--prefix', 'app', 'test', '--', '--bail=1', '--reporter=json', '--outputFile=' + report]
+    const args = [
+      '--prefix',
+      'app',
+      'test',
+      '--',
+      '--bail=1',
+      '--reporter=json',
+      '--outputFile=' + report
+    ]
     if (options.file) {
       const absolute = path.resolve(root, 'app', options.file)
       if (
@@ -36,13 +65,7 @@ export function checkDefinition(root, run, name, options = {}) {
   if (name === 'script-tests')
     return {
       program: process.execPath,
-      args: [
-        '--test',
-        'scripts/tests/ios-debug.test.mjs',
-        'scripts/tests/ios-cache.test.mjs',
-        'scripts/tests/ios-verification.test.mjs',
-        'scripts/tests/ios-resources.test.mjs'
-      ],
+      args: ['--test', ...scriptTestFiles(root)],
       stage: 'check',
       coverage: ['check/script-tests'],
       log
@@ -54,7 +77,8 @@ export function checkDefinition(root, run, name, options = {}) {
       simulator: '.local/ios/DerivedData/Build/Products/Release-iphonesimulator/App.app',
       device: '.local/ios/DerivedData/Build/Products/Release-iphoneos/App.app'
     }
-    if (!Object.hasOwn(paths, target)) throw new Error('资源目标只允许 source / simulator / device。')
+    if (!Object.hasOwn(paths, target))
+      throw new Error('资源目标只允许 source / simulator / device。')
     return {
       program: process.execPath,
       args: ['scripts/verify-ios-resources.mjs', ...(paths[target] ? [paths[target]] : [])],
@@ -105,5 +129,24 @@ export function checkDefinition(root, run, name, options = {}) {
     stage: 'build',
     coverage: ['check/' + name],
     log
+  }
+}
+
+// 完整 Shell 的叶子执行器仅运行同一工具测试集合，不另建验收调度或绕过原生证据锁。
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  if (process.argv.length !== 3 || process.argv[2] !== 'run-script-tests') {
+    console.error('仅支持 run-script-tests。')
+    process.exitCode = 1
+  } else {
+    const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
+    // 独立 runner 不继承上层 node:test 的内部上下文，否则 Node 会静默跳过嵌套执行。
+    const env = { ...process.env }
+    delete env.NODE_TEST_CONTEXT
+    const result = spawnSync(process.execPath, ['--test', ...scriptTestFiles(root)], {
+      cwd: root,
+      env,
+      stdio: 'inherit'
+    })
+    process.exitCode = result.status ?? 1
   }
 }

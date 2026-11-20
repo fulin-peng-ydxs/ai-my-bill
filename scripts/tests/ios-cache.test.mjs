@@ -9,7 +9,6 @@ import { DatabaseSync } from 'node:sqlite'
 import { cachedLayer, layerInputs, installationMatches, readInstallationLease,
   inspectInstallation, recordInstallation, forgetInstallation } from '../lib/ios-cache.mjs'
 import { APP_ID, hashPaths } from '../lib/ios-debug.mjs'
-import { ciValidationScope, requestedScope } from '../lib/ios-ci.mjs'
 
 function temporary(t) {
   const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'ios-cache-test-')))
@@ -69,105 +68,6 @@ test('SPM 干净检出经真实 native:sync 初始化，重复同步及缺失骨
   fs.symlinkSync(sentinel, target)
   assert.notEqual(spawnSync(process.execPath, [script, '--prepare']).status, 0, '拒绝向链接目标写入')
   assert.equal(fs.readFileSync(sentinel, 'utf8'), 'existing project source')
-})
-
-test('CI 显式选择脚本、集成与最终范围，局部绿色不能声称完整验收', () => {
-  const scopes = {
-    scripts: { level: 'scripts', common: 'scripts', native: false, final: false },
-    app: { level: 'app', common: 'app', native: true, final: false },
-    final: { level: 'final', common: 'app', native: true, final: true }
-  }
-  assert.deepEqual(ciValidationScope(), scopes.scripts)
-  for (const [level, expected] of Object.entries(scopes)) {
-    assert.deepEqual(ciValidationScope(level), expected)
-    assert.deepEqual(requestedScope('workflow_dispatch', { inputs: { verification: level } }), expected)
-    assert.deepEqual(requestedScope('push', { ref: `refs/tags/ios-ci/${level}/candidate-700bcc9` }), expected)
-  }
-  assert.deepEqual(requestedScope('workflow_dispatch', {}), scopes.scripts)
-  for (const level of ['', 'auto', 'full', true, null, 'final\ncommon=scripts']) {
-    assert.throws(() => ciValidationScope(level), /只允许/)
-    assert.throws(() => requestedScope('workflow_dispatch', { inputs: { verification: level } }), /只允许/)
-  }
-})
-
-test('CI 拒绝日常 push/PR、普通或非法标签与删除事件，不启动或扩大远端工作', () => {
-  for (const [name, event] of [
-    ['push', { ref: 'refs/heads/codex/offline-ios-app' }],
-    ['pull_request', { inputs: { verification: 'final' } }],
-    ['schedule', {}], ['push', {}],
-    ['push', { ref: 'refs/tags/v1.0.0' }],
-    ['push', { ref: 'refs/tags/ios-ci/unknown/candidate' }],
-    ['push', { ref: 'refs/tags/ios-ci/final/' }],
-    ['push', { ref: 'refs/tags/ios-ci/final/candidate', deleted: true }]
-  ]) assert.throws(() => requestedScope(name, event), /仅接受/)
-})
-
-test('CI 实际入口无凭据或网络仍按请求分流，重跑不升级范围且不改本地失败锁', t => {
-  const root = temporary(t)
-  const eventFile = write(root, 'event.json', '{}'), output = path.join(root, 'output')
-  const state = write(root, '.local/ios/tmp/ai-agent/ios-verification-state.json', '{"failed":"preserve"}')
-  const marker = path.join(root, 'network-called')
-  const stub = write(root, 'no-network.mjs', `import fs from 'node:fs';
-    globalThis.fetch=()=>{fs.writeFileSync(${JSON.stringify(marker)},'unexpected');throw new Error('billing blocked')}`)
-  for (const level of ['scripts', 'app', 'final']) {
-    for (const name of ['workflow_dispatch', 'push']) {
-      fs.writeFileSync(eventFile, JSON.stringify(name === 'workflow_dispatch'
-        ? { inputs: { verification: level } } : { ref: `refs/tags/ios-ci/${level}/candidate` }))
-      fs.rmSync(output, { force: true })
-      const result = spawnSync(process.execPath, ['--import', stub, new URL('../lib/ios-ci.mjs', import.meta.url).pathname], {
-        cwd: root, encoding: 'utf8', env: { ...process.env,
-          GITHUB_EVENT_PATH: eventFile, GITHUB_EVENT_NAME: name, GITHUB_OUTPUT: output,
-          GH_TOKEN: '', GITHUB_RUN_ATTEMPT: '2', GITHUB_API_URL: 'https://unavailable.invalid' }
-      })
-      assert.equal(result.status, 0, result.stderr)
-      const expected = ciValidationScope(level)
-      assert.deepEqual(JSON.parse(result.stdout), expected)
-      assert.equal(fs.readFileSync(output, 'utf8'),
-        `common=${expected.common}\nnative=${expected.native}\nfinal=${expected.final}\n`)
-      assert.equal(fs.readFileSync(state, 'utf8'), '{"failed":"preserve"}')
-      assert.equal(fs.existsSync(marker), false, '范围选择不查询远端基线或计费')
-    }
-  }
-  fs.writeFileSync(eventFile, JSON.stringify({ inputs: { verification: 'invalid' } }))
-  fs.rmSync(output, { force: true })
-  const invalid = spawnSync(process.execPath, [new URL('../lib/ios-ci.mjs', import.meta.url).pathname], {
-    encoding: 'utf8', env: { ...process.env, GITHUB_EVENT_PATH: eventFile,
-      GITHUB_EVENT_NAME: 'workflow_dispatch', GITHUB_OUTPUT: output }
-  })
-  assert.notEqual(invalid.status, 0)
-  assert.equal(fs.existsSync(output), false, '非法范围不得留下可供下游消费的输出')
-})
-
-test('CI 工作流仅按需触发，最终标记及触摸步骤受范围约束，保留原生失败与超时门禁', () => {
-  const directory = new URL('../../.github/workflows/', import.meta.url)
-  const workflows = fs.readdirSync(directory).filter(file => /\.ya?ml$/.test(file))
-  const app = fs.readFileSync(new URL('offline-ios.yml', directory), 'utf8')
-  const triggers = app.slice(app.indexOf('on:\n'), app.indexOf('\npermissions:'))
-  assert.match(triggers, /push:\n    tags:/)
-  for (const level of ['scripts', 'app', 'final']) assert.ok(triggers.includes(`'ios-ci/${level}/**'`))
-  assert.match(triggers, /workflow_dispatch:/)
-  assert.match(triggers, /default: scripts/)
-  assert.doesNotMatch(triggers, /pull_request:|branches:|paths:|schedule:/)
-  assert.doesNotMatch(app, /GH_TOKEN:|actions: read|verified-baseline/)
-  assert.ok(app.includes('run: bash scripts/check-secrets.sh'))
-  assert.ok(app.includes("if: needs.scope.outputs.native == 'false'"))
-  assert.ok(app.includes("if: needs.scope.outputs.native == 'true'"))
-  assert.ok(app.includes("- id: touch-local\n        if: needs.scope.outputs.final == 'true'"))
-  assert.match(app, /- if: needs\.scope\.outputs\.final == 'true'\n        env:[\s\S]*?run: npm run check:ios-app:touch/)
-  assert.ok(app.includes('npm run check:ios-app:simulator -- --session "$IOS_DEBUG_SESSION" --from "$IOS_LOCAL_EVIDENCE"'))
-  assert.ok(app.includes('npm run check:ios-app:touch -- --session "$IOS_DEBUG_SESSION" --from "$IOS_LOCAL_EVIDENCE"'))
-  assert.ok(app.includes("if: always() && steps.ios-session.outputs.session != ''"))
-  assert.ok(app.includes('timeout-minutes: 45'))
-  const marker = app.slice(app.indexOf('  app-baseline-v1:'))
-  for (const guard of ["needs.scope.result == 'success'", "needs.scope.outputs.final == 'true'",
-    "needs['app-common'].result == 'success'", "needs['native-simulator'].result == 'success'"])
-    assert.ok(marker.includes(guard), '最终标记必须检查：' + guard)
-  assert.doesNotMatch(marker, /baseline ==|script-macos.*success/)
-  for (const file of workflows) {
-    const workflow = fs.readFileSync(new URL(file, directory), 'utf8')
-    assert.doesNotMatch(workflow, /postgresql-16|actions\/setup-java|--prefix\s+(web|server)\b|working-directory:\s*(web|server)\b/,
-      '不得重新启用已退役旧端：' + file)
-  }
 })
 
 test('分层缓存命中与失效按真实依赖传播，Swift/脚本/测试修改不重打前端', t => {

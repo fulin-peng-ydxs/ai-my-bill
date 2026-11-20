@@ -1,0 +1,125 @@
+import fs from 'node:fs'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { createPlan, registry, executionMatrix } from './lib/ios-ci-plan.mjs'
+import { resultsDirectory, executeGroup, reconcile, archiveGroup } from './lib/ios-ci-run.mjs'
+import { requestedScope } from './lib/ios-ci.mjs'
+
+const root = fs.realpathSync(path.join(path.dirname(fileURLToPath(import.meta.url)), '..'))
+const args = process.argv.slice(2)
+try {
+  const mode = args.shift(),
+    options = {},
+    explicit = args[0] && !args[0].startsWith('--') ? args.shift() : undefined
+  const profile = explicit ?? 'change'
+  if (explicit && mode !== 'plan') throw new Error('只有 plan 接受范围参数。')
+  for (let i = 0; i < args.length; i += 2) {
+    if (
+      !['--base', '--head', '--results', '--group', '--attempt'].includes(args[i]) ||
+      !args[i + 1] ||
+      Object.hasOwn(options, args[i])
+    )
+      throw new Error('CI 参数无效。')
+    options[args[i]] = args[i + 1]
+  }
+  const allowed =
+    mode === 'plan'
+      ? ['--base', '--head', '--results']
+      : mode === 'run'
+        ? ['--results', '--group']
+        : mode === 'archive'
+          ? ['--results', '--group', '--attempt']
+          : mode === 'result'
+            ? ['--results']
+            : []
+  if (Object.keys(options).some((k) => !allowed.includes(k)))
+    throw new Error('参数不适用于该 CI 命令。')
+  if (mode === 'check' || mode === 'list') {
+    const r = registry(root)
+    console.log(
+      JSON.stringify(
+        mode === 'list' ? r.suites : { status: 'passed', suites: Object.keys(r.suites).length },
+        null,
+        2
+      )
+    )
+  } else if (mode === 'prepare' || mode === 'plan') {
+    if (
+      mode === 'prepare' &&
+      ![process.env.GITHUB_RUN_ID, process.env.GITHUB_RUN_ATTEMPT].every((value) =>
+        /^[1-9]\d*$/.test(value ?? '')
+      )
+    )
+      throw new Error('远端运行 ID 或 attempt 无效。')
+    let selected = { profile, base: options['--base'] }
+    if (mode === 'prepare')
+      selected = requestedScope(
+        process.env.GITHUB_EVENT_NAME,
+        JSON.parse(fs.readFileSync(process.env.GITHUB_EVENT_PATH, 'utf8'))
+      )
+    const plan = createPlan(root, selected.profile, {
+      base: selected.base,
+      head: options['--head']
+    })
+    const directory =
+      options['--results'] ??
+      (mode === 'prepare'
+        ? `.local/ios/tmp/ai-agent/ios-ci-${process.env.GITHUB_RUN_ID}-${process.env.GITHUB_RUN_ATTEMPT}`
+        : `.local/ios/tmp/ai-agent/ios-ci-${Date.now()}-${process.pid}`)
+    const absolute = resultsDirectory(root, directory, true)
+    fs.writeFileSync(path.join(absolute, 'ci-plan.json'), JSON.stringify(plan, null, 2), {
+      flag: 'wx',
+      mode: 0o600
+    })
+    const matrix = executionMatrix(plan)
+    if (mode === 'prepare')
+      fs.appendFileSync(
+        process.env.GITHUB_OUTPUT,
+        `matrix=${JSON.stringify(matrix)}\ndirectory=${path.relative(root, absolute)}\nprofile=${plan.profile}\nartifact=ios-ci-plan-${process.env.GITHUB_RUN_ATTEMPT}\n`
+      )
+    console.log(
+      JSON.stringify({
+        directory: path.relative(root, absolute),
+        profile: plan.profile,
+        suites: plan.suites.map((s) => s.name),
+        matrix
+      })
+    )
+  } else if (['run', 'result', 'archive'].includes(mode)) {
+    if (!options['--results'])
+      throw new Error('run/result 必须指定 --results，不隐式启动或覆盖旧运行。')
+    const directory = resultsDirectory(root, options['--results'])
+    if (mode === 'archive') {
+      console.log(archiveGroup(root, directory, options['--group'], options['--attempt']))
+    } else if (mode === 'run') {
+      await executeGroup(root, directory, options['--group'])
+      console.log('所选执行组通过；完整结论须由 result 对账。')
+    } else {
+      let result
+      try {
+        result = reconcile(root, directory, process.env.IOS_CI_CHECKS_STATUS)
+      } catch (error) {
+        // 汇总损坏也刷新机器结论，不能遗留上次绿色；原计划和失败报告不修改。
+        result = { schema: 1, status: 'incomplete', completeCandidate: false, error: error.message }
+        fs.writeFileSync(path.join(directory, 'ci-result.json'), JSON.stringify(result, null, 2), {
+          mode: 0o600
+        })
+        fs.writeFileSync(
+          path.join(directory, 'ci-result.md'),
+          `CI incomplete: ${error.message}\n`,
+          { mode: 0o600 }
+        )
+      }
+      if (process.env.GITHUB_OUTPUT)
+        fs.appendFileSync(process.env.GITHUB_OUTPUT, `complete=${result.completeCandidate}\n`)
+      console.log(JSON.stringify(result, null, 2))
+      if (result.status !== 'passed') process.exitCode = 1
+    }
+  } else
+    throw new Error(
+      '用法：ci:ios-app -- check|list；plan [change|scripts|app|final|套件] --base SHA；run --results PATH --group linux|macos；result --results PATH。'
+    )
+} catch (error) {
+  console.error(error.message)
+  process.exitCode = 1
+}

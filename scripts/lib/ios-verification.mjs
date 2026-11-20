@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url'
 import { release } from 'node:os'
 import { performance } from 'node:perf_hooks'
 import { readSession, sourceHash, hashPaths, selection } from './ios-debug.mjs'
-import { checkDefinition } from './ios-checks.mjs'
+import { checkDefinition, scriptTestFiles } from './ios-checks.mjs'
 
 export const controlInputs = [
   'scripts/ios-app.sh',
@@ -19,6 +19,10 @@ export const controlInputs = [
   'scripts/tests/ios-debug.test.mjs',
   'scripts/tests/ios-verification.test.mjs',
   'scripts/tests/ios-resources.test.mjs',
+  'scripts/tests/ios-ci.test.mjs',
+  'scripts/ios-ci.mjs',
+  'scripts/ios-ci.sh',
+  'config/ios-ci.json',
   'scripts/toolchain.sh',
   'package.json',
   '.nvmrc'
@@ -62,7 +66,7 @@ const stateFile = (root) => path.join(evidenceRoot(root), 'ios-verification-stat
 export const inputHash = (root) =>
   digest(
     sourceHash(root, [process.version, process.platform, process.arch, release()].join('/')) +
-      hashPaths(root, controlInputs)
+      hashPaths(root, [...new Set([...controlInputs, ...scriptTestFiles(root)])])
   )
 export const verificationHash = (root, environment) => digest(inputHash(root) + '\0' + environment)
 export function writeJson(file, value) {
