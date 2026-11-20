@@ -1,6 +1,5 @@
 import fs from 'node:fs'
 import path from 'node:path'
-import { spawn } from 'node:child_process'
 import { performance } from 'node:perf_hooks'
 import { assertPlan, digest, executionMatrix } from './ios-ci-plan.mjs'
 import { audit, auditDependencies } from './ios-audit.mjs'
@@ -8,7 +7,7 @@ import { inputHash, requireEvidence, writeJson } from './ios-verification.mjs'
 import { contentHash } from './ios-cache.mjs'
 import { selection, nativeCases, uiCases } from './ios-debug.mjs'
 import { assertScriptReport, assertModePhases } from './ios-test-reports.mjs'
-import { processCleanup } from './ios-processes.mjs'
+import { spawnManaged } from './ios-processes.mjs'
 
 const read = (file) => JSON.parse(plainFile(file))
 
@@ -45,13 +44,14 @@ export async function runCommand(root, program, args, log, timeoutMs = 2_700_000
   }
   try {
     const code = await new Promise((resolve, reject) => {
-      child = spawn(program, args, {
+      const managed = spawnManaged(program, args, {
         cwd: root,
         env: process.env,
         detached: true,
         stdio: ['ignore', fd, fd]
-      })
-      cleanup = processCleanup(child.pid)
+      }, { root })
+      child = managed.child
+      cleanup = managed.cleanup
       child.once('error', reject)
       child.once('close', (code) => resolve(code))
       timer = setTimeout(stop, timeoutMs)
@@ -69,6 +69,9 @@ export async function runCommand(root, program, args, log, timeoutMs = 2_700_000
       fs.closeSync(source)
     }
     return data.toString('utf8')
+  } catch (error) {
+    cleanup?.stop('SIGKILL')
+    throw error
   } finally {
     clearTimeout(timer)
     try {

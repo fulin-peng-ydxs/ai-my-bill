@@ -1,7 +1,6 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { randomUUID } from 'node:crypto'
-import { spawn } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { constants, release } from 'node:os'
 import {
@@ -41,7 +40,7 @@ import {
 } from './lib/ios-verification.mjs'
 
 import { checkNames, checkDefinition } from './lib/ios-checks.mjs'
-import { processCleanup } from './lib/ios-processes.mjs'
+import { spawnManaged } from './lib/ios-processes.mjs'
 import { cachedLayer, layerInputs, assetOutputs, installationMatches,
   inspectInstallation, recordInstallation, forgetInstallation } from './lib/ios-cache.mjs'
 
@@ -92,7 +91,7 @@ async function command(
   }
   try {
     const status = await new Promise((resolve, reject) => {
-      child = spawn(program, args, {
+      const managed = spawnManaged(program, args, {
         cwd,
         env,
         detached: true,
@@ -101,8 +100,9 @@ async function command(
           inherit ? 'inherit' : (output ?? 'pipe'),
           inherit ? 'inherit' : (output ?? 'pipe')
         ]
-      })
-      cleanup = processCleanup(child.pid, { graceMs: terminationGraceMs })
+      }, { root, graceMs: terminationGraceMs })
+      child = managed.child
+      cleanup = managed.cleanup
       activeCleanup = cleanup
       if (input !== undefined) {
         child.stdin.on('error', (error) => {
@@ -157,6 +157,9 @@ async function command(
       )
     }
     return { status, text }
+  } catch (error) {
+    cleanup?.stop('SIGKILL')
+    throw error
   } finally {
     clearTimeout(timer)
     clearInterval(watching)

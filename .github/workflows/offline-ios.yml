@@ -66,7 +66,7 @@ jobs:
       fail-fast: false
       matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
     runs-on: ${{ matrix.runner }}
-    # 同组顺序执行、独立模拟器复用；内外层命令共用进程组清理，既有阶段/整轮预算继续生效。
+    # 同组顺序执行、独立模拟器复用；补偿新进程组也经登记后放行，既有阶段/整轮预算继续生效。
     timeout-minutes: ${{ matrix.timeout }}
     steps:
       - uses: actions/checkout@v4
@@ -108,6 +108,7 @@ jobs:
           path: |
             .local/ios/tmp/ai-agent/ios-invocation-*/*.json
             .local/ios/tmp/ai-agent/ios-verification-state.json
+            .local/ios/tmp/ai-agent/ios-process-*/*.json
             .local/ios/tmp/ai-agent/ios-debug-*/run-*/*.xcresult
             .local/ios/tmp/ai-agent/native-*/*.xcresult
           include-hidden-files: true

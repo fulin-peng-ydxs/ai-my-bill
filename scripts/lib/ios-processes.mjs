@@ -1,5 +1,37 @@
-import { spawnSync } from 'node:child_process'
+import { spawn, spawnSync } from 'node:child_process'
 import { performance } from 'node:perf_hooks'
+import { fileURLToPath } from 'node:url'
+import { commandScope } from './ios-process-scope.mjs'
+
+/** 登记在放行补偿工具之前完成；每次外层调用建立独立范围，内层只继承自己的父登记。 */
+export function spawnManaged(program, args, options, { root, graceMs = 10_000 }) {
+  const scope = commandScope(root, options.env ?? process.env)
+  const gated = scope.inherited && graceMs === 0
+  let child, cleanup
+  try {
+    child = spawn(gated ? process.execPath : program,
+      gated ? [fileURLToPath(new URL('./ios-process-launch.mjs', import.meta.url)), program, ...args] : args,
+      { ...options, env: scope.env, stdio: gated ? [...options.stdio, 'pipe'] : options.stdio })
+    const channel = gated ? child.stdio[3] : undefined
+    channel?.on('error', (error) => child.emit('error', error))
+    cleanup = processCleanup(child.pid, { graceMs, scope })
+    scope.bind(child.pid)
+    if (scope.blocked()) {
+      channel?.end()
+      cleanup.stop('SIGKILL')
+    } else channel?.end('GO\n')
+    return { child, cleanup }
+  } catch (error) {
+    child?.on('error', () => {})
+    if (cleanup) {
+      cleanup.stop('SIGKILL')
+      cleanup.finish()
+    } else {
+      scope.finish(error)
+    }
+    throw error
+  }
+}
 
 /** 仅在取消时读取 PID/PPID/进程组，不读取命令参数；快照须早于 TERM 导致的父子关系消失。 */
 function descendantGroups(pid, timeout) {
@@ -34,7 +66,7 @@ function descendantGroups(pid, timeout) {
 }
 
 /** 内外层执行器共用同一有界清理：正常完成不扫描；停止后保留各层进程组直至最终强杀。 */
-export function processCleanup(pid, { graceMs = 10_000 } = {}) {
+export function processCleanup(pid, { graceMs = 10_000, scope } = {}) {
   const groups = new Set(Number.isSafeInteger(pid) && pid > 1 ? [pid] : [])
   let stopping = false,
     finished = false,
@@ -42,6 +74,7 @@ export function processCleanup(pid, { graceMs = 10_000 } = {}) {
     error
   const kill = (group, signal) => {
     try {
+      if (signal === 'SIGKILL') process.kill(-group, 0)
       process.kill(-group, signal)
     } catch (e) {
       if (e.code !== 'ESRCH') error ??= e
@@ -49,6 +82,14 @@ export function processCleanup(pid, { graceMs = 10_000 } = {}) {
   }
   const force = () => {
     if (finished) return
+    if (scope) {
+      try {
+        scope.seal()
+        for (const group of scope.groups()) groups.add(group)
+      } catch (e) {
+        error ??= e
+      }
+    }
     // 先回收内层组，再回收外层组长，防止外层强杀先于内层自己的宽限计时器。
     for (const group of groups)
       if (group !== pid) kill(group, 'SIGKILL')
@@ -74,11 +115,13 @@ export function processCleanup(pid, { graceMs = 10_000 } = {}) {
     finish() {
       if (finished) return
       try {
-        if (stopping) force()
+        // 命令结束也关闭自己的登记分支，避免成功退出的组长遗留后台成员后丢失归属。
+        if (stopping || scope) force()
         if (error) throw error
       } finally {
         finished = true
         clearTimeout(timer)
+        scope?.finish(error)
       }
     }
   }

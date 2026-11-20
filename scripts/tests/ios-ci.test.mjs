@@ -18,6 +18,7 @@ import { assertScriptReport, assertModePhases, requiredModePhases } from '../lib
 import { checkDefinition } from '../lib/ios-checks.mjs'
 import { requireEvidence } from '../lib/ios-verification.mjs'
 import { processCleanup } from '../lib/ios-processes.mjs'
+import { commandScope } from '../lib/ios-process-scope.mjs'
 
 const repository = new URL('../../', import.meta.url).pathname
 
@@ -579,7 +580,7 @@ test('CI 真实内外层命令统一清理嵌套独立进程组，超时/取消�
     }
   })
 
-test('CI 正常内外层命令不扫描进程树、不误拦成功或触发额外清理', async (t) => {
+test('CI 正常内外层命令不扫描进程树、不误拦成功或影响其他任务', async (t) => {
   const p = processFixture(t), marker = path.join(p.root, 'unexpected-ps')
   const ps = p.write('bin/ps', `#!/bin/sh\ntouch '${marker}'\nexit 1\n`)
   fs.chmodSync(ps, 0o755)
@@ -591,6 +592,109 @@ test('CI 正常内外层命令不扫描进程树、不误拦成功或触发额�
   assert.match(output, /^CI_RESULT=/m)
   assert.equal(fs.existsSync(marker), false)
 })
+
+test('CI 成功退出的组长遗留同组后台成员时仍关闭自己的分支，保留成功退出结果', async (t) => {
+  const p = fixture(t), pidFile = path.join(p.root, 'background.pid')
+  const source = `const fs=require('node:fs'),{spawn}=require('node:child_process');const c=spawn(process.execPath,['-e','setInterval(()=>{},1000)'],{stdio:'ignore'});fs.writeFileSync(${JSON.stringify(pidFile)},String(c.pid));c.unref();console.log('SUCCESSFUL_OWNER_EXIT')`
+  try {
+    const output = await runCommand(p.root, process.execPath, ['-e', source], path.join(p.root, 'success.log'), 2000)
+    assert.equal(output, 'SUCCESSFUL_OWNER_EXIT\n')
+    await waitForProcessState(() => !isRunningProcess(Number(fs.readFileSync(pidFile))))
+  } finally {
+    if (fs.existsSync(pidFile)) {
+      const pid = Number(fs.readFileSync(pidFile))
+      try { process.kill(pid, 'SIGKILL') } catch (e) { if (e.code !== 'ESRCH') throw e }
+    }
+  }
+})
+
+test('CI 取消后新补偿组仍归外层清理，登记前后中断不放行工具，保持预算与其他任务保护',
+  { timeout: 15000 }, async (t) => {
+    const sentinel = spawn(process.execPath, ['-e', 'setInterval(()=>{},1000)'], { detached: true, stdio: 'ignore' })
+    const sentinelEnded = new Promise((resolve) => sentinel.once('close', resolve))
+    try {
+      for (const mode of ['timeout', 'SIGTERM', 'before-publish', 'after-publish', 'bind-failure']) {
+        await t.test(mode, async (t) => {
+          const p = processFixture(t), initial = path.join(p.root, 'initial.json'), late = path.join(p.root, 'late.pid')
+          const gate = path.join(p.root, 'gate.json')
+          const xcrun = p.write('bin/xcrun', `#!${process.execPath}
+const fs=require('node:fs'),a=process.argv.slice(2);
+if(a[0]==='--sdk')console.log('27.0');
+else if(a[2]==='runtimes')console.log(JSON.stringify({runtimes:[{identifier:'com.apple.CoreSimulator.SimRuntime.iOS-27-0',isAvailable:true,buildversion:'TEST'}]}));
+else if(a[1]==='create'){fs.writeFileSync(${JSON.stringify(initial)},JSON.stringify({pid:process.pid,parent:process.ppid}));setInterval(()=>{},1000)}
+else if(a[2]==='devices'){process.on('SIGTERM',()=>{});fs.writeFileSync(${JSON.stringify(late)},String(process.pid));setInterval(()=>{},1000)}
+else process.exit(2);
+`)
+          fs.chmodSync(xcrun, 0o755)
+          const xcode = p.write('bin/xcodebuild', '#!/bin/sh\nprintf "Xcode 27.0\\n"\n')
+          fs.chmodSync(xcode, 0o755)
+          // 平台及工具链都由夹具提供；Linux 也执行相同控制器回归，不把它算作原生 SDK 验收。
+          const platform = p.write('.local/controlled-platform.mjs', "Object.defineProperty(process,'platform',{value:'darwin'});\n")
+          let preload
+          if (mode.endsWith('publish') || mode === 'bind-failure') {
+            preload = p.write('.local/publish-interruption.mjs', `
+import fs from 'node:fs';const original=fs.renameSync;
+fs.renameSync=(from,to)=>{
+  if(String(from).includes('/ios-process-') && fs.existsSync(${JSON.stringify(initial)})){
+    const r=JSON.parse(fs.readFileSync(from));
+    if(r.state==='running' && r.pid){
+      fs.writeFileSync(${JSON.stringify(gate)},JSON.stringify({pid:r.pid,parent:process.pid}));
+      ${mode === 'after-publish' ? 'original(from,to);' : ''}
+      ${mode === 'bind-failure' ? "throw new Error('controlled process registration failure');" : "process.kill(process.pid,'SIGKILL');"}
+    }
+  }
+  return original(from,to);
+};
+`)
+          }
+          const args = ['PATH=' + path.join(p.root, 'bin') + path.delimiter + process.env.PATH,
+            'DEVELOPER_DIR=/controlled/sdk', process.execPath, '--import', platform, ...(preload ? ['--import', preload] : []),
+            'scripts/ios-app.mjs', 'debug', 'create']
+          const workerFile = p.write('worker.mjs', `
+import {runCommand} from ${JSON.stringify(new URL('../lib/ios-ci-run.mjs', import.meta.url).href)};
+const original=globalThis.setTimeout;
+globalThis.setTimeout=(fn,ms,...args)=>original(fn,ms>9000&&ms<=10000?500:ms,...args);
+try{await runCommand(${JSON.stringify(p.root)},'/usr/bin/env',${JSON.stringify(args)},${JSON.stringify(path.join(p.root, 'outer.log'))},${mode === 'SIGTERM' ? 10000 : 1000});process.exitCode=2}catch{process.exitCode=1}
+`)
+          const worker = spawn(process.execPath, [workerFile], { cwd: p.root, detached: true, stdio: 'ignore' })
+          const ended = new Promise((resolve, reject) => { worker.once('error', reject); worker.once('close', resolve) })
+          const started = Date.now()
+          try {
+            await waitForProcessState(() => fs.existsSync(initial))
+            if (mode === 'SIGTERM') worker.kill('SIGTERM')
+            assert.equal(await ended, 1)
+            if (preload) {
+              assert.ok(fs.existsSync(gate), '实际中断了补偿组登记')
+              assert.equal(fs.existsSync(late), false, '尚未完成放行，实际工具不能执行')
+              await waitForProcessState(() => !isRunningProcess(JSON.parse(fs.readFileSync(gate)).pid))
+            } else {
+              assert.ok(fs.existsSync(late), '实际工具在取消后的补偿中启动')
+              await waitForProcessState(() => !isRunningProcess(Number(fs.readFileSync(late))))
+            }
+            assert.ok(Date.now() - started < 3500, '不得等待内层重新开始的 10 秒补偿预算')
+            assert.ok(isRunningProcess(sentinel.pid))
+          } finally {
+            worker.kill('SIGKILL')
+            if (fs.existsSync(late)) {
+              const pid = Number(fs.readFileSync(late))
+              const group = Number(spawnSync('ps', ['-p', String(pid), '-o', 'pgid='], { encoding: 'utf8' }).stdout.trim())
+              killOwnedGroup(group)
+            }
+            for (const file of [gate, initial]) if (fs.existsSync(file)) {
+              const record = JSON.parse(fs.readFileSync(file))
+              killOwnedGroup(record.pid)
+              killOwnedGroup(record.parent)
+            }
+            killOwnedGroup(worker.pid)
+            await ended
+          }
+        })
+      }
+    } finally {
+      killOwnedGroup(sentinel.pid)
+      await sentinelEnded
+    }
+  })
 
 test('CI 共享清理器不延长重复停止的宽限，完成后旧回调失效，进程树读取失败不伪报成功', (t) => {
   const p = fixture(t), ps = p.write('bin/ps', '#!/bin/sh\nexit 1\n')
@@ -620,6 +724,46 @@ test('CI 共享清理器不延长重复停止的宽限，完成后旧回调失�
     if (originalPath === undefined) delete process.env.PATH
     else process.env.PATH = originalPath
   }
+})
+
+test('CI 活动进程登记按父子范围隔离，关闭后拒绝续建，错误令牌和链接不能越界', (t) => {
+  const p = fixture(t), root = commandScope(p.root, {}), other = commandScope(p.root, {})
+  const left = commandScope(p.root, root.env), right = commandScope(p.root, root.env)
+  try {
+    root.bind(200001); other.bind(200002); left.bind(200003); right.bind(200004)
+    assert.deepEqual([...left.groups()], [200003])
+    assert.deepEqual([...other.groups()], [200002])
+    assert.deepEqual([...root.groups()].sort(), [200001, 200003, 200004])
+    left.seal()
+    assert.throws(() => commandScope(p.root, left.env), /已关闭/)
+    const continuing = commandScope(p.root, right.env)
+    continuing.bind(200005)
+    assert.ok(root.groups().has(200005))
+    continuing.finish()
+    const uncertain = commandScope(p.root, right.env)
+    uncertain.bind(200006)
+    uncertain.finish(new Error('controlled cleanup failure'))
+    uncertain.finish()
+    assert.throws(() => uncertain.bind(200007), /已绑定或关闭/)
+    assert.ok(root.groups().has(200006), '清理失败的组仍由外层持有，不提前摘除')
+    assert.throws(() => commandScope(p.root, uncertain.env), /已关闭/)
+    const wrong = JSON.parse(root.env.MYBILL_PROCESS_SCOPE)
+    wrong.nonce = JSON.parse(other.env.MYBILL_PROCESS_SCOPE).nonce
+    assert.throws(() => commandScope(p.root, { MYBILL_PROCESS_SCOPE: JSON.stringify(wrong) }), /不匹配/)
+    const context = JSON.parse(other.env.MYBILL_PROCESS_SCOPE), target = p.write('unrelated.txt', 'PRESERVE')
+    fs.symlinkSync(target, path.join(context.directory, '.closed-' + context.member))
+    assert.throws(() => other.seal())
+    assert.equal(fs.readFileSync(target, 'utf8'), 'PRESERVE')
+  } finally {
+    left.finish(); right.finish(); root.finish(); other.finish()
+  }
+  assert.throws(() => commandScope(p.root, root.env), /ENOENT/)
+  const unsafe = fixture(t), outside = path.join(p.root, 'outside')
+  fs.mkdirSync(outside)
+  fs.mkdirSync(path.join(unsafe.root, '.local'))
+  fs.symlinkSync(outside, path.join(unsafe.root, '.local/ios'))
+  assert.throws(() => commandScope(unsafe.root, {}), /父目录不能经链接/)
+  assert.deepEqual(fs.readdirSync(outside), [])
 })
 
 test('CI 正式 CLI 本地 plan→run→result 与非法参数回归，不访问旧端或远端', (t) => {
