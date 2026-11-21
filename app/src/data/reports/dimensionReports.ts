@@ -45,6 +45,49 @@ async function readRows(sql: SqlSession, conditions: string[], values: (string |
   throwIfCancelled(signal)
   return result
 }
+
+/** 候选商品已在本次快照中确定；历史读取不再逐页重扫候选账目。 */
+async function readQualityHistory(sql: SqlSession, candidates: Row[], signal?: AbortSignal): Promise<Row[]> {
+  const products = [...new Set(candidates.map(row => row.product_id).filter((id): id is string => typeof id === 'string'))].sort()
+  const lower = new Date(epoch(candidates[0]!) - 180 * 86400000).toISOString()
+  const upper = String(candidates.at(-1)!.business_time)
+  const result: Row[] = []
+  // 固定商品批次限制绑定数；一次 SQL 最多合并“当前商品续页”和“后续商品”两条有序索引流。
+  for (let offset = 0; offset < products.length; offset += 128) {
+    const batch = products.slice(offset, offset + 128)
+    let cursor: Row | undefined
+    for (;;) {
+      throwIfCancelled(signal)
+      const branches: string[] = []
+      const values: (string | number | null)[] = []
+      const history = `${projection} WHERE entry_type='EXPENSE' AND lifecycle_status='ACTIVE'`
+      if (cursor) {
+        // 不叠加旧的时间下界：否则 SQLite 可能只从该下界扫描，无法按完整尾游标定位同时间记录。
+        branches.push(`${history} AND product_id=? AND (business_time,created_at,id)>(?,?,?) AND business_time<=?`)
+        values.push(String(cursor.product_id), String(cursor.business_time), String(cursor.created_at), String(cursor.id), upper)
+      }
+      const currentProduct = cursor ? String(cursor.product_id) : undefined
+      const remaining = currentProduct === undefined ? batch : batch.filter(id => id > currentProduct)
+      if (remaining.length) {
+        branches.push(`${history} AND product_id IN (${remaining.map(() => '?').join(',')}) AND business_time BETWEEN ? AND ?`)
+        values.push(...remaining, lower, upper)
+      }
+      const rows = await sql.query(`${branches.join(' UNION ALL ')} ORDER BY product_id,business_time,created_at,id LIMIT 256`, values)
+      result.push(...rows)
+      if (rows.length < 256) break
+      cursor = rows.at(-1)!
+    }
+  }
+  throwIfCancelled(signal)
+  // 索引按商品分页；质量规则的 180 天滑窗仍消费全局时间顺序，同时间的稳定前序规则不变。
+  return result.sort((a, b) => {
+    for (const key of ['business_time', 'created_at', 'id']) {
+      const left = String(a[key]), right = String(b[key])
+      if (left !== right) return left < right ? -1 : 1
+    }
+    return 0
+  })
+}
 type Group = { point: Point; total: bigint; average?: bigint; quantity: bigint; quantityCount: number; price: bigint; priceCount: number; min?: bigint; max?: bigint;
   latestPrice?: bigint; unit?: string; labelOrder: string; actual: ExactMean; first: string; last: string }
 function grouped(rows: Row[], dimension: Dimension, income: boolean, primary: boolean, start: string, end: string): Point[] {
@@ -227,9 +270,7 @@ export async function dimensionReport(sql: SqlSession, filters: LedgerFilters, d
     throw new LocalError('REPORT_ENTRY_INCOMPATIBLE', '部分历史账目缺少此维度所需资料，请缩小筛选范围；账目和总览仍保留。')
   let points: Point[]
   if (dimension === 'QUALITY' && rows.length) {
-    const lower = new Date(epoch(rows[0]!) - 180 * 86400000).toISOString(), upper = String(rows.at(-1)!.business_time)
-    const history = await readRows(sql, ["entry_type='EXPENSE'", "lifecycle_status='ACTIVE'", 'business_time BETWEEN ? AND ?',
-      `product_id IN (SELECT DISTINCT product_id FROM ledger_entry WHERE ${plan.conditions.join(' AND ')})`], [lower, upper, ...plan.values], signal)
+    const history = await readQualityHistory(sql, rows, signal)
     points = quality(history, new Set(rows.map(row => String(row.id))), signal)
   } else points = grouped(rows, dimension, income, Boolean(filters.primaryCategoryId), plan.start, plan.end)
   if (!income && dimension === 'FREQUENCY' && plan.start > '0001-01-01') {

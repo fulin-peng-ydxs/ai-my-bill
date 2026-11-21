@@ -75,6 +75,11 @@ export function createSqliteBridge() {
   return {
     sqlite,
     files,
+    /** 只读查询剖析使用本轮真实 SQLite 文件；仍由 dispose 统一回收。 */
+    databasePath(name: string) {
+      connection(name)
+      return filename(name)
+    },
     dispose() {
       for (const database of connections.values()) {
         database.close()
