@@ -85,6 +85,11 @@ export function processCleanup(pid, { graceMs = 10_000, scope } = {}) {
     if (scope) {
       try {
         scope.seal()
+      } catch (e) {
+        error ??= e
+      }
+      // 关闭标记落盘失败不能跳过已经登记的补偿组；保留失败，但仍尽力回收当前范围。
+      try {
         for (const group of scope.groups()) groups.add(group)
       } catch (e) {
         error ??= e

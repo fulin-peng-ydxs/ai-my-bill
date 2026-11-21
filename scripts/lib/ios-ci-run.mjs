@@ -32,7 +32,11 @@ export function resultsDirectory(root, input, create = false) {
 }
 
 /** 不捕获到内存的大日志；超时/取消先通知原执行器清理，再限时终止进程组。 */
-export async function runCommand(root, program, args, log, timeoutMs = 2_700_000) {
+export async function runCommand(root, program, args, log, timeoutMs = 2_700_000,
+  { cleanupGraceMs = 10_000 } = {}) {
+  // 受控进程回归只缩短清理宽限；正式调用保留默认值，不提供 CLI/环境覆盖或延长预算。
+  if (!Number.isSafeInteger(cleanupGraceMs) || cleanupGraceMs < 0 || cleanupGraceMs > 10_000)
+    throw new Error('CI 清理宽限必须为 0 至 10000 毫秒。')
   const fd = fs.openSync(log, 'wx', 0o600)
   let child,
     timer,
@@ -49,7 +53,7 @@ export async function runCommand(root, program, args, log, timeoutMs = 2_700_000
         env: process.env,
         detached: true,
         stdio: ['ignore', fd, fd]
-      }, { root })
+      }, { root, graceMs: cleanupGraceMs })
       child = managed.child
       cleanup = managed.cleanup
       child.once('error', reject)

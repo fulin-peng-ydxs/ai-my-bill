@@ -486,6 +486,20 @@ test('CI 命令超时终止子进程并保留失败，不能被空输出记为�
   assert.ok(fs.existsSync(log))
 })
 
+test('CI 清理宽限与执行预算独立，慢命令正常完成且内部参数不能延长清理预算', async (t) => {
+  const p = fixture(t), log = path.join(p.root, 'slow-normal.log')
+  const output = await runCommand(p.root, process.execPath,
+    ['-e', "setTimeout(()=>console.log('SLOW_NORMAL_COMPLETED'),650)"], log, 10000,
+    { cleanupGraceMs: 500 })
+  assert.equal(output, 'SLOW_NORMAL_COMPLETED\n')
+  for (const [i, cleanupGraceMs] of [-1, 10001, Infinity, '500'].entries()) {
+    const rejectedLog = path.join(p.root, `rejected-${i}.log`)
+    await assert.rejects(runCommand(p.root, process.execPath, [], rejectedLog, 10000,
+      { cleanupGraceMs }), /清理宽限/)
+    assert.equal(fs.existsSync(rejectedLog), false, '非法参数在启动或创建日志前拒绝')
+  }
+})
+
 test('CI 超时及取消后组长提前退出，忽略 TERM 的后代仍被清理且正常完成不误杀', { timeout: 15000 }, async (t) => {
   for (const mode of ['timeout', 'SIGTERM']) {
     await t.test(mode, async (t) => {
@@ -540,7 +554,7 @@ test('CI 真实内外层命令统一清理嵌套独立进程组，超时/取消�
             const clock = p.write('.local/short-check-clock.mjs', `const original=globalThis.setTimeout;globalThis.setTimeout=(fn,ms,...args)=>original(fn,ms>60000?900:ms,...args);\n`)
             args = [...(mode === 'inner-timeout' ? ['--import', clock] : []), 'scripts/ios-app.mjs', 'common']
           } else {
-            const worker = p.write('worker.mjs', `import {runCommand} from ${JSON.stringify(new URL('../lib/ios-ci-run.mjs', import.meta.url).href)};${mode === 'outer-force' ? 'const original=globalThis.setTimeout;globalThis.setTimeout=(fn,ms,...args)=>original(fn,ms>9000&&ms<=10000?60:ms,...args);' : ''}try{await runCommand(${JSON.stringify(p.root)},process.execPath,['scripts/ios-app.mjs','common'],${JSON.stringify(path.join(p.root, 'outer.log'))},${mode.endsWith('timeout') || mode === 'outer-force' ? 900 : 10000});process.exitCode=2}catch{process.exitCode=1}`)
+            const worker = p.write('worker.mjs', `import {runCommand} from ${JSON.stringify(new URL('../lib/ios-ci-run.mjs', import.meta.url).href)};try{await runCommand(${JSON.stringify(p.root)},process.execPath,['scripts/ios-app.mjs','common'],${JSON.stringify(path.join(p.root, 'outer.log'))},${mode.endsWith('timeout') || mode === 'outer-force' ? 900 : 10000},${mode === 'outer-force' ? '{cleanupGraceMs:60}' : '{}'});process.exitCode=2}catch{process.exitCode=1}`)
             args = [worker]
           }
           const worker = spawn(process.execPath, args, { cwd: p.root, env, detached: true, stdio: 'ignore' })
@@ -609,17 +623,21 @@ test('CI 成功退出的组长遗留同组后台成员时仍关闭自己的分�
 })
 
 test('CI 取消后新补偿组仍归外层清理，登记前后中断不放行工具，保持预算与其他任务保护',
-  { timeout: 15000 }, async (t) => {
+  // 包含真实执行超时和受控慢预检，测试容器预算不改变执行器的生产预算。
+  { timeout: 30000 }, async (t) => {
     const sentinel = spawn(process.execPath, ['-e', 'setInterval(()=>{},1000)'], { detached: true, stdio: 'ignore' })
     const sentinelEnded = new Promise((resolve) => sentinel.once('close', resolve))
     try {
-      for (const mode of ['timeout', 'SIGTERM', 'before-publish', 'after-publish', 'bind-failure']) {
+      for (const mode of ['timeout', 'SIGTERM', 'slow-preflight', 'seal-failure',
+        'before-publish', 'after-publish', 'bind-failure']) {
         await t.test(mode, async (t) => {
           const p = processFixture(t), initial = path.join(p.root, 'initial.json'), late = path.join(p.root, 'late.pid')
-          const gate = path.join(p.root, 'gate.json')
+          const gate = path.join(p.root, 'gate.json'), sealFailure = path.join(p.root, 'seal-failure.json')
+          const workerResult = path.join(p.root, 'worker-result.json')
+          const executionBudget = mode === 'timeout' ? 5000 : 10000
           const xcrun = p.write('bin/xcrun', `#!${process.execPath}
 const fs=require('node:fs'),a=process.argv.slice(2);
-if(a[0]==='--sdk')console.log('27.0');
+if(a[0]==='--sdk'){${mode === 'slow-preflight' ? 'Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,650);' : ''}console.log('27.0')}
 else if(a[2]==='runtimes')console.log(JSON.stringify({runtimes:[{identifier:'com.apple.CoreSimulator.SimRuntime.iOS-27-0',isAvailable:true,buildversion:'TEST'}]}));
 else if(a[1]==='create'){fs.writeFileSync(${JSON.stringify(initial)},JSON.stringify({pid:process.pid,parent:process.ppid}));setInterval(()=>{},1000)}
 else if(a[2]==='devices'){process.on('SIGTERM',()=>{});fs.writeFileSync(${JSON.stringify(late)},String(process.pid));setInterval(()=>{},1000)}
@@ -651,18 +669,42 @@ fs.renameSync=(from,to)=>{
             'DEVELOPER_DIR=/controlled/sdk', process.execPath, '--import', platform, ...(preload ? ['--import', preload] : []),
             'scripts/ios-app.mjs', 'debug', 'create']
           const workerFile = p.write('worker.mjs', `
+import fs from 'node:fs';
 import {runCommand} from ${JSON.stringify(new URL('../lib/ios-ci-run.mjs', import.meta.url).href)};
-const original=globalThis.setTimeout;
-globalThis.setTimeout=(fn,ms,...args)=>original(fn,ms>9000&&ms<=10000?500:ms,...args);
-try{await runCommand(${JSON.stringify(p.root)},'/usr/bin/env',${JSON.stringify(args)},${JSON.stringify(path.join(p.root, 'outer.log'))},${mode === 'SIGTERM' ? 10000 : 1000});process.exitCode=2}catch{process.exitCode=1}
+${mode === 'seal-failure' ? `const original=fs.writeFileSync;
+fs.writeFileSync=(file,...args)=>{
+  if(String(file).includes('/ios-process-') && String(file).includes('/.closed-') && fs.existsSync(${JSON.stringify(late)})){
+    original(${JSON.stringify(sealFailure)},JSON.stringify({code:'ENOSPC'}));
+    throw Object.assign(new Error('controlled seal write failure'),{code:'ENOSPC'});
+  }
+  return original(file,...args);
+};` : ''}
+const started=Date.now();
+try{await runCommand(${JSON.stringify(p.root)},'/usr/bin/env',${JSON.stringify(args)},${JSON.stringify(path.join(p.root, 'outer.log'))},${executionBudget},{cleanupGraceMs:500});process.exitCode=2}
+catch(error){fs.writeFileSync(${JSON.stringify(workerResult)},JSON.stringify({error:error.message,elapsed:Date.now()-started}));process.exitCode=1}
 `)
           const worker = spawn(process.execPath, [workerFile], { cwd: p.root, detached: true, stdio: 'ignore' })
           const ended = new Promise((resolve, reject) => { worker.once('error', reject); worker.once('close', resolve) })
           const started = Date.now()
           try {
             await waitForProcessState(() => fs.existsSync(initial))
-            if (mode === 'SIGTERM') worker.kill('SIGTERM')
+            // 取消从创建进程实际就绪后开始；真实超时场景仍由执行器自己的执行预算触发。
+            const cancelRequestedAt = Date.now()
+            if (mode !== 'timeout') worker.kill('SIGTERM')
             assert.equal(await ended, 1)
+            const result = JSON.parse(fs.readFileSync(workerResult))
+            if (mode === 'timeout') {
+              assert.ok(result.elapsed >= executionBudget, '执行超时不能误用缩短后的清理宽限')
+              assert.ok(Date.now() - started < executionBudget + 3500, '超时后不等待内层新的 10 秒补偿预算')
+            } else {
+              assert.ok(Date.now() - cancelRequestedAt < 3500, '取消后不等待内层新的 10 秒补偿预算')
+            }
+            if (mode === 'slow-preflight')
+              assert.ok(cancelRequestedAt - started >= 650, '实际慢预检超过清理宽限仍能到达创建阶段')
+            if (mode === 'seal-failure') {
+              assert.ok(fs.existsSync(sealFailure), '实际触发关闭标记写入失败')
+              assert.match(result.error, /controlled seal write failure/, '清理已登记组后仍保留关闭失败')
+            }
             if (preload) {
               assert.ok(fs.existsSync(gate), '实际中断了补偿组登记')
               assert.equal(fs.existsSync(late), false, '尚未完成放行，实际工具不能执行')
@@ -671,7 +713,6 @@ try{await runCommand(${JSON.stringify(p.root)},'/usr/bin/env',${JSON.stringify(a
               assert.ok(fs.existsSync(late), '实际工具在取消后的补偿中启动')
               await waitForProcessState(() => !isRunningProcess(Number(fs.readFileSync(late))))
             }
-            assert.ok(Date.now() - started < 3500, '不得等待内层重新开始的 10 秒补偿预算')
             assert.ok(isRunningProcess(sentinel.pid))
           } finally {
             worker.kill('SIGKILL')
@@ -695,6 +736,46 @@ try{await runCommand(${JSON.stringify(p.root)},'/usr/bin/env',${JSON.stringify(a
       await sentinelEnded
     }
   })
+
+test('CI 关闭标记失败仍读取登记组并先清理内层，保留失败且旧回调不能再次清理', () => {
+  const originalKill = process.kill, originalTimer = globalThis.setTimeout
+  const signals = [], callbacks = [], outer = 200101, late = 200102
+  const failure = Object.assign(new Error('controlled seal failure'), { code: 'ENOSPC' })
+  let retained, readCount = 0
+  try {
+    process.kill = (pid, signal) => {
+      signals.push([pid, signal])
+      return true
+    }
+    globalThis.setTimeout = (fn, ms) => {
+      assert.equal(ms, 0, '零宽限不因关闭失败增加等待')
+      callbacks.push(fn)
+      return undefined
+    }
+    const cleanup = processCleanup(outer, { graceMs: 0, scope: {
+      seal() { throw failure },
+      groups() {
+        readCount++
+        return new Set([outer, late])
+      },
+      finish(error) { retained = error }
+    } })
+    cleanup.stop('SIGKILL')
+    assert.throws(() => cleanup.finish(), (error) => error === failure)
+    assert.equal(retained, failure, '清理成功也不能抹除关闭标记失败')
+    assert.equal(readCount, 2, '首次强杀及最终收尾均尝试读取登记组')
+    assert.deepEqual(signals.filter(([, signal]) => signal === 'SIGKILL').map(([pid]) => pid),
+      [-late, -outer, -late, -outer])
+    const completed = signals.length
+    cleanup.stop()
+    cleanup.finish()
+    callbacks[0]()
+    assert.equal(signals.length, completed, '迟到回调不复活已完成的清理')
+  } finally {
+    process.kill = originalKill
+    globalThis.setTimeout = originalTimer
+  }
+})
 
 test('CI 共享清理器不延长重复停止的宽限，完成后旧回调失效，进程树读取失败不伪报成功', (t) => {
   const p = fixture(t), ps = p.write('bin/ps', '#!/bin/sh\nexit 1\n')
