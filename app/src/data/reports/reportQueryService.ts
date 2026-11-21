@@ -1,5 +1,5 @@
 import type { LedgerFilters } from '../../api/ledgerEntries'
-import type { ReportFilters, ReportSummary, ReportTimeGrain, TimeReport } from '../../api/reports'
+import type { ExpenseReport, IncomeReport, ReportFilters, ReportSummary, ReportTimeGrain, TimeReport } from '../../api/reports'
 import { clearIncompatibleReportFilters } from '../../domain/reportQuery'
 import { LocalError, throwIfCancelled } from '../../domain/localError'
 import { addBusinessDays, bucketLabel, bucketStart, businessDayCount, isBusinessDate, nextBucket, previousBusinessYear } from '../../domain/businessDates'
@@ -8,12 +8,15 @@ import { fromSqliteInteger, scaledIntegerToDecimal } from '../../domain/money'
 import { fieldError } from '../dictionaries/repository'
 import { compileLedgerFilter, readbackProjection } from '../entries/querySql'
 import type { LedgerDatabase, SqlSession } from '../ledgerDatabase'
+import { dimensionReport, type Dimension } from './dimensionReports'
 
 export interface CoreReport {
   /** 与金额共用本次查询时钟；总览下钻不能再次解析 TODAY 等相对范围。 */
   resolvedRange: Pick<TimeReport, 'startDate' | 'endDate'>
   summary: ReportSummary
   time?: TimeReport
+  expense?: ExpenseReport
+  income?: IncomeReport
 }
 type Totals = { income: bigint; gross: bigint; adjustment: bigint; incomeCount: number; expenseCount: number; adjustmentCount: number }
 const empty = (): Totals => ({ income: 0n, gross: 0n, adjustment: 0n, incomeCount: 0, expenseCount: 0, adjustmentCount: 0 })
@@ -69,10 +72,11 @@ function unavailable(startDate: string, endDate: string, unavailableReason: stri
 export class ReportQueryService {
   constructor(private readonly database: Pick<LedgerDatabase, 'read'>, private readonly clock = () => new Date()) {}
 
-  async snapshot(filters: ReportFilters, grain?: ReportTimeGrain, signal?: AbortSignal): Promise<CoreReport> {
+  async snapshot(filters: ReportFilters, grain?: ReportTimeGrain, signal?: AbortSignal, dimension?: Dimension): Promise<CoreReport> {
     const now = this.clock(), scope = filters.scope, ledger = this.ledgerFilters(filters)
     const plan = compileLedgerFilter(ledger, now)
     if (grain !== undefined && !grains.includes(grain)) throw fieldError('grain', '请选择有效的时间粒度。')
+    if (dimension !== undefined && (scope === 'ALL' || grain !== undefined)) throw fieldError('dimension', '请先选择收支类型及有效维度。')
     const starts: string[] = [], lastStart = grain ? bucketStart(plan.end, grain) : undefined
     if (grain) {
       for (let day = bucketStart(plan.start, grain); ; day = nextBucket(day, grain)) {
@@ -86,6 +90,7 @@ export class ReportQueryService {
         throwIfCancelled(signal)
         const totals = await this.totals(sql, ledger, now)
         const result: CoreReport = { resolvedRange: { startDate: plan.start, endDate: plan.end }, summary: summary(totals, scope) }
+        if (dimension !== undefined) return { ...result, ...await dimensionReport(sql, ledger, dimension, now, signal) }
         if (!grain) return result
         const grouped = await sql.query(`SELECT ${grainSql[grain]} AS bucket_start,entry_type,
           CAST(sum(CAST(amount_text AS INTEGER)) AS TEXT) AS amount,count(*) AS count

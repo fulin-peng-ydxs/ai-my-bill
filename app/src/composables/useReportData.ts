@@ -1,6 +1,6 @@
 import { computed } from 'vue'
 
-import { getCoreReport, getExpenseReport, getIncomeReport, getReportSummary,
+import { getCoreReport, getDimensionReport,
   type ExpenseReport, type IncomeReport, type ReportFilters, type ReportSummary, type TimeReport } from '../api/reports'
 import { isExpenseDimension, isIncomeDimension, type ReportPresentation } from '../domain/reportQuery'
 import { useLatestRequest } from './useLatestRequest'
@@ -8,7 +8,7 @@ import { useLatestRequest } from './useLatestRequest'
 export interface ReportSnapshot {
   filters: ReportFilters
   presentation: ReportPresentation
-  /** 本地总览/时间快照的实际范围；其他维度尚未接入该本地接口。 */
+  /** 本地快照的实际范围，全部维度下钻均使用同一业务时钟。 */
   resolvedRange?: Pick<TimeReport, 'startDate' | 'endDate'>
   summary: ReportSummary
   time?: TimeReport
@@ -26,15 +26,9 @@ export function useReportData() {
       if (view.dimension === 'OVERVIEW' || view.dimension === 'TIME') {
         return { filters: snapshot, presentation: view, ...await getCoreReport(snapshot, view.dimension === 'TIME' ? view.grain : undefined, signal) }
       }
-      const details: Pick<ReportSnapshot, 'time' | 'expense' | 'income'> = {}
-      const summaryPromise = getReportSummary(snapshot, signal)
-      const detailPromise = isExpenseDimension(view.dimension, snapshot.scope)
-          ? getExpenseReport(snapshot, view.dimension, signal).then(value => { details.expense = value })
-          : isIncomeDimension(view.dimension, snapshot.scope)
-            ? getIncomeReport(snapshot, view.dimension, signal).then(value => { details.income = value })
-            : Promise.resolve()
-      const [summary] = await Promise.all([summaryPromise, detailPromise])
-      return { filters: snapshot, presentation: view, summary, ...details }
+      if (!isExpenseDimension(view.dimension, snapshot.scope) && !isIncomeDimension(view.dimension, snapshot.scope))
+        throw new Error('当前范围不支持该分析维度。')
+      return { filters: snapshot, presentation: view, ...await getDimensionReport(snapshot, view.dimension, signal) }
     }, { intent: request.data.value ? 'refresh' : 'replace' })
   }
   return { ...request, canDrill, load }

@@ -244,7 +244,8 @@ function drillTime(bucket: TimeReport['buckets'][number]): void {
 
 function drillExpense(point: ExpenseReport['points'][number]): void {
   if (!request.canDrill.value) return
-  const ledgerFilters: LedgerFilters = { ...shownFilters.value, type: 'EXPENSE', lifecycle: 'ACTIVE' }
+  const ledgerFilters: LedgerFilters = { ...shownFilters.value, type: 'EXPENSE', lifecycle: 'ACTIVE',
+    range: 'CUSTOM', ...request.data.value?.resolvedRange }
   delete (ledgerFilters as Partial<ReportFilters>).scope
   const dimension = shownPresentation.value.dimension
   if (dimension === 'CATEGORY') {
@@ -285,7 +286,8 @@ function drillExpense(point: ExpenseReport['points'][number]): void {
 
 function drillIncome(point: IncomeReport['points'][number]): void {
   if (!request.canDrill.value) return
-  const ledgerFilters: LedgerFilters = { ...shownFilters.value, type: 'INCOME', lifecycle: 'ACTIVE' }
+  const ledgerFilters: LedgerFilters = { ...shownFilters.value, type: 'INCOME', lifecycle: 'ACTIVE',
+    range: 'CUSTOM', ...request.data.value?.resolvedRange }
   delete (ledgerFilters as Partial<ReportFilters>).scope
   const dimension = shownPresentation.value.dimension
   if (dimension === 'CATEGORY') ledgerFilters.incomeCategoryId = point.value

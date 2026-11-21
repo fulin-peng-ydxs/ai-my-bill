@@ -148,6 +148,12 @@
       "case": "DictionaryUITests/DictionaryTouchTests/test07RestoreCandidates",
       "runner": "macos",
       "description": "原字典单用例 test07RestoreCandidates"
+    },
+    "ui-report-dimensions": {
+      "kind": "ui",
+      "scenario": "report-dimensions",
+      "runner": "macos",
+      "description": "九类支出、五类收入及质量线索的原生排行下钻"
     }
   },
   "profiles": {
@@ -264,7 +270,8 @@
       ],
       "suites": [
         "ui-query",
-        "ui-reports"
+        "ui-reports",
+        "ui-report-dimensions"
       ]
     },
     {
@@ -353,7 +360,8 @@
         "app/src/api/reports.ts"
       ],
       "suites": [
-        "ui-reports"
+        "ui-reports",
+        "ui-report-dimensions"
       ],
       "exclude": [
         "**/*.spec.ts"
@@ -422,7 +430,8 @@
         "ui-dictionary-4",
         "ui-dictionary-5",
         "ui-dictionary-6",
-        "ui-dictionary-7"
+        "ui-dictionary-7",
+        "ui-report-dimensions"
       ],
       "exclude": [
         "**/*.spec.ts"
@@ -436,6 +445,19 @@
       ],
       "suites": [
         "dependency-audit"
+      ]
+    },
+    {
+      "paths": [
+        "app/src/data/reports/**",
+        "app/test-support/dimensionReport*",
+        "app/src/composables/useReportData*"
+      ],
+      "exclude": [
+        "**/*.spec.ts"
+      ],
+      "suites": [
+        "ui-report-dimensions"
       ]
     }
   ],
@@ -463,7 +485,8 @@
       "ui-dictionary-4",
       "ui-dictionary-5",
       "ui-dictionary-6",
-      "ui-dictionary-7"
+      "ui-dictionary-7",
+      "ui-report-dimensions"
     ]
   },
   "scriptSkips": {

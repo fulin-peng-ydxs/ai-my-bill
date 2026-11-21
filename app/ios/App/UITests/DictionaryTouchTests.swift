@@ -15,7 +15,7 @@ final class DictionaryTouchTests: XCTestCase {
         executionTimeAllowance = 60
         if app.state != .runningForeground {
             app.launch()
-            if !name.contains("test00PrepareReportApp") {
+            if !name.contains("test00PrepareReportApp") && !name.contains("test00PrepareDimensionReport") {
                 activateWebContent()
                 appears("记一笔", timeout: 20)
             }
@@ -980,6 +980,119 @@ final class DictionaryTouchTests: XCTestCase {
         appears("净支出趋势")
         expectReportAmount("-¥13")
         print("REPORT_TOUCH_NET_DRILL_EDIT_RETURN_REFRESH")
+    }
+
+    func test00PrepareDimensionReport() throws {
+        test00PrepareReportApp()
+        try reportFixtureScope()
+        print("REPORT_DIMENSION_SCOPE_READY")
+    }
+
+    /// WKWebView 可把被固定底栏遮挡的行报告为 hittable；触摸前还需让行中心进入内容视口。
+    private func revealReportRow(_ row: XCUIElement) {
+        for _ in 0..<5 {
+            let frame = row.frame
+            if row.isHittable && frame.midY > app.frame.minY + 100 && frame.midY < app.frame.maxY - 140 { return }
+            if frame.midY < app.frame.minY + 100 { app.webViews.firstMatch.swipeDown() }
+            else { app.webViews.firstMatch.swipeUp() }
+        }
+        XCTAssertTrue(row.isHittable && row.frame.midY > app.frame.minY + 100 && row.frame.midY < app.frame.maxY - 140,
+                      "排行行必须位于内容视口，避免误点固定底栏")
+    }
+
+    /// 仅触摸原排行和返回入口；金额/组成由随后的 SQLite 只读回读校验。
+    private func verifyDimension(_ title: String, group: String) {
+        selectReportControl("report-dimension", label: "维度", option: title)
+        let row = app.buttons.matching(NSPredicate(format: "label CONTAINS %@ AND label CONTAINS %@", group, "条")).firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 5), "\(title) 必须读取本地排行")
+        revealReportRow(row)
+        XCTAssertTrue(row.isEnabled && row.isHittable, "新快照就绪后才允许下钻")
+        row.tap()
+        let counts = ["分类结构": 7, "商品排行": 3, "支付方式": 7, "购买渠道": 6, "常用地点": 6,
+                      "消费习惯": 7, "价格观察": 1, "消费频次": 4]
+        let count = counts[title] ?? 1
+        appears("已加载 \(count) 笔", timeout: 5)
+        XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "返回报表")).firstMatch.exists)
+        tap("返回报表")
+        expectValue(reportControl("report-dimension", label: "维度"), title)
+        print("REPORT_DIMENSION_DRILL_RETURN " + title + " count=\(count)")
+    }
+
+    func test40ExpenseDimensionGroups() throws {
+        try reportFixtureScope()
+        tap("支出")
+        for (title, group) in [("分类结构", "一级分类"), ("商品排行", "商品与单位")] {
+            verifyDimension(title, group: group)
+        }
+    }
+
+    func test41ExpenseDimensionAnalysis() throws {
+        try reportFixtureScope()
+        tap("支出")
+        for (title, group) in [("消费习惯", "星期分布"), ("价格观察", "商品价格")] {
+            verifyDimension(title, group: group)
+        }
+    }
+
+    func test42IncomeDimensions() throws {
+        try reportFixtureScope()
+        tap("收入")
+        for (title, group) in [("收入分类", "收入分类"), ("收款方式", "收款方式")] {
+            verifyDimension(title, group: group)
+        }
+    }
+
+    func test40ExpensePaymentChannels() throws {
+        try reportFixtureScope()
+        tap("支出")
+        verifyDimension("支付方式", group: "支付方式")
+        verifyDimension("购买渠道", group: "购买渠道")
+    }
+
+    func test40ExpenseLocations() throws {
+        try reportFixtureScope()
+        tap("支出")
+        verifyDimension("常用地点", group: "常用地点")
+    }
+
+    func test41ExpenseFrequencyQuality() throws {
+        try reportFixtureScope()
+        tap("支出")
+        verifyDimension("消费频次", group: "高频商品")
+        verifyDimension("数据质量", group: "数据质量")
+    }
+
+    func test42IncomePayerName() throws {
+        try reportFixtureScope()
+        tap("收入")
+        verifyDimension("付款方", group: "付款方")
+        verifyDimension("收入名称", group: "收入名称")
+    }
+
+    func test42IncomeFrequency() throws {
+        try reportFixtureScope()
+        tap("收入")
+        verifyDimension("收入频次", group: "收入频次")
+    }
+
+    func test43QualityThresholdDrill() throws {
+        try reportFixtureScope()
+        tap("支出")
+        selectReportControl("report-dimension", label: "维度", option: "数据质量")
+        appears("规则 expense-quality-v1")
+        let high = app.buttons.matching(NSPredicate(format: "label CONTAINS %@ AND label CONTAINS %@", "异常高价线索", "15.01")).firstMatch
+        XCTAssertTrue(high.waitForExistence(timeout: 5))
+        revealReportRow(high)
+        high.tap()
+        appears("已加载 1 笔")
+        // 明细金额合并在原行的 AX 控件中；通过既有编辑表单核对精确实付，不依赖独立 StaticText。
+        tapLedgerRow("报表苹果", kind: "支出")
+        appears("编辑支出")
+        expectValue(entryField("expense-paid-amount", "实付金额"), "15.01")
+        tap("关闭")
+        tap("返回报表")
+        expectValue(reportControl("report-dimension", label: "维度"), "数据质量")
+        print("REPORT_QUALITY_THRESHOLD_DRILL_READONLY")
     }
 
     func test39ReportComparison() throws {

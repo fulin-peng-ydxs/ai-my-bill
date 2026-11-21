@@ -1,8 +1,8 @@
 import type { components } from './generated/schema'
-import { apiRequest } from './http'
 import { ReportQueryService } from '../data/reports/reportQueryService'
 import { appDatabase } from '../data/appDatabase'
 import { localOperation } from '../data/localOperation'
+import { fieldError } from '../data/dictionaries/repository'
 const reports = new ReportQueryService(appDatabase)
 
 export type ReportScope = components['schemas']['ReportScope']
@@ -32,11 +32,6 @@ export interface ReportFilters {
   incomeName?: string
 }
 
-const OPTIONAL_KEYS = [
-  'fundingChannelId', 'primaryCategoryId', 'secondaryCategoryId', 'productId',
-  'purchaseChannelId', 'locationLabelId', 'incomeCategoryId', 'payerId', 'incomeName',
-] as const
-
 /** 总览/时间共享同一原生账本读取，避免摘要与趋势之间插入正式写入。 */
 export function getCoreReport(filters: ReportFilters, grain?: ReportTimeGrain, signal?: AbortSignal) {
   return localOperation(() => reports.snapshot(filters, grain, signal))
@@ -45,36 +40,31 @@ export async function getReportSummary(filters: ReportFilters, signal?: AbortSig
   return (await getCoreReport(filters, undefined, signal)).summary
 }
 
-function reportParams(filters: ReportFilters): URLSearchParams {
-  const params = new URLSearchParams({ query: filters.query, scope: filters.scope, range: filters.range })
-  for (const key of OPTIONAL_KEYS) if (filters[key]) params.set(key, filters[key])
-  if (filters.range === 'CUSTOM' && filters.startDate && filters.endDate) {
-    params.set('startDate', filters.startDate)
-    params.set('endDate', filters.endDate)
-  }
-  return params
+/** 多维分析与摘要一次读取；页面不再并行访问网络或分别解析相对日期。 */
+export function getDimensionReport(filters: ReportFilters, dimension: ExpenseReportDimension | IncomeReportDimension, signal?: AbortSignal) {
+  return localOperation(() => reports.snapshot(filters, undefined, signal, dimension))
 }
 
 export async function getTimeReport(filters: ReportFilters, grain: ReportTimeGrain, signal?: AbortSignal): Promise<TimeReport> {
   return (await getCoreReport(filters, grain, signal)).time!
 }
 
-export function getExpenseReport(
+export async function getExpenseReport(
   filters: ReportFilters,
   dimension: ExpenseReportDimension,
   signal?: AbortSignal,
 ): Promise<ExpenseReport> {
-  const params = reportParams(filters)
-  params.set('dimension', dimension)
-  return apiRequest(`/reports/expenses?${params}`, { signal })
+  const snapshot = await getDimensionReport(filters, dimension, signal)
+  if (!snapshot.expense) throw fieldError('scope', '请选择支出范围。')
+  return snapshot.expense
 }
 
-export function getIncomeReport(
+export async function getIncomeReport(
   filters: ReportFilters,
   dimension: IncomeReportDimension,
   signal?: AbortSignal,
 ): Promise<IncomeReport> {
-  const params = reportParams(filters)
-  params.set('dimension', dimension)
-  return apiRequest(`/reports/incomes?${params}`, { signal })
+  const snapshot = await getDimensionReport(filters, dimension, signal)
+  if (!snapshot.income) throw fieldError('scope', '请选择收入范围。')
+  return snapshot.income
 }

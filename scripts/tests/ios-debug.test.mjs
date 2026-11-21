@@ -263,7 +263,7 @@ function touchFixture(root) {
   const file = path.join(directory, 'ledgerSQLite.db')
   const database = new DatabaseSync(file)
   try {
-    for (const name of ['0001_initial.sql', '0002_dictionary_governance.sql', '0003_ledger_writes.sql', '0004_snapshot_search.sql', '0005_personal_state.sql', '0006_adjustment_lifecycle.sql', '0007_ledger_query.sql']) {
+    for (const name of ['0001_initial.sql', '0002_dictionary_governance.sql', '0003_ledger_writes.sql', '0004_snapshot_search.sql', '0005_personal_state.sql', '0006_adjustment_lifecycle.sql', '0007_ledger_query.sql', '0008_report_dimensions.sql']) {
       database.exec(
         fs.readFileSync(new URL('../../app/src/data/migrations/' + name, import.meta.url), 'utf8')
       )
@@ -901,4 +901,39 @@ test('T10 夹具与其他阶段隔离，编辑用例必须且只能产生约定�
     assert.notEqual(execute('debug-check-report-38').status, 0)
     assert.notEqual(execute('debug-report-36').status, 0)
   } finally { db.close() }
+})
+
+
+test('T11 多维单组/单用例共用原生入口，夹具隔离且回读拒绝分析改账', t => {
+  assert.deepEqual(selection('--case','NativeTests/NativeSqliteTests/testOfflineDimensionReports',[]).cases,
+    ['NativeTests/NativeSqliteTests/testOfflineDimensionReports'])
+  const selected = selection('--scenario','report-dimensions',[])
+  assert.equal(selected.cases.length,10)
+  const remaining = selection('--scenario','report-dimension-details',[])
+  assert.equal(remaining.cases.length,6)
+  assert.ok(!remaining.cases.some(name => name.endsWith('test41ExpenseDimensionAnalysis')))
+  const shell = fs.readFileSync(new URL('../lib/ios-app-full.sh',import.meta.url),'utf8')
+  for(const name of ['test40ExpenseDimensionGroups','test41ExpenseDimensionAnalysis','test42IncomeDimensions','test43QualityThresholdDrill','test40ExpensePaymentChannels','test40ExpenseLocations','test41ExpenseFrequencyQuality','test42IncomePayerName','test42IncomeFrequency']) {
+    const single = selection('--case','DictionaryUITests/DictionaryTouchTests/'+name,[])
+    assert.equal(single.cases.length,2)
+    assert.ok(single.cases[0].endsWith('test00PrepareDimensionReport'))
+    assert.ok(shell.includes('-only-testing:DictionaryUITests/DictionaryTouchTests/'+name))
+    assert.ok(shell.includes('-skip-testing:DictionaryUITests/DictionaryTouchTests/'+name))
+  }
+  assert.ok(shell.includes('prepare-dimensions') && shell.includes('check-dimensions'))
+  const { file,execute } = touchFixture(temporary(t))
+  const prepared = execute('debug-'+selected.fixture)
+  assert.equal(prepared.status,0,prepared.stderr)
+  assert.equal(execute('debug-check-'+selected.fixture).status,0)
+  const db = new DatabaseSync(file)
+  try {
+    const samples = db.prepare("SELECT id,unit_id FROM ledger_entry WHERE product_name_snapshot LIKE '报表%' AND id<>'t10-expense'").all()
+    assert.equal(samples.length,9)
+    for(const row of samples) {
+      assert.match(row.id,/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/)
+      assert.match(row.unit_id,/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/)
+    }
+    db.prepare("UPDATE ledger_entry SET note='分析不应改账' WHERE amount_cents=1501 AND product_name_snapshot='报表苹果'").run()
+    assert.notEqual(execute('debug-check-'+selected.fixture).status,0)
+  } finally {db.close()}
 })

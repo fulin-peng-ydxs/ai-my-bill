@@ -8,7 +8,7 @@ import sqlite3
 import sys
 import unicodedata
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from pathlib import Path
 
@@ -33,7 +33,7 @@ if mode == 'wait-initialized':
     raise RuntimeError('本轮模拟器的正式账本未在准备预算内初始化')
 assert database.is_file()
 # debug 数据仅由已校验会话中的全新 App 初始化；复用同一夹具，不开放任意 SQL 或路径。
-report_match = re.fullmatch(r'debug-(check-)?report-((?:3[6-9]|4[0-2])(?:,(?:3[6-9]|4[0-2]))*)', mode)
+report_match = re.fullmatch(r'debug-(check-)?report-((?:3[6-9]|(?:4[0-9]|5[0-2]))(?:,(?:3[6-9]|(?:4[0-9]|5[0-2])))*)', mode)
 report_cases = [int(case) for case in report_match[2].split(',')] if report_match else []
 if report_match:
     mode = 'debug-check' if report_match[1] else 'prepare'
@@ -118,6 +118,33 @@ def add_report_items(connection):
     stamp = now.astimezone(ZoneInfo('UTC')).isoformat(timespec='milliseconds').replace('+00:00','Z')
     connection.execute("INSERT INTO expense_adjustment(id,original_expense_id,adjustment_type,amount_cents,business_time,business_date,note,created_at,updated_at,search_text) VALUES('t10-refund','t10-expense','REFUND',300,?,?,'报表退款',?,?,'退款 报表退款')",(stamp,now.date().isoformat(),stamp,stamp))
 
+def add_dimension_items(connection):
+    """本轮专用报表夹具；固定业务日期，读回时核验所有样本未被页面分析修改。"""
+    fixture = report_touch_fixture()
+    stamp = datetime.fromisoformat(fixture['occurredAt'].replace('Z', '+00:00'))
+    base = dict(connection.execute("SELECT * FROM ledger_entry WHERE id='t10-expense'").fetchone())
+    def clone(identifier, at, cents, quantity=1000, **changes):
+        row = dict(base)
+        iso = at.isoformat(timespec='milliseconds').replace('+00:00','Z')
+        row.update(id=str(uuid.uuid4()), business_time=iso, business_date=at.astimezone(ZoneInfo('Asia/Shanghai')).date().isoformat(),
+                   amount_cents=cents, quantity_scaled=quantity, unit_price_scaled=cents*100, calculated_amount_cents=(cents*100*quantity+50000)//100000,
+                   created_at=iso, updated_at=iso)
+        row.update(changes)
+        columns = list(row)
+        assert all(re.fullmatch(r'[a-z_]+', key) for key in columns)
+        connection.execute('INSERT INTO ledger_entry('+','.join(columns)+') VALUES('+','.join('?' for _ in columns)+')',tuple(row[key] for key in columns))
+    for i, days in enumerate([180,100,50]): clone('t11-history-'+str(i), stamp-timedelta(days=days), 1000)
+    clone('t11-equal',stamp,3000,2000)
+    clone('t11-high',stamp,1501)
+    dictionary_ids = {key:str(uuid.uuid4()) for key in ['unit','purchase','location','duplicate']}
+    for key,kind,name in [('unit','UNIT','报表箱'),('purchase','PURCHASE_CHANNEL','未指定'),('location','LOCATION_LABEL','未指定'),('duplicate','PRODUCT','报表重复商品')]:
+        connection.execute("INSERT INTO dictionary_item(id,kind,name,normalized_name,status) VALUES(?,?,?,?,'ACTIVE')",(dictionary_ids[key],kind,name,name))
+    clone('t11-unit',stamp,2000,2000,unit_id=dictionary_ids['unit'],unit_name_snapshot='报表箱',purchase_channel_id=dictionary_ids['purchase'],purchase_channel_name_snapshot='未指定',location_label_id=dictionary_ids['location'],location_label_name_snapshot='未指定')
+    for i,minutes in enumerate([0,9,20]):
+        clone('t11-duplicate-'+str(i),stamp+timedelta(minutes=minutes),700,product_id=dictionary_ids['duplicate'],product_name_snapshot='报表重复商品',normalized_product_name_snapshot='报表重复商品')
+    snapshot = [dict(row) for row in connection.execute("SELECT * FROM ledger_entry ORDER BY id")]
+    return snapshot
+
 def report_touch_fixture():
     return json.loads((Path(__file__).resolve().parents[2] / 'app/test-support/reportTouchFixture.json').read_text())
 
@@ -131,6 +158,10 @@ def check_reports(connection, cases):
     fixture = report_touch_fixture()
     dates = connection.execute("SELECT business_time,business_date FROM ledger_entry WHERE id LIKE 't10-%' UNION ALL SELECT business_time,business_date FROM expense_adjustment WHERE id='t10-refund'").fetchall()
     assert [tuple(row) for row in dates] == [(fixture['occurredAt'],fixture['endDate'])] * 3
+    if any(case >= 43 for case in cases):
+        expected_snapshot = json.loads(receipt_path.read_text())['dimensionSnapshot']
+        actual_snapshot = [dict(row) for row in connection.execute("SELECT * FROM ledger_entry ORDER BY id")]
+        assert actual_snapshot == expected_snapshot, '多维/质量分析不能改写样本'
     print('REPORT_TOUCH_SQLITE_VERIFIED cases=' + ','.join(map(str,cases)))
 
 def add_query_items(connection):
@@ -250,6 +281,12 @@ try:
         print('REPORT_TOUCH_FIXTURE_PREPARED')
     elif mode == 'check-report':
         check_reports(connection, [36,37,38,39,40])
+    elif mode == 'prepare-dimensions':
+        with connection: snapshot = add_dimension_items(connection)
+        receipt_path.write_text(json.dumps({'dimensionSnapshot':snapshot},ensure_ascii=False))
+        print('REPORT_DIMENSION_FIXTURE_PREPARED')
+    elif mode == 'check-dimensions':
+        check_reports(connection, [38,43,44,45,46])
     elif mode == 'debug-check' and query_cases:
         check_query(connection, query_cases)
     elif mode == 'prepare-query':
@@ -359,7 +396,10 @@ try:
                 '2026-11-15T01:00:00.000Z','2026-11-15T01:00:00.000Z','2026-11-15T01:00:00.000Z')""",
                                (ids['template'], ids['source'], ids['category'], ids['unit'], ids['funding']))
         if report_cases:
-            with connection: add_report_items(connection)
+            with connection:
+                add_report_items(connection)
+                if any(case >= 43 for case in report_cases):
+                    ids['dimensionSnapshot'] = add_dimension_items(connection)
         if query_cases:
             with connection: add_query_items(connection)
         if lifecycle_cases:

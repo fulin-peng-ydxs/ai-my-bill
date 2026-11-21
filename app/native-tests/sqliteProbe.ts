@@ -119,4 +119,4 @@ export { backgroundCompletion } from './adjustmentProbe'
 
 export { ledgerQueries } from './ledgerQueryProbe'
 
-export { reportQueries } from './reportProbe'
+export { reportQueries, dimensionReports } from './reportProbe'

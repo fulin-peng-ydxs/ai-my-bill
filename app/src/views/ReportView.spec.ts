@@ -13,7 +13,7 @@ import { LocalError } from '../domain/localError'
 import type { CoreReport } from '../data/reports/reportQueryService'
 import { resolveLedgerDateRange } from '../domain/businessDates'
 const { core, list } = vi.hoisted(() => ({ core: vi.fn(), list: vi.fn() }))
-vi.mock('../api/reports', () => ({ getCoreReport: core, getReportSummary: vi.fn(), getExpenseReport: vi.fn(), getIncomeReport: vi.fn() }))
+vi.mock('../api/reports', () => ({ getCoreReport: core, getDimensionReport: core, getReportSummary: vi.fn(), getExpenseReport: vi.fn(), getIncomeReport: vi.fn() }))
 vi.mock('../api/ledgerEntries', () => ({ listLedgerEntries: list }))
 vi.mock('../components/AppDrawer.vue', () => ({ default: { render: () => null } }))
 vi.mock('../components/AppDialog.vue', () => ({ default: { render: () => null } }))
@@ -167,4 +167,27 @@ it('后台账目变更刷新；失败保留可信快照并禁止下钻，原重�
   retry.click(); await settle()
   expect(host.querySelector<HTMLFieldSetElement>('fieldset.report-result')!.disabled).toBe(false)
   expect(host.textContent).not.toContain('报表尚未更新')
+})
+
+
+it.each([
+  ['EXPENSE', 'PURCHASE_CHANNEL', 'UNSPECIFIED', 'missingPurchaseChannel'],
+  ['INCOME', 'PAYER', '123e4567-e89b-12d3-a456-426614174000', 'payerId'],
+] as const)('%s 多维跨午夜下钻使用原快照和稳定分组，返回保持原范围与维度', async (scope, dimension, value, key) => {
+  vi.setSystemTime(new Date('2026-11-20T15:59:59Z'))
+  const point = { group: '测试分组', label: '同名显示', value, amount: '15.00', itemCount: 1 }
+  const dimensionResult = { ...result, time: undefined,
+    resolvedRange: { startDate: '2026-11-20', endDate: '2026-11-20' },
+    ...(scope === 'EXPENSE' ? { expense: { dimension, measureLabel: '原始支出（元）', points: [point], truncated: false } }
+      : { income: { dimension, measureLabel: '收入金额（元）', points: [point], truncated: false } }) }
+  core.mockResolvedValue(dimensionResult)
+  const { host, router, click } = await mount(`/reports?scope=${scope}&range=TODAY&dimension=${dimension}`)
+  vi.setSystemTime(new Date('2026-11-20T16:00:01Z'))
+  await click(host.querySelector<HTMLButtonElement>('.dimension-ranking button')!)
+  expect(router.currentRoute.value.query).toMatchObject({ range: 'CUSTOM', startDate: '2026-11-20', endDate: '2026-11-20',
+    [key]: value === 'UNSPECIFIED' ? 'true' : value })
+  expect(list.mock.calls.at(-1)?.[0]).toMatchObject({ [key]: value === 'UNSPECIFIED' ? true : value })
+  const back = [...host.querySelectorAll<HTMLButtonElement>('button')].find(button => button.textContent?.includes('返回报表'))!
+  await click(back)
+  expect(router.currentRoute.value.query).toMatchObject({ scope, range: 'TODAY', dimension })
 })

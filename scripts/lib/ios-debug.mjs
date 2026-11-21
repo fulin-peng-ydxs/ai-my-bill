@@ -16,6 +16,7 @@ export const nativeCases = [
   'testOfflineAdjustmentLifecycle',
   'testOfflineLedgerQuery',
   'testOfflineCoreReports',
+  'testOfflineDimensionReports',
   'testOfflineCleanupFinalization',
   'testOfflineCleanupForegroundState',
   'testNativeLifecycleDraftWindow',
@@ -65,7 +66,17 @@ export const uiCases = [
   'test39ReportComparison',
   'test37ReportTimeGrainsQuarterYear',
   'test36ReportTimePreparation',
-  'test00PrepareReportApp'
+  'test00PrepareReportApp',
+  'test40ExpenseDimensionGroups',
+  'test41ExpenseDimensionAnalysis',
+  'test42IncomeDimensions',
+  'test43QualityThresholdDrill',
+  'test00PrepareDimensionReport',
+  'test40ExpensePaymentChannels',
+  'test40ExpenseLocations',
+  'test41ExpenseFrequencyQuality',
+  'test42IncomePayerName',
+  'test42IncomeFrequency'
 ]
 
 export const recoveryPhases = ['snapshot-ready', 'migration-recorded', 'upgrade-committed']
@@ -87,7 +98,13 @@ export const uiScenarios = {
   'query-input': [34, 35],
   'report-cycle': [42, 36, 41, 37, 40, 38, 39],
   'report-overview-grains': [42, 36, 41, 37, 40],
-  'report-grains': [42, 41, 37, 40]
+  'report-grains': [42, 41, 37, 40],
+  'report-dimensions': [47, 43, 48, 49, 44, 50, 45, 51, 52, 46],
+  'report-expense-groups': [47, 43, 48, 49],
+  'report-expense-analysis': [47, 44, 50],
+  'report-income-dimensions': [47, 45, 51, 52],
+  'report-quality': [47, 46],
+  'report-dimension-details': [47, 50, 45, 51, 52, 46]
 }
 
 /** 启动请求失败也可能遗留桥接会话；后续准备失败不能遮住历史故障。 */
@@ -149,7 +166,8 @@ export function selection(kind, name, nativeScenarios) {
             : index === 18 ? [17, 18] : index === 20 ? [17, 19, 20]
               : index === 27 ? [26, 27] : index === 28 ? [26, 28] : index === 29 ? [26, 28, 29]
               : index === 24 ? [22, 23, 24] : index === 25 ? [22, 23, 24, 25]
-                : index === 36 ? [42, 36] : [37, 38, 39, 40].includes(index) ? [42, 41, index] : index === 41 ? [42, 41] : [index]
+                : index === 36 ? [42, 36] : [37, 38, 39, 40].includes(index) ? [42, 41, index] : index === 41 ? [42, 41]
+                  : index >= 43 && index !== 47 ? [47, index] : [index]
         )
     }
   }

@@ -87,7 +87,7 @@ test('CI 启动入口与共享消费者选择必要专项，测试文件和局�
   }
   for (const name of ['ProductCombobox', 'NameSuggestionCombobox'])
     assert.deepEqual(selected(`app/src/components/${name}.vue`), ['secrets', 'app-common', 'ui-entry', 'ui-personal'])
-  assert.deepEqual(selected('app/src/components/DictionaryFilterPicker.vue'), ['secrets', 'app-common', 'ui-query', 'ui-reports'])
+  assert.deepEqual(selected('app/src/components/DictionaryFilterPicker.vue'), ['secrets', 'app-common', 'ui-query', 'ui-reports', 'ui-report-dimensions'])
   assert.deepEqual(selected('app/src/components/ComboboxField.spec.ts'), ['secrets', 'app-common'])
   assert.deepEqual(selected('app/src/stores/bootstrap.spec.ts'), ['secrets', 'app-common'])
 })
@@ -1185,4 +1185,17 @@ test('CI 普通 iOS 工具测试自动接入，同一叶子入口实际执行，
     encoding: 'utf8'
   })
   assert.notEqual(rejected.status, 0)
+})
+
+
+test('T11 报表专项覆盖新计算和原页面消费者，完整触摸要求多维实际执行与回读', t => {
+  const r = registry(fixture(t).root)
+  for(const file of ['app/src/data/reports/dimensionReports.ts','app/src/data/reports/reportMath.ts',
+    'app/test-support/dimensionReportScenarios.ts','app/src/composables/useReportData.ts','app/src/views/ReportView.vue']) {
+    assert.ok(selectSuites(r,'change',[file]).some(s=>s.name==='ui-report-dimensions'),file)
+  }
+  assert.ok(!selectSuites(r,'change',['app/src/data/reports/dimensionReports.spec.ts']).some(s=>s.kind==='ui'))
+  const phases = requiredModePhases('ios-touch')
+  assert.ok(phases.some(([, , log])=>log==='touch-dimensions.log'))
+  assert.ok(phases.some(([, , log])=>log==='touch-dimensions-readback.log'))
 })
