@@ -97,7 +97,16 @@ CI 规划入口消费 Actions 的 GITHUB_EVENT_PATH、GITHUB_EVENT_NAME、GITHUB
 
 [进程清理器](../../scripts/lib/ios-processes.mjs)内部传递 `MYBILL_PROCESS_SCOPE`，绑定本次命令树的私有目录、随机令牌和父登记 ID；目录及成员校验由[归属登记](../../scripts/lib/ios-process-scope.mjs)统一处理。它由执行器生成并随子进程环境继承，不从开发配置加载，也不参与验收授权。登记目录为 `.local/ios/tmp/ai-agent/ios-process-*`（700），文件为 600；仅记录 PID 和父子归属，不承载账本、安装回执或缓存。补偿命令经内部启动管道确认登记后才执行；正常关闭回收目录，清理失败保留诊断，不能手工复用旧范围。执行预算和清理规则见[验证策略](../testing/guide.md#统一套件按需-ci-与最终验收)。
 
-`scripts/ios-app.sh` 在 `.local/ios/tmp/ai-agent/native-*` 以权限 600 创建本轮 `test-context.json`，包含新建模拟器 UUID、随机 runId 与固定 App ID。`MYBILL_TEST_CONTEXT_FILE` 是脚本传给 xcodebuild 的绝对路径构建设置，经两个 scheme 的 TestAction 环境传入测试进程；守卫将清单 UUID 与系统 `SIMULATOR_UDID` 比较，并限制清单大小及结构。完整 simulator/touch 还必须由 `--from` 提供当前局部成功证据；调度器以 schema 2 历史维护工作区失败锁、按输入/故障事件的尝试次数及真实局部失败，跨套件检查也读取当前输入的完整历史，兼容迁移旧状态；可选 cacheRepairs 按输入/原生环境/阶段保存实际局部修复时间，只控制缓存重做，不修改完整失败锁或次数；Node 检查使用 ios-check-* 回执，多份 --from 逐份校验并按目标各自的失败时点合并，普通原生场景另包含场景覆盖键与日志信号；原生证据另绑定 Xcode/SDK/runtime build/宿主环境。调度器从入口以单调时钟累计预算，工具链前置查询及验收体共享剩余时间；ios-invocation-* 保存整轮预算/累计耗时及前置失败证据。所有入口的构建、安装及测试阶段通过 progress.json / timings.json 分别计时；common/ios-build 使用 ios-command-* 活动许可及 scope=engineering 回执，不计入完整验收历史，调度器统一通过内部 `MYBILL_FULL_ATTEMPT` 传递本轮活动许可及阶段进度；common/ios-build 也使用各自的工程检查目录，用户提供该变量不能替代调度许可。它不是用户可配置的绕过开关。局部调试由 ios-app.mjs 在同一受管根的 ios-debug-* 目录创建额外 kind/schema/state/name 字段，并在每次运行写入可选 scenario；Swift 守卫校验设备后由测试方法消费场景，缓存 xctestrun 仍指向这一测试清单。ui-install.json 虽沿用历史文件名，但统一登记 UI/Release 和 App/Debug 已核验的安装；包切换冷重置宿主合成账本并重建空基线，Debug/Release 构建缓存分别保留。完整入口借用会话时共用归属校验，卸载成功后失效旧登记，返回局部重新冷准备，不清除完整失败历史。会话、日志与 Debug/Release 缓存的生命周期及命令锁见[局部调试规范](../testing/guide.md#原生局部调试与完整验收)。完整 simulator/touch 入口选择 `--session` 时，调度器经内部 `MYBILL_FULL_SESSION` 传递已校验路径，子脚本在重置合成 App 前再次校验真实设备；普通完整命令清空该内部变量，不接受外部环境注入。借用设备的生命周期仍属调试会话，完整流程退出只关闭其运行；默认新建设备仍在退出时删除。上述配置不进入 Run/Archive 环境或正式 App 资源，也不读取 `.local/web`。缺少、不匹配、损坏或非模拟器环境拒绝测试；清单只由完整命令或显式打开的调试会话维护；手工 Xcode 测试不能套用其他会话或已关闭的清单。脚本对缺少清单的 hosted/UI 入口执行预期失败及业务数据未写入的负例，运行方式见[开发验证规范](../testing/guide.md#工程检查)。
+原生测试清单 `test-context.json` 由[完整流程](../../scripts/lib/ios-app-full.sh)在 `.local/ios/tmp/ai-agent/native-*` 创建，或由[调度器](../../scripts/ios-app.mjs)在显式创建的 `ios-debug-*` 会话目录维护，文件权限为 600。共同字段为 simulatorId、随机 runId 与固定 appId；局部清单另有 kind/schema/state/name 及运行时可选 scenario，测试方法在设备校验后读取场景，缓存 xctestrun 仍引用该会话清单。
+
+| 配置项 | 来源、传递与消费 | 生效与拒绝边界 |
+| --- | --- | --- |
+| `MYBILL_TEST_CONTEXT_FILE` | 脚本传给 xcodebuild 的绝对路径构建设置，经两个 scheme 的 TestAction 环境进入测试进程 | [隔离守卫](../../app/ios/App/NativeTests/OwnedSimulatorTestContext.swift)限制清单路径、大小和结构，缺失、损坏、不匹配或非模拟器环境拒绝测试；手工 Xcode 测试不能借用其他会话或已关闭的清单 |
+| `SIMULATOR_UDID` | 模拟器测试进程的系统环境，由守卫与清单 simulatorId 比较 | 不是用户指定测试设备的配置入口；设备须由受管命令创建或复用 |
+| `MYBILL_FULL_ATTEMPT` | 调度器向内部 Shell 传递当前活动许可及阶段进度目录，common/ios-build 和完整原生入口均消费 | 子流程在生成资源前核对许可与工作区命令锁；外部提供同名变量不能替代有效许可 |
+| `MYBILL_FULL_SESSION` | 完整 simulator/touch 显式选择 `--session` 后，调度器传递已校验会话路径，子脚本在重置前再次校验设备 | 未选择会话时调度器清空该内部变量，不接受外部环境注入；借用与新建设备的生命周期按验证规范执行 |
+
+上述配置不进入 Run/Archive 环境或正式 App 资源，也不读取 `.local/web`。失败锁、证据与阶段预算、分层缓存、安装/沙盒迁移及会话清理的完整规则统一见[原生局部调试与完整验收](../testing/guide.md#原生局部调试与完整验收)；清单缺失负例及实际数据未写入判据见[工程检查](../testing/guide.md#工程检查)。
 
 ### iOS 复测配置
 

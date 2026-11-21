@@ -2,12 +2,12 @@
 
 ## 当前能力与职责
 
-当前 GitHub Actions 提供持续检查，但不会自动连接环境。经授权的运维人员通过 `npm run release -- ...` 显式执行持续构建更新：统一入口负责本地关卡、候选封装、SSH交付、逐实例更新和健康检查；目标机器信息与通用流程分离。没有自动推送镜像仓库、自动审批、零停机或数据库自动回滚。
+本文维护保留的旧 Web/服务端手工构建与发布流程，不用于离线 iPhone App 的安装交付。旧端自动 CI 已移除；经授权的运维人员仍可通过 `npm run release -- ...` 显式执行本地关卡、候选封装、SSH 交付、逐实例更新和健康检查。目标机器信息与通用流程分离，没有自动推送镜像仓库、自动审批、零停机或数据库自动回滚。保留这些工具不授权恢复已停止的日常 Web/PG 服务。
 
 ```mermaid
 flowchart LR
-  Commit[提交与 PR] --> CI[CI 检查]
-  CI --> Candidate[干净 HEAD 构建候选]
+  Request[获授权的旧端手工发布请求] --> Checks[release build 本地关卡]
+  Checks --> Candidate[干净 HEAD 构建候选]
   Candidate --> Manifest[源码 / dist / 摘要与提交]
   Manifest --> Target[选择一个或多个本机目标]
   Target --> Images[目标机构建 app / migrate / proxy]
@@ -16,13 +16,13 @@ flowchart LR
   Verify --> Case[同步实例当前事实并回复验证结果]
 ```
 
-## CI 已配置的检查
+## 当前 CI 与旧端本地关卡
 
-push 与 pull_request 触发 ubuntu-latest 作业，checkout 全历史用于 secret 扫描，Node 按 .nvmrc、Java21，安装 PostgreSQL16 与隔离 Chromium。依次 npm --prefix web ci、npm run check、check:performance、check:security、check:e2e。
+本分支唯一保留的 Actions 是离线 iOS 按需工作流；普通 push/PR 不启动。其套件、执行条件、结果对账及最终候选要求由[统一验证策略](../testing/guide.md#统一套件按需-ci-与最终验收)维护，不运行旧 Web/Java/PostgreSQL/浏览器检查。远端额度或计费受阻不阻止已有必要本地验证通过后的开发和提交；最终候选的必要验收仍须完成。
 
-各检查的覆盖与未覆盖项见[工程检查](../testing/guide.md#工程检查)；目标容器、宿主、手机及真实恢复仍由部署验收核对。
+下文 `release build` 的旧端关卡仍在本地手工入口内执行，其覆盖与未覆盖项见[工程检查](../testing/guide.md#工程检查)。目标容器、宿主、Web 终端及真实恢复由旧端部署验收核对，不作为离线 App 的开发依赖。
 
-CI YAML 存在只证明配置，不等于某次远端作业成功。每次发布保存对应提交的实际执行结果。
+工作流存在只证明配置，不等于某次远端作业成功；本地发布关卡与已请求的远端检查分别保留对应提交的实际结果，不互相冒充。
 
 ## 统一入口与目标分层
 
