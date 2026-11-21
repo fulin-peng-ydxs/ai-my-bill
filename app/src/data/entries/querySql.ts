@@ -80,7 +80,7 @@ export function compileLedgerFilter(filters: LedgerFilters, now: Date) {
 }
 
 // 同一投影供有效明细、净支出构成和回收站消费；调整只冲减支出，不混成收入。
-export const readbackProjection = `SELECT e.id,e.entry_type,e.business_time,e.business_date,e.amount_text,e.adjusted_text,e.linked_count,
+const commonReadbackProjection = `SELECT e.id,e.entry_type,e.business_time,e.business_date,e.amount_text,e.adjusted_text,e.linked_count,
   e.funding_channel_id,e.funding_channel_name_snapshot,e.note,COALESCE(e.created_at,'') AS created_at,e.row_version,e.lifecycle_status,e.deleted_at,e.purge_after,
   e.primary_category_id,e.secondary_category_id,e.product_id,e.unit_id,e.purchase_channel_id,e.location_label_id,
   e.income_category_id,e.payer_id,e.income_name,e.search_text,
@@ -96,5 +96,9 @@ export const readbackProjection = `SELECT e.id,e.entry_type,e.business_time,e.bu
   NULL,NULL,NULL,l.adjustment_source_search_text || ' ' || a.search_text,
   l.product_name_snapshot,
   CASE WHEN a.adjustment_type='REFUND' THEN '退款' ELSE '报销' END,l.product_name_snapshot,a.adjustment_type,a.original_expense_id,NULL,NULL
-  FROM expense_adjustment a JOIN ledger_entry l ON l.id=a.original_expense_id
+  FROM expense_adjustment a JOIN ledger_entry l ON l.id=a.original_expense_id`
+
+export const readbackProjection = `${commonReadbackProjection}
   WHERE a.status='TRASHED' OR (a.status='EFFECTIVE' AND l.lifecycle_status='ACTIVE')`
+// 全部 CSV 保留已撤销/来源冻结的调整；普通明细仍只展示原有可见状态。
+export const allExportProjection = commonReadbackProjection

@@ -14,6 +14,7 @@ export const controlInputs = [
   'scripts/lib',
   'scripts/fixtures/dictionary-touch.py',
   'scripts/fixtures/ios-ui-baseline.py',
+  'scripts/fixtures/ios_data_management.py',
   'scripts/tests/ios-cache.test.mjs',
   'scripts/verify-ios-resources.mjs',
   'scripts/ios-storage-policy.mjs',

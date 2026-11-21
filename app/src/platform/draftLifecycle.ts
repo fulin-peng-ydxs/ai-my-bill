@@ -1,12 +1,12 @@
 import { ledgerFiles } from './ledgerFiles'
 
-const writers = new Set<() => Promise<void>>()
-export function registerDraftFlush(write: () => Promise<void>) {
+const writers = new Set<(strict?: boolean) => Promise<void>>()
+export function registerDraftFlush(write: (strict?: boolean) => Promise<void>) {
   writers.add(write)
   return () => writers.delete(write)
 }
-export async function flushDrafts() {
-  await Promise.all([...writers].map(write => write()))
+export async function flushDrafts(strict = false) {
+  await Promise.all([...writers].map(write => write(strict)))
 }
 /** 页面隐藏与原生挂起都消费同一批落盘入口；原生提供有界的后台完成窗口。 */
 export function installDraftLifecycle() {

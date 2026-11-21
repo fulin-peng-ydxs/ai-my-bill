@@ -6,7 +6,8 @@ vi.mock('../data/ledgerDatabase', () => ({ LedgerDatabase: class {
   open = database.open
   read = database.read
 } }))
-vi.mock('./preferences', () => ({ usePreferencesStore: () => ({ initialize: vi.fn(async () => {}) }) }))
+const preferences = vi.hoisted(() => ({ datasetId: 'old',generation: 1,initialize: vi.fn(async (_id: string) => {}) }))
+vi.mock('./preferences', () => ({ usePreferencesStore: () => preferences }))
 
 describe('账本初始化状态入口', () => {
   beforeEach(() => {
@@ -55,4 +56,25 @@ describe('账本初始化状态入口', () => {
     expect(incompatible.error?.retryable).toBe(false)
     expect(database.read).toHaveBeenCalledTimes(1)
   })
+  it('切换前同步撤销旧数据集与偏好代次，失败重新挂回实际可用账本并保留失败', async () => {
+    database.open.mockResolvedValue(undefined)
+    const { useBootstrapStore } = await import('./bootstrap')
+    const state = useBootstrapStore()
+    await state.initialize()
+    const generation = preferences.generation
+    await expect(state.replaceDataset(async () => {
+      expect(state.status).toBe('loading')
+      expect(state.datasetId).toBe('')
+      expect(preferences.datasetId).toBe('')
+      expect(preferences.generation).toBe(generation+1)
+      throw new Error('controlled-switch')
+    })).rejects.toThrow('controlled-switch')
+    expect(state.status).toBe('ready')
+    expect(state.datasetId).toBe('controlled-dataset')
+    database.read.mockResolvedValueOnce('new-dataset')
+    await state.replaceDataset(async () => {})
+    expect(state.datasetId).toBe('new-dataset')
+    expect(preferences.initialize).toHaveBeenLastCalledWith('new-dataset')
+  })
+
 })

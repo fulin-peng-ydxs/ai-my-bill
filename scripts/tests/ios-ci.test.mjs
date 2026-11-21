@@ -1199,3 +1199,17 @@ test('T11 报表专项覆盖新计算和原页面消费者，完整触摸要求�
   assert.ok(phases.some(([, , log])=>log==='touch-dimensions.log'))
   assert.ok(phases.some(([, , log])=>log==='touch-dimensions-readback.log'))
 })
+
+test('T12 文件/数据管理分流使用同一专项，完整报告缺失文件触摸或回读均拒绝', t => {
+  const r=registry(fixture(t).root)
+  for(const file of ['app/src/components/DataManagementActions.vue','app/src/api/exports.ts','app/src/data/management/dataManagement.ts','app/src/platform/ledgerTransfers.ts','app/src/Views/ProfileView.vue'.replace('Views','views')]) {
+    const selected = selectSuites(r,'change',[file]).map(s=>s.name)
+    assert.ok(selected.includes('ui-data-management'),file)
+    assert.ok(!selected.includes('touch'),file)
+  }
+  assert.ok(!selectSuites(r,'change',['app/src/data/management/dataManagement.spec.ts']).some(s=>s.name==='ui-data-management'))
+  assert.equal(r.suites['ui-data-management'].scenario,'data-cycle')
+  const phases=requiredModePhases('ios-touch')
+  assert.ok(phases.some(([,,log])=>log==='touch-data.log'))
+  assert.ok(phases.some(([,,log])=>log==='touch-data-readback.log'))
+})

@@ -20,7 +20,7 @@ sources:
 
 适用范围：离线 App 仅支持 iPhone、iOS 27.0 起，使用随包 WKWebView；沿用原页面布局、导航、组件、交互和主题，不重新设计。登录、角色、管理端、PWA 安装及跨设备同步规则只适用于保留的旧 Web，不进入 App。共享组件登记仍由下文统一维护；App 的个人页面登记只包含六个个人页面，不含 login 或 admin。
 
-当前实现：个人页面及共享外壳已迁入 App，先经真实 SQLite 初始化才挂载业务页；八类字典维护、录入候选及商品合并已接入本地服务，沿用原模板、样式与弹层确认。收支保存/编辑、草稿、偏好、日常模板及退款报销/回收站已接入 SQLite；收支总览、日/周/月/季/年时间趋势，以及九类支出和五类收入多维报表已接入本地统计，质量线索只读且支持原页面下钻返回；导出与完整备份仍待接入，未接通操作继续明确显示不可用。首个业务帧前恢复 SQLite 主题，双类型草稿独立恢复，存储失败复用原提示与重试；不建立浏览器存储。原界面摘要见 [uiBaseline](app/src/app/uiBaseline.json)：保留初始模板与全局样式哈希，已确认的 Unicode/输入法行为绑定另登记精确模板摘要，并回验剥离这组绑定后仍匹配原模板；不豁免结构、样式或其他行为变化。到期清理的时钟异常、失败或取消复用现有全局提示，不调整业务页面布局。
+当前实现：个人页面及共享外壳已迁入 App，先经真实 SQLite 初始化才挂载业务页；八类字典维护、录入候选及商品合并已接入本地服务，沿用原模板、样式与弹层确认。收支保存/编辑、草稿、偏好、日常模板及退款报销/回收站已接入 SQLite；收支总览、日/周/月/季/年时间趋势，以及九类支出和五类收入多维报表已接入本地统计，质量线索只读且支持原页面下钻返回；CSV 导出、密码加密备份、文件恢复和本机清空已接入本地数据与原生文件能力，新增操作复用“我的”数据与安全分组及原弹层。首个业务帧前恢复 SQLite 主题，双类型草稿独立恢复，存储失败复用原提示与重试；不建立浏览器存储。原界面摘要见 [uiBaseline](app/src/app/uiBaseline.json)：保留初始模板与全局样式哈希，已确认的 Unicode/输入法行为绑定另登记精确模板摘要，并回验剥离这组绑定后仍匹配原模板；不豁免结构、样式或其他行为变化。到期清理的时钟异常、失败或取消复用现有全局提示，不调整业务页面布局。
 
 ## 1. Visual Theme & Atmosphere
 
@@ -271,7 +271,8 @@ App 的 [designContract.spec.ts](app/src/app/designContract.spec.ts) 检查九�
 | 日常模板 | DailyEntryPicker复用AppDrawer、EntryTypeSwitch、AppStateBlock，两类表单共用DailyTemplateFallbackNotice；只回填白名单、更新时间、清空备注并复验，请求/投递有竞态保护 |
 | 明细与回收站 | GlobalLedgerSearch、AppliedFilterBar、FilterSheet、SegmentedControl、AppStateBlock、LedgerContextActions、AppToast、LedgerListItem、IncrementalLedgerList；共享日期分组、请求代次/幂等、上下文和状态切换 |
 | 删除及恢复反馈 | 回收站行显示剩余天数和关联清理影响；删除Toast提供即时恢复，永久清理经AppDialog二次确认 |
-| 导出 | P4页头与P5数据设置共用DataExportAction、API/轮询/取消/下载状态和AppToast；图标44×44px、设置整行披露 |
+| 导出 | P4页头与P5数据设置共用DataExportAction、任务/取消/保存状态和AppToast；图标44×44px、设置整行披露；App 使用原生“文件”，旧 Web 保持下载 |
+| App 数据管理 | DataManagementActions 组合 AppDrawer、AppDialog、FormField、错误及状态提示；入口与交互遵守[iPhone 安装与页面状态](#iphone-安装与页面状态) |
 | 报表 | ChartPanel、TimeTrendPanel、ReportDimensionPanel共用useReportChart的ECharts SVG、非零尺寸初始化、ResizeObserver、主题token和减少动态；九类支出、五类收入维度共享排行/空态/截断/键盘与触摸下钻 |
 | 跨页状态 | 最近收支类型来自服务端偏好；资金渠道/明细范围/报表范围/主题在“我的”统一维护；路由、刷新、退出和账号变化共用未保存守卫；报表筛选只在应用后生效，scope切换清理不兼容条件，下钻保持URL上下文 |
 
@@ -560,7 +561,7 @@ App 动效数值的唯一事实源为 `app/src/styles/tokens.css`（旧 Web 使�
 | `ledger-entry` | 记一笔 | `quick-entry` | 选择日常模板或手动快速保存商品支出、金额收入 | `EntryReceipt` / `AmountField` / `EntryTypeSwitch` / `DailyEntryPicker` / `ProductCombobox` / `NameSuggestionCombobox` / `DictionaryCombobox` / `FundingChannelPicker` / `FormSection` / `FormDisclosure` / `SavedEntrySummary` / `EntrySaveBar` / `AppToast` |
 | `reports` | 收支报表 | `dashboard` | 分析收支、调整、时间趋势、收支多维与质量线索并下钻 | `GlobalLedgerSearch` / `MoneySummary` / `ChartPanel` / `TimeTrendPanel` / `ReportDimensionPanel` / `DictionaryFilterPicker` / `FilterSheet` |
 | `bill-details` | 收支明细 | `list` | 查询和纠正支出、收入及调整 | `GlobalLedgerSearch` / `LedgerListItem` / `LedgerContextActions` / `IncrementalLedgerList` / `DictionaryFilterPicker` / `FilterSheet` / `AppDrawer` |
-| `profile-settings` | 我的 | `settings` | 从单一“管理个人字典”入口进入八类维护，并管理偏好、安装帮助和个人数据 | `PageWorkspace` / `PageHeading` / `SettingsGroup` / `SettingsDisclosureList` / `ThemeModeControl` / `PwaInstallPrompt` / `AppDrawer` / `AppDialog` |
+| `profile-settings` | 我的 | `settings` | 从单一“管理个人字典”入口进入八类维护，管理偏好和个人数据；App 增加完整备份、恢复和清空 | `PageWorkspace` / `PageHeading` / `SettingsGroup` / `SettingsDisclosureList` / `ThemeModeControl` / `DataExportAction` / `DataManagementActions`（App） / `PwaInstallPrompt`（旧 Web） / `AppDrawer` / `AppDialog` |
 | `personal-dictionaries` | 个人字典 | `settings` | 查看八类真实启用数与总数并进入对应维护页 | `PageWorkspace` / `PageHeading` / `DictionaryIndexPanel` / `AppStateBlock` |
 | `personal-dictionary-detail` | 字典维护 | `settings` | 按类型新增、改名、排序、停用和恢复；分类最多两级 | `GlobalLedgerSearch` / `SegmentedControl` / `AppDrawer` / `AppDialog` / `AppToast` / `ReorderList` / `DictionaryItemList` / `DictionaryListFooter` |
 | `admin-console` | 系统管理 | `admin` | 管理用户、默认字典、运行概况和操作日志 | `AppDataTable` / `AppDrawer` / `AppDialog` / `AppPagination` |
@@ -580,7 +581,7 @@ App 动效数值的唯一事实源为 `app/src/styles/tokens.css`（旧 Web 使�
 - 收支页在各视口使用票据式表单，主金额前置，页头依次提供日常支出/收入文字入口和选项管理图标按钮，分类摘要与补充信息错误自动展开，新增页独立底部动作区承接主保存和带边框的连续保存动作，候选、失败、校验、金额计算反馈、模板抽屉与撤销均在原上下文反馈；明细页在手机和桌面使用相同的信息顺序、日期分组和上下文动作，短按查看/编辑，低频操作由查看/编辑中的“更多操作”、长按、右键或 `Shift+F10` 打开统一面板；回收站只出现恢复和永久清理动作，行级反馈、剩余天数、即时撤销及关联调整影响均在原上下文表达。
 - 报表页在手机和桌面保持搜索、已应用条件、摘要、维度和图表的阅读顺序，图表按主题 token 渲染并提供键盘下钻；收支维度使用相同阅读顺序和可访问下钻。
 - 调整创建抽屉锁定来源并复用既有表单、金额、弹层和保存组件，撤销经危险确认后保留已撤销轨迹。
-- P4 页头导出保持 44×44px 图标并原位切换取消，P5“数据与安全”以设置行承载完整导出，两处共用状态组件且完成后直接下载。
+- P4 页头导出保持 44×44px 图标并原位切换取消，P5“数据与安全”以设置行承载完整导出，两处共用状态组件；App 完成后打开原生保存面板，旧 Web 直接下载。
 - P5 注销与 P6 用户注销复用既有弹层/操作抽屉，危险确认必须完整呈现即时删除、180 天匿名审计和备份恢复重放边界；P5 只有收到注销成功响应后才清理当前账号命名空间并返回登录页；失败或结果不明保留本地数据，不能依据会话失效推断注销成功。
 - P6-F1 在桌面使用稳定数据表格，在 `≤833px` 使用带状态色轨的账号摘要卡和底部操作抽屉。
 - P6-F3 备份卡片消费宿主只读状态，区分成功、失败、执行中、超时、未配置和不可读，并展示最近成功时间；不以旧成功掩盖当前失败。
@@ -590,6 +591,7 @@ App 动效数值的唯一事实源为 `app/src/styles/tokens.css`（旧 Web 使�
 
 - App 通过 Xcode 签名安装，不显示 PWA 安装、网站地址或登录/账号操作入口。数据库初始化 loading/error 沿用 AppStateBlock；失败不挂载业务页、不清空账本，可重试错误提供重试，不兼容版本只提示升级。
 - 主导航仍为“记一笔、报表、明细、我的”，保留原图标、顺序和入口；字典从原“选项管理”进入。App 缓存由 datasetId 隔离，隐藏页关闭候选/原生弹层并暂停轮询和图表观察器；返回保留草稿与滚动，子层放弃只处理指定作用域。
+- App 的备份/恢复与清空沿用上表数据管理组件；恢复先展示对象范围再确认，清空说明内部快照及外部文件边界。取消原生文件面板只取消该次选择/保存；错误保留重试入口，密码不跨操作保留。
 - 小/默认/大 iPhone 及横屏沿用现有断点；安全区只分配一次，完整软键盘下输入、正文滚动与保存动作必须可达。实际操作使用独立模拟器；最终真机性能和安装验收另行执行。
 - 检查入口及证明边界见[开发验证规范](agent-works/testing/guide.md#工程检查)。设计门禁由 check:app 执行，原生导航/缓存/焦点/嵌套关闭由 check:ios-app:simulator 执行；原生触摸、键盘及实际布局还须直接操作验证。
 

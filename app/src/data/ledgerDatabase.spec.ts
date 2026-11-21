@@ -44,6 +44,7 @@ beforeEach(async () => {
     nativeConnections.delete(database)
   })
   bridge.query.mockImplementation(async ({ statement }: { statement: string }) => {
+    if (statement === "SELECT key FROM maintenance_state WHERE key='backup_revision'") return { values: [{ key: 'backup_revision' }] }
     if (statement === 'PRAGMA foreign_keys') {
       return { values: [{ foreign_keys: 1 }] }
     }

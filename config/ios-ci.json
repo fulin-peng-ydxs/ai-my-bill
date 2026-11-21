@@ -154,6 +154,12 @@
       "scenario": "report-dimensions",
       "runner": "macos",
       "description": "九类支出、五类收入及质量线索的原生排行下钻"
+    },
+    "ui-data-management": {
+      "kind": "ui",
+      "scenario": "data-cycle",
+      "runner": "macos",
+      "description": "CSV 文件、加密备份、恢复拒绝/确认与清空后的外部恢复"
     }
   },
   "profiles": {
@@ -431,7 +437,8 @@
         "ui-dictionary-5",
         "ui-dictionary-6",
         "ui-dictionary-7",
-        "ui-report-dimensions"
+        "ui-report-dimensions",
+        "ui-data-management"
       ],
       "exclude": [
         "**/*.spec.ts"
@@ -458,6 +465,30 @@
       ],
       "suites": [
         "ui-report-dimensions"
+      ]
+    },
+    {
+      "paths": [
+        "app/src/data/management/**",
+        "app/src/components/DataManagementActions.vue",
+        "app/src/components/DataExportAction.vue",
+        "app/src/api/exports.ts",
+        "app/src/platform/ledgerTransfers.ts",
+        "app/src/platform/backupLifecycle.ts",
+        "app/src/views/ProfileView.vue",
+        "app/src/stores/bootstrap.ts",
+        "app/src/components/AppDrawer.vue",
+        "app/src/components/FormField.vue",
+        "app/src/components/SettingsGroup.vue",
+        "app/ios/App/App/LedgerDataFiles.swift",
+        "app/ios/App/App/LedgerFilesPlugin.swift",
+        "app/ios/App/App/Info.plist"
+      ],
+      "exclude": [
+        "**/*.spec.ts"
+      ],
+      "suites": [
+        "ui-data-management"
       ]
     }
   ],
@@ -486,7 +517,8 @@
       "ui-dictionary-5",
       "ui-dictionary-6",
       "ui-dictionary-7",
-      "ui-report-dimensions"
+      "ui-report-dimensions",
+      "ui-data-management"
     ]
   },
   "scriptSkips": {

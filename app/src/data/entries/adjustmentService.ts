@@ -65,7 +65,7 @@ export class AdjustmentService {
   }
 
   private async perform(dataset: string, operation: string, key: string, input: unknown, work: (sql: SqlSession) => Promise<ExpenseAdjustmentResponse>) {
-    const digest = await sha256(JSON.stringify({ dataset, input }))
+    const digest = sha256(JSON.stringify({ dataset, input }))
     let response!: ExpenseAdjustmentResponse
     await this.database.executeOnce(operation, key, digest, async sql => {
       await assertDataset(sql, dataset)

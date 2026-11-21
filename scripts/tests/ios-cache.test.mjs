@@ -445,3 +445,76 @@ test('UI 重置断点篡改/跨数据集拒绝恢复，不清除原目录和日�
     assert.equal(fs.existsSync(journal), true)
   }
 })
+
+
+test('T12 合法清空终态经完整回读登记后可迁移复用，未知数据集/篡改/跨会话仍拒绝', t => {
+  const p = baselineFixture(t)
+  assert.equal(p.execute('capture').status, 0)
+  const source = JSON.parse(fs.readFileSync(path.join(p.session,'ui-baseline/receipt.json')))
+  const fixture = write(p.root,path.relative(p.root,path.join(p.session,'run-Data','fixture.json')),
+    JSON.stringify({dataset:source.datasetId}))
+  write(p.root,path.relative(p.root,path.join(p.container,'Documents/T12-backup-test.mybill')),'MYBILL-BACKUP-1\nfixture')
+  const db = new DatabaseSync(p.file)
+  db.prepare('UPDATE ledger_meta SET dataset_id=?').run(randomUUID())
+  db.close()
+  assert.notEqual(p.execute('restore').status,0,'未知换库不能自动接管')
+  const settle = file => spawnSync('python3',['-I',p.script,'settle-data',p.contextFile,p.container,p.appHash,file],
+    {cwd:p.root,encoding:'utf8'})
+  const wrong = write(p.root,path.relative(p.root,path.join(p.session,'run-Wrong','fixture.json')),JSON.stringify({dataset:randomUUID()}))
+  assert.notEqual(settle(wrong).status,0)
+  let result=settle(fixture)
+  assert.equal(result.status,0,result.stderr)
+  const moved=path.join(path.dirname(p.container),randomUUID())
+  fs.cpSync(p.container,moved,{recursive:true})
+  result=p.execute('rebind',{container:moved})
+  assert.equal(result.status,0,result.stderr)
+  const movedFile=path.join(moved,'Library/OfflineLedger/ledgerSQLite.db')
+  const old=fs.readFileSync(movedFile)
+  const changed=new DatabaseSync(movedFile)
+  changed.prepare("UPDATE preference SET value=? WHERE key='theme'").run(JSON.stringify("changed"))
+  changed.close()
+  assert.notEqual(p.execute('restore',{container:moved}).status,0,'登记后改写不能借旧成功放行')
+  fs.writeFileSync(movedFile,old)
+  result=p.execute('restore',{container:moved})
+  assert.equal(result.status,0,result.stderr)
+  assert.deepEqual(fs.readFileSync(movedFile),fs.readFileSync(path.join(p.session,'ui-baseline/ledgerSQLite.db')))
+  assert.equal(fs.existsSync(path.join(p.session,'ui-data-transition.json')),false)
+})
+
+
+test('T12 已登记换库后的基线重置在旧目录移走时中断，保留新数据集并可再次重置', t => {
+  const p=baselineFixture(t)
+  assert.equal(p.execute('capture').status,0)
+  const source=JSON.parse(fs.readFileSync(path.join(p.session,'ui-baseline/receipt.json')))
+  const fixture=write(p.root,path.relative(p.root,path.join(p.session,'run-Data','fixture.json')),JSON.stringify({dataset:source.datasetId}))
+  write(p.root,path.relative(p.root,path.join(p.container,'Documents/T12-backup-test.mybill')),'MYBILL-BACKUP-1\nfixture')
+  const db=new DatabaseSync(p.file)
+  const current=randomUUID()
+  db.prepare('UPDATE ledger_meta SET dataset_id=?').run(current)
+  db.close()
+  const settled=spawnSync('python3',['-I',p.script,'settle-data',p.contextFile,p.container,p.appHash,fixture],{cwd:p.root,encoding:'utf8'})
+  assert.equal(settled.status,0,settled.stderr)
+  const killed=spawnSync('python3',['-I','-c',`
+import os, runpy, signal, sys
+from pathlib import Path
+module=runpy.run_path(sys.argv[1])
+rename=Path.rename
+def move(self,target):
+    result=rename(self,target)
+    if self.name=='OfflineLedger': os.kill(os.getpid(),signal.SIGTERM)
+    return result
+Path.rename=move
+module['run']('restore',*sys.argv[2:])
+`,p.script,p.contextFile,p.container,p.appHash],{cwd:p.root,encoding:'utf8'})
+  assert.equal(killed.signal,'SIGTERM')
+  assert.equal(fs.existsSync(p.file),false)
+  const recovered=p.execute('validate')
+  assert.equal(recovered.status,0,recovered.stderr)
+  const read=new DatabaseSync(p.file)
+  assert.equal(read.prepare('SELECT dataset_id FROM ledger_meta').get().dataset_id,current)
+  read.close()
+  assert.equal(fs.existsSync(path.join(p.session,'ui-data-transition.json')),true,'回滚保留换库身份')
+  const restored=p.execute('restore')
+  assert.equal(restored.status,0,restored.stderr)
+  assert.deepEqual(fs.readFileSync(p.file),fs.readFileSync(path.join(p.session,'ui-baseline/ledgerSQLite.db')))
+})

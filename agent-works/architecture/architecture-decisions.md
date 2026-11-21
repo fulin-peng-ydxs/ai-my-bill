@@ -6,7 +6,7 @@
 
 ## 离线 iOS 原生入口
 
-`app/` 是独立的 Vue 3 + Capacitor iPhone 工程，最低 iOS 27.0；`app/ios/App/App.xcodeproj` 的 `App` scheme 仅声明 iPhone 设备家族，关闭 Mac Catalyst、Mac 上的 iPhone/iPad 兼容运行和 visionOS 兼容运行。个人页面及共享组件已经沿原布局迁入 `app/src`，四个主导航及六个个人路由沿用原顺序和交互；旧 `web/src` 保留对照。启动由 bootstrap store 打开真实 LedgerDatabase，loading/error 时不挂载页面，成功后以 datasetId 隔离 KeepAlive。打开失败不重建库，仅可重试错误提供重试；完整业务服务和备份恢复仍待实现。
+`app/` 是独立的 Vue 3 + Capacitor iPhone 工程，最低 iOS 27.0；`app/ios/App/App.xcodeproj` 的 `App` scheme 仅声明 iPhone 设备家族，关闭 Mac Catalyst、Mac 上的 iPhone/iPad 兼容运行和 visionOS 兼容运行。个人页面及共享组件已经沿原布局迁入 `app/src`，四个主导航及六个个人路由沿用原顺序和交互；旧 `web/src` 保留对照。启动由 bootstrap store 打开真实 LedgerDatabase，loading/error 时不挂载页面，成功后以 datasetId 隔离 KeepAlive。打开失败不重建库，仅可重试错误提供重试；本地业务与数据管理均经下述原生入口接入；最终签名交付和容量验收另行执行。
 
 构建由 [ios-app.sh](../../scripts/ios-app.sh) 调用 app 的 `native:sync`：Vite 将 Vue 编译至 app/dist，Capacitor 将资源复制到原生 App/public，并生成配置和 CapApp-SPM 清单。配置不接受环境变量覆盖远程地址，未配置 `server.url`；WKWebView 从 `capacitor://localhost` 随包入口加载，HTML 的 CSP 将资源连接限制为自身。SwiftPM 清单由 CLI 生成，不维护另一份手工副本。[生成适配](../../scripts/normalize-capacitor-spm.mjs) 的 `--prepare` 在 sync 前从锁定 CLI 自带模板补齐缺失的 CapApp-SPM 文件（包含 Swift target 源），使干净检出也选择 SPM；已有工程与生成物不被准备阶段覆盖。普通构建和局部分层构建共用该入口。CLI 8.6.2 在 tools 5.9 清单中生成 `.iOS(.v27)`，sync 后同一脚本将这一已知形态转换为等价的 `.iOS("27.0")`；形态变化时明确失败，升级 CLI 时需重新评估。npm 依赖由 app/package-lock.json 锁定，原生远程依赖由 [Package.resolved](../../app/ios/App/App.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved) 固定，禁止自动漂移。
 
@@ -56,7 +56,15 @@ TemplateService 只从有效且引用可用的收支生成定点字段白名单�
 
 [默认清单](../../app/src/data/seed/defaults.ts) 只对确认的新数据集写入，与 datasetId、schemaVersion、seedVersion 和初始化标记共同提交。现有清单采用已确认的八项收入分类；已有账本不随安装包 seed 变化更新，空字典也不补种。偏好以 JSON 原值保存，区分缺失与 false、0、空值。新数据集执行结构/必需数据迁移后，初始偏好由当前 seed 显式覆盖同键迁移缺省值；此覆盖仅存在于新装事务。存量升级不执行 seed，缺失字段只由相应迁移补齐，已有用户值继续保持。数据层 executeOnce 将业务写入和操作结果共同提交，相同操作名/ID/摘要回传已有结果，摘要不同拒绝；调用者仍须提供规范化业务输入摘要及领域校验。
 
-升级前关闭原生连接，通过 [LedgerFilesPlugin](../../app/ios/App/App/LedgerFilesPlugin.swift) 检查空间、复制已关闭的数据库，以 128 KiB 分块计算并核对 SHA-256，写入清单后将临时目录原子改名为完成快照。文件能力只接受受限库标识，路径均由 App 私有目录派生；非空 WAL 及 magic 非零/日志头不完整的 journal 拒绝复制；SQLite 已失效的完整 journal 头（8 字节 magic 清零）可保留在原处，快照只复制已由 SQLite 校验并关闭的主库，不主动删除日志。私有目录、数据库及完成快照重新设置并回读系统备份排除标记；实体 iOS 构建还要求 completeUntilFirstUserAuthentication 文件保护回读成功。模拟器构建明确返回 protected=false、simulator=true，不把模拟器结果作为实体文件保护证据。快照自动调度、保留 7 份、恢复替换及外部加密备份在数据管理功能接入。
+升级前关闭原生连接，通过 [LedgerFilesPlugin](../../app/ios/App/App/LedgerFilesPlugin.swift) 检查空间、复制已关闭的数据库，以 128 KiB 分块计算并核对 SHA-256，写入清单后将临时目录原子改名为完成快照。文件能力只接受受限库标识，路径均由 App 私有目录派生；非空 WAL 及 magic 非零/日志头不完整的 journal 拒绝复制；SQLite 已失效的完整 journal 头（8 字节 magic 清零）可保留在原处，快照只复制已由 SQLite 校验并关闭的主库，普通快照不主动删除日志。私有目录、数据库及完成快照重新设置并回读系统备份排除标记；实体 iOS 构建还要求 completeUntilFirstUserAuthentication 文件保护回读成功。模拟器构建明确返回 protected=false、simulator=true，不把模拟器结果作为实体文件保护证据。快照的触发、轮换和数据集切换见下述数据管理机制。
+
+[DataManagementService](../../app/src/data/management/dataManagement.ts) 统一协调 CSV、加密备份、临时库验证与整库替换；管理操作不并行。CSV 沿用 39 列、UTF-8 BOM、引号转义、前导空白公式防护和上海时间，当前筛选复用明细过滤，全部数据包含回收站及非生效调整。单个读事务按 200 行稳定游标取数，按文本块追加原生临时文件，不将全账本放入 JS。原导出组件保留任务/取消交互，下载由原生文件保存面板承接；数据集切换使旧导出任务过期。
+
+[LedgerDataFiles](../../app/ios/App/App/LedgerDataFiles.swift) 只接受受管 UUID/库名，路径从 Library/OfflineLedger 派生。外部 `.mybill` 格式版本为 1，无压缩、数据库最大 256 MiB：PBKDF2-HMAC-SHA256 固定 600000 次、随机 32 字节盐，派生 AES-256-GCM 密钥；256 KiB 认证帧绑定头和顺序，清单先认证，逐帧解密后再核对完整 SHA-256。算法使用系统 CryptoKit/CommonCrypto，密码不入偏好、日志或 Keychain。恢复在独立临时库检查格式、版本、元信息、表清单/数量、迁移履历、结构和外键，经同一 LedgerDatabase 迁移链升级，不重铺默认字典；候选库还拒绝超额/状态不符的调整和其他数据集草稿；确认替换前 remap 为新的 datasetId，保留原业务内容、seed 来源与历史覆盖。
+
+备份、恢复保护和清空共用 LedgerDatabase.withClosed：同步关闭新受理窗口，排空已受理读写及摘要预处理，再关闭原生连接；文件操作后经同一校验入口重开。普通写入的事务同时更新 maintenance_state 中的 backup_revision，回滚/幂等只读回放/仅清理时钟状态不更新；已安装账本缺少水位时只补运行期标记。前台维护复用 DOM/原生状态双重资格，先严格落盘双草稿；有业务变更时按上海日历每天最多一份常规快照。升级/恢复前额外保护，完成副本先校验并持久化再原子发布，正式账本合计最近 7 份，进行中保护快照不参与删除；快照失败不删除最后可用副本。自动快照期间普通操作排队，手动替换窗口拒绝新操作。
+
+替换先持久化旧副本、新副本及新旧摘要标记，再同文件系统原子 rename；冷启动据标记及实际文件摘要辨别提交点，正式库校验通过后才回收旧副本。清空使用当前 seed 创建新数据集，再清理内部快照、临时文件及旧数据；用户主动保存的文件不在清理范围。bootstrap 在切换前撤销页面/偏好的数据集和代次，重建缓存，旧草稿与响应不能落入新账本。原生“文件”提供导入和另存；UIFileSharing 只公开 Documents，账本与临时明文仍在私有 Library 并排除系统备份。保存到本 App Documents 的用户副本可经“文件”复制到其他位置；App 内清空保留它，卸载则遵循系统沙盒删除规则。最近结果只保存最小状态，文件操作中断在冷启动标为待核对，不以旧成功替代失败。
 
 迁移阶段通过可注入的只读进度观察器报告 snapshot-ready、migration-recorded、upgrade-committed，不传出数据库连接。测试 bundle 在正式 open→upgrade 流程观察到指定阶段后挂起，隔离脚本再终止该 App；生产入口不读取测试请求文件，也没有启用故障的参数。提交前中断须恢复旧版完整结构/履历并可重试，提交后中断须保留新版且不重放迁移。
 

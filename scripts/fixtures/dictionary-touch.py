@@ -33,6 +33,9 @@ if mode == 'wait-initialized':
     raise RuntimeError('本轮模拟器的正式账本未在准备预算内初始化')
 assert database.is_file()
 # debug 数据仅由已校验会话中的全新 App 初始化；复用同一夹具，不开放任意 SQL 或路径。
+data_match = re.fullmatch(r'debug-(check-)?data-((?:5[3-9]|60)(?:,(?:5[3-9]|60))*)', mode)
+data_cases = [int(case) for case in data_match[2].split(',')] if data_match else []
+if data_match: mode = 'debug-check' if data_match[1] else 'prepare-data'
 report_match = re.fullmatch(r'debug-(check-)?report-((?:3[6-9]|(?:4[0-9]|5[0-2]))(?:,(?:3[6-9]|(?:4[0-9]|5[0-2])))*)', mode)
 report_cases = [int(case) for case in report_match[2].split(',')] if report_match else []
 if report_match:
@@ -55,7 +58,7 @@ debug_case = 16 if debug_entry_cycle else int(debug_match[2]) if debug_match els
 debug_check = bool(debug_match and debug_match[1])
 if debug_match:
     mode = 'debug-check' if debug_check else 'prepare'
-connection = sqlite3.connect(f'file:{database}?mode={"rw" if mode in ("prepare", "prepare-paging", "prepare-entry", "prepare-personal", "prepare-lifecycle", "prepare-query", "prepare-report") else "ro"}', uri=True)
+connection = sqlite3.connect(f'file:{database}?mode={"rw" if mode in ("prepare", "prepare-paging", "prepare-entry", "prepare-personal", "prepare-lifecycle", "prepare-query", "prepare-report", "prepare-data") else "ro"}', uri=True)
 def add_paging_items(connection, ids, kinds=('PRODUCT', 'UNIT')):
     """完整和局部触摸共用相同末页数据，始终拒绝覆盖既有同名样本。"""
     assert connection.execute("SELECT count(*) FROM dictionary_item WHERE name LIKE 'PageProduct%' OR name LIKE 'PageUnit%'").fetchone()[0] == 0
@@ -92,7 +95,7 @@ def check_entries(connection, case):
     print('ENTRY_TOUCH_SQLITE_VERIFIED case=' + str(case))
 
 
-def add_personal_items(connection, prefix='t7', label='日常', dictionary_ids=None, occurred_at=None):
+def add_personal_items(connection, prefix='t7', label='日常', dictionary_ids=None, occurred_at=None, ledger_ids=None):
     item_ids = dictionary_ids or {key:prefix+'-'+key for key in ['product','category','unit','funding','payer']}
     assert connection.execute("SELECT count(*) FROM dictionary_item WHERE id LIKE ?", (prefix+'-%',)).fetchone()[0] == 0
     for key, kind, name in [('product','PRODUCT','苹果'),('category','EXPENSE_CATEGORY','水果'),('unit','UNIT','份'),('funding','FUNDING_CHANNEL','现金'),('payer','PAYER','公司')]:
@@ -102,11 +105,11 @@ def add_personal_items(connection, prefix='t7', label='日常', dictionary_ids=N
     connection.execute("""INSERT INTO ledger_entry(id,entry_type,amount_cents,funding_channel_id,funding_channel_name_snapshot,business_time,business_date,
         product_id,product_name_snapshot,normalized_product_name_snapshot,primary_category_id,primary_category_name_snapshot,unit_id,unit_name_snapshot,
         unit_price_scaled,quantity_scaled,calculated_amount_cents,note,updated_at) VALUES(?,'EXPENSE',1500,?,?,?,?,?,?,?,?,?,?,?,123456,1250,1543,'来源备注',?)""",
-        (prefix+'-expense',item_ids['funding'],label+'现金',stamp,now.date().isoformat(),item_ids['product'],label+'苹果',label+'苹果',item_ids['category'],label+'水果',item_ids['unit'],label+'份',stamp))
+        ((ledger_ids or {}).get('expense',prefix+'-expense'),item_ids['funding'],label+'现金',stamp,now.date().isoformat(),item_ids['product'],label+'苹果',label+'苹果',item_ids['category'],label+'水果',item_ids['unit'],label+'份',stamp))
     connection.execute("""INSERT INTO ledger_entry(id,entry_type,amount_cents,funding_channel_id,funding_channel_name_snapshot,business_time,business_date,
         income_name,normalized_income_name,payer_id,payer_name_snapshot,income_category_id,income_category_name_snapshot,note,updated_at)
         VALUES(?,'INCOME',100000,?,?,?,?,?,?,?,?,'61000000-0000-0000-0000-000000000001','工资','来源收入备注',?)""",
-        (prefix+'-income',item_ids['funding'],label+'现金',stamp,now.date().isoformat(),label+'工资',label+'工资',item_ids['payer'],label+'公司',stamp))
+        ((ledger_ids or {}).get('income',prefix+'-income'),item_ids['funding'],label+'现金',stamp,now.date().isoformat(),label+'工资',label+'工资',item_ids['payer'],label+'公司',stamp))
 
 
 def add_report_items(connection):
@@ -274,7 +277,13 @@ connection.row_factory = sqlite3.Row
 connection.execute('PRAGMA foreign_keys=ON')
 receipt_path = Path(receipt_file)
 try:
-    if mode == 'debug-check' and report_cases:
+    if mode == 'prepare-data':
+        from ios_data_management import prepare
+        prepare(connection, receipt_path, add_personal_items)
+    elif mode == 'check-data' or (mode == 'debug-check' and data_cases):
+        from ios_data_management import check
+        check(connection, receipt_path, data_cases or list(range(53,60)), folder)
+    elif mode == 'debug-check' and report_cases:
         check_reports(connection, report_cases)
     elif mode == 'prepare-report':
         with connection: add_report_items(connection)

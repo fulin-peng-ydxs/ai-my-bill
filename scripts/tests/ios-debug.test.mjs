@@ -937,3 +937,37 @@ test('T11 多维单组/单用例共用原生入口，夹具隔离且回读拒绝
     assert.notEqual(execute('debug-check-'+selected.fixture).status,0)
   } finally {db.close()}
 })
+
+test('T12 局部文件场景只补必要前置，完整触摸必须实际登记且回读不可省略', t => {
+  const all = selection('--scenario','data-cycle',[])
+  assert.equal(all.fixture,'data-53,60,54,55,56,57,58,59')
+  assert.equal(all.cases.length,9)
+  assert.equal(selection('--case','DictionaryUITests/DictionaryTouchTests/test45DataBackupSave',[]).cases.length,3)
+  assert.deepEqual(selection('--case','DictionaryUITests/DictionaryTouchTests/test48DataRestoreConfirm',[]).cases,
+    ['test00DebugKeyboardReady','test45DataBackupCancel','test45DataBackupSave','test47DataRestorePreviewCancel','test48DataRestoreConfirm'].map(name=>'DictionaryUITests/DictionaryTouchTests/'+name))
+  const shell = fs.readFileSync(new URL('../lib/ios-app-full.sh',import.meta.url),'utf8')
+  for(const name of all.cases.filter(name=>!name.endsWith('test00DebugKeyboardReady'))) {
+    assert.ok(shell.includes('-only-testing:'+name))
+    assert.ok(shell.includes('-skip-testing:'+name))
+  }
+  assert.ok(shell.indexOf('prepare-data') > shell.indexOf('check-dimensions'))
+  assert.ok(shell.indexOf('check-data') > shell.indexOf('touch-data.log'))
+  assert.equal(selection('--case','NativeTests/NativeSqliteTests/testOfflineDataManagement',[]).cases.length,1)
+  assert.equal(selection('--case','NativeTests/NativeSqliteTests/testDataFileSecurityAndSwitchRecovery',[]).cases.length,1)
+  const {file, execute} = touchFixture(temporary(t))
+  const init = new DatabaseSync(file)
+  try { init.prepare('INSERT INTO ledger_meta VALUES(1,8,?,1,1,?,?)').run(randomUUID(),'2026-11-21T01:00:00Z','2026-11-21T01:00:00Z') }
+  finally {init.close()}
+  const prepared = execute('debug-data-54')
+  assert.equal(prepared.status,0,prepared.stderr)
+  const db = new DatabaseSync(file)
+  try {
+    assert.equal(db.prepare('SELECT COUNT(*) AS n FROM ledger_draft').get().n,2)
+    for(const row of db.prepare('SELECT data_json FROM ledger_draft').all()) assert.match(JSON.parse(row.data_json).occurredAt,/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/)
+    assert.equal(db.prepare('SELECT COUNT(*) AS n FROM expense_adjustment').get().n,1)
+    assert.equal(db.prepare("SELECT COUNT(*) AS n FROM ledger_entry WHERE lifecycle_status='TRASHED'").get().n,1)
+    assert.notEqual(execute('debug-check-data-54').status,0,'没有实际外部文件不能伪称保存通过')
+    assert.notEqual(execute('debug-data-54').status,0,'重复准备拒绝覆盖，不复用上一轮变更账本')
+    assert.equal(db.prepare("SELECT COUNT(*) AS n FROM ledger_entry WHERE id LIKE 't10-%' OR id LIKE 't7-%'").get().n,0)
+  } finally {db.close()}
+})

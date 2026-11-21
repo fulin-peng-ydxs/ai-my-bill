@@ -120,9 +120,31 @@ public class LedgerFilesPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "protect", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "snapshot", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "getLifecycleState", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "finishBackground", returnType: CAPPluginReturnPromise)
+        CAPPluginMethod(name: "finishBackground", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "createTransfer", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "appendTransfer", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "exportBackup", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "saveTransfer", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "pickBackup", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "prepareRestore", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "discardTransfer", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "cancelTransfer", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "replaceLedger", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "hashDatabase", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "discardDatabase", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "dataStatus", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "recordDataResult", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "recover", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "finishSwitch", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "finishSnapshot", returnType: CAPPluginReturnPromise)
     ]
-    private let worker = DispatchQueue(label: "com.mybill.offline.files", qos: .utility)
+    let worker = DispatchQueue(label: "com.mybill.offline.files", qos: .utility)
+    var documentCall: CAPPluginCall?
+    var documentExportId: String?
+    let cancellationLock = NSLock()
+    var cancelledTransfers = Set<String>()
+    var cleanedLaunchTransfers = false
+    var snapshotCancellationId: String?
     private var lifecycle: LedgerLifecycleCoordinator?
 
     public override func load() {
@@ -154,7 +176,7 @@ public class LedgerFilesPlugin: CAPPlugin, CAPBridgedPlugin {
         }
     }
 
-    private func root() throws -> URL {
+    func root() throws -> URL {
         guard let library = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask).first else {
             throw CocoaError(.fileNoSuchFile)
         }
@@ -169,7 +191,7 @@ public class LedgerFilesPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     /// 对目录和文件均重新应用并回读；不能依赖插件只在建目录时设置一次。
-    private func protectURL(_ input: URL) throws {
+    func protectURL(_ input: URL) throws {
         var url = input
         let attrs = try FileManager.default.attributesOfItem(atPath: url.path)
         guard attrs[.type] as? FileAttributeType != .typeSymbolicLink else { throw CocoaError(.fileReadInvalidFileName) }
@@ -196,11 +218,14 @@ public class LedgerFilesPlugin: CAPPlugin, CAPBridgedPlugin {
         #endif
     }
 
-    private func digest(_ url: URL) throws -> String {
+    func digest(_ url: URL) throws -> String {
         let stream = try FileHandle(forReadingFrom: url)
         defer { try? stream.close() }
         var hash = SHA256()
-        while let data = try stream.read(upToCount: 131072), !data.isEmpty { hash.update(data: data) }
+        while let data = try stream.read(upToCount: 131072), !data.isEmpty {
+            try checkSnapshotCancellation()
+            hash.update(data: data)
+        }
         return hash.finalize().map { String(format: "%02x", $0) }.joined()
     }
 
@@ -253,6 +278,15 @@ public class LedgerFilesPlugin: CAPPlugin, CAPBridgedPlugin {
 
     @objc func snapshot(_ call: CAPPluginCall) {
         worker.async {
+            self.snapshotCancellationId = call.getString("operationId")
+            defer {
+                if let id = self.snapshotCancellationId {
+                    self.cancellationLock.lock()
+                    self.cancelledTransfers.remove(id)
+                    self.cancellationLock.unlock()
+                }
+                self.snapshotCancellationId = nil
+            }
             var pending: URL?
             var stage = "preflight"
             do {
@@ -262,6 +296,38 @@ public class LedgerFilesPlugin: CAPPlugin, CAPBridgedPlugin {
                 try self.protectURL(db)
                 stage = "sidecar"
                 try Self.verifyClosedSidecars(database: db)
+                let storage = try self.store()
+                let previous = try storage.snapshotManifests().filter { $0.1["database"] as? String == call.getString("name") }
+                let checksum = try self.digest(db)
+                let reason = call.getString("reason") ?? "upgrade"
+                guard ["daily","upgrade","restore"].contains(reason) else { throw LedgerDataError.invalidFile }
+                if reason == "daily" {
+                    guard let day = call.getString("day"), day.range(of: "^\\d{4}-\\d{2}-\\d{2}$", options: .regularExpression) != nil else { throw LedgerDataError.invalidFile }
+                    guard let revision = call.getString("revision"), UUID(uuidString: revision) != nil else { throw LedgerDataError.invalidFile }
+                    let directory = try storage.directory(self.root(), "Snapshots")
+                    let policy = directory.appendingPathComponent("policy-" + call.getString("name")! + ".json")
+                    let saved = FileManager.default.fileExists(atPath: policy.path) ? try storage.json(policy) : [:]
+                    if !saved.isEmpty {
+                        guard let value = saved["day"] as? String, value.range(of: "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",options: .regularExpression) != nil,
+                              let previousRevision = saved["revision"] as? String, UUID(uuidString: previousRevision) != nil,
+                              let previousHash = saved["sha256"] as? String, previousHash.range(of: "^[a-f0-9]{64}$",options: .regularExpression) != nil else { throw LedgerDataError.invalidFile }
+                    }
+                    let storedDay = saved["day"] as? String ?? ""
+                    let lastDay = max(storedDay, previous.compactMap { $0.1["reason"] as? String == "daily" ? $0.1["day"] as? String : nil }.max() ?? "")
+                    if lastDay >= day || saved["revision"] as? String == revision {
+                        guard let valid = previous.first, try self.digest(valid.0.appendingPathComponent("ledger.db")) == valid.1["sha256"] as? String else { throw LedgerDataError.invalidFile }
+                        var skipped = self.protectionEvidence
+                        skipped.merge(["id": previous.first?.1["id"] as? String ?? "", "bytes": 0, "sha256": checksum, "skipped": true]) { _, new in new }
+                        call.resolve(skipped)
+                        return
+                    }
+                } else if let existing = previous.first(where: { $0.1["sha256"] as? String == checksum && $0.1["pinned"] as? Bool == true && $0.1["reason"] as? String == reason }) {
+                    guard try self.digest(existing.0.appendingPathComponent("ledger.db")) == checksum else { throw LedgerDataError.invalidFile }
+                    var reused = self.protectionEvidence
+                    reused.merge(["id": existing.1["id"]!, "bytes": existing.1["bytes"]!, "sha256": checksum]) { _, new in new }
+                    call.resolve(reused)
+                    return
+                }
                 stage = "capacity"
                 let size = (try fm.attributesOfItem(atPath: db.path)[.size] as? NSNumber)?.int64Value ?? 0
                 let available = (try fm.attributesOfFileSystem(forPath: db.deletingLastPathComponent().path)[.systemFreeSize] as? NSNumber)?.int64Value ?? 0
@@ -279,17 +345,28 @@ public class LedgerFilesPlugin: CAPPlugin, CAPBridgedPlugin {
                 try fm.copyItem(at: db, to: copy)
                 try self.protectURL(copy)
                 stage = "digest"
-                let checksum = try self.digest(db)
                 guard try self.digest(copy) == checksum else { throw CocoaError(.fileReadCorruptFile) }
                 stage = "manifest"
-                let manifest = try JSONSerialization.data(withJSONObject: ["id": id, "database": call.getString("name")!, "bytes": size, "sha256": checksum, "createdAt": ISO8601DateFormatter().string(from: Date())], options: [.sortedKeys])
+                let manifest = try JSONSerialization.data(withJSONObject: ["id": id, "database": call.getString("name")!, "bytes": size, "sha256": checksum, "createdAt": ISO8601DateFormatter().string(from: Date()), "reason": reason, "day": call.getString("day") ?? "", "revision": call.getString("revision") ?? "", "pinned": reason != "daily"], options: [.sortedKeys])
                 let manifestURL = temp.appendingPathComponent("manifest.json")
                 try manifest.write(to: manifestURL, options: .atomic)
                 try self.protectURL(manifestURL)
+                for url in [copy,manifestURL] {
+                    let handle = try FileHandle(forWritingTo: url)
+                    try handle.synchronize()
+                    try handle.close()
+                }
+                try storage.syncDirectory(temp)
                 let final = directory.appendingPathComponent(id, isDirectory: true)
+                try self.checkSnapshotCancellation()
                 try fm.moveItem(at: temp, to: final)
                 pending = nil
+                try storage.syncDirectory(directory)
                 try self.protectURL(final)
+                try storage.rotateSnapshots(database: call.getString("name")!)
+                if reason == "daily" {
+                    try storage.writeJSON(["day": call.getString("day")!, "sha256": checksum, "revision": call.getString("revision")!], directory.appendingPathComponent("policy-" + call.getString("name")! + ".json"))
+                }
                 var result = self.protectionEvidence
                 result.merge(["id": id, "bytes": size, "sha256": checksum]) { _, new in new }
                 call.resolve(result)
@@ -303,6 +380,15 @@ public class LedgerFilesPlugin: CAPPlugin, CAPBridgedPlugin {
                 call.reject("升级保护快照失败，账本未升级。", "SNAPSHOT_FAILED", error)
             }
         }
+    }
+
+    func checkSnapshotCancellation() throws {
+        guard let id = snapshotCancellationId else { return }
+        guard UUID(uuidString: id) != nil else { throw LedgerDataError.invalidFile }
+        cancellationLock.lock()
+        let cancelled = cancelledTransfers.contains(id)
+        cancellationLock.unlock()
+        if cancelled { throw LedgerDataError.cancelled }
     }
 }
 

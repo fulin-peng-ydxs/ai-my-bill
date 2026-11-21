@@ -56,7 +56,7 @@ export class EntryService {
     requireId(id)
     const key = operationId(requestedKey)
     const operation = type.toLowerCase()
-    const digest = await sha256(JSON.stringify({ id, key }))
+    const digest = sha256(JSON.stringify({ id, key }))
     await this.database.executeOnce(`${operation}.undo`, key, digest, async sql => {
       const receipt = (await sql.query('SELECT result_json FROM idempotency_result WHERE operation=? AND operation_id=?', [`${operation}.create`, key]))[0]
       const original = receipt ? JSON.parse(String(receipt.result_json)) : undefined
@@ -80,7 +80,7 @@ export class EntryService {
       requireId(requestedId)
     }
     const operation = `${type.toLowerCase()}.${version === undefined ? 'create' : 'update'}`
-    const digest = await sha256(JSON.stringify({ id: requestedId, version, input }))
+    const digest = sha256(JSON.stringify({ id: requestedId, version, input }))
     const result = await this.database.executeOnce(operation, key, digest, async sql => {
       validateWriteTime(input.occurredAt, now)
       const id = requestedId ?? crypto.randomUUID()

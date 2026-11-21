@@ -104,22 +104,34 @@ def recover_reset(session, ledger, identity, receipt):
     previous = ledger.with_name('offline-previous-' + operation)
     staging = ledger.with_name('offline-reset-' + operation)
     meta = {k: receipt[k] for k in ['schemaVersion', 'datasetId']}
+    previous_meta = record.get('previousMeta', meta)
+    if previous_meta != meta:
+        transition = session / 'ui-data-transition.json'
+        assert transition.is_file() and not transition.is_symlink()
+        stat = transition.stat()
+        assert stat.st_uid == os.getuid() and stat.st_mode & 0o077 == 0 and stat.st_size <= 4096
+        changed = json.loads(transition.read_text())
+        assert all(changed.get(k) == v for k, v in identity.items() if k != 'container')
+        assert changed['sourceDatasetId'] == meta['datasetId']
+        assert all(changed.get(k) == v for k, v in previous_meta.items())
+        assert record['previousHash'] == changed['databaseHash']
     for folder in [ledger, previous, staging]:
         assert folder.resolve() == folder
         assert not any(p.is_symlink() for p in folder.rglob('*'))
     if not ledger.exists():
         assert previous.is_dir(), '缺少本次重置的原目录，保留断点拒绝猜测'
-        assert validate_database(previous / 'ledgerSQLite.db') == meta
+        assert validate_database(previous / 'ledgerSQLite.db') == previous_meta
         previous.rename(ledger)
-    assert validate_database(ledger / 'ledgerSQLite.db') == meta
+    actual = validate_database(ledger / 'ledgerSQLite.db')
+    assert actual == meta or (actual == previous_meta and checksum(ledger / 'ledgerSQLite.db') == record.get('previousHash'))
     # 正式目录已有效时，previous 可能已清理一半；仅删除日志绑定的唯一操作目录。
     for folder in [previous, staging]:
         if folder.exists(): shutil.rmtree(folder)
     journal.unlink()
 
 
-def run(mode, context_file, container, app_hash):
-    session, ledger, identity = owned_context(context_file, container, app_hash, mode == 'rebind')
+def run(mode, context_file, container, app_hash, data_fixture=None):
+    session, ledger, identity = owned_context(context_file, container, app_hash, mode in ['rebind', 'settle-data'])
     baseline = session / 'ui-baseline'
     database = ledger / 'ledgerSQLite.db'
     if mode == 'capture':
@@ -137,7 +149,8 @@ def run(mode, context_file, container, app_hash):
             staging.rename(baseline)
         finally:
             if staging.exists(): shutil.rmtree(staging)
-    elif mode in ['validate', 'restore', 'rebind']:
+    elif mode in ['validate', 'restore', 'rebind', 'settle-data']:
+
         assert baseline.resolve() == baseline and not any(p.is_symlink() for p in baseline.rglob('*'))
         receipt = json.loads((baseline / 'receipt.json').read_text())
         # container 保留捕获来源；XCTest 可搬迁同一数据沙盒，不能只凭路径变化重装。
@@ -146,9 +159,41 @@ def run(mode, context_file, container, app_hash):
         source = baseline / 'ledgerSQLite.db'
         assert checksum(source) == receipt['sha256']
         assert validate_database(source, empty=True) == {k: receipt[k] for k in ['schemaVersion', 'datasetId']}
+        transition = session / 'ui-data-transition.json'
+        original = {k: receipt[k] for k in ['schemaVersion', 'datasetId']}
+        if mode == 'settle-data':
+            # T12 允许合法换库；只接受本会话已准备夹具的清空/完整恢复终态，不凭新 UUID 放行。
+            current = validate_database(database)
+            if current != original:
+                fixture = Path(data_fixture)
+                assert fixture.resolve() == fixture and fixture.parent.parent == session
+                assert re.fullmatch(r'run-[A-Za-z0-9]+', fixture.parent.name) and fixture.name == 'fixture.json'
+                assert fixture.is_file() and not fixture.is_symlink() and fixture.stat().st_uid == os.getuid()
+                source_data = json.loads(fixture.read_text())
+                assert source_data['dataset'] == original['datasetId']
+                import runpy
+                check = runpy.run_path(str(Path(__file__).with_name('ios_data_management.py')))['check']
+                with closing(sqlite3.connect(database.as_uri() + '?mode=ro', uri=True)) as db:
+                    db.row_factory = sqlite3.Row
+                    empty = db.execute('SELECT count(*) FROM ledger_entry').fetchone()[0] == 0
+                    check(db, fixture, [58] if empty else [59], Path(container))
+                assert current['schemaVersion'] == original['schemaVersion']
+                write_json(transition, {**identity, **current, 'sourceDatasetId': original['datasetId'],
+                                        'databaseHash': checksum(database)})
+            print('UI_DATA_TRANSITION_VERIFIED')
+            return
         if mode in ['restore', 'validate']: recover_reset(session, ledger, identity, receipt)
-        if mode in ['restore', 'rebind', 'validate']:
-            assert validate_database(database) == {k: receipt[k] for k in ['schemaVersion', 'datasetId']}
+        current = validate_database(database)
+        if current != original:
+            assert transition.is_file() and not transition.is_symlink()
+            stat = transition.stat()
+            assert stat.st_uid == os.getuid() and stat.st_mode & 0o077 == 0 and stat.st_size <= 4096
+            changed = json.loads(transition.read_text())
+            assert all(changed.get(k) == v for k, v in identity.items() if k != 'container')
+            # XCTest 仅可移动已核验的同一换库终态；其他设备/包/数据集或后续改写仍拒绝。
+            assert changed['sourceDatasetId'] == original['datasetId']
+            assert all(changed.get(k) == v for k, v in current.items())
+            assert changed['databaseHash'] == checksum(database)
         if mode == 'rebind':
             assert not (session / 'ui-reset.json').exists(), '待恢复重置不能先搬迁沙盒'
             write_json(session / 'ui-install.json', identity)
@@ -162,7 +207,8 @@ def run(mode, context_file, container, app_hash):
             try:
                 shutil.copy2(source, staging / 'ledgerSQLite.db')
                 write_json(journal, {**identity, 'schema': 1, 'operation': operation,
-                    **{k: receipt[k] for k in ['sha256', 'schemaVersion', 'datasetId']}})
+                    **{k: receipt[k] for k in ['sha256', 'schemaVersion', 'datasetId']},
+                    'previousMeta': current, 'previousHash': checksum(database)})
                 try:
                     ledger.rename(previous)
                     staging.rename(ledger)
@@ -170,6 +216,7 @@ def run(mode, context_file, container, app_hash):
                     recover_reset(session, ledger, identity, receipt)
                     raise
                 recover_reset(session, ledger, identity, receipt)
+                if transition.exists(): transition.unlink()
             finally:
                 # 超时/进程终止后保留日志绑定目录；下一轮恢复，不能提前清掉唯一原目录。
                 if not journal.exists() and staging.exists(): shutil.rmtree(staging)

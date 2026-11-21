@@ -1,6 +1,7 @@
 import XCTest
 import UIKit
 import WebKit
+import CryptoKit
 @testable import App
 
 /// Hosted XCTest 驱动实际 App 的 WKWebView；不使用浏览器数据库或 Mock。
@@ -258,6 +259,125 @@ final class NativeSqliteTests: XCTestCase {
         print("OFFLINE_DIMENSION_REPORT_EVIDENCE " + String(decoding: try JSONSerialization.data(withJSONObject: evidence, options: [.sortedKeys]), as: UTF8.self))
     }
 
+    func testOfflineDataManagement() async throws {
+        let webView = try await readyWebView()
+        let script = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "sqlite-probe", withExtension: "js"))
+        _ = try await webView.evaluateJavaScript(String(contentsOf: script, encoding: .utf8) + ";void 0;")
+        let result = try await webView.callAsyncJavaScript("return await MyBillNativeProbe.dataManagement()", arguments: [:], in: nil, contentWorld: .page)
+        let evidence = try XCTUnwrap(result as? [String: Any])
+        XCTAssertEqual(evidence["schemaVersion"] as? Int, 8)
+        XCTAssertEqual((evidence["checks"] as? [String])?.count, 9)
+        try verifySnapshots(prefix: XCTUnwrap(evidence["databasePrefix"] as? String), minimum: 1, cleanup: true)
+        print("OFFLINE_DATA_MANAGEMENT_EVIDENCE " + String(decoding: try JSONSerialization.data(withJSONObject: evidence, options: [.sortedKeys]), as: UTF8.self))
+    }
+
+    func testDataFileSecurityAndSwitchRecovery() throws {
+        let fm = FileManager.default
+        let root = fm.temporaryDirectory.appendingPathComponent("data-files-" + UUID().uuidString, isDirectory: true)
+        try fm.createDirectory(at: root,withIntermediateDirectories: false)
+        defer { try? fm.removeItem(at: root) }
+        let plugin = LedgerFilesPlugin()
+        let hash: (URL) throws -> String = { url in
+            let input = try FileHandle(forReadingFrom: url)
+            defer { try? input.close() }
+            var digest = SHA256()
+            while let bytes = try input.read(upToCount: 131072), !bytes.isEmpty { digest.update(data: bytes) }
+            return digest.finalize().map { String(format: "%02x",$0) }.joined()
+        }
+        var failStage: String?
+        let storage = LedgerDataStore(root: root,protect: plugin.protectURL,hash: hash,observe: { stage in
+            if failStage == stage { failStage = nil; throw LedgerDataError.cancelled }
+        })
+        let database = try storage.database("ledger")
+        let content = Data((0..<(LedgerDataStore.chunk * 2 + 19)).map { UInt8($0 % 251) })
+        try content.write(to: database)
+        try plugin.protectURL(database)
+        let original = try hash(database)
+        let id = try storage.begin("backup")
+        try storage.seal(id,name: "ledger",password: "Native-password-测试",manifest: ["backupFormatVersion": 1,"schemaVersion": 8])
+        let archive = try storage.payload(id), bytes = try Data(contentsOf: archive)
+        XCTAssertNil(bytes.range(of: content.prefix(128)))
+        XCTAssertThrowsError(try storage.unseal(id,password: "wrong-password")) { XCTAssertEqual($0 as? LedgerDataError,.authentication) }
+        let decoded = try storage.unseal(id,password: "Native-password-测试")
+        XCTAssertEqual(try hash(storage.database(decoded.0)),original)
+        XCTAssertEqual(try storage.database(decoded.0).resourceValues(forKeys: [.isExcludedFromBackupKey]).isExcludedFromBackup,true)
+        var corrupt = bytes
+        corrupt[corrupt.count - 1] ^= 1
+        try corrupt.write(to: archive)
+        XCTAssertThrowsError(try storage.unseal(id,password: "Native-password-测试"))
+        XCTAssertEqual(try hash(database),original)
+        try bytes.dropLast().write(to: archive)
+        XCTAssertThrowsError(try storage.unseal(id,password: "Native-password-测试"))
+        try bytes.write(to: archive)
+        // 恶意派生参数在 KDF 前拒绝，不以实际执行高成本派生来测试上界。
+        let offset = LedgerDataStore.magic.count
+        let headerLength = bytes[offset..<offset+4].reduce(0) { ($0 << 8) | Int($1) }
+        var header = try XCTUnwrap(JSONSerialization.jsonObject(with: bytes.subdata(in: offset+4..<offset+4+headerLength)) as? [String: Any])
+        header["iterations"] = 2_000_000_000
+        let changedHeader = try JSONSerialization.data(withJSONObject: header)
+        var size = UInt32(changedHeader.count).bigEndian
+        let hostile = LedgerDataStore.magic + withUnsafeBytes(of: &size) { Data($0) } + changedHeader
+        try hostile.write(to: archive)
+        XCTAssertThrowsError(try storage.unseal(id,password: "Native-password-测试")) { XCTAssertEqual($0 as? LedgerDataError,.incompatible) }
+        try bytes.write(to: archive)
+        let noSpace = LedgerDataStore(root: root,protect: plugin.protectURL,hash: hash,availableBytes: { 0 })
+        XCTAssertThrowsError(try noSpace.unseal(id,password: "Native-password-测试"))
+        XCTAssertThrowsError(try storage.database("../../ledger"))
+        XCTAssertThrowsError(try storage.transfer("../../outside"))
+
+        // 在 marker 前后、原子提交后及旧文件已删除后分别中断；只读旧库或完整新库可见。
+        for stage in ["copies-ready","switch-prepared","switch-committed","result-ready","cleanup-recorded","old-files-removed"] {
+            try content.write(to: database)
+            let name = "restore_" + UUID().uuidString.replacingOccurrences(of: "-",with: "").lowercased()
+            let prepared = try storage.database(name), replacement = Data("new-dataset-\(stage)".utf8)
+            try replacement.write(to: prepared)
+            failStage = stage
+            if stage.hasPrefix("switch-") || stage == "copies-ready" {
+                XCTAssertThrowsError(try storage.replace(name: "ledger",prepared: name,operationId: UUID().uuidString,clear: false,expectedSHA256: hash(prepared))) {
+                    XCTAssertEqual($0 as? LedgerDataError,.cancelled,"未进入指定切换中断阶段")
+                }
+            } else {
+                try storage.replace(name: "ledger",prepared: name,operationId: UUID().uuidString,clear: false,expectedSHA256: hash(prepared))
+                XCTAssertThrowsError(try storage.finishSwitch("ledger")) {
+                    XCTAssertEqual($0 as? LedgerDataError,.cancelled,"未进入指定收尾中断阶段")
+                }
+            }
+            try storage.recover("ledger")
+            XCTAssertEqual(try Data(contentsOf: database),["copies-ready","switch-prepared"].contains(stage) ? content : replacement)
+            try storage.finishSwitch("ledger")
+            try storage.finishSwitch("ledger")
+            XCTAssertFalse(fm.fileExists(atPath: try storage.marker("ledger").path))
+        }
+        // 外部副本不在账本根目录，清空内部快照/能力后仍能重新导入并认证解密。
+        let external = fm.temporaryDirectory.appendingPathComponent("external-" + UUID().uuidString + ".mybill")
+        try bytes.write(to: external)
+        defer { try? fm.removeItem(at: external) }
+        let snapshots = try storage.directory(root,"Snapshots")
+        for i in 0..<9 {
+            let snapshotId = UUID().uuidString.lowercased(), folder = try storage.directory(snapshots,snapshotId)
+            let copy = folder.appendingPathComponent("ledger.db")
+            try content.write(to: copy)
+            try storage.writeJSON(["id": snapshotId,"database": "ledger","bytes": content.count,"sha256": original,
+                "createdAt": String(format: "2026-11-%02dT00:00:00Z",i+1),"pinned": i == 0],folder.appendingPathComponent("manifest.json"))
+        }
+        try storage.rotateSnapshots(database: "ledger")
+        XCTAssertEqual(try storage.snapshotManifests().count,7)
+        XCTAssertTrue(try storage.snapshotManifests().contains { $0.1["pinned"] as? Bool == true })
+        try storage.finishSwitch("ledger")
+        XCTAssertFalse(try storage.snapshotManifests().contains { $0.1["pinned"] as? Bool == true }, "校验就绪后不遗留中断保护钉住旧快照")
+        let fresh = "fresh_" + UUID().uuidString.replacingOccurrences(of: "-",with: "").lowercased()
+        try Data("empty-dataset".utf8).write(to: storage.database(fresh))
+        try storage.replace(name: "ledger",prepared: fresh,operationId: UUID().uuidString,clear: true,expectedSHA256: hash(storage.database(fresh)))
+        try storage.finishSwitch("ledger")
+        XCTAssertEqual(try storage.snapshotManifests().count,0)
+        XCTAssertEqual(try fm.contentsOfDirectory(atPath: storage.directory(root,"Operations").path).count,0)
+        XCTAssertEqual(try fm.contentsOfDirectory(atPath: storage.directory(root,"Transfers").path).count,0)
+        let imported = try storage.importFile(external)
+        let restored = try storage.unseal(imported,password: "Native-password-测试")
+        XCTAssertEqual(try hash(storage.database(restored.0)),original)
+        print("OFFLINE_DATA_FILE_SECURITY_VERIFIED frames/authentication/limits/space/ownership/switch-recovery/retention/clear/external-restore")
+    }
+
     func testNativeLifecycleDraftWindow() async throws {
         // 私有 NotificationCenter 与可控窗口使慢写/快速切换确定可复现，不改变宿主 App 状态。
         let center = NotificationCenter()
@@ -375,6 +495,15 @@ final class NativeSqliteTests: XCTestCase {
         let root = library.appendingPathComponent("OfflineLedger/Snapshots", isDirectory: true)
         var verified = 0
         for folder in try FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil) {
+            if folder.lastPathComponent.hasPrefix("policy-") && folder.pathExtension == "json" {
+                guard folder.lastPathComponent.hasPrefix("policy-" + prefix) else { continue }
+                let policy = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: folder)) as? [String: String])
+                XCTAssertNotNil(policy["revision"].flatMap(UUID.init(uuidString:)))
+                XCTAssertEqual(policy["sha256"]?.count, 64)
+                XCTAssertEqual(try folder.resourceValues(forKeys: [.isExcludedFromBackupKey]).isExcludedFromBackup, true)
+                if cleanup { try FileManager.default.removeItem(at: folder) }
+                continue
+            }
             let manifestURL = folder.appendingPathComponent("manifest.json")
             let manifest = try JSONSerialization.jsonObject(with: Data(contentsOf: manifestURL)) as? [String: Any]
             guard (manifest?["database"] as? String)?.hasPrefix(prefix) == true else { continue }

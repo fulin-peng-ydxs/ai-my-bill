@@ -17,6 +17,8 @@ export const nativeCases = [
   'testOfflineLedgerQuery',
   'testOfflineCoreReports',
   'testOfflineDimensionReports',
+  'testOfflineDataManagement',
+  'testDataFileSecurityAndSwitchRecovery',
   'testOfflineCleanupFinalization',
   'testOfflineCleanupForegroundState',
   'testNativeLifecycleDraftWindow',
@@ -76,7 +78,9 @@ export const uiCases = [
   'test40ExpenseLocations',
   'test41ExpenseFrequencyQuality',
   'test42IncomePayerName',
-  'test42IncomeFrequency'
+  'test42IncomeFrequency',
+  'test44DataCsv','test45DataBackupSave','test46DataWrongPassword','test47DataRestorePreviewCancel',
+  'test48DataRestoreConfirm','test49DataClearCancelConfirm','test50DataExternalRestore','test45DataBackupCancel'
 ]
 
 export const recoveryPhases = ['snapshot-ready', 'migration-recorded', 'upgrade-committed']
@@ -104,6 +108,11 @@ export const uiScenarios = {
   'report-expense-analysis': [47, 44, 50],
   'report-income-dimensions': [47, 45, 51, 52],
   'report-quality': [47, 46],
+  'data-cycle': [53,60,54,55,56,57,58,59],
+  'data-backup': [60,54],
+  'data-restore': [60,54,55,56,57],
+  'data-restore-clear': [60,54,56,57,58,59],
+  'data-clear': [60,54,58,59],
   'report-dimension-details': [47, 50, 45, 51, 52, 46]
 }
 
@@ -167,7 +176,9 @@ export function selection(kind, name, nativeScenarios) {
               : index === 27 ? [26, 27] : index === 28 ? [26, 28] : index === 29 ? [26, 28, 29]
               : index === 24 ? [22, 23, 24] : index === 25 ? [22, 23, 24, 25]
                 : index === 36 ? [42, 36] : [37, 38, 39, 40].includes(index) ? [42, 41, index] : index === 41 ? [42, 41]
-                  : index >= 43 && index !== 47 ? [47, index] : [index]
+                  : index === 53 ? [53] : index === 60 ? [60] : index === 54 ? [60,54] : index === 55 ? [60,54,55] : index === 56 ? [60,54,56] : index === 57 ? [60,54,56,57]
+                  : index === 58 ? [60,54,58] : index === 59 ? [60,54,58,59]
+                  : index >= 43 && index < 53 && index !== 47 ? [47, index] : [index]
         )
     }
   }
@@ -177,14 +188,14 @@ function uiSelection(indices) {
   return {
     scheme: 'DictionaryTouch',
     configuration: 'Release',
-    fixture: indices.some(i => i >= 36) ? 'report-' + indices.join(',')
+    fixture: indices.some(i => i >= 53) ? 'data-' + indices.join(',') : indices.some(i => i >= 36) ? 'report-' + indices.join(',')
       : indices.some(i => i >= 31) ? 'query-' + indices.join(',')
       : indices.some(i => i >= 26) ? 'lifecycle-' + indices.join(',')
       : indices.some(i => i >= 17) ? 'personal-' + indices.join(',')
       : indices.includes(15) && indices.includes(16) ? 'entry-cycle' : String(indices.at(-1)),
     cases: [
       // 只为实际输入场景保留键盘前置；只读报表粒度不串入明细搜索键盘验收。
-      ...(indices.some((i) => (i >= 1 && i <= 5) || i === 11 || i === 13 || (i >= 15 && i <= 35) || i === 38)
+      ...(indices.some((i) => (i >= 1 && i <= 5) || i === 11 || i === 13 || (i >= 15 && i <= 35) || i === 38 || i >= 53)
         ? ['DictionaryUITests/DictionaryTouchTests/test00DebugKeyboardReady']
         : []),
       ...indices.map((i) => `DictionaryUITests/DictionaryTouchTests/${uiCases[i]}`)

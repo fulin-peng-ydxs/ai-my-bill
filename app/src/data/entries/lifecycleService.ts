@@ -25,7 +25,7 @@ export class LifecycleService {
       throw lifecycleConflict()
     }
     const key = operationId(requestedKey)
-    const digest = await sha256(JSON.stringify({ dataset, item, action, includeAdjustments }))
+    const digest = sha256(JSON.stringify({ dataset, item, action, includeAdjustments }))
     let response: LedgerLifecycleResponse | undefined
     await this.database.executeOnce(`lifecycle.${action}`, key, digest, async sql => {
       await assertDataset(sql, dataset)

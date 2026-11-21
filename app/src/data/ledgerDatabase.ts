@@ -14,6 +14,14 @@ export interface SqlSession {
 export type LifecycleStage = 'snapshot-ready' | 'migration-recorded' | 'upgrade-committed'
 /** 进度观察依赖只传阶段/版本，不暴露连接；测试 bundle 可在真实路径观察到阶段后挂起。 */
 export type LifecycleObserver = (stage: LifecycleStage, version: number) => Promise<void>
+export interface DatabaseOrigin {
+  schemaVersion: number
+  datasetId: string
+  initialized: 1
+  seedVersion: number
+  historyStart: string
+  tables: Record<string, number>
+}
 const owners = new Set<string>()
 
 /** 单一账本所有者：初始化/升级/读写/关闭共享队列，外部不能取得原生连接。 */
@@ -22,6 +30,9 @@ export class LedgerDatabase {
   private connection?: NativeDatabase
   private ready = false
   private claimed = false
+  private maintenance = false
+  private queueDuringMaintenance = false
+  private originVerified = false
 
   constructor(
     readonly name = 'ledger',
@@ -29,6 +40,7 @@ export class LedgerDatabase {
     private readonly seed: Seed = defaultSeed,
     private readonly files: LedgerFiles = ledgerFiles,
     private readonly observe: LifecycleObserver = async () => {},
+    private readonly origin?: DatabaseOrigin,
   ) {}
 
   open(): Promise<void> {
@@ -46,23 +58,7 @@ export class LedgerDatabase {
       owners.add(this.name)
       this.claimed = true
       try {
-        if (!this.chain.length || this.chain.some((m, i) => m.version !== i + 1)) {
-          this.refuse('迁移版本不连续。')
-        }
-        this.connection = await createIosDatabase(this.name, 1)
-        await this.connection.open()
-        await this.verifyForeignKeys()
-        const tables = await this.connection.query("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")
-        if (!tables.values?.length) {
-          await this.initialize()
-        } else {
-          await this.upgrade()
-        }
-        const flags = await this.files.protect({ name: this.name })
-        if (!flags.excluded || (!flags.protected && !flags.simulator)) {
-          this.refuse('账本文件保护未生效。')
-        }
-        this.ready = true
+        await this.connect()
       } catch (error) {
         await this.release(error)
         throw error
@@ -78,6 +74,7 @@ export class LedgerDatabase {
   }
 
   read<T>(task: (sql: SqlSession) => Promise<T>, signal?: AbortSignal): Promise<T> {
+    if (this.maintenance && !this.queueDuringMaintenance) return Promise.reject(this.busy())
     // 读入口仍仅面向数据层仓储；不把原始 SQL 暴露给页面。
     return this.queue.run(async () => {
       this.requireReady()
@@ -86,19 +83,94 @@ export class LedgerDatabase {
   }
 
   write<T>(task: (sql: SqlSession) => Promise<T>, signal?: AbortSignal): Promise<T> {
+    if (this.maintenance && !this.queueDuringMaintenance) return Promise.reject(this.busy())
     return this.queue.run(async () => {
       this.requireReady()
-      return this.transaction(() => task(this.session()), signal)
+      return this.transaction(async () => {
+        let metadataChanges = 0
+        const sql = this.session((statement, changes) => {
+          if (/^\s*(?:INSERT\s+INTO|UPDATE|DELETE\s+FROM)\s+maintenance_state\b/i.test(statement)) metadataChanges += changes
+        })
+        const before = (await sql.query('SELECT CAST(total_changes() AS TEXT) AS n'))[0].n
+        const result = await task(sql)
+        const after = (await sql.query('SELECT CAST(total_changes() AS TEXT) AS n'))[0].n
+        if (BigInt(String(after)) - BigInt(String(before)) > BigInt(metadataChanges)) await this.markBackupChange()
+        return result
+      }, signal)
     }, signal)
   }
 
+  /** 分批导出持有同一读事务及队列，不因批次之间的新写入混成不同快照。 */
+  readSnapshot<T>(task: (sql: SqlSession) => Promise<T>, signal?: AbortSignal): Promise<T> {
+    return this.read(() => this.transaction(() => task(this.session()), signal), signal)
+  }
+
+  /** 文件复制/替换的唯一关闭窗口。立即拒绝新任务，排空已受理任务后才关闭；所有权不交接。 */
+  withClosed<T, C = undefined>(task: (captured: C) => Promise<T>, capture?: (sql: SqlSession) => Promise<C>, queueNew = false): Promise<T> {
+    if (this.maintenance) return Promise.reject(this.busy())
+    this.maintenance = true
+    this.queueDuringMaintenance = queueNew
+    return this.queue.run(async () => {
+      this.requireReady()
+      const captured = capture ? await capture(this.session()) : undefined as C
+      this.ready = false
+      await this.closeNativeConnection()
+      let result: T
+      try {
+        result = await task(captured)
+      } catch (error) {
+        try { await this.connect() }
+        catch (reopen) { throw new AggregateError([error, reopen], '文件操作失败且账本重开失败。') }
+        throw error
+      }
+      await this.connect()
+      return result
+    }).finally(() => { this.maintenance = false; this.queueDuringMaintenance = false })
+  }
+
+  private busy() {
+    return new LocalError('DATABASE_BUSY', '正在保护或切换账本，请稍后重试。', { retryable: true })
+  }
+
+  private async connect() {
+    if (!this.chain.length || this.chain.some((m, i) => m.version !== i + 1)) this.refuse('迁移版本不连续。')
+    await this.files.recover?.({ name: this.name })
+    this.connection = await createIosDatabase(this.name, 1)
+    await this.connection.open()
+    await this.verifyForeignKeys()
+    const tables = await this.connection.query("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")
+    if (!tables.values?.length) {
+      if (this.origin) this.refuse('备份没有已初始化账本，不能使用默认配置补造。')
+      await this.initialize()
+    }
+    else await this.upgrade()
+    // 运行期快照水位不改变业务 schema；已安装 v6+ 的账本只补水位，不补种字典。
+    if (this.chain.length >= 6 && !(await this.session().query("SELECT key FROM maintenance_state WHERE key='backup_revision'")).length) {
+      await this.transaction(() => this.markBackupChange())
+    }
+    const flags = await this.files.protect({ name: this.name })
+    if (!flags.excluded || (!flags.protected && !flags.simulator)) this.refuse('账本文件保护未生效。')
+    await this.files.finishSwitch?.({ name: this.name })
+    this.ready = true
+  }
+
   /** 操作名+ID 范围去重；digest 由应用层对规范化业务输入计算。记录与写入同事务。 */
-  executeOnce<T>(operation: string, id: string, digest: string, task: (sql: SqlSession) => Promise<T>, signal?: AbortSignal,
+  executeOnce<T>(operation: string, id: string | Promise<string>, digest: string | Promise<string>, task: (sql: SqlSession) => Promise<T>, signal?: AbortSignal,
     verifyResult?: (sql: SqlSession, result: T) => Promise<void>): Promise<T> {
-    if (!/^[a-z][a-z0-9_.]{0,63}$/.test(operation) || !id || id.length > 128 || !/^[a-f0-9]{64}$/.test(digest)) {
+    const validId = (value: string) => Boolean(value) && value.length <= 128
+    const validDigest = (value: string) => /^[a-f0-9]{64}$/.test(value)
+    // 摘要预处理也在受理窗口内；恢复/清空不能跨过尚未完成的保存请求。
+    // 立即消费拒绝，避免任务排队时预处理先失败产生未处理拒绝。
+    const input = Promise.all([id, digest]).then(values => ({ values }), error => ({ error }))
+    if (!/^[a-z][a-z0-9_.]{0,63}$/.test(operation) ||
+        (typeof id === 'string' && !validId(id)) || (typeof digest === 'string' && !validDigest(digest))) {
       return Promise.reject(new LocalError('INVALID_OPERATION', '操作标识不合法。'))
     }
     return this.write(async (sql) => {
+      const settled = await input
+      if ('error' in settled) throw settled.error
+      const [id, digest] = settled.values
+      if (!validId(id) || !validDigest(digest)) throw new LocalError('INVALID_OPERATION', '操作标识不合法。')
       const old = (await sql.query('SELECT request_digest,result_json FROM idempotency_result WHERE operation=? AND operation_id=?', [operation, id]))[0]
       if (old) {
         if (old.request_digest !== digest) {
@@ -120,11 +192,15 @@ export class LedgerDatabase {
     }, signal)
   }
 
-  private session(): SqlSession {
+  private session(onRun?: (statement: string, changes: number) => void): SqlSession {
     const connection = this.connection!
     return {
       query: async (sql, values = []) => (await connection.query(sql, values)).values ?? [],
-      run: async (sql, values = []) => (await connection.run(sql, values, false)).changes?.changes ?? 0,
+      run: async (sql, values = []) => {
+        const changes = (await connection.run(sql, values, false)).changes?.changes ?? 0
+        onRun?.(sql, changes)
+        return changes
+      },
     }
   }
 
@@ -144,12 +220,14 @@ export class LedgerDatabase {
       const now = new Date().toISOString()
       await this.session().run('INSERT INTO ledger_meta VALUES(1,?,?,1,?,?,?)',
         [this.chain.length, crypto.randomUUID(), this.seed.version, now, now])
+      await this.markBackupChange()
       await this.integrity(this.chain.length)
     })
   }
 
   private async upgrade() {
     let meta: Record<string, unknown> | undefined
+    let failure: unknown
     try {
       meta = (await this.session().query('SELECT * FROM ledger_meta WHERE singleton=1'))[0]
     } catch (cause) {
@@ -171,6 +249,18 @@ export class LedgerDatabase {
       }
     }
     await this.integrity(version)
+    if (this.origin && !this.originVerified) {
+      const expected = this.origin
+      if (version !== expected.schemaVersion || meta.dataset_id !== expected.datasetId || meta.initialized !== expected.initialized ||
+          meta.seed_version !== expected.seedVersion || meta.history_start !== expected.historyStart) this.refuse('备份清单与实际账本不一致。')
+      const names = (await this.session().query("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name")).map(row => String(row.name))
+      if (JSON.stringify(names) !== JSON.stringify(Object.keys(expected.tables).sort())) this.refuse('备份对象清单不完整。')
+      for (const name of names) {
+        if (!/^[a-z][a-z0-9_]*$/.test(name) || !Number.isSafeInteger(expected.tables[name]) || expected.tables[name] < 0 ||
+            (await this.session().query(`SELECT COUNT(*) AS n FROM "${name}"`))[0]?.n !== expected.tables[name]) this.refuse('备份对象数量与清单不一致。')
+      }
+      this.originVerified = true
+    }
     if (version === this.chain.length) {
       return
     }
@@ -180,18 +270,29 @@ export class LedgerDatabase {
     if (!snapshot.excluded || (!snapshot.protected && !snapshot.simulator) || !snapshot.sha256) {
       this.refuse('升级保护快照不可用。')
     }
-    await this.observe('snapshot-ready', version)
-    this.connection = await createIosDatabase(this.name, 1)
-    await this.connection.open()
-    await this.verifyForeignKeys()
-    await this.transaction(async () => {
-      for (const migration of this.chain.slice(version)) {
-        await this.apply(migration)
+    try {
+      await this.observe('snapshot-ready', version)
+      this.connection = await createIosDatabase(this.name, 1)
+      await this.connection.open()
+      await this.verifyForeignKeys()
+      await this.transaction(async () => {
+        for (const migration of this.chain.slice(version)) await this.apply(migration)
+        await this.session().run('UPDATE ledger_meta SET schema_version=? WHERE singleton=1', [this.chain.length])
+        await this.markBackupChange()
+        await this.integrity(this.chain.length)
+      })
+      await this.observe('upgrade-committed', this.chain.length)
+    } catch (error) {
+      failure = error
+      throw error
+    } finally {
+      // 成功/回滚均已结束本次升级；失败仍保留完成快照，只解除进行中操作的轮换保护。
+      try { await this.files.finishSnapshot?.({ id: snapshot.id }) }
+      catch (cleanup) {
+        if (failure) throw new AggregateError([failure,cleanup], '升级失败且保护快照收尾失败。')
+        throw cleanup
       }
-      await this.session().run('UPDATE ledger_meta SET schema_version=? WHERE singleton=1', [this.chain.length])
-      await this.integrity(this.chain.length)
-    })
-    await this.observe('upgrade-committed', this.chain.length)
+    }
   }
 
   private async apply(migration: Migration) {
@@ -199,6 +300,13 @@ export class LedgerDatabase {
     await migration.data?.apply(this.session())
     await this.session().run('INSERT INTO migration_history VALUES(?,?,?)', [migration.version, await migrationDigest(migration), new Date().toISOString()])
     await this.observe('migration-recorded', migration.version)
+  }
+
+  /** 使用已有维护元数据表，标记与业务写同事务；重开引起的文件头变化不算用户数据变更。 */
+  private async markBackupChange() {
+    if (this.chain.length < 6) return
+    await this.session().run("INSERT INTO maintenance_state(key,value) VALUES('backup_revision',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+      [JSON.stringify({ revision: crypto.randomUUID() })])
   }
 
   private async transaction<T>(task: () => Promise<T>, signal?: AbortSignal): Promise<T> {

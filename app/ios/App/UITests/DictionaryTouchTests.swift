@@ -1108,4 +1108,171 @@ final class DictionaryTouchTests: XCTestCase {
         print("REPORT_TOUCH_INCOMPLETE_HISTORY_REASON")
     }
 
+    private static let dataFileStem = "T12-backup-" + UUID().uuidString.prefix(8)
+    private static let csvFileStem = "T12-csv-" + UUID().uuidString.prefix(8)
+    private func dataAction(_ title: String) {
+        let link = app.links.matching(NSPredicate(format: "label == %@","我的")).firstMatch
+        if link.exists { link.tap() } else { tap("我的") }
+        let row = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@",title)).firstMatch
+        for _ in 0..<3 {
+            if row.exists && row.isHittable && row.frame.midY < app.frame.maxY - 85 { break }
+            app.webViews.firstMatch.swipeUp()
+        }
+        XCTAssertTrue(row.waitForExistence(timeout: 5))
+        row.tap()
+    }
+    private func dataStatusText(_ prefix: String) {
+        let text = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@",prefix)).firstMatch
+        XCTAssertTrue(text.waitForExistence(timeout: 10), "未显示数据操作结果：" + prefix)
+    }
+    private func password(_ value: String) {
+        let field = app.secureTextFields.firstMatch
+        XCTAssertTrue(field.waitForExistence(timeout: 5),app.debugDescription)
+        field.tap()
+        field.typeText(value)
+        dismissEntryKeyboard()
+    }
+    private func cancelNativeFile() {
+        XCTAssertTrue(app.textFields["DOCPicker.filenameTextField"].waitForExistence(timeout: 20))
+        // 当前保存目录只有返回/保存；使用系统 sheet 的原生下拉取消。
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5,dy: 0.07)).press(forDuration: 0.05,
+            thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5,dy: 0.8)))
+    }
+    private func nativeButton(_ labels: [String]) {
+        let button = app.buttons.matching(NSPredicate(format: "label IN %@",labels)).firstMatch
+        XCTAssertTrue(button.waitForExistence(timeout: 5),app.debugDescription)
+        button.tap()
+    }
+    private func localFilesLocation() {
+        // 只在本机文件提供器保存合成数据，不能走个人 iCloud；目录由原生面板记忆。
+        let local = app.otherElements.matching(NSPredicate(format: "identifier BEGINSWITH %@",
+            "DOC.browsingRoot Source: com.apple.FileProvider.LocalStorage")).firstMatch
+        XCTAssertTrue(local.waitForExistence(timeout: 20))
+        let current = app.navigationBars.buttons.matching(NSPredicate(format: "label BEGINSWITH %@","我的账单,")).firstMatch
+        if !current.exists {
+            let folder = app.cells.matching(NSPredicate(format: "label CONTAINS %@","我的账单")).firstMatch
+            XCTAssertTrue(folder.waitForExistence(timeout: 5))
+            folder.tap()
+        }
+    }
+    private func saveNativeFile(_ stem: String) {
+        let field = app.textFields["DOCPicker.filenameTextField"]
+        XCTAssertTrue(field.waitForExistence(timeout: 20))
+        field.tap()
+        let old = field.value as? String ?? ""
+        field.coordinate(withNormalizedOffset: CGVector(dx: 0.99,dy: 0.5)).tap()
+        field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue,count: max(1,old.count)))
+        field.typeText(stem)
+        expectValue(field,stem)
+        localFilesLocation()
+        nativeButton(["Save","存储","保存","Export","导出"])
+    }
+    private func selectBackupFile() {
+        tap("选择备份文件")
+        localFilesLocation()
+        let file = app.cells.matching(NSPredicate(format: "label CONTAINS %@",Self.dataFileStem)).firstMatch
+        XCTAssertTrue(file.waitForExistence(timeout: 8),app.debugDescription)
+        file.tap()
+        appears("校验备份")
+    }
+    func test44DataCsv() {
+        dataAction("导出数据")
+        cancelNativeFile()
+        dataAction("导出数据")
+        saveNativeFile(Self.csvFileStem)
+        dataStatusText("已导出")
+        print("DATA_MANAGEMENT_TOUCH_CSV_SAVED")
+    }
+    func test45DataBackupCancel() {
+        dataAction("创建完整备份")
+        password("T12-safe-password")
+        tap("创建并保存备份")
+        cancelNativeFile()
+        dataStatusText("已取消保存")
+        XCTAssertFalse(app.secureTextFields.firstMatch.exists,"已生成的备份不能展示可修改但不生效的密码框")
+        print("DATA_MANAGEMENT_TOUCH_BACKUP_CANCEL")
+    }
+    func test45DataBackupSave() {
+        appears("重新保存备份")
+        tap("重新保存备份")
+        saveNativeFile(Self.dataFileStem)
+        dataStatusText("完整备份已保存")
+        tap("关闭")
+        print("DATA_MANAGEMENT_TOUCH_BACKUP_CANCEL_SAVE")
+    }
+    func test46DataWrongPassword() {
+        dataAction("从文件恢复")
+        selectBackupFile()
+        password("wrong-password")
+        tap("校验备份")
+        appears("备份密码不正确或文件已损坏。")
+        tap("关闭")
+        print("DATA_MANAGEMENT_TOUCH_WRONG_PASSWORD_REJECTED")
+    }
+    func test47DataRestorePreviewCancel() {
+        tap("记一笔")
+        tap("收入")
+        expectValue(entryField("income-amount","收入金额"),"222")
+        tap("保存收入")
+        dataStatusText("收入已保存")
+        dataAction("从文件恢复")
+        selectBackupFile()
+        password("T12-safe-password")
+        tap("校验备份")
+        appears("确认恢复范围")
+        tap("确认恢复范围")
+        appears("用备份替换当前账本？")
+        tap("取消")
+        appears("确认恢复范围")
+        // 保留已校验预览给下一项；不重新解密或重新准备夹具。
+        print("DATA_MANAGEMENT_TOUCH_RESTORE_PREVIEW_CANCELLED")
+    }
+    func test48DataRestoreConfirm() {
+        tap("确认恢复范围")
+        tap("确认恢复")
+        appears("记一笔")
+        dataAction("最近数据管理结果")
+        dataStatusText("备份已恢复")
+        tap("关闭")
+        print("DATA_MANAGEMENT_TOUCH_RESTORE_CONFIRMED")
+    }
+    func test49DataClearCancelConfirm() {
+        dataAction("清空本机数据")
+        appears("清空本机全部数据？")
+        tap("取消")
+        dataAction("清空本机数据")
+        tap("确认清空")
+        appears("记一笔")
+        dataAction("最近数据管理结果")
+        dataStatusText("本机数据已清空")
+        tap("关闭")
+        app.terminate()
+        app.launch()
+        activateWebContent()
+        appears("记一笔")
+        dataAction("最近数据管理结果")
+        dataStatusText("本机数据已清空")
+        tap("关闭")
+        print("DATA_MANAGEMENT_TOUCH_CLEAR_CANCEL_REOPEN")
+    }
+    func test50DataExternalRestore() {
+        dataAction("从文件恢复")
+        selectBackupFile()
+        password("T12-safe-password")
+        tap("校验备份")
+        appears("确认恢复范围")
+        tap("确认恢复范围")
+        tap("确认恢复")
+        appears("记一笔")
+        dataAction("最近数据管理结果")
+        dataStatusText("备份已恢复")
+        tap("关闭")
+        tap("记一笔")
+        tap("收入")
+        expectValue(entryField("income-amount","收入金额"),"222")
+        tap("支出")
+        expectValue(entryField("expense-paid-amount","实付金额"),"77")
+        print("DATA_MANAGEMENT_TOUCH_EXTERNAL_RESTORE_DRAFTS")
+    }
+
 }

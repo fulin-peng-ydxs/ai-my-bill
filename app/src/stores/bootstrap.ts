@@ -12,6 +12,22 @@ export const useBootstrapStore = defineStore('bootstrap', {
     error: undefined as RequestError | undefined,
   }),
   actions: {
+    async replaceDataset(operation: () => Promise<unknown>): Promise<void> {
+      // 先撤销页面/偏好的数据集归属，再卸载缓存；停用回调不能把旧草稿落到恢复后的账本。
+      this.datasetId = ''
+      this.status = 'loading'
+      const preferences = usePreferencesStore()
+      preferences.datasetId = ''
+      preferences.generation++
+      let failure: unknown
+      try { await operation() }
+      catch (cause) { failure = cause }
+      await this.initialize()
+      if ((this.status as 'loading' | 'ready' | 'error') !== 'ready') {
+        throw new AggregateError([failure,this.error].filter(Boolean),'账本切换后重新打开未完成，请保留当前数据后重试。')
+      }
+      if (failure) throw failure
+    },
     initialize(): Promise<void> {
       if (this.status === 'ready') {
         return Promise.resolve()

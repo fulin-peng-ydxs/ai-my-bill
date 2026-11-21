@@ -532,31 +532,46 @@ async function runPartial(session, selected, toolchain, requested) {
       log: path.join(run, 'ui-launch.log')
     })
     const testLog = path.join(run, 'test.log')
-    await tracked(
-      run,
-      'test',
-      selectedCoverage(selected),
-      'xcodebuild',
-      [
-        'test-without-building',
-        '-xctestrun',
-        build.plan,
-        '-destination',
-        `platform=iOS Simulator,id=${device.udid}`,
-        '-parallel-testing-enabled',
-        'NO',
-        '-test-timeouts-enabled',
-        'YES',
-        '-maximum-test-execution-time-allowance',
-        '60',
-        '-collect-test-diagnostics',
-        'never',
-        ...selected.cases.map((name) => '-only-testing:' + name),
-        '-resultBundlePath',
-        path.join(run, 'test.xcresult')
-      ],
-      { log: testLog, timeout: 900_000, scenario: selected.scenario }
-    )
+    let testFailure
+    try {
+      await tracked(
+        run,
+        'test',
+        selectedCoverage(selected),
+        'xcodebuild',
+        [
+          'test-without-building',
+          '-xctestrun',
+          build.plan,
+          '-destination',
+          `platform=iOS Simulator,id=${device.udid}`,
+          '-parallel-testing-enabled',
+          'NO',
+          '-test-timeouts-enabled',
+          'YES',
+          '-maximum-test-execution-time-allowance',
+          '60',
+          '-collect-test-diagnostics',
+          'never',
+          ...selected.cases.map((name) => '-only-testing:' + name),
+          '-resultBundlePath',
+          path.join(run, 'test.xcresult')
+        ],
+        { log: testLog, timeout: 900_000, scenario: selected.scenario }
+      )
+    } catch (error) { testFailure = error }
+    if (selected.fixture?.startsWith('data-')) {
+      try {
+        await stopApp(device.udid, path.join(run, 'stop-data-transition.log'))
+        container = (await simctl('get_app_container', device.udid, APP_ID, 'data')).text.trim()
+        await command('python3', ['-I', 'scripts/fixtures/ios-ui-baseline.py', 'settle-data',
+          session.file, container, appHash, fixture], { log: path.join(run, 'data-transition.log') })
+      } catch (error) {
+        if (testFailure) testFailure.message += `；换库终态登记失败：${error.message}`
+        else throw error
+      }
+    }
+    if (testFailure) throw testFailure
     const output = fs.readFileSync(testLog, 'utf8')
     for (const id of selected.cases)
       if (!output.includes(` ${id.split('/').at(-1)}]' passed`))

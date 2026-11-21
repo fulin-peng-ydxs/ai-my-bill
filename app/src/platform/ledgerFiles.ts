@@ -3,7 +3,10 @@ import { registerPlugin, type PluginListenerHandle } from '@capacitor/core'
 /** 文件能力只接受数据库标识，不接受来自页面/备份的任意沙盒路径。 */
 export interface LedgerFiles {
   protect(options: { name: string }): Promise<{ excluded: boolean; protected: boolean; simulator: boolean }>
-  snapshot(options: { name: string }): Promise<{ id: string; bytes: number; sha256: string; excluded: boolean; protected: boolean; simulator: boolean }>
+  snapshot(options: { name: string; reason?: 'upgrade' | 'restore' | 'daily'; day?: string; operationId?: string; revision?: string }): Promise<{ id: string; bytes: number; sha256: string; excluded: boolean; protected: boolean; simulator: boolean; skipped?: boolean }>
+  recover?(options: { name: string }): Promise<void>
+  finishSwitch?(options: { name: string }): Promise<void>
+  finishSnapshot?(options: { id: string }): Promise<void>
 }
 interface DraftLifecycle {
   addListener(event: 'background' | 'foreground', callback: (event: { generation?: number }) => void): Promise<PluginListenerHandle>

@@ -82,7 +82,7 @@ export function requiredModePhases(mode) {
     ]
   const rejection = 'case/NativeTests/NativeSqliteTests/testRejectUnownedTestContexts'
   const touchGroups = ['touch', 'touch-paging', 'touch-entry', 'touch-personal',
-    'touch-lifecycle', 'touch-query', 'touch-report', 'touch-dimensions']
+    'touch-lifecycle', 'touch-query', 'touch-report', 'touch-dimensions', 'touch-data']
   return [
     ...native,
     ...testRun('touch-initialize', 'App/Debug'),

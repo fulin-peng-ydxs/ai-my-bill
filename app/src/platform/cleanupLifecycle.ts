@@ -10,7 +10,7 @@ export const cleanupNotice = reactive({ open: false, message: '', error: undefin
 const session = crypto.randomUUID()
 const service = new CleanupService(appDatabase, () => ({ wall: Date.now(), monotonic: performance.now(), session }))
 /** 原生/DOM 前后台事件合并为一个前台轮次；不轮询、不在失败的本轮重试。 */
-export function installCleanupLifecycle() {
+export function installCleanupLifecycle(afterForeground?: (signal: AbortSignal) => Promise<void>) {
   let domVisible = !document.hidden
   let nativeForeground: boolean | undefined
   let nativeEventsReady = false
@@ -49,6 +49,14 @@ export function installCleanupLifecycle() {
           cleanupNotice.open = true
         }
       } finally {
+        if (afterForeground && foreground && !controller!.signal.aborted && bootstrap.status === 'ready' && bootstrap.datasetId === dataset) {
+          try { await afterForeground(controller!.signal) }
+          catch (cause) {
+            cleanupNotice.error = normalizeRequestError(cause)
+            cleanupNotice.message = '前台数据维护未完成，请查看数据与安全后重试。'
+            cleanupNotice.open = true
+          }
+        }
         running = undefined
         if (pendingForeground && foreground) {
           pendingForeground = false

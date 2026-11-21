@@ -16,6 +16,7 @@ import ThemeModeControl from '../components/ThemeModeControl.vue'
 import DictionaryCombobox from '../components/DictionaryCombobox.vue'
 import DictionaryManager from '../components/DictionaryManager.vue'
 import DataExportAction from '../components/DataExportAction.vue'
+import DataManagementActions from '../components/DataManagementActions.vue'
 import { usePreferencesStore, type PreferenceField } from '../stores/preferences'
 import { useThemeStore } from '../stores/theme'
 import { useLatestRequest } from '../composables/useLatestRequest'
@@ -161,6 +162,7 @@ function showExportNotice(message: string, kind: 'success' | 'error') {
           presentation="setting"
           @notify="showExportNotice"
         />
+        <DataManagementActions />
       </SettingsDisclosureList>
     </SettingsGroup>
 

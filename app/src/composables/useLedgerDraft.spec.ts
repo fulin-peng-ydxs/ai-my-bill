@@ -199,6 +199,19 @@ describe('SQLite 草稿调度', () => {
     expect(api.save.mock.calls.map(call => call[2])).toEqual([{ note: '已保存账目' }, {}])
     expect(draft.dirty.value).toBe(false)
   })
+  it.each(['EXPENSE','INCOME'] as const)('显式备份的 %s 严格落盘失败会拒绝，重试成功且不增加后台续写', async type => {
+    const draft = await mounted(type)
+    await settle()
+    await draft.replace({ note: '必须进入完整备份的最新输入' })
+    api.save.mockRejectedValueOnce(new Error('controlled-strict-flush-failure'))
+    await expect(flushDrafts(true)).rejects.toMatchObject({ code: 'DRAFT_NOT_SAVED' })
+    await vi.advanceTimersByTimeAsync(500)
+    expect(api.save).toHaveBeenCalledTimes(1)
+    expect(draft.data.value.note).toBe('必须进入完整备份的最新输入')
+    await expect(flushDrafts(true)).resolves.toBeUndefined()
+    expect(api.save).toHaveBeenCalledTimes(2)
+    expect(draft.storageError.value).toBeUndefined()
+  })
   it('数据集切换使旧恢复、防抖和后续编辑失效', async () => {
     let complete!: (value: Record<string, string>) => void
     api.read.mockImplementationOnce(() => new Promise(done => { complete = done }))

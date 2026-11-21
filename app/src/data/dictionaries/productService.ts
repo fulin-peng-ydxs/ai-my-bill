@@ -58,7 +58,7 @@ export class ProductService {
     requireId(sourceId, 'sourceProductId')
     requireId(targetId, 'targetProductId')
     // 原入口不传操作 ID；一对稳定商品只能合并一次，以确定键保证提交回执丢失后可查回原结果。
-    const digest = await sha256(JSON.stringify({ sourceId, targetId }))
+    const digest = sha256(JSON.stringify({ sourceId, targetId }))
     return this.database.executeOnce('product.merge', digest, digest, async sql => {
       const pair = await this.resolvePair(sql, sourceId, targetId)
       const impact = await this.impact(sql, pair)

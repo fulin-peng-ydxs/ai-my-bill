@@ -6,6 +6,7 @@ import { appDatabase } from '../data/appDatabase'
 import { localOperation } from '../data/localOperation'
 import { useBootstrapStore } from '../stores/bootstrap'
 import { registerDraftFlush } from '../platform/draftLifecycle'
+import { LocalError } from '../domain/localError'
 import { registerUnsavedChanges, notifyUnsavedChangesChanged } from './unsavedChanges'
 
 const service = new DraftService(appDatabase)
@@ -149,7 +150,13 @@ export function useLedgerDraft(type: Ref<EntryType>, enabled?: Ref<boolean>) {
     notifyUnsavedChangesChanged()
   }
   const stopUnsaved = registerUnsavedChanges(dirty, clear)
-  const stopFlush = registerDraftFlush(() => flush())
+  const stopFlush = registerDraftFlush(async strict => {
+    await flush()
+    // 显式备份/恢复前不能把尚未落盘的最新输入当成已经包含；普通后台失败反馈保持原规则。
+    if (strict && active.value && (pending || storageError.value)) {
+      throw new LocalError('DRAFT_NOT_SAVED','最新草稿尚未保存，请先重试草稿备份。', { cause: storageError.value,retryable: true })
+    }
+  })
   const stopDataset = watch(() => bootstrap.datasetId, value => {
     if (value !== dataset) {
       ++revision

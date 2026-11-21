@@ -145,4 +145,5 @@ export function forgetInstallation(session) {
   fs.rmSync(path.join(session.directory, 'ui-baseline'), { recursive: true, force: true })
   fs.rmSync(path.join(session.directory, 'ui-install.json'), { force: true })
   fs.rmSync(path.join(session.directory, 'ui-reset.json'), { force: true })
+  fs.rmSync(path.join(session.directory, 'ui-data-transition.json'), { force: true })
 }
