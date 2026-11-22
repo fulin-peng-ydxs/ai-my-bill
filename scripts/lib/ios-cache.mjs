@@ -115,6 +115,13 @@ export async function inspectInstallation(session, container, installedHash, ver
   let rebound = false
   if (lease && installedHash && installedHash !== lease.appHash)
     throw new Error('安装回执与已安装 App 不匹配，拒绝卸载或重置。')
+  if (fs.existsSync(path.join(session.directory, 'ui-data-intent.json'))) {
+    if (!lease || !installedHash || !fs.existsSync(path.join(session.directory, 'ui-baseline')))
+      throw new Error('待续作换库缺少有效安装或基线，拒绝卸载或重置。')
+    assertOwnedContainer(session.context, container)
+    // 先核验上一轮允许的真实终态，再进行原有迁移/重置守卫；不凭新数据集跳过校验。
+    await verifyLedger(lease, 'resume-data')
+  }
   if (lease && installedHash && lease.container !== container) {
     assertOwnedContainer(session.context, container)
     if (!fs.existsSync(path.join(session.directory, 'ui-baseline')))
@@ -146,4 +153,5 @@ export function forgetInstallation(session) {
   fs.rmSync(path.join(session.directory, 'ui-install.json'), { force: true })
   fs.rmSync(path.join(session.directory, 'ui-reset.json'), { force: true })
   fs.rmSync(path.join(session.directory, 'ui-data-transition.json'), { force: true })
+  fs.rmSync(path.join(session.directory, 'ui-data-intent.json'), { force: true })
 }

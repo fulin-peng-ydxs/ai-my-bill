@@ -6,6 +6,7 @@ import Darwin
 import Capacitor
 import UIKit
 import UniformTypeIdentifiers
+import OSLog
 
 enum LedgerDataError: String, Error {
     case invalidFile = "BACKUP_INVALID"
@@ -437,18 +438,23 @@ final class LedgerDataStore {
 
     /// 只有共享迁移器/完整性及文件策略通过后才回收原库；中断时标记仍指向可判定状态。
     func releaseCompletedPins(_ name: String) throws {
-        for (folder, var info) in try snapshotManifests() where info["database"] as? String == name && info["pinned"] as? Bool == true {
-            info["pinned"] = false
-            try writeJSON(info,folder.appendingPathComponent("manifest.json"))
+        do {
+            for (folder, var info) in try snapshotManifests() where info["database"] as? String == name && info["pinned"] as? Bool == true {
+                info["pinned"] = false
+                try writeJSON(info,folder.appendingPathComponent("manifest.json"))
+            }
+            try rotateSnapshots(database: name)
+        } catch {
+            // 旧快照维护不是主库就绪条件；保留未清完对象和明确提示，不牵连已校验的健康账本。
+            snapshotWarning(error)
         }
-        try rotateSnapshots(database: name)
     }
 
     func finishSwitch(_ name: String) throws {
         guard let (state, folder) = try switchState(name) else { try releaseCompletedPins(name); return }
         let committed = try hash(database(name)) == state["newSha256"] as? String
         if committed && state["clear"] as? Bool == true {
-            for leaf in ["Snapshots","Transfers"] {
+            for leaf in ["Snapshots","Transfers","QuarantinedSnapshots"] {
                 let url = root.appendingPathComponent(leaf, isDirectory: true)
                 if fm.fileExists(atPath: url.path) {
                     guard try url.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink != true else { throw LedgerDataError.invalidFile }
@@ -472,16 +478,69 @@ final class LedgerDataStore {
         if committed && state["clear"] as? Bool == true { try cleanupOrphans() }
     }
 
+    /// 维护故障保留可见提示及安全诊断；警告落盘失败也不能把旧快照故障扩大成主库不可用。
+    func snapshotWarning(_ error: Error) {
+        let fault = error as NSError
+        Logger(subsystem: "com.mybill.offline", category: "storage").error("Snapshot maintenance incomplete: domain=\(fault.domain, privacy: .public), code=\(fault.code)")
+        do {
+            let folder = try directory(root,"Snapshots")
+            try writeJSON(["message": "内部快照维护未完成或存在已隔离副本；账本仍可使用，请创建外部备份后核对。"],folder.appendingPathComponent("warning.json"))
+        } catch {
+            Logger(subsystem: "com.mybill.offline", category: "storage").error("Snapshot warning could not be persisted: code=\((error as NSError).code)")
+        }
+    }
+
+    /// 隔离最多七份异常副本，不直接删除可能仍含可救援数据的旧文件。达到上限时停止新增快照。
+    func quarantineSnapshot(_ folder: URL, error: Error) {
+        do {
+            let quarantine = try directory(root,"QuarantinedSnapshots")
+            let children = try fm.contentsOfDirectory(at: quarantine,includingPropertiesForKeys: nil)
+            guard children.count < 7 else { throw LedgerDataError.conflict }
+            let target = quarantine.appendingPathComponent(folder.lastPathComponent)
+            guard !fm.fileExists(atPath: target.path), Darwin.rename(folder.path,target.path) == 0 else { throw LedgerDataError.conflict }
+            try syncDirectory(quarantine)
+            try syncDirectory(folder.deletingLastPathComponent())
+        } catch {
+            // 权限等暂态故障时留在原地，后续维护再尝试，不假定异常副本已删除。
+            snapshotWarning(error)
+        }
+        snapshotWarning(error)
+    }
+
+    func assertSnapshotCapacity() throws {
+        let quarantine = try directory(root,"QuarantinedSnapshots")
+        guard try fm.contentsOfDirectory(at: quarantine,includingPropertiesForKeys: nil).count < 7 else { throw LedgerDataError.conflict }
+    }
+
+    /// 轮换先原子移出有效集合；递归删除中断只留下 retiring-UUID，重开继续回收。
+    func recoverRetiredSnapshots(_ base: URL) throws {
+        for folder in try fm.contentsOfDirectory(at: base,includingPropertiesForKeys: nil) {
+            guard folder.lastPathComponent.hasPrefix("retiring-"),
+                  UUID(uuidString: String(folder.lastPathComponent.dropFirst(9))) != nil else { continue }
+            do {
+                guard try folder.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink != true else { throw LedgerDataError.invalidFile }
+                try fm.removeItem(at: folder)
+                try syncDirectory(base)
+            } catch { snapshotWarning(error) }
+        }
+    }
+
     func snapshotManifests() throws -> [(URL, [String: Any])] {
         let base = try directory(root, "Snapshots")
+        try recoverRetiredSnapshots(base)
         return try fm.contentsOfDirectory(at: base, includingPropertiesForKeys: nil).compactMap { url in
             guard UUID(uuidString: url.lastPathComponent) != nil else { return nil }
-            guard try url.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink != true else { throw LedgerDataError.invalidFile }
-            let info = try json(url.appendingPathComponent("manifest.json"))
-            guard info["id"] as? String == url.lastPathComponent,
-                  let bytes = info["bytes"] as? Int, try regularFile(url.appendingPathComponent("ledger.db")) == bytes,
-                  info["sha256"] is String, info["createdAt"] is String else { throw LedgerDataError.invalidFile }
-            return (url, info)
+            do {
+                guard try url.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink != true else { throw LedgerDataError.invalidFile }
+                let info = try json(url.appendingPathComponent("manifest.json"))
+                guard info["id"] as? String == url.lastPathComponent,
+                      let bytes = info["bytes"] as? Int, try regularFile(url.appendingPathComponent("ledger.db")) == bytes,
+                      info["sha256"] is String, info["createdAt"] is String else { throw LedgerDataError.invalidFile }
+                return (url, info)
+            } catch {
+                quarantineSnapshot(url,error: error)
+                return nil
+            }
         }.sorted { ($0.1["createdAt"] as! String, $0.0.lastPathComponent) > ($1.1["createdAt"] as! String, $1.0.lastPathComponent) }
     }
 
@@ -490,10 +549,22 @@ final class LedgerDataStore {
         let all = try snapshotManifests().filter { $0.1["database"] as? String == database }
         var excess = all.count - 7
         for (url, info) in all.reversed() where excess > 0 && info["pinned"] as? Bool != true {
-            try fm.removeItem(at: url)
+            let retired = url.deletingLastPathComponent().appendingPathComponent("retiring-" + url.lastPathComponent)
+            guard !fm.fileExists(atPath: retired.path), Darwin.rename(url.path,retired.path) == 0 else { throw LedgerDataError.conflict }
+            try syncDirectory(url.deletingLastPathComponent())
+            try observe("snapshot-retired")
+            try fm.removeItem(at: retired)
+            try syncDirectory(url.deletingLastPathComponent())
+            try observe("snapshot-files-removed")
             excess -= 1
         }
         guard excess <= 0 else { throw LedgerDataError.conflict }
+        let base = try directory(root,"Snapshots"), quarantine = try directory(root,"QuarantinedSnapshots")
+        if try fm.contentsOfDirectory(at: quarantine,includingPropertiesForKeys: nil).isEmpty,
+           !(try fm.contentsOfDirectory(atPath: base.path)).contains(where: { $0.hasPrefix("retiring-") }) {
+            let warning = base.appendingPathComponent("warning.json")
+            if fm.fileExists(atPath: warning.path) { try fm.removeItem(at: warning) }
+        }
     }
 
     func finishSnapshot(_ id: String) throws {
@@ -650,8 +721,12 @@ extension LedgerFilesPlugin: UIDocumentPickerDelegate {
     @objc func dataStatus(_ call: CAPPluginCall) {
         dataWork(call) { [self] in
             let storage = try store(), state = storage.root.appendingPathComponent("data-status.json")
-            return ["snapshots": try storage.snapshotManifests().filter { $0.1["database"] as? String == "ledger" }.count,
-                    "lastResult": FileManager.default.fileExists(atPath: state.path) ? try storage.json(state)["lastResult"] as? String ?? "暂无恢复或清空记录" : "暂无恢复或清空记录"]
+            let snapshots = try storage.snapshotManifests().filter { $0.1["database"] as? String == "ledger" }.count
+            let warning = try storage.directory(storage.root,"Snapshots").appendingPathComponent("warning.json")
+            let message = FileManager.default.fileExists(atPath: warning.path) ? try storage.json(warning)["message"] as? String : nil
+            let lastResult = FileManager.default.fileExists(atPath: state.path) ? try storage.json(state)["lastResult"] as? String : nil
+            return ["snapshots": snapshots,
+                    "lastResult": message ?? lastResult ?? "暂无恢复或清空记录"]
         }
     }
 

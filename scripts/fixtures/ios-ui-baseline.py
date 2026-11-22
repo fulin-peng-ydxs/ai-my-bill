@@ -82,6 +82,9 @@ def write_json(file, value):
             output.flush()
             os.fsync(output.fileno())
         pending.replace(file)
+        descriptor = os.open(file.parent, os.O_RDONLY)
+        try: os.fsync(descriptor)
+        finally: os.close(descriptor)
     finally:
         if pending.exists(): pending.unlink()
 
@@ -130,8 +133,8 @@ def recover_reset(session, ledger, identity, receipt):
     journal.unlink()
 
 
-def run(mode, context_file, container, app_hash, data_fixture=None):
-    session, ledger, identity = owned_context(context_file, container, app_hash, mode in ['rebind', 'settle-data'])
+def run(mode, context_file, container, app_hash, data_fixture=None, data_selection=None):
+    session, ledger, identity = owned_context(context_file, container, app_hash, mode in ['rebind', 'settle-data', 'resume-data'])
     baseline = session / 'ui-baseline'
     database = ledger / 'ledgerSQLite.db'
     if mode == 'capture':
@@ -149,7 +152,7 @@ def run(mode, context_file, container, app_hash, data_fixture=None):
             staging.rename(baseline)
         finally:
             if staging.exists(): shutil.rmtree(staging)
-    elif mode in ['validate', 'restore', 'rebind', 'settle-data']:
+    elif mode in ['validate', 'restore', 'rebind', 'settle-data', 'arm-data', 'resume-data']:
 
         assert baseline.resolve() == baseline and not any(p.is_symlink() for p in baseline.rglob('*'))
         receipt = json.loads((baseline / 'receipt.json').read_text())
@@ -161,14 +164,59 @@ def run(mode, context_file, container, app_hash, data_fixture=None):
         assert validate_database(source, empty=True) == {k: receipt[k] for k in ['schemaVersion', 'datasetId']}
         transition = session / 'ui-data-transition.json'
         original = {k: receipt[k] for k in ['schemaVersion', 'datasetId']}
-        if mode == 'settle-data':
-            # T12 允许合法换库；只接受本会话已准备夹具的清空/完整恢复终态，不凭新 UUID 放行。
+        intent = session / 'ui-data-intent.json'
+        def fixture_path(value):
+            fixture = Path(value)
+            assert fixture.resolve() == fixture and fixture.parent.parent == session
+            assert re.fullmatch(r'run-[A-Za-z0-9]+', fixture.parent.name) and fixture.name == 'fixture.json'
+            assert fixture.is_file() and not fixture.is_symlink() and fixture.stat().st_uid == os.getuid()
+            assert fixture.stat().st_size <= 16 * 1024 * 1024
+            return fixture
+        def selected_cases(value):
+            match = re.fullmatch(r'data-((?:5[3-9]|60)(?:,(?:5[3-9]|60))*)', value)
+            assert match
+            cases = list(map(int,match[1].split(',')))
+            assert len(cases) == len(set(cases))
+            return cases
+        def read_intent():
+            assert intent.is_file() and not intent.is_symlink()
+            stat = intent.stat()
+            assert stat.st_uid == os.getuid() and stat.st_mode & 0o077 == 0 and stat.st_size <= 4096
+            record = json.loads(intent.read_text())
+            assert record['schema'] == 1
+            assert all(record.get(k) == v for k, v in identity.items() if k != 'container')
+            assert record['sourceDatasetId'] == original['datasetId'] and record['baselineHash'] == receipt['sha256']
+            fixture = fixture_path(session / record['fixture'])
+            assert checksum(fixture) == record['fixtureHash']
+            return fixture, selected_cases(record['selection'])
+        if mode == 'arm-data':
+            assert not intent.exists() and not intent.is_symlink(), '上轮换库意图尚未核验，拒绝覆盖'
+            fixture = fixture_path(data_fixture)
+            selected_cases(data_selection)
+            source_data = json.loads(fixture.read_text())
+            assert source_data['dataset'] == original['datasetId'] and validate_database(database) == original
+            import runpy
+            snapshot = runpy.run_path(str(Path(__file__).with_name('ios_data_management.py')))['snapshot']
+            with closing(sqlite3.connect(database.as_uri() + '?mode=ro', uri=True)) as db:
+                db.row_factory = sqlite3.Row
+                assert snapshot(db) == source_data['dataSource']
+                drafts = {row['entry_type']: json.loads(row['data_json']) for row in db.execute('SELECT * FROM ledger_draft WHERE dataset_id=?',(original['datasetId'],))}
+                assert drafts == source_data['drafts']
+            # 在启动 UI 前持久化来源和允许的动作；取消/整轮超时后不再续发命令，下轮核验再接管。
+            write_json(intent,{**identity,'schema':1,'sourceDatasetId':original['datasetId'],'baselineHash':receipt['sha256'],
+                'fixture':str(fixture.relative_to(session)),'fixtureHash':checksum(fixture),'selection':data_selection})
+            print('UI_DATA_INTENT_ARMED')
+            return
+        if mode in ['settle-data','resume-data']:
+            cases = None
+            if mode == 'resume-data' or intent.exists():
+                fixture, cases = read_intent()
+                if data_fixture is not None: assert fixture_path(data_fixture) == fixture
+            else:
+                # 兼容显式核验旧运行的受管终态；自动续作始终要求预登记意图。
+                fixture = fixture_path(data_fixture)
             current = validate_database(database)
             if current != original:
-                fixture = Path(data_fixture)
-                assert fixture.resolve() == fixture and fixture.parent.parent == session
-                assert re.fullmatch(r'run-[A-Za-z0-9]+', fixture.parent.name) and fixture.name == 'fixture.json'
-                assert fixture.is_file() and not fixture.is_symlink() and fixture.stat().st_uid == os.getuid()
                 source_data = json.loads(fixture.read_text())
                 assert source_data['dataset'] == original['datasetId']
                 import runpy
@@ -176,10 +224,17 @@ def run(mode, context_file, container, app_hash, data_fixture=None):
                 with closing(sqlite3.connect(database.as_uri() + '?mode=ro', uri=True)) as db:
                     db.row_factory = sqlite3.Row
                     empty = db.execute('SELECT count(*) FROM ledger_entry').fetchone()[0] == 0
+                    if cases is not None:
+                        assert any(case in cases for case in ([58,59] if empty else [57,59])), '所选用例未获准产生该换库终态'
                     check(db, fixture, [58] if empty else [59], Path(container))
                 assert current['schemaVersion'] == original['schemaVersion']
                 write_json(transition, {**identity, **current, 'sourceDatasetId': original['datasetId'],
                                         'databaseHash': checksum(database)})
+            if intent.exists():
+                intent.unlink()
+                descriptor = os.open(session,os.O_RDONLY)
+                try: os.fsync(descriptor)
+                finally: os.close(descriptor)
             print('UI_DATA_TRANSITION_VERIFIED')
             return
         if mode in ['restore', 'validate']: recover_reset(session, ledger, identity, receipt)

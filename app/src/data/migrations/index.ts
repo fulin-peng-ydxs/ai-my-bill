@@ -22,6 +22,8 @@ import querySearchSource from '../../domain/ledgerSearchV1.ts?raw'
 import { backfillLedgerSearch } from './0007_ledger_query'
 import reportDimensions from './0008_report_dimensions.sql?raw'
 import reportSchema from './0008_schema.json'
+import csvExport from './0009_csv_export.sql?raw'
+import csvSchema from './0009_schema.json'
 
 export type Migration = Readonly<{
   version: number
@@ -41,6 +43,7 @@ export const migrations: readonly Migration[] = [
   { version: 7, sql: ledgerQuery, schema: querySchema,
     data: { source: JSON.stringify([queryDataSource, querySearchSource, nameV1Source]), apply: backfillLedgerSearch } },
   { version: 8, sql: reportDimensions, schema: reportSchema },
+  { version: 9, sql: csvExport, schema: csvSchema },
 ]
 export const publishedSchemaVersions: readonly number[] = []
 

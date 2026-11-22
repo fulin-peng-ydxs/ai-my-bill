@@ -80,23 +80,30 @@ export function compileLedgerFilter(filters: LedgerFilters, now: Date) {
 }
 
 // 同一投影供有效明细、净支出构成和回收站消费；调整只冲减支出，不混成收入。
-const commonReadbackProjection = `SELECT e.id,e.entry_type,e.business_time,e.business_date,e.amount_text,e.adjusted_text,e.linked_count,
+export const entryReadbackProjection = `SELECT e.id,e.entry_type,e.business_time,e.business_date,e.amount_text,e.adjusted_text,e.linked_count,
   e.funding_channel_id,e.funding_channel_name_snapshot,e.note,COALESCE(e.created_at,'') AS created_at,e.row_version,e.lifecycle_status,e.deleted_at,e.purge_after,
   e.primary_category_id,e.secondary_category_id,e.product_id,e.unit_id,e.purchase_channel_id,e.location_label_id,
   e.income_category_id,e.payer_id,e.income_name,e.search_text,
   CASE WHEN e.entry_type='EXPENSE' THEN e.product_name_snapshot ELSE e.income_name END AS title,
   CASE WHEN e.entry_type='EXPENSE' THEN e.primary_category_name_snapshot || COALESCE(' / ' || e.secondary_category_name_snapshot,'') ELSE e.income_category_name_snapshot END AS category_name,
   CASE WHEN e.entry_type='EXPENSE' THEN COALESCE(e.quantity_text,'') || ' ' || COALESCE(e.unit_name_snapshot,'') ELSE e.payer_name_snapshot END AS counterparty_name,
-  NULL AS adjustment_type,NULL AS original_expense_id,e.quantity_text,e.unit_name_snapshot FROM (${entryProjection}) e
-  UNION ALL
-  SELECT a.id,'ADJUSTMENT',a.business_time,a.business_date,CAST(a.amount_cents AS TEXT),'0',0,
+  NULL AS adjustment_type,NULL AS original_expense_id,e.quantity_text,e.unit_name_snapshot FROM (${entryProjection}) e`
+
+function adjustmentProjection(exportKeys = false) {
+  return `SELECT a.id,'ADJUSTMENT' AS entry_type,a.business_time,a.business_date,CAST(a.amount_cents AS TEXT) AS amount_text,'0' AS adjusted_text,0 AS linked_count,
   l.funding_channel_id,l.funding_channel_name_snapshot,a.note,a.created_at,a.row_version,
-  CASE WHEN a.status='TRASHED' THEN 'TRASHED' ELSE 'ACTIVE' END,a.deleted_at,a.purge_after,
+  CASE WHEN a.status='TRASHED' THEN 'TRASHED' ELSE 'ACTIVE' END AS lifecycle_status,a.deleted_at,a.purge_after,
   l.primary_category_id,l.secondary_category_id,l.product_id,l.unit_id,l.purchase_channel_id,l.location_label_id,
-  NULL,NULL,NULL,l.adjustment_source_search_text || ' ' || a.search_text,
-  l.product_name_snapshot,
-  CASE WHEN a.adjustment_type='REFUND' THEN '退款' ELSE '报销' END,l.product_name_snapshot,a.adjustment_type,a.original_expense_id,NULL,NULL
-  FROM expense_adjustment a JOIN ledger_entry l ON l.id=a.original_expense_id`
+  NULL AS income_category_id,NULL AS payer_id,NULL AS income_name,l.adjustment_source_search_text || ' ' || a.search_text AS search_text,
+  l.product_name_snapshot AS title,
+  CASE WHEN a.adjustment_type='REFUND' THEN '退款' ELSE '报销' END AS category_name,l.product_name_snapshot AS counterparty_name,a.adjustment_type,a.original_expense_id,NULL AS quantity_text,NULL AS unit_name_snapshot
+  FROM expense_adjustment a${exportKeys ? ' INDEXED BY adjustment_export_order' : ''} JOIN ledger_entry l ON l.id=a.original_expense_id`
+}
+
+export const adjustmentReadbackProjection = adjustmentProjection()
+export const adjustmentExportKeyProjection = adjustmentProjection(true)
+
+const commonReadbackProjection = `${entryReadbackProjection} UNION ALL ${adjustmentReadbackProjection}`
 
 export const readbackProjection = `${commonReadbackProjection}
   WHERE a.status='TRASHED' OR (a.status='EFFECTIVE' AND l.lifecycle_status='ACTIVE')`

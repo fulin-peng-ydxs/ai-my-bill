@@ -329,6 +329,7 @@ public class LedgerFilesPlugin: CAPPlugin, CAPBridgedPlugin {
                     return
                 }
                 stage = "capacity"
+                try storage.assertSnapshotCapacity()
                 let size = (try fm.attributesOfItem(atPath: db.path)[.size] as? NSNumber)?.int64Value ?? 0
                 let available = (try fm.attributesOfFileSystem(forPath: db.deletingLastPathComponent().path)[.systemFreeSize] as? NSNumber)?.int64Value ?? 0
                 guard size > 0, available > size + 16 * 1024 * 1024 else { throw CocoaError(.fileWriteOutOfSpace) }

@@ -19,7 +19,8 @@ import { DataManagementService, describeDatabase, readBackupRevision } from './d
 import { migrations } from '../migrations'
 import { defaultSeed } from '../seed/defaults'
 import { entryFixture } from '../../../test-support/entryScenarios'
-import { csvHeaders, csvRow } from './csvExport'
+import { csvHeaders, csvRow, writeCsv } from './csvExport'
+import { profileSqliteQueries, type RecordedQuery } from '../../../test-support/sqliteQueryProfile'
 
 let database: LedgerDatabase, service: DataManagementService, files: LedgerTransfers, directory: string
 let counter = 0
@@ -313,8 +314,142 @@ describe('本地导出与整库恢复', () => {
     expect(backup.manifest.schemaVersion).toBe(5)
     await service.restore(await service.prepare(backup.id,'password1'))
     const current = await database.read(describeDatabase)
-    expect(current.schemaVersion).toBe(8)
+    expect(current.schemaVersion).toBe(migrations.length)
     expect((await database.read(sql => sql.query("SELECT name FROM dictionary_item WHERE name='旧版付款方'")))).toHaveLength(1)
     expect((await database.read(sql => sql.query("SELECT value FROM preference WHERE key='theme'")))[0].value).toBe('"DARK"')
   })
+})
+
+
+it('关闭失败后保留原因并恢复可用账本，下一次备份可重试', async () => {
+  const original = (await database.read(describeDatabase)).datasetId
+  vi.spyOn(state.fixture!.sqlite,'closeConnection').mockRejectedValueOnce(new Error('controlled-close'))
+  await expect(service.daily()).rejects.toThrow('账本连接释放失败')
+  expect((await database.read(describeDatabase)).datasetId).toBe(original)
+  const backup = await service.backup('password1')
+  expect(backup.manifest.datasetId).toBe(original)
+})
+
+it('连续关闭失败有界退出，故障解除后的正常读取恢复同一账本', async () => {
+  const original = (await database.read(describeDatabase)).datasetId
+  const close = vi.spyOn(state.fixture!.sqlite,'closeConnection')
+    .mockRejectedValueOnce(new Error('close-first')).mockRejectedValueOnce(new Error('close-recovery'))
+  await expect(service.daily()).rejects.toBeInstanceOf(AggregateError)
+  expect(close).toHaveBeenCalledTimes(2)
+  close.mockRestore()
+  await database.open()
+  const create = vi.spyOn(state.fixture!.sqlite,'createConnection')
+  expect((await database.read(describeDatabase)).datasetId).toBe(original)
+  expect(create).not.toHaveBeenCalled()
+  await expect(service.daily()).resolves.toBe(true)
+})
+
+it('文件操作后的重开保护失败不覆盖遗留句柄，普通重试重新校验后可读写', async () => {
+  const original = (await database.read(describeDatabase)).datasetId
+  vi.spyOn(state.fixture!.files,'protect').mockRejectedValueOnce(new Error('controlled-reopen'))
+  await expect(service.daily()).rejects.toThrow('controlled-reopen')
+  expect((await database.read(describeDatabase)).datasetId).toBe(original)
+  await database.write(sql => sql.run("UPDATE preference SET value='\"DARK\"' WHERE key='theme'"))
+  expect((await database.read(sql => sql.query("SELECT value FROM preference WHERE key='theme'")))[0].value).toBe('"DARK"')
+})
+
+it('CSV 实际索引计划及 VM 扫描量近线性增长，穷尽分支不重复扫描', async () => {
+  const f = await entryFixture(database)
+  const original = await f.service.createIncome(f.income,'profile-original')
+  const columns = await database.read(sql => sql.query('PRAGMA table_info(ledger_entry)'))
+  const insert = `INSERT INTO ledger_entry(${columns.map(column => column.name).join(',')}) SELECT ${columns.map(column => column.name === 'id' ? '?' : column.name).join(',')} FROM ledger_entry WHERE id=?`
+  const profiles: ReturnType<typeof profileSqliteQueries>[] = []
+  for (const [start,end] of [[0,999],[999,1999]]) {
+    await database.write(async sql => {
+      for (let index=start;index<end;index++) await sql.run(insert,['profile-'+String(index).padStart(8,'0'),original.id])
+    })
+    const queries: RecordedQuery[] = [], plans: string[][] = []
+    const observed = { readSnapshot: (work: Parameters<LedgerDatabase['readSnapshot']>[0],signal?: AbortSignal) => database.readSnapshot(sql => work({ ...sql,
+      query: async (statement,values=[]) => {
+        const result = await sql.query(statement,values)
+        queries.push({ statement,values:[...values],rows:result.length })
+        plans.push((await sql.query('EXPLAIN QUERY PLAN '+statement,values)).map(row => String(row.detail)))
+        return result
+      } }),signal) }
+    const csv = await writeCsv(observed as LedgerDatabase,files,{scope:'ALL_DATA'})
+    expect(csv.rows).toBe(end+1)
+    const keyQueries = queries.filter(query => query.statement.startsWith('SELECT id,entry_type,business_time'))
+    expect(keyQueries.filter(query => query.statement.includes('adjustment_export_order'))).toHaveLength(1)
+    expect(queries.every(query => query.rows<=200)).toBe(true)
+    const profile = profileSqliteQueries(path(database.name),queries)
+    expect(profile.rows).toEqual(queries.map(query => query.rows))
+    for (const plan of [...plans,...profile.plans]) {
+      // 只有键流读取可以接触未选中的历史；正文限制为本页 ID，无全量 UNION 排序。
+      expect(plan.some(line => /SCAN l$|SCAN a$/.test(line))).toBe(false)
+    }
+    for (const query of keyQueries) {
+      const plan = (await database.read(sql => sql.query('EXPLAIN QUERY PLAN '+query.statement,query.values))).map(row => String(row.detail))
+      expect(plan.some(line => line.includes(query.statement.includes('adjustment_export_order') ? 'adjustment_export_order' : 'ledger_export_order'))).toBe(true)
+      expect(plan.some(line => line.includes('USE TEMP B-TREE'))).toBe(false)
+      if (query.values.length) expect(plan.some(line => line.includes('SEARCH') && line.includes('export_order'))).toBe(true)
+    }
+    process.stdout.write('CSV_QUERY_PROFILE '+JSON.stringify({rows:csv.rows,queries:queries.length,keyQueries:keyQueries.length,steps:profile.steps,sqliteVersion:profile.sqliteVersion})+'\n')
+    profiles.push(profile)
+  }
+  expect(profiles[1]!.steps/profiles[0]!.steps).toBeLessThan(2.5)
+})
+
+it('v8→v9 只追加 CSV 索引，故障回滚可重试且保留用户配置与原业务', async () => {
+  const old = new LedgerDatabase('csv_v8',migrations.slice(0,8))
+  managers.push(old)
+  await old.open()
+  const f = await entryFixture(old)
+  await f.service.createIncome(f.income,'legacy-csv')
+  await old.write(sql => sql.run("UPDATE preference SET value='\"DARK\"' WHERE key='theme'"))
+  const original = await old.read(describeDatabase)
+  await old.close()
+  const broken = new LedgerDatabase('csv_v8',migrations,defaultSeed,state.fixture!.files,async stage => {
+    if (stage==='migration-recorded') throw new Error('controlled-v9-interrupt')
+  })
+  managers.push(broken)
+  await expect(broken.open()).rejects.toThrow('controlled-v9-interrupt')
+  await broken.close()
+  const check = new LedgerDatabase('csv_v8',migrations.slice(0,8))
+  managers.push(check)
+  await check.open()
+  expect((await check.read(describeDatabase)).schemaVersion).toBe(8)
+  expect((await check.read(sql => sql.query("SELECT name FROM sqlite_master WHERE name LIKE '%export_order'")))).toHaveLength(0)
+  await check.close()
+  const upgraded = new LedgerDatabase('csv_v8')
+  managers.push(upgraded)
+  await upgraded.open()
+  const current = await upgraded.read(describeDatabase)
+  expect(current.datasetId).toBe(original.datasetId)
+  expect(current.tables.ledger_entry).toBe(1)
+  expect(current.tables.dictionary_item).toBe(original.tables.dictionary_item)
+  expect((await upgraded.read(sql => sql.query("SELECT name FROM sqlite_master WHERE name LIKE '%export_order'")))).toHaveLength(2)
+  expect((await upgraded.read(sql => sql.query("SELECT value FROM preference WHERE key='theme'")))[0].value).toBe('"DARK"')
+})
+
+it('混合收支/调整同时间跨页归并不漏不重，当前筛选与全部状态保持区分', async () => {
+  const f = await entryFixture(database)
+  const expense = await f.service.createExpense(f.expense,'mixed-expense')
+  const income = await f.service.createIncome(f.income,'mixed-income')
+  const {AdjustmentService} = await import('../entries/adjustmentService')
+  const adjustments = new AdjustmentService(database,() => f.now)
+  const dataset = (await database.read(describeDatabase)).datasetId
+  const adjustment = await adjustments.create(dataset,expense.id,{adjustmentType:'REFUND',amount:'0.01',occurredAt:f.now.toISOString()},'mixed-adjustment')
+  await database.write(async sql => {
+    for (const [table,source,prefix] of [['ledger_entry',income.id,'income'],['expense_adjustment',adjustment.id,'adjustment']]) {
+      const columns = await sql.query('PRAGMA table_info('+table+')')
+      const insert = `INSERT INTO ${table}(${columns.map(column=>column.name).join(',')}) SELECT ${columns.map(column=>column.name==='id'?'?':column.name).join(',')} FROM ${table} WHERE id=?`
+      for(let index=0;index<200;index++) await sql.run(insert,[prefix+'-'+String(index).padStart(4,'0'),source])
+    }
+    await sql.run("UPDATE expense_adjustment SET status='REVOKED' WHERE id='adjustment-0000'")
+    await sql.run("UPDATE ledger_entry SET lifecycle_status='TRASHED',deleted_at=?,purge_after=? WHERE id='income-0000'",[f.now.toISOString(),f.now.toISOString()])
+  })
+  const expected = await database.read(sql => sql.query("SELECT id,entry_type,business_time FROM ledger_entry UNION ALL SELECT id,'ADJUSTMENT',business_time FROM expense_adjustment ORDER BY business_time,entry_type,id"))
+  const all = await service.exportCsv({scope:'ALL_DATA'})
+  const ids = capabilities.get(all.id)!.text.split('\r\n').slice(1,-1).map(line=>line.split(',')[0].slice(1,-1))
+  expect(ids).toEqual(expected.map(row=>row.id))
+  expect(new Set(ids).size).toBe(403)
+  const current = await service.exportCsv({scope:'CURRENT_FILTERS',type:'ADJUSTMENT',lifecycle:'ACTIVE',query:'',range:'CUSTOM',startDate:'2026-01-01',endDate:'2026-12-31',fundingChannelId:f.funding.id})
+  expect(current.rows).toBe(200)
+  expect(capabilities.get(current.id)!.text).not.toContain('adjustment-0000')
+  expect(capabilities.get(current.id)!.text).toContain('0.01')
 })

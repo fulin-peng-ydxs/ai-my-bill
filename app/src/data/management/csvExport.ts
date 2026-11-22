@@ -2,7 +2,7 @@ import type { ExportRequest } from '../../api/exports'
 import type { LedgerFilters } from '../../api/ledgerEntries'
 import type { LedgerDatabase } from '../ledgerDatabase'
 import type { LedgerTransfers } from '../../platform/ledgerTransfers'
-import { compileLedgerFilter, readbackProjection, allExportProjection } from '../entries/querySql'
+import { compileLedgerFilter, entryReadbackProjection, adjustmentReadbackProjection, adjustmentExportKeyProjection } from '../entries/querySql'
 import { scaledIntegerToDecimal, fromSqliteInteger } from '../../domain/money'
 import { throwIfCancelled } from '../../domain/localError'
 
@@ -44,22 +44,56 @@ export async function writeCsv(db: LedgerDatabase, files: LedgerTransfers, reque
         where = compiled.conditions.join(' AND ')
         values = compiled.values
       }
-      const projection = request.scope === 'ALL_DATA' ? allExportProjection : readbackProjection
       await files.appendTransfer({ id, text: '\uFEFF' + csvRow(csvHeaders) })
-      let cursor: [string, string, string] | undefined
+      type Key = Record<string, unknown>
+      let entryKeys: Key[] = [], adjustmentKeys: Key[] = []
+      let entryCursor: [string,string,string] | undefined, adjustmentCursor: [string,string] | undefined
+      let entriesDone = false, adjustmentsDone = false
       while (true) {
         throwIfCancelled(signal)
+        // 每条流仅在缓冲耗尽后读取下一批；已穷尽的分支不因另一分支仍有数据而重复扫描。
+        if (!entryKeys.length && !entriesDone) {
+          entryKeys = await sql.query(`SELECT id,entry_type,business_time FROM ledger_entry INDEXED BY ledger_export_order
+            WHERE ${where} ${entryCursor ? 'AND (business_time,entry_type,id)>(?,?,?)' : ''}
+            ORDER BY business_time,entry_type,id LIMIT 200`, [...values,...(entryCursor ?? [])])
+          entriesDone = entryKeys.length < 200
+          const last = entryKeys.at(-1)
+          if (last) entryCursor = [String(last.business_time),String(last.entry_type),String(last.id)]
+        }
+        if (!adjustmentKeys.length && !adjustmentsDone) {
+          const visible = request.scope === 'ALL_DATA' ? '' : " WHERE a.status='TRASHED' OR (a.status='EFFECTIVE' AND l.lifecycle_status='ACTIVE')"
+          // 调整类型为常量，游标去掉类型位，使用 (business_time,id) 的完整索引范围。
+          adjustmentKeys = await sql.query(`SELECT id,entry_type,business_time FROM (${adjustmentExportKeyProjection}${visible})
+            WHERE ${where} ${adjustmentCursor ? 'AND (business_time,id)>(?,?)' : ''}
+            ORDER BY business_time,id LIMIT 200`, [...values,...(adjustmentCursor ?? [])])
+          adjustmentsDone = adjustmentKeys.length < 200
+          const last = adjustmentKeys.at(-1)
+          if (last) adjustmentCursor = [String(last.business_time),String(last.id)]
+        }
+        const keys = [...entryKeys,...adjustmentKeys].sort((a,b) => {
+          for (const key of ['business_time','entry_type','id']) {
+            if (a[key] !== b[key]) return String(a[key]) < String(b[key]) ? -1 : 1
+          }
+          return 0
+        }).slice(0,200)
+        if (!keys.length) break
+        const entryIds = keys.filter(key => key.entry_type !== 'ADJUSTMENT').map(key => String(key.id))
+        const adjustmentIds = keys.filter(key => key.entry_type === 'ADJUSTMENT').map(key => String(key.id))
+        entryKeys.splice(0,entryIds.length)
+        adjustmentKeys.splice(0,adjustmentIds.length)
+        const placeholders = (ids: string[]) => ids.length ? ids.map(() => '?').join(',') : 'NULL'
+        const projection = `${entryReadbackProjection} WHERE e.id IN (${placeholders(entryIds)})
+          UNION ALL ${adjustmentReadbackProjection} WHERE a.id IN (${placeholders(adjustmentIds)})`
         const batch = await sql.query(`SELECT q.*,d.product_name_snapshot AS product,d.payer_name_snapshot AS payer,
           d.primary_category_name_snapshot AS primary_name,d.secondary_category_name_snapshot AS secondary_name,
           d.income_category_name_snapshot AS income_category,CAST(d.unit_price_scaled AS TEXT) AS price,
           CAST(d.calculated_amount_cents AS TEXT) AS calculated,d.purchase_channel_name_snapshot AS purchase,
           d.location_label_name_snapshot AS location,d.updated_at AS entry_updated,a.status AS adjustment_status,a.updated_at AS adjustment_updated
-          FROM (SELECT * FROM (${projection}) WHERE ${where}
-          ${cursor ? 'AND (business_time,entry_type,id)>(?,?,?)' : ''}
-          ORDER BY business_time,entry_type,id LIMIT 200) q
+          FROM (${projection}) q
           LEFT JOIN ledger_entry d ON d.id=q.id AND q.entry_type<>'ADJUSTMENT'
           LEFT JOIN expense_adjustment a ON a.id=q.id AND q.entry_type='ADJUSTMENT'
-          ORDER BY q.business_time,q.entry_type,q.id`, [...values, ...(cursor ?? [])])
+          ORDER BY q.business_time,q.entry_type,q.id`, [...entryIds,...adjustmentIds])
+        if (batch.length !== keys.length) throw new Error('导出快照的分页对象不一致。')
         let buffer = ''
         for (const row of batch) {
           throwIfCancelled(signal)
@@ -84,9 +118,6 @@ export async function writeCsv(db: LedgerDatabase, files: LedgerTransfers, reque
           rows++
         }
         if (buffer) await files.appendTransfer({ id,text: buffer })
-        if (batch.length < 200) break
-        const last = batch.at(-1)!
-        cursor = [String(last.business_time),String(last.entry_type),String(last.id)]
       }
     }, signal)
     return { id, rows }

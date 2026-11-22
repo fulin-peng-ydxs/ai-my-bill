@@ -1202,7 +1202,7 @@ test('T11 报表专项覆盖新计算和原页面消费者，完整触摸要求�
 
 test('T12 文件/数据管理分流使用同一专项，完整报告缺失文件触摸或回读均拒绝', t => {
   const r=registry(fixture(t).root)
-  for(const file of ['app/src/components/DataManagementActions.vue','app/src/api/exports.ts','app/src/data/management/dataManagement.ts','app/src/platform/ledgerTransfers.ts','app/src/Views/ProfileView.vue'.replace('Views','views')]) {
+  for(const file of ['app/src/components/DataManagementActions.vue','app/src/api/exports.ts','app/src/data/management/dataManagement.ts','app/src/platform/ledgerTransfers.ts','app/src/data/entries/querySql.ts','app/src/data/ledgerDatabase.ts','app/src/Views/ProfileView.vue'.replace('Views','views')]) {
     const selected = selectSuites(r,'change',[file]).map(s=>s.name)
     assert.ok(selected.includes('ui-data-management'),file)
     assert.ok(!selected.includes('touch'),file)
@@ -1212,4 +1212,17 @@ test('T12 文件/数据管理分流使用同一专项，完整报告缺失文件
   const phases=requiredModePhases('ios-touch')
   assert.ok(phases.some(([,,log])=>log==='touch-data.log'))
   assert.ok(phases.some(([,,log])=>log==='touch-data-readback.log'))
+})
+
+
+test('T12 CSV 索引迁移和受管续作分别进入原生与脚本套件，不自动扩大完整触摸', t => {
+  const r=registry(fixture(t).root)
+  for(const file of ['app/src/data/migrations/0009_csv_export.sql','app/src/data/migrations/0009_schema.json']) {
+    const names=selectSuites(r,'change',[file]).map(s=>s.name)
+    assert.ok(names.includes('app-common')&&names.includes('native-sqlite'))
+    assert.ok(!names.includes('touch'))
+  }
+  const names=selectSuites(r,'change',['scripts/fixtures/ios-ui-baseline.py']).map(s=>s.name)
+  assert.ok(names.includes('scripts')&&names.includes('scripts-macos'))
+  assert.ok(!names.includes('touch'))
 })

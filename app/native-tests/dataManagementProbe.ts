@@ -80,10 +80,26 @@ export async function dataManagement() {
       transfers.push(oldBackup.id)
       check(oldBackup.manifest.schemaVersion === 5,'未创建受控旧版本格式')
       await service.restore(await service.prepare(oldBackup.id,'Native-old-version'))
-      check((await database.read(describeDatabase)).schemaVersion === 8,'临时库未通过正式升级链')
+      check((await database.read(describeDatabase)).schemaVersion === migrations.length,'临时库未通过正式升级链')
       check((await database.read(sql => sql.query("SELECT name FROM dictionary_item WHERE name='旧用户付款方'"))).length === 1,'旧用户配置未保留')
       check((await database.read(sql => sql.query("SELECT value FROM preference WHERE key='theme'")))[0].value === '"DARK"','旧备份被新默认覆盖')
-      return { schemaVersion: migrations.length,databasePrefix: prefix,checks: ['csv','authenticated-backup','wrong-password','atomic-restore','draft-scope','repeat-reopen','report-readback','daily-policy','legacy-upgrade'] }
+      const v8 = manager('v8',migrations.slice(0,8))
+      await v8.open()
+      const v8Fixture = await entryFixture(v8)
+      await v8Fixture.service.createIncome(v8Fixture.income,'v8-income')
+      await v8.write(sql => sql.run("UPDATE preference SET value='\"DARK\"' WHERE key='theme'"))
+      const v8Origin = await v8.read(describeDatabase)
+      await v8.close()
+      const v9 = manager('v8')
+      await v9.open()
+      const upgraded = await v9.read(describeDatabase)
+      check(upgraded.schemaVersion === 9 && upgraded.datasetId === v8Origin.datasetId && upgraded.tables.ledger_entry === 1,'v8→v9 改变业务来源')
+      check((await v9.read(sql => sql.query("SELECT name FROM sqlite_master WHERE name IN ('ledger_export_order','adjustment_export_order')"))).length === 2,'原生 CSV 索引未建立')
+      check((await v9.read(sql => sql.query("SELECT value FROM preference WHERE key='theme'")))[0].value === '"DARK"','v9 升级覆盖用户偏好')
+      const migratedCsv = await new DataManagementService(v9).exportCsv({scope:'ALL_DATA'})
+      transfers.push(migratedCsv.id)
+      check(migratedCsv.rows === 1,'v8 升级后的实际 CSV 查询失败')
+      return { schemaVersion: migrations.length,databasePrefix: prefix,checks: ['csv','authenticated-backup','wrong-password','atomic-restore','draft-scope','repeat-reopen','report-readback','daily-policy','legacy-upgrade','csv-v8-upgrade'] }
     } finally {
       for (const item of staged) await item.close()
       for (const id of transfers) {

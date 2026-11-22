@@ -526,6 +526,9 @@ async function runPartial(session, selected, toolchain, requested) {
         ],
         { log: path.join(run, 'fixture.log') }
       )
+    if (selected.fixture?.startsWith('data-'))
+      await command('python3', ['-I', 'scripts/fixtures/ios-ui-baseline.py', 'arm-data',
+        session.file, container, appHash, fixture, selected.fixture], { log: path.join(run, 'data-intent.log') })
     // 局部夹具已落盘且连接已关闭；让首屏与 runner 准备并行，避免重复冷启动挤占业务用例。
     // XCTest 仍建立原生自动化会话并执行原断言；不把预启动记为冷启动/正式初始化通过。
     if (ui) await command('xcrun', ['simctl', 'launch', device.udid, APP_ID], {

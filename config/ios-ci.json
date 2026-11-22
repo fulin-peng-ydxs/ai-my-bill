@@ -34,7 +34,7 @@
       "kind": "full",
       "mode": "ios-smoke",
       "runner": "macos",
-      "description": "原生 SQLite、升级与桥接集成"
+      "description": "原生 SQLite、升级、文件快照与桥接集成"
     },
     "touch": {
       "kind": "full",
@@ -482,7 +482,9 @@
         "app/src/components/SettingsGroup.vue",
         "app/ios/App/App/LedgerDataFiles.swift",
         "app/ios/App/App/LedgerFilesPlugin.swift",
-        "app/ios/App/App/Info.plist"
+        "app/ios/App/App/Info.plist",
+        "app/src/data/entries/querySql.ts",
+        "app/src/data/ledgerDatabase.ts"
       ],
       "exclude": [
         "**/*.spec.ts"
@@ -523,6 +525,8 @@
   },
   "scriptSkips": {
     "linux": [
+      "T12 真实 CLI 换库后 cancelled 保留意图且停止续发，下轮先恢复再准备",
+      "T12 真实 CLI 换库后 timed-out 保留意图且停止续发，下轮先恢复再准备",
       "真实 CLI 成对恢复局部入口只接受受管阶段，结束后回收活动许可并生成可用证据",
       "原生场景 CLI 把具体场景传入测试阶段及最终回执，受控工具替身不启动设备",
       "UI 局部 CLI 只在夹具关闭后预启动，runner 准备复用前台 App，不扩大用例",

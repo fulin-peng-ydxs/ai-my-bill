@@ -33,6 +33,7 @@ export class LedgerDatabase {
   private maintenance = false
   private queueDuringMaintenance = false
   private originVerified = false
+  private maintenanceRecovery = false
 
   constructor(
     readonly name = 'ledger',
@@ -59,6 +60,7 @@ export class LedgerDatabase {
       this.claimed = true
       try {
         await this.connect()
+        this.maintenanceRecovery = false
       } catch (error) {
         await this.release(error)
         throw error
@@ -77,7 +79,7 @@ export class LedgerDatabase {
     if (this.maintenance && !this.queueDuringMaintenance) return Promise.reject(this.busy())
     // 读入口仍仅面向数据层仓储；不把原始 SQL 暴露给页面。
     return this.queue.run(async () => {
-      this.requireReady()
+      await this.ensureReady()
       return task(this.session())
     }, signal)
   }
@@ -85,7 +87,7 @@ export class LedgerDatabase {
   write<T>(task: (sql: SqlSession) => Promise<T>, signal?: AbortSignal): Promise<T> {
     if (this.maintenance && !this.queueDuringMaintenance) return Promise.reject(this.busy())
     return this.queue.run(async () => {
-      this.requireReady()
+      await this.ensureReady()
       return this.transaction(async () => {
         let metadataChanges = 0
         const sql = this.session((statement, changes) => {
@@ -111,21 +113,35 @@ export class LedgerDatabase {
     this.maintenance = true
     this.queueDuringMaintenance = queueNew
     return this.queue.run(async () => {
-      this.requireReady()
+      await this.ensureReady()
       const captured = capture ? await capture(this.session()) : undefined as C
       this.ready = false
-      await this.closeNativeConnection()
+      this.maintenanceRecovery = true
       let result: T
       try {
+        await this.closeNativeConnection()
         result = await task(captured)
       } catch (error) {
-        try { await this.connect() }
-        catch (reopen) { throw new AggregateError([error, reopen], '文件操作失败且账本重开失败。') }
+        // 关闭与文件操作同属恢复窗口。关闭失败仍持有旧句柄，先重试释放再经同一入口重开。
+        try { await this.recoverMaintenance() }
+        catch (reopen) { throw new AggregateError([error, reopen], '文件维护失败且账本重开失败。') }
         throw error
       }
-      await this.connect()
+      await this.recoverMaintenance()
       return result
     }).finally(() => { this.maintenance = false; this.queueDuringMaintenance = false })
+  }
+
+  /** 每次显式请求最多恢复一次；持续失败保留句柄/所有权，下一次正常重试仍可恢复。 */
+  private async recoverMaintenance() {
+    await this.closeNativeConnection()
+    await this.connect()
+    this.maintenanceRecovery = false
+  }
+
+  private async ensureReady() {
+    if (this.maintenanceRecovery && this.claimed) await this.recoverMaintenance()
+    this.requireReady()
   }
 
   private busy() {
@@ -375,5 +391,6 @@ export class LedgerDatabase {
       owners.delete(this.name)
     }
     this.claimed = false
+    this.maintenanceRecovery = false
   }
 }

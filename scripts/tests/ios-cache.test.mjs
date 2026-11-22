@@ -518,3 +518,120 @@ module['run']('restore',*sys.argv[2:])
   assert.equal(restored.status,0,restored.stderr)
   assert.deepEqual(fs.readFileSync(p.file),fs.readFileSync(path.join(p.session,'ui-baseline/ledgerSQLite.db')))
 })
+
+/** 本轮 UI 启动前建立真实来源，模拟停止 App 后留下的换库；不依赖运行模拟器。 */
+function pendingDataFixture(t, selection = 'data-60,54,58,59') {
+  const p = baselineFixture(t)
+  assert.equal(p.execute('capture').status, 0)
+  const prepared = p.fixture('debug-' + selection)
+  assert.equal(prepared.status, 0, prepared.stderr)
+  const fixture = write(p.root,path.relative(p.root,path.join(p.session,'run-Intent','fixture.json')),
+    fs.readFileSync(path.join(p.session,'fixture.json')))
+  const arm = spawnSync('python3',['-I',p.script,'arm-data',p.contextFile,p.container,p.appHash,fixture,selection],
+    {cwd:p.root,encoding:'utf8'})
+  assert.equal(arm.status,0,arm.stderr)
+  const settle = mode => spawnSync('python3',['-I',p.script,mode,p.contextFile,p.container,p.appHash],{cwd:p.root,encoding:'utf8'})
+  return {...p,fixture,settle}
+}
+
+for (const interruption of ['cancelled','timed-out']) {
+  test(`T12 换库后 ${interruption} 不续发命令，下轮先核验意图再安全重绑/重置，保留失败锁`, async t => {
+    const p = pendingDataFixture(t)
+    // 已提交清空的真实结构来自本会话基线，数据集身份由本次清空重新产生。
+    fs.copyFileSync(path.join(p.session,'ui-baseline/ledgerSQLite.db'),p.file)
+    const db = new DatabaseSync(p.file)
+    db.prepare('UPDATE ledger_meta SET dataset_id=?').run(randomUUID())
+    db.close()
+    write(p.root,path.relative(p.root,path.join(p.container,'Documents/T12-backup-proof.mybill')),'MYBILL-BACKUP-1\nfixture')
+    const lock = write(p.root,'.local/ios/tmp/ai-agent/ios-verification-state.json',JSON.stringify({status:'failed',reason:interruption}))
+    const failure = fs.readFileSync(lock)
+    const moved=path.join(path.dirname(p.container),randomUUID())
+    fs.cpSync(p.container,moved,{recursive:true})
+    const session={directory:p.session,context:p.context}, modes=[]
+    const result=await inspectInstallation(session,moved,p.appHash,async (lease,mode)=>{
+      modes.push(mode)
+      const checked=spawnSync('python3',['-I',p.script,mode,p.contextFile,moved,lease.appHash],{cwd:p.root,encoding:'utf8'})
+      assert.equal(checked.status,0,checked.stderr)
+    },true)
+    assert.deepEqual(modes,['resume-data','rebind'])
+    assert.equal(result.rebound,true)
+    assert.equal(fs.existsSync(path.join(p.session,'ui-data-intent.json')),false)
+    assert.equal(fs.existsSync(path.join(p.session,'ui-data-transition.json')),true)
+    const reset=p.execute('restore',{container:moved})
+    assert.equal(reset.status,0,reset.stderr)
+    assert.deepEqual(fs.readFileSync(lock),failure)
+    assert.deepEqual(fs.readFileSync(path.join(moved,'Library/OfflineLedger/ledgerSQLite.db')),fs.readFileSync(path.join(p.session,'ui-baseline/ledgerSQLite.db')))
+  })
+}
+
+test('T12 续作拒绝缺失/篡改来源和意图、未授权清空及其他数据集，校验失败不消费意图', async t => {
+  for(const kind of ['fixture-tamper','missing-fixture','intent-session','intent-app','intent-selection','unexpected-data']) {
+    const p=pendingDataFixture(t,kind==='intent-selection'?'data-60,54':'data-60,54,58,59')
+    fs.copyFileSync(path.join(p.session,'ui-baseline/ledgerSQLite.db'),p.file)
+    const db=new DatabaseSync(p.file)
+    db.prepare('UPDATE ledger_meta SET dataset_id=?').run(randomUUID())
+    if(kind==='unexpected-data') db.prepare("INSERT INTO dictionary_item(id,kind,name,normalized_name,status) VALUES(?,'PAYER','外来','外来','ACTIVE')").run(randomUUID())
+    db.close()
+    write(p.root,path.relative(p.root,path.join(p.container,'Documents/T12-backup-proof.mybill')),'MYBILL-BACKUP-1\nfixture')
+    const intentFile=path.join(p.session,'ui-data-intent.json')
+    if(kind==='fixture-tamper') fs.appendFileSync(p.fixture,' ')
+    if(kind==='missing-fixture') fs.unlinkSync(p.fixture)
+    if(kind==='intent-session'||kind==='intent-app') {
+      const intent=JSON.parse(fs.readFileSync(intentFile))
+      intent[kind==='intent-session'?'runId':'appHash']=kind==='intent-session'?randomUUID():'b'.repeat(64)
+      fs.writeFileSync(intentFile,JSON.stringify(intent),{mode:0o600})
+    }
+    const before=fs.readFileSync(p.file)
+    assert.notEqual(p.settle('resume-data').status,0,kind)
+    assert.equal(fs.existsSync(intentFile),true)
+    assert.deepEqual(fs.readFileSync(p.file),before)
+  }
+})
+
+test('T12 登记意图后尚未换库也可安全续作，缺安装回执时不能降级冷重置', async t => {
+  const p=pendingDataFixture(t)
+  let result=p.settle('resume-data')
+  assert.equal(result.status,0,result.stderr)
+  assert.equal(fs.existsSync(path.join(p.session,'ui-data-intent.json')),false)
+  // 已消费旧意图后可重新登记；未受理业务前不改变数据集。
+  result=spawnSync('python3',['-I',p.script,'arm-data',p.contextFile,p.container,p.appHash,p.fixture,'data-58'],{cwd:p.root,encoding:'utf8'})
+  assert.equal(result.status,0,result.stderr)
+  fs.unlinkSync(p.leaseFile)
+  await assert.rejects(inspectInstallation({directory:p.session,context:p.context},p.container,p.appHash,async()=>{},true),/缺少有效安装/)
+})
+
+test('T12 恢复已提交但回执未完成时，续作验证全部来源及双草稿，不借意图接受额外写入', async t => {
+  const p=pendingDataFixture(t,'data-60,54,56,57')
+  const original=fs.readFileSync(p.file)
+  const db=new DatabaseSync(p.file), dataset=randomUUID()
+  db.prepare('UPDATE ledger_meta SET dataset_id=?').run(dataset)
+  db.prepare('UPDATE ledger_draft SET dataset_id=?').run(dataset)
+  db.close()
+  write(p.root,path.relative(p.root,path.join(p.container,'Documents/T12-backup-proof.mybill')),'MYBILL-BACKUP-1\nfixture')
+  const changed=fs.readFileSync(p.file)
+  const drift=new DatabaseSync(p.file)
+  drift.prepare("UPDATE ledger_entry SET amount_cents=amount_cents+1 WHERE entry_type='INCOME'").run()
+  drift.close()
+  assert.notEqual(p.settle('resume-data').status,0,'额外改写不属于备份恢复终态')
+  fs.writeFileSync(p.file,changed)
+  const interrupted=spawnSync('python3',['-I','-c',`
+import os,runpy,signal,sys
+from pathlib import Path
+module=runpy.run_path(sys.argv[1])
+unlink=Path.unlink
+def interrupt(self,*args,**kwargs):
+    if self.name=='ui-data-intent.json': os.kill(os.getpid(),signal.SIGTERM)
+    return unlink(self,*args,**kwargs)
+Path.unlink=interrupt
+module['run']('resume-data',*sys.argv[2:])
+`,p.script,p.contextFile,p.container,p.appHash],{cwd:p.root,encoding:'utf8'})
+  assert.equal(interrupted.signal,'SIGTERM')
+  assert.equal(fs.existsSync(path.join(p.session,'ui-data-intent.json')),true)
+  assert.equal(fs.existsSync(path.join(p.session,'ui-data-transition.json')),true)
+  const resumed=p.settle('resume-data')
+  assert.equal(resumed.status,0,resumed.stderr)
+  assert.equal(fs.existsSync(path.join(p.session,'ui-data-intent.json')),false)
+  const reset=p.execute('restore')
+  assert.equal(reset.status,0,reset.stderr)
+  assert.notDeepEqual(fs.readFileSync(p.file),original,'基线重置确实撤销本轮合成来源，未延续上一轮终态')
+})

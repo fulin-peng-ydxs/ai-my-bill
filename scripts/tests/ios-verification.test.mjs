@@ -291,6 +291,58 @@ function finishAttempt(p, hash, proof, failed = true, required = [target]) {
   return a
 }
 
+for (const interruption of ['cancelled', 'timed-out']) {
+  test(`T12 真实 CLI 换库后 ${interruption} 保留意图且停止续发，下轮先恢复再准备`,
+    { timeout: 30000, skip: process.platform !== 'darwin' }, t => {
+      const p = runnerProject(t), trace = path.join(p.root, 'data-trace.json')
+      const intent = path.join(p.session, 'ui-data-intent.json'), committed = path.join(p.root, 'data-committed')
+      const interrupt = p.write('interrupt-data', interruption)
+      const python = p.write('bin/python3', '#!' + process.execPath + '\n' + `
+const fs=require('node:fs'),path=require('node:path'),a=process.argv.slice(2),trace=${JSON.stringify(trace)},intent=${JSON.stringify(intent)}
+const mode=a[0]==='-I'?a[2]:a[1]
+const history=fs.existsSync(trace)?JSON.parse(fs.readFileSync(trace)):[];history.push(mode);fs.writeFileSync(trace,JSON.stringify(history))
+if(mode==='capture')fs.mkdirSync(${JSON.stringify(path.join(p.session,'ui-baseline'))},{recursive:true})
+if(mode==='arm-data')fs.writeFileSync(intent,'controlled intent')
+if(mode==='resume-data'||mode==='settle-data')fs.unlinkSync(intent)
+if(mode==='wait-initialized'){
+ const file=path.join(${JSON.stringify(p.container)},'Library/OfflineLedger/ledgerSQLite.db')
+ fs.mkdirSync(path.dirname(file),{recursive:true});fs.writeFileSync(file,'controlled ledger')
+}
+`)
+      fs.chmodSync(python, 0o755)
+      const xcode = path.join(p.root, 'bin/xcodebuild')
+      fs.appendFileSync(xcode, `
+if(a[0]==='test-without-building'&&fs.existsSync(${JSON.stringify(interrupt)})){
+ fs.writeFileSync(${JSON.stringify(committed)},'controlled switch committed')
+ ${interruption==='cancelled' ? "process.kill(process.ppid,'SIGTERM')" : ''}
+}
+`)
+      const clockFile = p.write('.local/ios/data-deadline.mjs', `
+import fs from 'node:fs'
+import {performance} from 'node:perf_hooks'
+const now=performance.now.bind(performance)
+Object.defineProperty(performance,'now',{value:()=>now()+(fs.existsSync(${JSON.stringify(committed)})?900001:0)})
+`)
+      const args = ['debug','run','--session',p.session,'--case',ui('test48DataRestoreConfirm')]
+      const failed = p.run(args, interruption==='timed-out'?{NODE_OPTIONS:'--import='+clockFile}:{})
+      assert.notEqual(failed.status,0,failed.stderr)
+      assert.equal(fs.existsSync(committed),true,'只有模拟换库提交就绪后才取消或推进截止时钟')
+      assert.equal(fs.existsSync(intent),true)
+      const first = JSON.parse(fs.readFileSync(trace))
+      assert.ok(first.includes('arm-data'))
+      assert.ok(!first.includes('settle-data'),'取消/整轮超时不能在旧执行中追加文件终态登记')
+      fs.unlinkSync(interrupt)
+      fs.unlinkSync(committed)
+      const resumed = p.run(args)
+      assert.equal(resumed.status,0,resumed.stderr)
+      const second = JSON.parse(fs.readFileSync(trace)).slice(first.length)
+      assert.ok(second.indexOf('resume-data')>=0 && second.indexOf('resume-data')<second.indexOf('restore'))
+      assert.ok(second.indexOf('restore')<second.indexOf('arm-data'))
+      assert.ok(second.indexOf('arm-data')<second.indexOf('settle-data'))
+      assert.equal(fs.existsSync(intent),false)
+    })
+}
+
 test('当前局部证据校验：失败/旧输入/错误环境/范围/符号链接拒绝，文档变化不作废', (t) => {
   const p = project(t),
     good = p.evidence(),
