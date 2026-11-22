@@ -196,7 +196,11 @@ def run(mode, context_file, container, app_hash, data_fixture=None, data_selecti
             source_data = json.loads(fixture.read_text())
             assert source_data['dataset'] == original['datasetId'] and validate_database(database) == original
             import runpy
-            snapshot = runpy.run_path(str(Path(__file__).with_name('ios_data_management.py')))['snapshot']
+            helpers = runpy.run_path(str(Path(__file__).with_name('ios_data_management.py')))
+            snapshot = helpers['snapshot']
+            with closing(sqlite3.connect(source.as_uri() + '?mode=ro', uri=True)) as baseline_db:
+                baseline_db.row_factory = sqlite3.Row
+                assert source_data['clearDefaults'] == helpers['clear_defaults'](baseline_db), '清空参照不匹配受管空基线'
             with closing(sqlite3.connect(database.as_uri() + '?mode=ro', uri=True)) as db:
                 db.row_factory = sqlite3.Row
                 assert snapshot(db) == source_data['dataSource']
@@ -220,13 +224,16 @@ def run(mode, context_file, container, app_hash, data_fixture=None, data_selecti
                 source_data = json.loads(fixture.read_text())
                 assert source_data['dataset'] == original['datasetId']
                 import runpy
-                check = runpy.run_path(str(Path(__file__).with_name('ios_data_management.py')))['check']
+                helpers = runpy.run_path(str(Path(__file__).with_name('ios_data_management.py')))
+                with closing(sqlite3.connect(source.as_uri() + '?mode=ro', uri=True)) as baseline_db:
+                    baseline_db.row_factory = sqlite3.Row
+                    defaults = helpers['clear_defaults'](baseline_db)
                 with closing(sqlite3.connect(database.as_uri() + '?mode=ro', uri=True)) as db:
                     db.row_factory = sqlite3.Row
                     empty = db.execute('SELECT count(*) FROM ledger_entry').fetchone()[0] == 0
                     if cases is not None:
                         assert any(case in cases for case in ([58,59] if empty else [57,59])), '所选用例未获准产生该换库终态'
-                    check(db, fixture, [58] if empty else [59], Path(container))
+                    helpers['check'](db, fixture, [58] if empty else [59], Path(container), defaults)
                 assert current['schemaVersion'] == original['schemaVersion']
                 write_json(transition, {**identity, **current, 'sourceDatasetId': original['datasetId'],
                                         'databaseHash': checksum(database)})

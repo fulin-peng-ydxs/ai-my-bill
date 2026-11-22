@@ -277,7 +277,10 @@ connection.row_factory = sqlite3.Row
 connection.execute('PRAGMA foreign_keys=ON')
 receipt_path = Path(receipt_file)
 try:
-    if mode == 'prepare-data':
+    if mode == 'capture-data-defaults':
+        from ios_data_management import capture_clear_defaults
+        capture_clear_defaults(connection, receipt_path)
+    elif mode == 'prepare-data':
         from ios_data_management import prepare
         prepare(connection, receipt_path, add_personal_items)
     elif mode == 'check-data' or (mode == 'debug-check' and data_cases):

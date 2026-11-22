@@ -4,6 +4,24 @@ import uuid
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
+EMPTY_TABLES = ['ledger_entry','expense_adjustment','daily_entry_template','ledger_draft','product_merge_event','idempotency_result']
+
+
+def clear_defaults(connection):
+    """消费同一安装正式初始化的值，不复制 seed；清空后偏好必须含且仅含原始键值。"""
+    return {
+        'dictionary_item': [dict(row) for row in connection.execute('SELECT * FROM dictionary_item ORDER BY id')],
+        'preference': {row['key']: json.loads(row['value']) for row in connection.execute('SELECT * FROM preference')},
+    }
+
+
+def capture_clear_defaults(connection, receipt):
+    assert not receipt.exists(), '默认参照存在时拒绝覆盖'
+    for table in EMPTY_TABLES:
+        assert connection.execute(f'SELECT COUNT(*) FROM {table}').fetchone()[0] == 0, table
+    receipt.write_text(json.dumps({'dataset': connection.execute('SELECT dataset_id FROM ledger_meta').fetchone()[0],
+                                  'clearDefaults': clear_defaults(connection)},ensure_ascii=False))
+
 
 def snapshot(connection):
     tables = [r[0] for r in connection.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name")]
@@ -15,6 +33,11 @@ def snapshot(connection):
 
 def prepare(connection, receipt, add_personal):
     assert not connection.execute("SELECT id FROM dictionary_item WHERE name='备份苹果'").fetchall()
+    # 局部从受管空基线读取；完整触摸须在任何业务夹具前捕获，后续阶段沿用原参照。
+    if not receipt.exists(): capture_clear_defaults(connection, receipt)
+    defaults = json.loads(receipt.read_text())
+    assert defaults['dataset'] == connection.execute('SELECT dataset_id FROM ledger_meta').fetchone()[0]
+    assert 'clearDefaults' in defaults
     now = datetime.now(ZoneInfo('Asia/Shanghai'))
     ids = {key:str(uuid.uuid4()) for key in ['product','category','unit','funding','payer','expense','income','refund','trash','template']}
     with connection:
@@ -37,19 +60,21 @@ def prepare(connection, receipt, add_personal):
             connection.execute('INSERT INTO preference VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value',(key,json.dumps(value)))
         # 夹具写入不经过生产写队列，显式给本夹具新的快照水位。
         connection.execute("INSERT INTO maintenance_state VALUES('backup_revision',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",(json.dumps({'revision':str(uuid.uuid4())}),))
-    receipt.write_text(json.dumps({'dataSource':snapshot(connection),'dataset':dataset,'ids':ids,'drafts':drafts},ensure_ascii=False))
+    receipt.write_text(json.dumps({'dataSource':snapshot(connection),'dataset':dataset,'ids':ids,'drafts':drafts,
+                                  'clearDefaults':defaults['clearDefaults']},ensure_ascii=False))
     print('DATA_MANAGEMENT_FIXTURE_PREPARED')
 
 
-def check(connection, receipt, cases, folder):
+def check(connection, receipt, cases, folder, defaults=None):
     source = json.loads(receipt.read_text())
     current = connection.execute('SELECT dataset_id FROM ledger_meta').fetchone()[0]
     cleared = 58 in cases and 59 not in cases
     if cleared:
         assert current != source['dataset']
-        for table in ['ledger_entry','expense_adjustment','daily_entry_template','ledger_draft','product_merge_event','idempotency_result']:
+        for table in EMPTY_TABLES:
             assert connection.execute(f'SELECT COUNT(*) FROM {table}').fetchone()[0] == 0, table
-        assert connection.execute('SELECT COUNT(*) FROM dictionary_item').fetchone()[0] == 8
+        expected = defaults if defaults is not None else source['clearDefaults']
+        assert clear_defaults(connection) == expected, '清空后默认字典或偏好不一致'
         # 清空后启动可生成新的空账本常规快照，旧数据快照绝不能留下。
         root = folder/'Library/OfflineLedger/Snapshots'
         if root.exists():
@@ -70,7 +95,10 @@ def check(connection, receipt, cases, folder):
         else:
             assert actual == source['dataSource'], [key for key in actual if actual[key] != source['dataSource'][key]]
         if restored:
-            drafts = {row['entry_type']:json.loads(row['data_json']) for row in connection.execute('SELECT * FROM ledger_draft WHERE dataset_id=?',(current,))}
+            rows = list(connection.execute('SELECT * FROM ledger_draft'))
+            assert all(row['dataset_id'] == current for row in rows), '恢复后存在跨数据集草稿'
+            drafts = {row['entry_type']:json.loads(row['data_json']) for row in rows}
+            assert set(drafts) == set(source['drafts']), '恢复后草稿类型集合不一致'
             for kind,fields in source['drafts'].items():
                 for key,value in fields.items(): assert drafts[kind][key]==value,(kind,key)
     assert not connection.execute('PRAGMA foreign_key_check').fetchall()

@@ -1222,7 +1222,9 @@ test('T12 CSV 索引迁移和受管续作分别进入原生与脚本套件，不
     assert.ok(names.includes('app-common')&&names.includes('native-sqlite'))
     assert.ok(!names.includes('touch'))
   }
-  const names=selectSuites(r,'change',['scripts/fixtures/ios-ui-baseline.py']).map(s=>s.name)
-  assert.ok(names.includes('scripts')&&names.includes('scripts-macos'))
-  assert.ok(!names.includes('touch'))
+  for(const file of ['scripts/fixtures/ios-ui-baseline.py','scripts/fixtures/ios_data_management.py','scripts/fixtures/dictionary-touch.py']) {
+    const names=selectSuites(r,'change',[file]).map(s=>s.name)
+    assert.ok(names.includes('scripts')&&names.includes('scripts-macos'),file)
+    assert.ok(!names.includes('touch'),file)
+  }
 })

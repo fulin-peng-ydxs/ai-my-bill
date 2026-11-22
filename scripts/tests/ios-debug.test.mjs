@@ -951,6 +951,8 @@ test('T12 局部文件场景只补必要前置，完整触摸必须实际登记�
     assert.ok(shell.includes('-skip-testing:'+name))
   }
   assert.ok(shell.indexOf('prepare-data') > shell.indexOf('check-dimensions'))
+  const capture='python3 scripts/fixtures/dictionary-touch.py capture-data-defaults "${APP_CONTAINER}" "${SIMULATOR_ID}" "${RUN_DIRECTORY}/touch-data-fixture.json"'
+  assert.ok(shell.indexOf(capture)>=0 && shell.indexOf(capture)<shell.indexOf('dictionary-touch.py prepare "'))
   assert.ok(shell.indexOf('check-data') > shell.indexOf('touch-data.log'))
   assert.equal(selection('--case','NativeTests/NativeSqliteTests/testOfflineDataManagement',[]).cases.length,1)
   assert.equal(selection('--case','NativeTests/NativeSqliteTests/testDataFileSecurityAndSwitchRecovery',[]).cases.length,1)
@@ -970,4 +972,39 @@ test('T12 局部文件场景只补必要前置，完整触摸必须实际登记�
     assert.notEqual(execute('debug-data-54').status,0,'重复准备拒绝覆盖，不复用上一轮变更账本')
     assert.equal(db.prepare("SELECT COUNT(*) AS n FROM ledger_entry WHERE id LIKE 't10-%' OR id LIKE 't7-%'").get().n,0)
   } finally {db.close()}
+})
+
+test('T12 完整触摸沿用业务操作前的默认参照，清空回读拒绝字典和偏好残留', t => {
+  const {file,execute}=touchFixture(temporary(t))
+  const init=new DatabaseSync(file)
+  init.prepare('INSERT INTO ledger_meta VALUES(1,8,?,1,1,?,?)').run(randomUUID(),'2026-11-21','2026-11-21')
+  init.close()
+  const initial=fs.readFileSync(file),receipt=path.join(path.dirname(path.dirname(path.dirname(file))),'fixture.json')
+  const captured=execute('capture-data-defaults')
+  assert.equal(captured.status,0,captured.stderr)
+  const defaults=JSON.parse(fs.readFileSync(receipt)).clearDefaults
+  const earlier=new DatabaseSync(file)
+  earlier.prepare("INSERT INTO preference VALUES('theme','\"DARK\"') ON CONFLICT(key) DO UPDATE SET value=excluded.value").run()
+  earlier.prepare("INSERT INTO dictionary_item(id,kind,name,normalized_name,status) VALUES(?,'PAYER','先前阶段','先前阶段','ACTIVE')").run(randomUUID())
+  earlier.close()
+  assert.notEqual(execute('capture-data-defaults').status,0,'已有参照不得被业务终态覆盖')
+  const prepared=execute('debug-data-58')
+  assert.equal(prepared.status,0,prepared.stderr)
+  assert.deepEqual(JSON.parse(fs.readFileSync(receipt)).clearDefaults,defaults)
+  fs.writeFileSync(file,initial)
+  const clear=new DatabaseSync(file)
+  clear.prepare('UPDATE ledger_meta SET dataset_id=?').run(randomUUID())
+  clear.close()
+  const valid=fs.readFileSync(file),container=path.dirname(path.dirname(path.dirname(file)))
+  fs.mkdirSync(path.join(container,'Documents'),{recursive:true})
+  fs.writeFileSync(path.join(container,'Documents/T12-backup-proof.mybill'),'MYBILL-BACKUP-1\nfixture')
+  assert.equal(execute('debug-check-data-58').status,0)
+  for(const sql of ["UPDATE dictionary_item SET name='残留',normalized_name='残留' WHERE name='工资'",
+    "INSERT INTO preference VALUES('residual','true')"]) {
+    const db=new DatabaseSync(file);db.exec(sql);db.close()
+    const before=fs.readFileSync(file)
+    assert.notEqual(execute('debug-check-data-58').status,0)
+    assert.deepEqual(fs.readFileSync(file),before)
+    fs.writeFileSync(file,valid)
+  }
 })

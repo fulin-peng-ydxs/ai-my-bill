@@ -534,6 +534,60 @@ function pendingDataFixture(t, selection = 'data-60,54,58,59') {
   return {...p,fixture,settle}
 }
 
+test('T12 清空参照须匹配受管空基线，篡改默认值不能登记操作意图', t => {
+  const p=pendingDataFixture(t),intent=path.join(p.session,'ui-data-intent.json')
+  fs.unlinkSync(intent)
+  const source=JSON.parse(fs.readFileSync(p.fixture))
+  source.clearDefaults.preference.theme='DARK'
+  fs.writeFileSync(p.fixture,JSON.stringify(source))
+  const before=hashPaths(p.container,['.'])
+  const result=spawnSync('python3',['-I',p.script,'arm-data',p.contextFile,p.container,p.appHash,p.fixture,'data-58'],{cwd:p.root,encoding:'utf8'})
+  assert.notEqual(result.status,0)
+  assert.equal(fs.existsSync(intent),false)
+  assert.equal(hashPaths(p.container,['.']),before)
+})
+
+for (const residue of ['dictionary-change','extra-preference','foreign-draft']) {
+  test(`T12 换库终态拒绝 ${residue}，保留原数据、意图、既有回执和失败锁，修复后可续作`, t => {
+    for (const existingReceipt of [false,true]) {
+      const p=pendingDataFixture(t), restored=residue==='foreign-draft'
+      if (!restored) fs.copyFileSync(path.join(p.session,'ui-baseline/ledgerSQLite.db'),p.file)
+      const db=new DatabaseSync(p.file), dataset=randomUUID()
+      db.prepare('UPDATE ledger_meta SET dataset_id=?').run(dataset)
+      if (restored) db.prepare('UPDATE ledger_draft SET dataset_id=?').run(dataset)
+      db.close()
+      const valid=fs.readFileSync(p.file)
+      const changed=new DatabaseSync(p.file)
+      if (residue==='dictionary-change')
+        changed.prepare("UPDATE dictionary_item SET name='残留分类',normalized_name='残留分类' WHERE name='工资'").run()
+      else if (residue==='extra-preference')
+        changed.prepare("INSERT INTO preference VALUES('residualPreference','true')").run()
+      else changed.prepare('INSERT INTO ledger_draft SELECT ?,entry_type,schema_version,data_json,created_at,updated_at FROM ledger_draft LIMIT 1').run(randomUUID())
+      changed.close()
+      write(p.root,path.relative(p.root,path.join(p.container,'Documents/T12-backup-proof.mybill')),'MYBILL-BACKUP-1\nfixture')
+      const receipt=path.join(p.session,'ui-data-transition.json')
+      if (existingReceipt) write(p.root,path.relative(p.root,receipt),JSON.stringify({keep:'previous receipt'}))
+      const lock=write(p.root,'.local/ios/tmp/ai-agent/ios-verification-state.json',JSON.stringify({status:'failed',reason:'pending full acceptance'}))
+      const preserved=[p.fixture,p.leaseFile,path.join(p.session,'ui-data-intent.json'),lock,
+        ...(existingReceipt?[receipt]:[])].map(file=>[file,fs.readFileSync(file)])
+      const containerHash=hashPaths(p.container,['.']),baselineHash=hashPaths(path.join(p.session,'ui-baseline'),['.'])
+      for (const mode of ['settle-data','resume-data']) {
+        const result=p.settle(mode)
+        assert.notEqual(result.status,0,`${residue}/${mode} 不得登记为合法终态`)
+        assert.equal(hashPaths(p.container,['.']),containerHash,'拒绝不改账本或外部文件')
+        assert.equal(hashPaths(path.join(p.session,'ui-baseline'),['.']),baselineHash)
+        for(const [file,bytes] of preserved) assert.deepEqual(fs.readFileSync(file),bytes,file)
+        assert.equal(fs.existsSync(receipt),existingReceipt,'不得新建或覆盖回执')
+      }
+      fs.writeFileSync(p.file,valid)
+      const resumed=p.settle('resume-data')
+      assert.equal(resumed.status,0,resumed.stderr)
+      assert.equal(fs.existsSync(path.join(p.session,'ui-data-intent.json')),false)
+      assert.deepEqual(fs.readFileSync(lock),preserved.find(([file])=>file===lock)[1])
+    }
+  })
+}
+
 for (const interruption of ['cancelled','timed-out']) {
   test(`T12 换库后 ${interruption} 不续发命令，下轮先核验意图再安全重绑/重置，保留失败锁`, async t => {
     const p = pendingDataFixture(t)
