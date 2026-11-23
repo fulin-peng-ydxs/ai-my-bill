@@ -1,3 +1,4 @@
+import { coverageReport } from '../lib/ios-coverage.mjs'
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
@@ -237,7 +238,7 @@ test('CI 登记复用现有执行器与专项；固定范围、按需触发和�
   )
   const full = selectSuites(r, 'final').map((s) => s.name)
   assert.ok(full.includes('touch') && full.includes('dependency-audit'))
-  for (const profile of ['scripts', 'app', 'final', 'dependency-audit']) {
+  for (const profile of ['scripts', 'app', 'final', 'dependency-audit', 'recovery', 'scale-10000', 'scale-100000']) {
     assert.equal(
       requestedScope('workflow_dispatch', { inputs: { verification: profile } }).profile,
       profile
@@ -902,6 +903,13 @@ test('CI 原报告语义对账拒绝空单测、跳过、阶段缺失，即使�
   const appReport = path.join(proof, 'app-tests.json'),
     scriptLog = path.join(proof, 'script-tests.log')
   p.write('scripts/ios-app.sh', `#!/bin/sh\nprintf 'CI_RESULT=${proof}\\n'\n`)
+  const source = p.write('app/src/sample.ts','export const value=1')
+  const rawCoverage = { [source]:{path:source,s:{0:1},statementMap:{0:{start:{line:1,column:0},end:{line:1,column:20}}},f:{},fnMap:{},b:{},branchMap:{}} }
+  const metrics = {lines:{total:1,covered:1,pct:100},statements:{total:1,covered:1,pct:100},functions:{total:0,covered:0,pct:100},branches:{total:0,covered:0,pct:100}}
+  const summary = {total:metrics,[source]:metrics}
+  const coverageProof = p.write(path.relative(p.root,path.join(proof,'coverage-proof.json')),coverageReport(p.root,rawCoverage,summary))
+  p.write(path.relative(p.root,path.join(proof,'coverage-final.json')),rawCoverage)
+  p.write(path.relative(p.root,path.join(proof,'coverage-summary.json')),summary)
   const { directory } = prepare(p, 'app-common')
   p.write(path.relative(p.root, appReport), {
     success: true,
@@ -918,7 +926,7 @@ test('CI 原报告语义对账拒绝空单测、跳过、阶段缺失，即使�
     const log = coverage === 'check/script-tests' ? scriptLog :
       p.write(path.relative(p.root, path.join(proof, `phase-${i}.log`)), 'phase completed\n')
     return { stage, coverage: [coverage], log, status: 'passed',
-      ...(coverage === 'check/app-tests' ? { report: appReport } : {}) }
+      ...(coverage === 'check/app-tests' ? { report: appReport } : coverage === 'check/app-coverage' ? {report:coverageProof} : {}) }
   })
   p.write(path.relative(p.root, path.join(proof, 'result.json')), {
     scope: 'engineering',

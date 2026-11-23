@@ -51,6 +51,7 @@ export function requiredModePhases(mode) {
     ['build', 'check/app-build'],
     ['build', 'check/probe-build'],
     ['check', 'check/app-tests'],
+    ['check', 'check/app-coverage'],
     ['check', 'check/script-tests'],
     ['check', 'check/resources/source']
   ]

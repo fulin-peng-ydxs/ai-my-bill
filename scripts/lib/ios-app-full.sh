@@ -106,7 +106,9 @@ positive_test() {
 run_phase build check/app-build "${RUN_DIRECTORY}/app-build.log" '' npm --prefix app run native:sync
 run_phase build check/probe-build "${RUN_DIRECTORY}/probe-build.log" '' npm --prefix app run probe:bundle
 if [[ "${MODE}" != ios-recovery ]]; then
-  run_phase check check/app-tests "${RUN_DIRECTORY}/app-tests.log" "${RUN_DIRECTORY}/app-tests.json" npm --prefix app test -- --bail=1 --reporter=json --outputFile="${RUN_DIRECTORY}/app-tests.json"
+  COVERAGE_ARGS=(--coverage --maxWorkers=2 --coverage.reportsDirectory="${RUN_DIRECTORY}/coverage")
+  run_phase check check/app-tests "${RUN_DIRECTORY}/app-tests.log" "${RUN_DIRECTORY}/app-tests.json" npm --prefix app test -- --bail=1 --reporter=json --outputFile="${RUN_DIRECTORY}/app-tests.json" "${COVERAGE_ARGS[@]}"
+  run_phase check check/app-coverage "${RUN_DIRECTORY}/coverage.log" "${RUN_DIRECTORY}/coverage/coverage-proof.json" node scripts/ios-coverage.mjs "${RUN_DIRECTORY}/coverage"
   run_phase check check/script-tests "${RUN_DIRECTORY}/script-tests.log" '' node scripts/lib/ios-checks.mjs run-script-tests
 fi
 run_phase check check/resources/source "${RUN_DIRECTORY}/resources.log" '' node scripts/verify-ios-resources.mjs

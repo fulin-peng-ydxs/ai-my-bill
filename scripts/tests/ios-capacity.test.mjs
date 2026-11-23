@@ -1,3 +1,4 @@
+import { capacityEvidenceFixture as fixture } from '../fixtures/capacity-report.mjs'
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
@@ -6,27 +7,10 @@ import path from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { createHash,randomUUID } from 'node:crypto'
 import { DatabaseSync } from 'node:sqlite'
+import { runCommand } from '../lib/ios-ci-run.mjs'
 import { capacityReport,scaleAppId,scaleMetrics,percentile95 } from '../lib/ios-capacity.mjs'
 import { selection } from '../lib/ios-debug.mjs'
 import { bindScalePlan,verifyScaleFixture,assertScaleLease,resolveScaleProcesses,readScaleEvent,readScaleCold,finishScale,replaceScaleFixture,recoverScaleSwap } from '../lib/ios-scale-run.mjs'
-function fixture() {
-  const receipt = { runId:'00000000-0000-4000-8000-000000000001',sourceHash:'a'.repeat(64),artifactHash:'b'.repeat(64),
-    commit:'c'.repeat(40),mode:'device',appId:scaleAppId,configuration:'Release',debugger:false,workingTree:false,
-    deviceModel:'iPhone 14 Pro Max',iosVersion:'27.0.1',deviceId:'00008120-0000000000000000',teamId:'EXAMPLE123',
-    xcodeVersion:'27.0',sqliteVersion:'3',pluginVersion:'8.1.1',appVersion:'1.0',buildVersion:'1' }
-  const samples = Object.fromEntries(scaleMetrics.filter(x => !['coldStart','filter','backup','restore'].includes(x)).map(key => ['sqlite.'+key,Array(30).fill(1)]))
-  samples['files.backup'] = Array(5).fill(1); samples['files.restore'] = Array(5).fill(1)
-  const observation = { ...receipt,count:10000,fixture:{ version:1 },measurementScope:'native-services-not-page-e2e',samples }
-  const capture = { ...receipt,count:10000,fixtureVersion:1,scope:'page-e2e',evidenceHash:'d'.repeat(64),
-    samples:Object.fromEntries(scaleMetrics.map(x => [x,Array(['coldStart','backup','restore'].includes(x) ? 5 : 30).fill(1)])),
-    correctness:true,crashed:false,unboundedGrowth:false,memory:{ ...receipt,count:10000,windowStart:0,windowEnd:1000,evidenceHash:'e'.repeat(64),
-      samples:[0,500,1000].map(at => ({ at,appPid:10,webPid:11,appBytes:20,webBytes:30 })) } }
-  let clock = 0
-  capture.spans = Object.fromEntries(Object.entries(capture.samples).map(([key,values]) => [key,values.map(value => {
-    const start = clock; clock += value; return { start,end:clock }
-  })]))
-  return { receipt,observation,capture }
-}
 test('模拟器服务观测不充当真机验收，缺少页面/冷启动/组合内存不得通过',() => {
   const { receipt,observation,capture } = fixture()
   assert.equal(capacityReport({ ...receipt,mode:'simulator' },observation).deviceAcceptance,'not-verified')
@@ -70,6 +54,12 @@ test('逐次测试清单绑定 nonce 和绝对产物，不能修改缓存清单�
   const original = { targets:[{ TestBundlePath:'__TESTROOT__/Tests.xctest',EnvironmentVariables:{ MYBILL_CAPACITY_CONTEXT:'old',other:'keep' } }] }
   const bound = bindScalePlan(original,'/owned/products',{ runId:'new' })
   assert.equal(original.targets[0].TestBundlePath,'__TESTROOT__/Tests.xctest')
+  assert.equal(original.targets[0].DiagnosticCollectionPolicy,undefined)
+  assert.equal(bound.targets[0].DiagnosticCollectionPolicy,0)
+  const ui = { targets:[{ TestBundlePath:'__TESTROOT__/Cold.xctest',IsUITestBundle:true,PreferredScreenCaptureFormat:'screenRecording' }] }
+  assert.equal(bindScalePlan(ui,'/owned/products',{}).targets[0].PreferredScreenCaptureFormat,'screenshots')
+  assert.equal(ui.targets[0].PreferredScreenCaptureFormat,'screenRecording')
+  assert.equal(bound.targets[0].PreferredScreenCaptureFormat,undefined)
   assert.equal(original.targets[0].EnvironmentVariables.MYBILL_CAPACITY_CONTEXT,'old')
   assert.equal(bound.targets[0].TestBundlePath,'/owned/products/Tests.xctest')
   assert.equal(JSON.parse(bound.targets[0].EnvironmentVariables.MYBILL_CAPACITY_CONTEXT).runId,'new')
@@ -113,6 +103,17 @@ test('夹具摘要、数据集、数量和文件类型在覆盖前只读验证�
   assert.equal(readScaleEvent(log,'IOS_CAPACITY_PAGES').runId,'one')
   fs.appendFileSync(log,'IOS_CAPACITY_PAGES {"runId":"old"}\n')
   assert.throws(() => readScaleEvent(log,'IOS_CAPACITY_PAGES'))
+})
+
+test('容量收尾只接纳真实已停止终态，其他退出和超时仍失败',async t => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(),'scale-stop-'))
+  t.after(() => fs.rmSync(directory,{recursive:true,force:true}))
+  const acceptExit = (code,output) => code === 0 || (code === 3 && output.includes('found nothing to terminate'))
+  const invoke = (name,code,timeout=10000) => runCommand(process.cwd(),process.execPath,['-e',code],path.join(directory,name+'.log'),timeout,{acceptExit})
+  assert.match(await invoke('stopped',"console.log('found nothing to terminate');process.exit(3)"),/found nothing/)
+  await assert.rejects(invoke('wrong-error',"console.log('device unavailable');process.exit(3)"),/exit=3/)
+  await assert.rejects(invoke('wrong-exit',"console.log('found nothing to terminate');process.exit(2)"),/exit=2/)
+  await assert.rejects(invoke('timeout',"console.log('found nothing to terminate');setInterval(()=>{},1000)",200),/失败或取消/)
 })
 
 test('采样结束或落盘失败仍停止隔离 App，保留主失败和全部补偿失败',async () => {
@@ -169,6 +170,20 @@ test('冷启动五单例仅聚合本轮同源样本，缺失、重复和混轮�
   const write = values => fs.writeFileSync(file,values.map(value => 'IOS_CAPACITY_COLD_SAMPLE '+JSON.stringify(value)).join('\n'))
   write(events.toReversed()); assert.deepEqual(readScaleCold(file).samples,[10,11,12,13,14])
   assert.equal(selection('--scenario','scale-10000',[]).cases.length,8)
+  write([events[1]])
+  const single=selection('--scenario','scale-10000-cold-02',[])
+  assert.deepEqual(single.cases,['CapacityColdTests/CapacityColdTests/testColdLaunch02'])
+  assert.deepEqual(single.capacityColdIndices,[1])
+  assert.equal(single.testCaseMs,60000)
+  assert.deepEqual(readScaleCold(file,single.capacityColdIndices).samples,[11])
+  assert.deepEqual(readScaleCold(file,single.capacityColdIndices).sampleIndices,[1])
+  assert.throws(()=>readScaleCold(file),/五份有效样本/)
+  assert.throws(()=>readScaleCold(file,[0]),/有效样本/)
+  assert.throws(()=>readScaleCold(file,[]),/选择无效/)
+  assert.throws(()=>readScaleCold(file,[1,1]),/选择无效/)
+  for(const name of ['scale-10000-cold-00','scale-10000-cold-06','scale-10000-native-02'])
+    assert.throws(()=>selection('--scenario',name,[]),/未知用例/)
+
   for (const mutate of [xs => xs.pop(),xs => xs.push(xs[0]),xs => xs[4].sampleIndex=0,
     ...['runId','datasetId','deviceId','sourceHash','artifactHash','mode','clockDefinition','count'].map(key => xs => xs[4][key]='other'),
     xs => xs[4].spans[0].end+=2,xs => xs[4].samples=[NaN]]) {

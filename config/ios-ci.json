@@ -166,6 +166,29 @@
       "runner": "macos",
       "description": "原生横竖屏中文/数字键盘、日期与候选、保存可达和返回草稿",
       "scenario": "ios-interaction"
+    },
+    "recovery": {
+      "kind": "scenario",
+      "scenario": "interruption-all",
+      "runner": "macos",
+      "description": "原生迁移三阶段成对中断恢复"
+    },
+    "scale-10000": {
+      "kind": "scenario",
+      "scenario": "scale-10000",
+      "runner": "macos",
+      "description": "10000 条独立 Release 模拟器原生、页面、冷启动与组合内存观测"
+    },
+    "scale-100000": {
+      "kind": "scenario",
+      "scenario": "scale-100000",
+      "runner": "macos",
+      "description": "100000 条独立 Release 模拟器原生、页面、冷启动与组合内存观测"
+    },
+    "install-gate": {
+      "kind": "installation",
+      "runner": "macos",
+      "description": "可信手动输入：完整工程候选、签名检查与两种规模真机报告汇总"
     }
   },
   "profiles": {
@@ -186,7 +209,9 @@
       "native-build",
       "native-sqlite",
       "touch",
-      "dependency-audit"
+      "dependency-audit",
+      "scale-10000",
+      "scale-100000"
     ]
   },
   "changeBase": [
@@ -523,6 +548,50 @@
       "exclude": [
         "**/*.spec.ts"
       ]
+    },
+    {
+      "paths": [
+        "app/src/data/**",
+        "app/src/domain/**",
+        "app/src/platform/**",
+        "app/native-tests/**",
+        "app/test-support/**",
+        "app/ios/**",
+        "app/package*.json",
+        "app/vitest.config.ts",
+        "app/src/main.ts",
+        "app/src/App.vue",
+        "scripts/lib/ios-scale*",
+        "scripts/lib/ios-capacity*",
+        "scripts/toolchain.sh",
+        "app/src/views/ReportView.vue",
+        "app/src/views/LedgerView.vue",
+        "app/src/components/Report*",
+        "app/src/stores/bootstrap.ts"
+      ],
+      "exclude": [
+        "**/*.spec.ts"
+      ],
+      "suites": [
+        "scale-10000",
+        "scale-100000"
+      ]
+    },
+    {
+      "paths": [
+        "app/src/data/migrations/**",
+        "app/src/data/seed/**",
+        "app/src/data/management/**",
+        "app/src/data/ledgerDatabase.ts",
+        "app/src/platform/ledgerFiles*",
+        "app/ios/App/App/LedgerFilesPlugin.swift"
+      ],
+      "exclude": [
+        "**/*.spec.ts"
+      ],
+      "suites": [
+        "recovery"
+      ]
     }
   ],
   "supersedes": {
@@ -568,6 +637,21 @@
       "同会话 UI/Release→App/Debug→UI/Release 统一登记且热缓存恢复，探针安装失败=true",
       "完整入口借用会话共用安装校验，只有卸载成功才失效登记，不误拦返回局部",
       "创建失败补偿共享 10 秒清理预算，耗尽时不再叠加一次强杀宽限"
+    ]
+  },
+  "unknownSource": {
+    "paths": [
+      "app/src/**"
+    ],
+    "exclude": [
+      "**/*.spec.ts",
+      "**/*.d.ts",
+      "app/src/api/generated/**"
+    ],
+    "suites": [
+      "native-sqlite",
+      "scale-10000",
+      "scale-100000"
     ]
   }
 }

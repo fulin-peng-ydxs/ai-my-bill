@@ -9,10 +9,13 @@ on:
       - 'ios-ci/final/**'
       - 'ios-ci/change/**'
       - 'ios-ci/dependency-audit/**'
+      - 'ios-ci/recovery/**'
+      - 'ios-ci/scale-10000/**'
+      - 'ios-ci/scale-100000/**'
   workflow_dispatch:
     inputs:
       verification:
-        description: 'scripts=工具；change=按变更专项；app=集成；final=完整候选；dependency-audit=依赖审计'
+        description: 'scripts=工具；change=按变更专项；app=集成；final=完整候选；dependency-audit=依赖审计；recovery/scale=单项原生观测'
         required: true
         default: scripts
         type: choice
@@ -22,6 +25,9 @@ on:
           - app
           - final
           - dependency-audit
+          - recovery
+          - scale-10000
+          - scale-100000
       base_revision:
         description: 'change 必填：变更起点完整 SHA'
         type: string

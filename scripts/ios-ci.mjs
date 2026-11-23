@@ -2,7 +2,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createPlan, registry, executionMatrix } from './lib/ios-ci-plan.mjs'
-import { resultsDirectory, executeGroup, reconcile, archiveGroup } from './lib/ios-ci-run.mjs'
+import { resultsDirectory, executeGroup, reconcile, archiveGroup,runCommand } from './lib/ios-ci-run.mjs'
 import { requestedScope } from './lib/ios-ci.mjs'
 
 const root = fs.realpathSync(path.join(path.dirname(fileURLToPath(import.meta.url)), '..'))
@@ -15,7 +15,7 @@ try {
   if (explicit && mode !== 'plan') throw new Error('只有 plan 接受范围参数。')
   for (let i = 0; i < args.length; i += 2) {
     if (
-      !['--base', '--head', '--results', '--group', '--attempt'].includes(args[i]) ||
+      !['--base', '--head', '--results', '--group', '--attempt','--app','--candidate','--output','--input','--session'].includes(args[i]) ||
       !args[i + 1] ||
       Object.hasOwn(options, args[i])
     )
@@ -26,15 +26,25 @@ try {
     mode === 'plan'
       ? ['--base', '--head', '--results']
       : mode === 'run'
-        ? ['--results', '--group']
+        ? ['--results', '--group','--session']
         : mode === 'archive'
           ? ['--results', '--group', '--attempt']
-          : mode === 'result'
+          : mode === 'signing-check' ? ['--app','--candidate','--output']
+        : mode === 'install-gate' ? ['--input','--output']
+        : mode === 'result'
             ? ['--results']
             : []
   if (Object.keys(options).some((k) => !allowed.includes(k)))
     throw new Error('参数不适用于该 CI 命令。')
-  if (mode === 'check' || mode === 'list') {
+  if (['signing-check','install-gate'].includes(mode)) {
+    const names = mode==='signing-check' ? ['--app','--candidate','--output'] : ['--input','--output']
+    if (names.some(name=>!options[name])) throw new Error('缺少可信手动入口参数。')
+    const parent = path.join(root,'.local/ios/tmp/ai-agent')
+    fs.mkdirSync(parent,{recursive:true,mode:0o700})
+    const directory = fs.mkdtempSync(path.join(parent,'ios-gate-'))
+    await runCommand(root,process.execPath,['scripts/ios-'+mode+'.mjs',...names.map(name=>options[name])],path.join(directory,'gate.log'),120000)
+    console.log('GATE_RESULT='+path.resolve(options['--output']))
+  } else if (mode === 'check' || mode === 'list') {
     const r = registry(root)
     console.log(
       JSON.stringify(
@@ -92,7 +102,7 @@ try {
     if (mode === 'archive') {
       console.log(archiveGroup(root, directory, options['--group'], options['--attempt']))
     } else if (mode === 'run') {
-      await executeGroup(root, directory, options['--group'])
+      await executeGroup(root, directory, options['--group'],{session:options['--session']})
       console.log('所选执行组通过；完整结论须由 result 对账。')
     } else {
       let result

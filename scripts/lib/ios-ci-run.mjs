@@ -1,3 +1,4 @@
+import { isDeepStrictEqual } from 'node:util'
 import fs from 'node:fs'
 import path from 'node:path'
 import { performance } from 'node:perf_hooks'
@@ -5,8 +6,12 @@ import { assertPlan, digest, executionMatrix } from './ios-ci-plan.mjs'
 import { audit, auditDependencies } from './ios-audit.mjs'
 import { inputHash, requireEvidence, writeJson } from './ios-verification.mjs'
 import { contentHash } from './ios-cache.mjs'
-import { selection, nativeCases, uiCases } from './ios-debug.mjs'
+import { selection, nativeCases, uiCases,readSession } from './ios-debug.mjs'
 import { assertScriptReport, assertModePhases } from './ios-test-reports.mjs'
+import { installationGate } from './ios-install-gate.mjs'
+import { validateScenario } from './ios-scenario-evidence.mjs'
+import { readScaleCold } from './ios-scale-run.mjs'
+import { coverageReport } from './ios-coverage.mjs'
 import { spawnManaged } from './ios-processes.mjs'
 
 const read = (file) => JSON.parse(plainFile(file))
@@ -33,7 +38,7 @@ export function resultsDirectory(root, input, create = false) {
 
 /** 不捕获到内存的大日志；超时/取消先通知原执行器清理，再限时终止进程组。 */
 export async function runCommand(root, program, args, log, timeoutMs = 2_700_000,
-  { cleanupGraceMs = 10_000 } = {}) {
+  { cleanupGraceMs = 10_000, acceptExit } = {}) {
   // 受控进程回归只缩短清理宽限；正式调用保留默认值，不提供 CLI/环境覆盖或延长预算。
   if (!Number.isSafeInteger(cleanupGraceMs) || cleanupGraceMs < 0 || cleanupGraceMs > 10_000)
     throw new Error('CI 清理宽限必须为 0 至 10000 毫秒。')
@@ -62,7 +67,8 @@ export async function runCommand(root, program, args, log, timeoutMs = 2_700_000
       process.once('SIGINT', stop)
       process.once('SIGTERM', stop)
     })
-    if (cancelled || code !== 0) throw new Error(`CI 命令失败或取消（exit=${code}），见 ${log}`)
+    // 默认调用保留原有先判失败的路径；只有精确登记的预期非零终态需要读取输出再判。
+    if (cancelled || (!acceptExit && code !== 0)) throw new Error(`CI 命令失败或取消（exit=${code}），见 ${log}`)
     const size = fs.fstatSync(fd).size
     // 输出标识在命令收尾，最多读取尾部 64KiB；日志本体留存供失败诊断。
     const data = Buffer.alloc(Math.min(size, 65_536))
@@ -72,7 +78,10 @@ export async function runCommand(root, program, args, log, timeoutMs = 2_700_000
     } finally {
       fs.closeSync(source)
     }
-    return data.toString('utf8')
+    const output = data.toString('utf8')
+    // 预期的非零终态由调用者精确核验；取消始终失败，避免已退出命令误走取消快照/强杀。
+    if (acceptExit && !acceptExit(code, output)) throw new Error(`CI 命令失败或取消（exit=${code}），见 ${log}`)
+    return output
   } catch (error) {
     cleanup?.stop('SIGKILL')
     throw error
@@ -106,7 +115,12 @@ function collectEvidence(root, directory, proof, role) {
     throw new Error('执行器回执不属于本项目。')
   const result = read(path.join(proof, 'result.json'))
   if (result.status !== 'passed') throw new Error('执行器回执未通过。')
-  if (result.scope === 'partial') requireEvidence(root, proof, inputHash(root), result.environment)
+  if (result.scope === 'partial') {
+    if (/^scale-\d+$/.test(result.requested?.name ?? '')) {
+      if (result.inputHash !== inputHash(root)) throw new Error('容量证据输入失效。')
+      validateScenario(root,result.requested.name,result, name=>plainFile(path.join(proof,name)).toString(),name=>readScaleCold(path.join(proof,name)))
+    } else requireEvidence(root, proof, inputHash(root), result.environment)
+  }
   const files = new Set([path.join(proof, 'result.json')])
   for (const name of fs.readdirSync(proof))
     if (/\.(json|log)$/.test(name) && name !== 'active.json') files.add(path.join(proof, name))
@@ -116,6 +130,8 @@ function collectEvidence(root, directory, proof, role) {
         const absolute = path.resolve(root, file)
         if (!absolute.startsWith(base + path.sep)) throw new Error('阶段报告越出 iOS 私有目录。')
         if (fs.existsSync(absolute)) files.add(absolute)
+        if (path.basename(absolute)==='coverage-proof.json')
+          for (const name of ['coverage-final.json','coverage-summary.json']) files.add(path.join(path.dirname(absolute),name))
       }
     }
   return [...files].map((file, index) => {
@@ -134,7 +150,7 @@ function collectEvidence(root, directory, proof, role) {
 }
 
 /** 同一组复用本轮独立模拟器；完整入口继续要求新局部证据并自行执行全部原门禁。 */
-export async function executeGroup(root, directory, group, { command = runCommand } = {}) {
+export async function executeGroup(root, directory, group, { command = runCommand,session:borrowedSession } = {}) {
   const groupStarted = performance.now()
   const plan = assertPlan(root, read(path.join(directory, 'ci-plan.json')))
   if (!['linux', 'macos'].includes(group)) throw new Error('未知 CI 执行组。')
@@ -149,12 +165,14 @@ export async function executeGroup(root, directory, group, { command = runComman
   }
   if (group === 'macos' && process.platform !== 'darwin')
     throw new Error('macOS 专项必须在 macOS 执行。')
+  if (borrowedSession && group!=='macos') throw new Error('仅 macOS 原生组可复用模拟器。')
+  if (borrowedSession) readSession(path.join(root,'.local/ios/tmp/ai-agent'),borrowedSession)
   const groupFile = path.join(directory, `group-${group}.json`)
   fs.writeFileSync(groupFile, JSON.stringify({ status: 'running', plan: plan.id }), {
     flag: 'wx',
     mode: 0o600
   })
-  let session, error
+  let session = borrowedSession, error
   const ensureSession = async () => {
     if (!session)
       session = marker(
@@ -202,7 +220,9 @@ export async function executeGroup(root, directory, group, { command = runComman
         )
       }
       try {
-        if (suite.kind === 'audit') {
+        if (suite.kind === 'installation') {
+          await command(root,process.execPath,['scripts/ios-install-gate.mjs',path.join(directory,'install-input.json'),path.join(dest,'install-report.json')],path.join(dest,'install.log'),Math.min(120000,remaining()))
+        } else if (suite.kind === 'audit') {
           const report = await audit(root, { budgetMs: Math.min(120_000, remaining()) })
           fs.writeFileSync(path.join(dest, 'audit.json'), JSON.stringify(report, null, 2), {
             flag: 'wx',
@@ -223,6 +243,7 @@ export async function executeGroup(root, directory, group, { command = runComman
           if (suite.kind === 'check')
             proof = marker(await exec(['debug', 'check', '--check', suite.check]), 'EVIDENCE')
           if (suite.kind === 'engineering') proof = marker(await exec([suite.mode]), 'CI_RESULT')
+          if (suite.kind === 'scenario') proof = marker(await exec(['debug','run','--session',await ensureSession(),'--scenario',suite.scenario]),'EVIDENCE')
           if (suite.kind === 'ui')
             proof = marker(
               await exec([
@@ -290,7 +311,7 @@ export async function executeGroup(root, directory, group, { command = runComman
         await command(
           root,
           'bash',
-          ['scripts/ios-app.sh', 'debug', 'close', '--session', session],
+          ['scripts/ios-app.sh', 'debug', borrowedSession ? 'suspend' : 'close', '--session', session],
           path.join(directory, 'close-session.log'),
           Math.max(1, Math.min(120_000, budgetMs - (performance.now() - groupStarted)))
         )
@@ -325,6 +346,17 @@ function validateReports(root, directory, suite, receipt) {
     const bytes = plainFile(path.join(directory, report.path))
     if (digest(bytes) !== report.hash) throw new Error('原报告摘要不符。')
     if (report.primary && report.role === 'primary') primary.push(JSON.parse(bytes))
+  }
+  if (suite.kind === 'installation') {
+    const value = read(path.join(directory,'install-report.json'))
+    const evidence = value.evidence
+    if (!evidence) throw new Error('安装汇总缺少原始报告。')
+    const checked = installationGate(evidence.ci,evidence.candidate,evidence.devices,evidence.signature)
+    if (['source','artifactHash','deviceId','observations'].some(key=>JSON.stringify(value[key])!==JSON.stringify(checked[key])))
+      throw new Error('安装汇总与原始报告不符。')
+    if (value.status !== 'passed' || value.deviceAcceptance !== 'passed' || !isDeepStrictEqual(value.source,receipt.source))
+      throw new Error('安装交付报告未通过或源码不符。')
+    return
   }
   if (suite.kind === 'audit') {
     const result = read(path.join(directory, 'audit.json')),
@@ -405,6 +437,12 @@ function validateReports(root, directory, suite, receipt) {
     )
       throw new Error('App 单测报告为空或执行不完整。')
     scriptSummary(phaseRaw(scripts?.log))
+    const coverage = result.timings.find(p => p.coverage?.includes('check/app-coverage'))
+    if (!coverage?.report) throw new Error('缺少覆盖率阶段报告。')
+    const parent = path.posix.dirname(coverage.report)
+    const checked = coverageReport(root,JSON.parse(phaseRaw(parent+'/coverage-final.json')),JSON.parse(phaseRaw(parent+'/coverage-summary.json')))
+    if (JSON.stringify(checked) !== JSON.stringify(JSON.parse(phaseRaw(coverage.report))))
+      throw new Error('覆盖率原报告与回执不符。')
     if (suite.mode === 'ios-smoke') {
       const native = result.timings.find((p) => p.stage === 'test' && p.log?.endsWith('/test.log'))
       const log = phaseRaw(native?.log)
@@ -422,6 +460,14 @@ function validateReports(root, directory, suite, receipt) {
       if (!uiCases.every((name) => logs.includes(` ${name}]' passed`)))
         throw new Error('完整触摸缺少已登记专项的实际用例。')
     }
+  }
+  if (suite.kind === 'scenario') {
+    const reportFor = name => {
+      const item = receipt.reports.find(r=>r.role==='primary' && r.origin?.endsWith('/'+name))
+      if (!item) throw new Error('缺少专项原始报告：'+name)
+      return path.join(directory,item.path)
+    }
+    validateScenario(root,suite.scenario,result,name=>plainFile(reportFor(name)).toString(),name=>readScaleCold(reportFor(name)))
   }
   if (suite.kind === 'ui') {
     const kind = suite.case ? 'case' : 'scenario'

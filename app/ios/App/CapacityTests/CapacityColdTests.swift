@@ -24,7 +24,10 @@ import XCTest
         let epoch = Date().timeIntervalSince1970*1000
         app.launch()
         let price = app.textFields.matching(NSPredicate(format:"identifier == %@ OR label == %@","expense-unit-price","单价")).firstMatch
-        guard price.waitForExistence(timeout:15),price.isEnabled else {
+        // 使用既有 60 秒单例的剩余预算，预留 5 秒收尾；不将内部等待另加到总时限。
+        // 耗时仍从真正启动前计算，慢启动不会被隐藏或记为真机性能通过。
+        let readyBudget = max(0,55-(ProcessInfo.processInfo.systemUptime-start))
+        guard readyBudget > 0,price.waitForExistence(timeout:readyBudget),price.isEnabled else {
             throw NSError(domain:"CapacityGuard",code:5,userInfo:[NSLocalizedDescriptionKey:"冷启动后实际账本表单不可用"])
         }
         let elapsed = (ProcessInfo.processInfo.systemUptime-start)*1000

@@ -6,7 +6,7 @@ export const APP_ID = 'com.mybill.offline'
 export const RUNTIME = 'com.apple.CoreSimulator.SimRuntime.iOS-27-0'
 export const DEVICE_TYPE = 'com.apple.CoreSimulator.SimDeviceType.iPhone-14-Pro-Max'
 export const capacityColdCases = Array.from({ length:5 },(_,i) => `CapacityColdTests/CapacityColdTests/testColdLaunch0${i+1}`)
-export const capacityScenarios = [10000,100000].flatMap(count => ['', '-prepare','-native','-pages','-cold'].map(phase => 'scale-'+count+phase))
+export const capacityScenarios = [10000,100000].flatMap(count => ['', '-prepare','-native','-pages','-cold',...capacityColdCases.map((_,i) => '-cold-0'+(i+1))].map(phase => 'scale-'+count+phase))
 export const nativeCases = [
   'testIosInteractionMatrix',
   'testIosTextScale',
@@ -151,12 +151,13 @@ export function selection(kind, name, nativeScenarios) {
       'testIosInteractionMatrix','testIosStatusBarTheme','testIosTextScale','testOriginalShellNavigationAndOverlays'
     ].map(name => 'NativeTests/NativeSqliteTests/'+name) }
     if (capacityScenarios.includes(name)) {
-      const [,count,phase = 'all'] = name.split('-'), cases = [
+      const [,count,phase = 'all',sample] = name.split('-'), cases = [
         'CapacityTests/CapacityTests/testPrepareCapacityFixture','CapacityTests/CapacityTests/testNativeCapacity',
         'CapacityTests/CapacityTests/testPageCapacity',...capacityColdCases]
       return { scheme:'Capacity',configuration:'Release',capacity:Number(count),capacityPhase:phase,
+        ...(sample ? { capacityColdIndices:[Number(sample)-1] } : {}),
         appId:'com.mybill.offline.capacity',testCaseMs:['prepare','cold'].includes(phase) ? 60_000 : 600_000,
-        cases:phase === 'all' ? cases : phase === 'cold' ? capacityColdCases : [cases[['prepare','native','pages'].indexOf(phase)]] }
+        cases:phase === 'all' ? cases : phase === 'cold' ? (sample ? [capacityColdCases[Number(sample)-1]] : capacityColdCases) : [cases[['prepare','native','pages'].indexOf(phase)]] }
     }
     if (recoveryScenarios.includes(name))
       return {

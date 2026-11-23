@@ -2,7 +2,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { uiScenarios, uiCases, selection } from './ios-debug.mjs'
+import { uiScenarios, uiCases, selection,capacityScenarios,recoveryScenarios } from './ios-debug.mjs'
 import { contentHash, generated } from './ios-cache.mjs'
 import { scriptSkipPolicy } from './ios-test-reports.mjs'
 
@@ -40,7 +40,7 @@ export function registry(root) {
       !/^[a-z][a-z0-9-]*$/.test(name) ||
       !['linux', 'macos'].includes(s.runner) ||
       !s.description ||
-      !['secrets', 'check', 'engineering', 'full', 'ui', 'audit'].includes(s.kind) ||
+      !['secrets', 'check', 'engineering', 'full', 'ui', 'audit','scenario','installation'].includes(s.kind) ||
       (s.kind === 'check' && s.check !== 'script-tests') ||
       (s.kind === 'engineering' && !['common', 'ios-build'].includes(s.mode)) ||
       (s.kind === 'full' && !['ios-smoke', 'ios-touch'].includes(s.mode)) ||
@@ -49,13 +49,14 @@ export function registry(root) {
           ? !uiCases.some((name) => s.case === 'DictionaryUITests/DictionaryTouchTests/' + name) ||
             Boolean(s.scenario)
           : !Object.hasOwn(uiScenarios, s.scenario))) ||
-      ((['full', 'ui'].includes(s.kind) || s.mode === 'ios-build') && s.runner !== 'macos')
+      (s.kind === 'scenario' && ![...recoveryScenarios,...capacityScenarios.filter(x=>/^scale-\d+$/.test(x))].includes(s.scenario)) ||
+      ((['full', 'ui','scenario','installation'].includes(s.kind) || s.mode === 'ios-build') && s.runner !== 'macos')
     )
       throw new Error('CI 套件定义无效：' + name)
   }
   for (const p of ['scripts', 'app', 'final']) validateNames(r.profiles[p])
   validateNames(r.changeBase)
-  for (const rule of r.rules) {
+  for (const rule of [...r.rules,...(r.unknownSource ? [r.unknownSource] : [])]) {
     if (
       !Array.isArray(rule.paths) ||
       !rule.paths.length ||
@@ -102,7 +103,7 @@ export function registry(root) {
   for (const [profile, required] of Object.entries({
     scripts: ['secrets', 'script-linux', 'script-macos'],
     app: ['secrets', 'common', 'ios-build', 'ios-smoke'],
-    final: ['secrets', 'common', 'ios-build', 'ios-smoke', 'ios-touch', 'audit']
+    final: ['secrets', 'common', 'ios-build', 'ios-smoke', 'ios-touch', 'audit','scale-10000','scale-100000']
   })) {
     const selected = selectSuites(r, profile)
     for (const key of required)
@@ -111,6 +112,7 @@ export function registry(root) {
           (s) =>
             s.kind === key ||
             s.mode === key ||
+            (s.kind === 'scenario' && s.scenario === key) ||
             (key === 'script-linux' && s.kind === 'check' && s.runner === 'linux') ||
             (key === 'script-macos' && s.kind === 'check' && s.runner === 'macos')
         )
@@ -202,6 +204,15 @@ export function selectSuites(r, profile, files = []) {
           reasons[name] = [...new Set([...(reasons[name] ?? []), ...hits])]
         }
     }
+  if (profile==='change' && r.unknownSource) {
+    const fallback = r.unknownSource
+    for (const file of files) {
+      const known = r.rules.some(rule=>rule.suites.some(name=>!['secrets','app-common','scripts','scripts-macos'].includes(name)) &&
+        rule.paths.some(pattern=>path.matchesGlob(file,pattern)) && !(rule.exclude ?? []).some(pattern=>path.matchesGlob(file,pattern)))
+      if (!known && fallback.paths.some(pattern=>path.matchesGlob(file,pattern)) && !(fallback.exclude ?? []).some(pattern=>path.matchesGlob(file,pattern)))
+        for (const name of fallback.suites) {chosen.add(name);reasons[name]=[...(reasons[name] ?? []),'unknown:'+file]}
+    }
+  }
   for (const name of chosen) for (const covered of r.supersedes[name] ?? []) chosen.delete(covered)
   return Object.keys(r.suites)
     .filter((name) => chosen.has(name))
@@ -236,7 +247,7 @@ export function executionMatrix(plan) {
       timeout:
         group === 'macos' &&
         plan.suites.some(
-          (s) => s.runner === group && ['engineering', 'full', 'ui'].includes(s.kind)
+          (s) => s.runner === group && ['engineering', 'full', 'ui','scenario'].includes(s.kind)
         )
           ? 45
           : 10
