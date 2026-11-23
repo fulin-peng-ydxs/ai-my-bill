@@ -92,6 +92,16 @@ test('CI 启动入口与共享消费者选择必要专项，测试文件和局�
   assert.deepEqual(selected('app/src/stores/bootstrap.spec.ts'), ['secrets', 'app-common'])
 })
 
+test('T14 单测变更不触发原生交互专项，实现和混合变更仍选中',t => {
+  const r = registry(fixture(t).root)
+  const selected = files => selectSuites(r,'change',files).map(s => s.name)
+  for (const file of ['app/src/platform/textScale','app/src/platform/appearance','app/src/composables/useKeyboardViewport']) {
+    assert.deepEqual(selected([file+'.spec.ts']),['secrets','app-common'],file)
+    assert.ok(selected([file+'.ts']).includes('ui-ios-interaction'),file)
+    assert.ok(selected([file+'.spec.ts',file+'.ts']).includes('ui-ios-interaction'),file)
+  }
+})
+
 test('CI 脚本报告拒绝 TODO、非法/重复/错误平台跳过及计数缺口，保留登记的 Linux 缺口', (t) => {
   const p = fixture(t), allowed = registry(p.root).scriptSkips.linux[0]
   const report = (names = [], todo = 0) =>

@@ -3,11 +3,12 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { createHash } from 'node:crypto'
+import { spawnSync } from 'node:child_process'
+import { createHash,randomUUID } from 'node:crypto'
 import { DatabaseSync } from 'node:sqlite'
 import { capacityReport,scaleAppId,scaleMetrics,percentile95 } from '../lib/ios-capacity.mjs'
 import { selection } from '../lib/ios-debug.mjs'
-import { bindScalePlan,verifyScaleFixture,assertScaleLease,resolveScaleProcesses,readScaleEvent,readScaleCold,finishScale } from '../lib/ios-scale-run.mjs'
+import { bindScalePlan,verifyScaleFixture,assertScaleLease,resolveScaleProcesses,readScaleEvent,readScaleCold,finishScale,replaceScaleFixture,recoverScaleSwap } from '../lib/ios-scale-run.mjs'
 function fixture() {
   const receipt = { runId:'00000000-0000-4000-8000-000000000001',sourceHash:'a'.repeat(64),artifactHash:'b'.repeat(64),
     commit:'c'.repeat(40),mode:'device',appId:scaleAppId,configuration:'Release',debugger:false,workingTree:false,
@@ -183,4 +184,88 @@ test('模拟器报告同样拒绝跨轮、跨制品或非隔离来源，不能�
     const p = fixture(); p.receipt.mode='simulator'; change(p)
     assert.throws(() => capacityReport(p.receipt,p.observation),/来源、隔离/)
   }
+})
+
+function swapFixture(t) {
+  const directory = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(),'capacity-swap-')))
+  t.after(() => fs.rmSync(directory,{ recursive:true,force:true }))
+  const source = path.join(directory,'fixture.sqlite'), target = path.join(directory,'ledgerSQLite.db')
+  const db = new DatabaseSync(source)
+  db.exec(`CREATE TABLE ledger_meta(dataset_id TEXT,schema_version INTEGER,initialized INTEGER);
+    INSERT INTO ledger_meta VALUES('replacement',9,1);CREATE TABLE ledger_entry(id INTEGER);
+    WITH RECURSIVE seq(n) AS(SELECT 1 UNION ALL SELECT n+1 FROM seq WHERE n<10000) INSERT INTO ledger_entry SELECT n FROM seq;`)
+  db.close()
+  fs.copyFileSync(source,target)
+  const old = new DatabaseSync(target); old.exec("UPDATE ledger_meta SET dataset_id='original'"); old.close()
+  return { directory,source,target,before:fs.readFileSync(target),
+    journal:path.join(directory,'ledgerSQLite.db.capacity-intent.json'),
+    fixture:{ count:10000,datasetId:'replacement',sha256:createHash('sha256').update(fs.readFileSync(source)).digest('hex') },
+    identity:{ owner:randomUUID(),deviceId:randomUUID(),appId:scaleAppId } }
+}
+
+test('容量换库登记、复制、权限、校验或提交失败清理副本并保留原库，清理失败保留双重原因与可重试登记',t => {
+  for (const stage of ['register','copy','chmod','verify','rename','cleanup']) {
+    const p = swapFixture(t), io = { ...fs }, primary = new Error(stage)
+    if (stage === 'register') io.writeFileSync = fd => { fs.writeFileSync(fd,'partial'); throw primary }
+    if (stage === 'copy') io.copyFileSync = (...args) => { fs.copyFileSync(...args); throw primary }
+    if (stage === 'chmod') io.chmodSync = () => { throw primary }
+    if (stage === 'verify') io.chmodSync = file => fs.appendFileSync(file,'corrupt')
+    if (stage === 'rename' || stage === 'cleanup') io.renameSync = () => { throw primary }
+    if (stage === 'cleanup') io.unlinkSync = () => { throw new Error('cleanup blocked') }
+    assert.throws(() => replaceScaleFixture(p.directory,p.source,p.fixture,p.identity,io),error => {
+      if (stage === 'cleanup') return error instanceof AggregateError && error.errors[0] === primary && /cleanup blocked/.test(error.errors[1].message)
+      return stage === 'verify' ? /摘要/.test(error.message) : error === primary
+    })
+    assert.deepEqual(fs.readFileSync(p.target),p.before)
+    assert.equal(fs.existsSync(p.journal),stage === 'cleanup')
+    recoverScaleSwap(p.directory,p.identity)
+    assert.deepEqual(fs.readdirSync(p.directory).sort(),['fixture.sqlite','ledgerSQLite.db'])
+    replaceScaleFixture(p.directory,p.source,p.fixture,p.identity)
+    assert.deepEqual(fs.readFileSync(p.target),fs.readFileSync(p.source))
+    assert.equal(fs.statSync(p.target).mode & 0o777,0o600)
+  }
+})
+
+test('容量换库真实进程在登记后、复制后、提交后被强杀，下轮仅清本操作且可连续恢复',t => {
+  for (const point of ['registered','copied','committed']) {
+    const p = swapFixture(t), other = path.join(p.directory,'ledgerSQLite.db.capacity-'+randomUUID())
+    fs.writeFileSync(other,'other task')
+    const code = `import fs from 'node:fs';import {replaceScaleFixture} from ${JSON.stringify(new URL('../lib/ios-scale-run.mjs',import.meta.url).href)};
+      const p=JSON.parse(process.argv[1]),io={...fs};
+      const kill=()=>process.kill(process.pid,'SIGKILL');
+      if(p.point==='registered') io.copyFileSync=()=>kill();
+      if(p.point==='copied') io.chmodSync=()=>kill();
+      if(p.point==='committed') io.renameSync=(...args)=>{fs.renameSync(...args);kill()};
+      replaceScaleFixture(p.directory,p.source,p.fixture,p.identity,io);`
+    const child = spawnSync(process.execPath,['--input-type=module','-e',code,JSON.stringify({ ...p,before:undefined,point })],{ timeout:5000,encoding:'utf8' })
+    assert.equal(child.signal,'SIGKILL',child.stderr)
+    assert.equal(fs.existsSync(p.journal),true)
+    const expected = point === 'committed' ? fs.readFileSync(p.source) : p.before
+    recoverScaleSwap(p.directory,p.identity); recoverScaleSwap(p.directory,p.identity)
+    assert.deepEqual(fs.readFileSync(p.target),expected)
+    assert.equal(fs.readFileSync(other,'utf8'),'other task')
+    assert.deepEqual(fs.readdirSync(p.directory).sort(),['fixture.sqlite','ledgerSQLite.db',path.basename(other)])
+    replaceScaleFixture(p.directory,p.source,p.fixture,p.identity)
+    assert.deepEqual(fs.readFileSync(p.target),fs.readFileSync(p.source))
+  }
+})
+
+test('容量换库恢复拒绝跨会话、设备、错误登记和链接，缺目录及合法重试不误拦',t => {
+  const p = swapFixture(t), runId = randomUUID(), staged = p.target+'.capacity-'+runId
+  assert.doesNotThrow(() => recoverScaleSwap(path.join(p.directory,'not-created'),p.identity))
+  fs.writeFileSync(staged,'partial')
+  const write = value => fs.writeFileSync(p.journal,JSON.stringify(value),{ mode:0o600 })
+  const receipt = { schema:1,...p.identity,runId }
+  for (const value of [{ ...receipt,owner:randomUUID() },{ ...receipt,deviceId:randomUUID() },
+    { ...receipt,appId:'com.mybill.offline' },{ ...receipt,runId:'../outside' }]) {
+    write(value); assert.throws(() => recoverScaleSwap(p.directory,p.identity))
+    assert.equal(fs.readFileSync(staged,'utf8'),'partial'); assert.deepEqual(fs.readFileSync(p.target),p.before)
+  }
+  write(receipt); fs.unlinkSync(staged); fs.symlinkSync(p.source,staged)
+  assert.throws(() => recoverScaleSwap(p.directory,p.identity),/类型/)
+  assert.equal(fs.lstatSync(staged).isSymbolicLink(),true)
+  fs.unlinkSync(staged); recoverScaleSwap(p.directory,p.identity)
+  fs.symlinkSync(p.source,p.journal)
+  assert.throws(() => recoverScaleSwap(p.directory,p.identity),/类型/)
+  assert.deepEqual(fs.readFileSync(p.target),p.before)
 })

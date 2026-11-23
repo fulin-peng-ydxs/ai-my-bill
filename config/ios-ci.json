@@ -519,6 +519,9 @@
       ],
       "suites": [
         "ui-ios-interaction"
+      ],
+      "exclude": [
+        "**/*.spec.ts"
       ]
     }
   ],

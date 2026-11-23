@@ -51,6 +51,66 @@ export function verifyScaleFixture(source,expected) {
       throw new Error('容量夹具结构、数据集、规模或完整性不符。')
   } finally { database.close() }
 }
+const swapFile = directory => path.join(directory,'ledgerSQLite.db.capacity-intent.json')
+const swapTarget = directory => path.join(directory,'ledgerSQLite.db')
+const uuid = value => typeof value === 'string' && /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i.test(value)
+
+/** 只认当前受管沙盒内的精确操作登记；不按文件名前缀猜测归属。 */
+export function recoverScaleSwap(directory,identity,io = fs) {
+  if (identity.appId !== scaleAppId || !uuid(identity.owner) || !uuid(identity.deviceId))
+    throw new Error('容量换库归属无效。')
+  try {
+    if (fs.realpathSync(directory) !== directory) throw new Error('容量换库目录无效。')
+  } catch (error) { if (error.code === 'ENOENT') return; throw error }
+  const journal = swapFile(directory)
+  let stat
+  try { stat = io.lstatSync(journal) } catch (error) { if (error.code === 'ENOENT') return; throw error }
+  if (!stat.isFile() || stat.uid !== process.getuid() || stat.mode & 0o077 || stat.size > 4096)
+    throw new Error('容量换库登记类型或权限无效。')
+  const value = JSON.parse(io.readFileSync(journal,'utf8'))
+  if (value.schema !== 1 || !uuid(value.runId) ||
+      ['owner','deviceId','appId'].some(key => value[key] !== identity[key]) ||
+      Object.keys(value).sort().join(',') !== 'appId,deviceId,owner,runId,schema')
+    throw new Error('容量换库登记归属不符。')
+  const staged = swapTarget(directory)+'.capacity-'+value.runId
+  let copy
+  try { copy = io.lstatSync(staged) } catch (error) { if (error.code !== 'ENOENT') throw error }
+  if (copy && (!copy.isFile() || copy.nlink !== 1)) throw new Error('容量换库暂存文件类型无效。')
+  // rename 是提交点。暂存已不存在时只清登记，不回滚已替换的主库。
+  if (copy) io.unlinkSync(staged)
+  io.unlinkSync(journal)
+}
+
+/** 原子覆盖前保留原库；失败补偿与下次中断恢复共用同一有界清理。 */
+export function replaceScaleFixture(directory,source,fixture,identity,io = fs) {
+  recoverScaleSwap(directory,identity,io)
+  verifyScaleFixture(source,fixture)
+  const target = swapTarget(directory)
+  const targetStat = fs.lstatSync(target)
+  if (!targetStat.isFile() || targetStat.nlink !== 1 ||
+      ['-wal','-shm','-journal'].some(suffix => fs.existsSync(target+suffix)))
+    throw new Error('容量换库目标或旁路文件不安全。')
+  const runId = randomUUID(), staged = target+'.capacity-'+runId
+  // 先登记再复制；登记失败不会产生大型副本。后续仅删除本次精确路径。
+  let failure, created = false, registered = false
+  try {
+    const fd = io.openSync(swapFile(directory),'wx',0o600)
+    created = true
+    try { io.writeFileSync(fd,JSON.stringify({ schema:1,...identity,runId })) }
+    finally { io.closeSync(fd) }
+    registered = true
+    io.copyFileSync(source,staged,fs.constants.COPYFILE_EXCL)
+    io.chmodSync(staged,0o600)
+    verifyScaleFixture(staged,fixture)
+    io.renameSync(staged,target)
+  } catch (error) { failure = error; throw error }
+  finally {
+    try {
+      if (registered) recoverScaleSwap(directory,identity,io)
+      else if (created) io.unlinkSync(swapFile(directory))
+    } catch (error) { throw new AggregateError(failure ? [failure,error] : [error],'容量换库清理失败，保留登记供重试。') }
+  }
+}
 export function assertScaleLease(lease,session,installedHash) {
   if (!lease || lease.kind !== 'capacity' || lease.owner !== session.context.runId || lease.deviceId !== session.context.simulatorId ||
       lease.appId !== scaleAppId || !/^[a-f0-9]{64}$/.test(installedHash ?? '') ||
@@ -164,6 +224,10 @@ export async function runScaleSimulator({ root,run,session,selected,toolchain,co
   try {
     const stopMain = await command('xcrun',['simctl','terminate',sim,'com.mybill.offline'],{ accept:[0,3],log:path.join(run,'capacity-stop-main.log') })
     if (stopMain.status === 3 && !fs.readFileSync(path.join(run,'capacity-stop-main.log'),'utf8').includes('found nothing to terminate')) throw new Error('同轮主 App 未可靠停止。')
+    const identity = { owner:session.context.runId,deviceId:sim,appId:scaleAppId }
+    await stop('capacity-stop-before-recovery')
+    const initialData = await checkInstalled()
+    recoverScaleSwap(path.join(initialData,'Library/OfflineLedger'),identity)
     const phase = selected.capacityPhase
     const wants = name => phase === 'all' || phase === name
     const fixtureState = path.join(session.directory,`capacity-fixture-${selected.capacity}.json`)
@@ -190,13 +254,7 @@ export async function runScaleSimulator({ root,run,session,selected,toolchain,co
     const restoreFixture = async label => {
       await stop(label)
       const data = await checkInstalled(), source = path.join(data,fixture.fixturePath)
-      verifyScaleFixture(source,fixture)
-      const target = path.join(data,'Library/OfflineLedger/ledgerSQLite.db')
-      if (fs.realpathSync(path.dirname(target)) !== path.dirname(target) ||
-          ['-wal','-shm','-journal'].some(x => fs.existsSync(target+x))) throw new Error('容量换库路径或未关闭旁路文件不安全。')
-      const staged = target+'.capacity-'+context.runId
-      fs.copyFileSync(source,staged,fs.constants.COPYFILE_EXCL); fs.chmodSync(staged,0o600)
-      verifyScaleFixture(staged,fixture); fs.renameSync(staged,target)
+      replaceScaleFixture(path.join(data,'Library/OfflineLedger'),source,fixture,identity)
       context.datasetId = fixture.datasetId
     }
     if (phase !== 'prepare') sampler = sampleMemory(root,run,sim)
