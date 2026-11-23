@@ -204,13 +204,16 @@ function swapFixture(t) {
 }
 
 test('容量换库登记、复制、权限、校验或提交失败清理副本并保留原库，清理失败保留双重原因与可重试登记',t => {
-  for (const stage of ['register','copy','chmod','verify','rename','cleanup']) {
+  for (const stage of ['register','publish','copy','chmod','verify','rename','cleanup']) {
     const p = swapFixture(t), io = { ...fs }, primary = new Error(stage)
     if (stage === 'register') io.writeFileSync = fd => { fs.writeFileSync(fd,'partial'); throw primary }
     if (stage === 'copy') io.copyFileSync = (...args) => { fs.copyFileSync(...args); throw primary }
     if (stage === 'chmod') io.chmodSync = () => { throw primary }
     if (stage === 'verify') io.chmodSync = file => fs.appendFileSync(file,'corrupt')
-    if (stage === 'rename' || stage === 'cleanup') io.renameSync = () => { throw primary }
+    if (['publish','rename','cleanup'].includes(stage)) io.renameSync = (from,to) => {
+      if (to === (stage === 'publish' ? p.journal : p.target)) throw primary
+      fs.renameSync(from,to)
+    }
     if (stage === 'cleanup') io.unlinkSync = () => { throw new Error('cleanup blocked') }
     assert.throws(() => replaceScaleFixture(p.directory,p.source,p.fixture,p.identity,io),error => {
       if (stage === 'cleanup') return error instanceof AggregateError && error.errors[0] === primary && /cleanup blocked/.test(error.errors[1].message)
@@ -235,7 +238,7 @@ test('容量换库真实进程在登记后、复制后、提交后被强杀，�
       const kill=()=>process.kill(process.pid,'SIGKILL');
       if(p.point==='registered') io.copyFileSync=()=>kill();
       if(p.point==='copied') io.chmodSync=()=>kill();
-      if(p.point==='committed') io.renameSync=(...args)=>{fs.renameSync(...args);kill()};
+      if(p.point==='committed') io.renameSync=(from,to)=>{fs.renameSync(from,to);if(to===p.target)kill()};
       replaceScaleFixture(p.directory,p.source,p.fixture,p.identity,io);`
     const child = spawnSync(process.execPath,['--input-type=module','-e',code,JSON.stringify({ ...p,before:undefined,point })],{ timeout:5000,encoding:'utf8' })
     assert.equal(child.signal,'SIGKILL',child.stderr)
@@ -268,4 +271,63 @@ test('容量换库恢复拒绝跨会话、设备、错误登记和链接，缺�
   fs.symlinkSync(p.source,p.journal)
   assert.throws(() => recoverScaleSwap(p.directory,p.identity),/类型/)
   assert.deepEqual(fs.readFileSync(p.target),p.before)
+})
+
+
+test('容量登记创建后写入前强杀、半写入强杀或发布前后中断均可恢复',t => {
+  for (const point of ['before-write','partial-write','before-publish','after-publish']) {
+    const p = swapFixture(t)
+    const code = `import fs from 'node:fs';import {replaceScaleFixture} from ${JSON.stringify(new URL('../lib/ios-scale-run.mjs',import.meta.url).href)};
+      const p=JSON.parse(process.argv[1]),io={...fs},kill=()=>process.kill(process.pid,'SIGKILL');
+      if(p.point==='before-write') io.writeFileSync=()=>kill();
+      if(p.point==='partial-write') io.writeFileSync=fd=>{fs.writeFileSync(fd,'partial');kill()};
+      io.renameSync=(from,to)=>{
+        if(to===p.journal && p.point==='before-publish') kill();
+        fs.renameSync(from,to);
+        if(to===p.journal && p.point==='after-publish') kill();
+      };
+      replaceScaleFixture(p.directory,p.source,p.fixture,p.identity,io);`
+    const child = spawnSync(process.execPath,['--input-type=module','-e',code,JSON.stringify({ ...p,before:undefined,point })],{ timeout:5000,encoding:'utf8' })
+    assert.equal(child.signal,'SIGKILL',child.stderr)
+    assert.equal(fs.existsSync(p.journal),point==='after-publish','正式登记只允许完整发布')
+    assert.deepEqual(fs.readFileSync(p.target),p.before)
+    recoverScaleSwap(p.directory,p.identity); recoverScaleSwap(p.directory,p.identity)
+    assert.deepEqual(fs.readdirSync(p.directory).sort(),['fixture.sqlite','ledgerSQLite.db'])
+    replaceScaleFixture(p.directory,p.source,p.fixture,p.identity)
+    assert.deepEqual(fs.readFileSync(p.target),fs.readFileSync(p.source))
+  }
+})
+
+test('容量登记部分写入失败且清理失败仍保留主失败，下次重试只清本会话临时登记',t => {
+  const p = swapFixture(t), primary = new Error('partial write'), cleanup = new Error('cleanup unavailable')
+  const other = path.join(p.directory,`ledgerSQLite.db.capacity-intent-${randomUUID()}-${p.identity.deviceId}.tmp`)
+  fs.writeFileSync(other,'other task')
+  assert.throws(() => replaceScaleFixture(p.directory,p.source,p.fixture,p.identity,{ ...fs,
+    writeFileSync:fd => { fs.writeFileSync(fd,'partial'); throw primary },
+    unlinkSync:() => { throw cleanup }
+  }),error => error instanceof AggregateError && error.errors[0]===primary && error.errors[1]===cleanup)
+  assert.equal(fs.existsSync(p.journal),false)
+  assert.deepEqual(fs.readFileSync(p.target),p.before)
+  recoverScaleSwap(p.directory,p.identity)
+  assert.equal(fs.readFileSync(other,'utf8'),'other task')
+  assert.deepEqual(fs.readdirSync(p.directory).sort(),['fixture.sqlite','ledgerSQLite.db',path.basename(other)])
+  replaceScaleFixture(p.directory,p.source,p.fixture,p.identity)
+  assert.deepEqual(fs.readFileSync(p.target),fs.readFileSync(p.source))
+})
+
+test('容量登记临时路径拒绝链接、宽权限和超限文件，非法正式登记不被自动清空',t => {
+  const p = swapFixture(t)
+  const temporary = path.join(p.directory,`ledgerSQLite.db.capacity-intent-${p.identity.owner}-${p.identity.deviceId}.tmp`)
+  for (const kind of ['symlink','hardlink','permissions','oversize','invalid-journal']) {
+    if (kind==='symlink') fs.symlinkSync(p.source,temporary)
+    else if (kind==='hardlink') fs.linkSync(p.source,temporary)
+    else fs.writeFileSync(temporary,kind==='oversize' ? 'x'.repeat(4097) : 'partial',{mode:0o600})
+    if (kind==='permissions') fs.chmodSync(temporary,0o644)
+    if (kind==='invalid-journal') fs.writeFileSync(p.journal,'partial',{mode:0o600})
+    assert.throws(() => recoverScaleSwap(p.directory,p.identity),kind==='invalid-journal' ? SyntaxError : /临时登记/)
+    assert.equal(fs.lstatSync(temporary).isSymbolicLink(),kind==='symlink')
+    assert.deepEqual(fs.readFileSync(p.target),p.before)
+    fs.unlinkSync(temporary)
+    if (kind==='invalid-journal') { assert.equal(fs.readFileSync(p.journal,'utf8'),'partial'); fs.unlinkSync(p.journal) }
+  }
 })

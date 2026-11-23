@@ -53,6 +53,18 @@ export function verifyScaleFixture(source,expected) {
 }
 const swapFile = directory => path.join(directory,'ledgerSQLite.db.capacity-intent.json')
 const swapTarget = directory => path.join(directory,'ledgerSQLite.db')
+const swapPreparation = (directory,identity) => path.join(directory,
+  `ledgerSQLite.db.capacity-intent-${identity.owner}-${identity.deviceId}.tmp`)
+
+/** 未发布文件可能为空或半写入；归属由受管沙盒及会话/设备专属路径确定。 */
+function cleanScalePreparation(directory,identity,io) {
+  const file = swapPreparation(directory,identity)
+  let stat
+  try { stat = io.lstatSync(file) } catch (error) { if (error.code === 'ENOENT') return; throw error }
+  if (!stat.isFile() || stat.uid !== process.getuid() || stat.nlink !== 1 || stat.mode & 0o077 || stat.size > 4096)
+    throw new Error('容量临时登记类型、权限或大小无效。')
+  io.unlinkSync(file)
+}
 const uuid = value => typeof value === 'string' && /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i.test(value)
 
 /** 只认当前受管沙盒内的精确操作登记；不按文件名前缀猜测归属。 */
@@ -64,7 +76,11 @@ export function recoverScaleSwap(directory,identity,io = fs) {
   } catch (error) { if (error.code === 'ENOENT') return; throw error }
   const journal = swapFile(directory)
   let stat
-  try { stat = io.lstatSync(journal) } catch (error) { if (error.code === 'ENOENT') return; throw error }
+  try { stat = io.lstatSync(journal) } catch (error) {
+    if (error.code !== 'ENOENT') throw error
+    cleanScalePreparation(directory,identity,io)
+    return
+  }
   if (!stat.isFile() || stat.uid !== process.getuid() || stat.mode & 0o077 || stat.size > 4096)
     throw new Error('容量换库登记类型或权限无效。')
   const value = JSON.parse(io.readFileSync(journal,'utf8'))
@@ -79,6 +95,7 @@ export function recoverScaleSwap(directory,identity,io = fs) {
   // rename 是提交点。暂存已不存在时只清登记，不回滚已替换的主库。
   if (copy) io.unlinkSync(staged)
   io.unlinkSync(journal)
+  cleanScalePreparation(directory,identity,io)
 }
 
 /** 原子覆盖前保留原库；失败补偿与下次中断恢复共用同一有界清理。 */
@@ -91,13 +108,18 @@ export function replaceScaleFixture(directory,source,fixture,identity,io = fs) {
       ['-wal','-shm','-journal'].some(suffix => fs.existsSync(target+suffix)))
     throw new Error('容量换库目标或旁路文件不安全。')
   const runId = randomUUID(), staged = target+'.capacity-'+runId
-  // 先登记再复制；登记失败不会产生大型副本。后续仅删除本次精确路径。
+  // 正式登记只通过原子重命名发布；创建/写入中断不会留下不可解析的正式文件。
+  const temporary = swapPreparation(directory,identity)
   let failure, created = false, registered = false
   try {
-    const fd = io.openSync(swapFile(directory),'wx',0o600)
+    const fd = io.openSync(temporary,'wx',0o600)
     created = true
-    try { io.writeFileSync(fd,JSON.stringify({ schema:1,...identity,runId })) }
+    try {
+      io.writeFileSync(fd,JSON.stringify({ schema:1,...identity,runId }))
+      io.fsyncSync(fd)
+    }
     finally { io.closeSync(fd) }
+    io.renameSync(temporary,swapFile(directory))
     registered = true
     io.copyFileSync(source,staged,fs.constants.COPYFILE_EXCL)
     io.chmodSync(staged,0o600)
@@ -107,7 +129,7 @@ export function replaceScaleFixture(directory,source,fixture,identity,io = fs) {
   finally {
     try {
       if (registered) recoverScaleSwap(directory,identity,io)
-      else if (created) io.unlinkSync(swapFile(directory))
+      else if (created) cleanScalePreparation(directory,identity,io)
     } catch (error) { throw new AggregateError(failure ? [failure,error] : [error],'容量换库清理失败，保留登记供重试。') }
   }
 }
