@@ -24,6 +24,12 @@
 		C50000000000000000000021 /* reportTouchFixture.json in Resources */ = {isa = PBXBuildFile; fileRef = C50000000000000000000022; };
 		D60000000000000000000001 /* OwnedSimulatorTestContext.swift in NativeTests Sources */ = {isa = PBXBuildFile; fileRef = D60000000000000000000003; };
 		D60000000000000000000002 /* OwnedSimulatorTestContext.swift in UITests Sources */ = {isa = PBXBuildFile; fileRef = D60000000000000000000003; };
+
+		F10000000000000000000002 /* CapacityTests/CapacityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000003 /* CapacityTests/CapacityTests.swift */; };
+		F10000000000000000000004 /* sqlite-probe.js in Resources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000005 /* sqlite-probe.js */; };
+		F20000000000000000000002 /* CapacityColdTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20000000000000000000003; };
+		F20000000000000000000021 /* reportTouchFixture.json in Resources */ = {isa = PBXBuildFile; fileRef = F20000000000000000000022; };
+		F50000000000000000000001 /* LedgerAppearancePlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = F50000000000000000000002; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -35,6 +41,20 @@
 			remoteInfo = App;
 		};
 		C50000000000000000000014 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 504EC2FC1FED79650016851F /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 504EC3031FED79650016851F;
+			remoteInfo = App;
+		};
+		F10000000000000000000014 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 504EC2FC1FED79650016851F /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 504EC3031FED79650016851F;
+			remoteInfo = App;
+		};
+		F20000000000000000000014 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = 504EC2FC1FED79650016851F /* Project object */;
 			proxyType = 1;
@@ -64,6 +84,13 @@
 		C50000000000000000000022 /* reportTouchFixture.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = ../../test-support/reportTouchFixture.json; sourceTree = SOURCE_ROOT; };
 		C50000000000000000000006 /* DictionaryUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = DictionaryUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		D60000000000000000000003 /* OwnedSimulatorTestContext.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeTests/OwnedSimulatorTestContext.swift; sourceTree = SOURCE_ROOT; };
+		F10000000000000000000003 /* CapacityTests/CapacityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CapacityTests/CapacityTests.swift; sourceTree = SOURCE_ROOT; };
+		F10000000000000000000005 /* sqlite-probe.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; name = "sqlite-probe.js"; path = "../../.native-test/sqlite-probe.js"; sourceTree = SOURCE_ROOT; };
+		F10000000000000000000006 /* CapacityTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = CapacityTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		F20000000000000000000003 /* CapacityColdTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CapacityTests/CapacityColdTests.swift; sourceTree = SOURCE_ROOT; };
+		F20000000000000000000022 /* reportTouchFixture.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = ../../test-support/reportTouchFixture.json; sourceTree = SOURCE_ROOT; };
+		F20000000000000000000006 /* CapacityColdTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = CapacityColdTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		F50000000000000000000002 /* LedgerAppearancePlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = LedgerAppearancePlugin.swift; path = App/LedgerAppearancePlugin.swift; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -89,6 +116,20 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		F10000000000000000000008 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		F20000000000000000000008 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -99,6 +140,7 @@
 				504EC3061FED79650016851F /* App */,
 				504EC3051FED79650016851F /* Products */,
 				A10000000000000000000003 /* NativeTests/NativeSqliteTests.swift */,
+				F10000000000000000000003 /* CapacityTests/CapacityTests.swift */,
 				D60000000000000000000003 /* OwnedSimulatorTestContext.swift */,
 				C50000000000000000000003 /* DictionaryTouchTests.swift */,
 				C50000000000000000000022 /* reportTouchFixture.json */,
@@ -111,7 +153,9 @@
 			children = (
 				504EC3041FED79650016851F /* App.app */,
 				A10000000000000000000006 /* NativeTests.xctest */,
+				F10000000000000000000006 /* CapacityTests.xctest */,
 				C50000000000000000000006 /* DictionaryUITests.xctest */,
+				F20000000000000000000006 /* CapacityColdTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -121,6 +165,7 @@
 			children = (
 				9582B6822FE993A50072D4E8 /* SceneDelegate.swift */,
 				B30000000000000000000002 /* LedgerFilesPlugin.swift */,
+				F50000000000000000000002 /* LedgerAppearancePlugin.swift */,
 				E12000000000000000000002 /* LedgerDataFiles.swift */,
 				50379B222058CBB4000EE86E /* capacitor.config.json */,
 				504EC3071FED79650016851F /* AppDelegate.swift */,
@@ -193,6 +238,44 @@
 			productReference = C50000000000000000000006 /* DictionaryUITests.xctest */;
 			productType = "com.apple.product-type.bundle.ui-testing";
 		};
+		F10000000000000000000001 /* CapacityTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = F10000000000000000000010 /* Build configuration list for PBXNativeTarget "CapacityTests" */;
+			buildPhases = (
+				F10000000000000000000090 /* Capacity Bundle guard */,
+				F10000000000000000000007 /* Sources */,
+				F10000000000000000000008 /* Frameworks */,
+				F10000000000000000000009 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				F10000000000000000000013 /* PBXTargetDependency */,
+			);
+			name = CapacityTests;
+			productName = CapacityTests;
+			productReference = F10000000000000000000006 /* CapacityTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		F20000000000000000000001 /* CapacityColdTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = F20000000000000000000010 /* Build configuration list for PBXNativeTarget "CapacityColdTests" */;
+			buildPhases = (
+				F20000000000000000000090 /* Capacity Bundle guard */,
+				F20000000000000000000007 /* Sources */,
+				F20000000000000000000008 /* Frameworks */,
+				F20000000000000000000009 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				F20000000000000000000013 /* PBXTargetDependency */,
+			);
+			name = CapacityColdTests;
+			productName = CapacityColdTests;
+			productReference = F20000000000000000000006 /* CapacityColdTests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -230,7 +313,9 @@
 			projectRoot = "";
 			targets = (
 				A10000000000000000000001 /* NativeTests */,
+				F10000000000000000000001 /* CapacityTests */,
 				C50000000000000000000001 /* DictionaryUITests */,
+				F20000000000000000000001 /* CapacityColdTests */,
 				504EC3031FED79650016851F /* App */,
 			);
 		};
@@ -266,7 +351,48 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		F10000000000000000000009 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				F10000000000000000000004 /* sqlite-probe.js in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		F20000000000000000000009 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				F20000000000000000000021 /* reportTouchFixture.json in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		F10000000000000000000090 /* Capacity Bundle guard */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = ();
+			inputPaths = ();
+			outputPaths = ();
+			alwaysOutOfDate = 1;
+			shellPath = /bin/sh;
+			shellScript = "if [ \"${MYBILL_APP_ID:-}\" != \"com.mybill.offline.capacity\" ]; then\n echo \"error: Capacity tests require the isolated capacity Bundle\" >&2\n exit 1\nfi\n";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		F20000000000000000000090 /* Capacity Bundle guard */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = ();
+			inputPaths = ();
+			outputPaths = ();
+			alwaysOutOfDate = 1;
+			shellPath = /bin/sh;
+			shellScript = "if [ \"${MYBILL_APP_ID:-}\" != \"com.mybill.offline.capacity\" ]; then\n echo \"error: Capacity tests require the isolated capacity Bundle\" >&2\n exit 1\nfi\n";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		504EC3001FED79650016851F /* Sources */ = {
@@ -276,6 +402,7 @@
 				504EC3081FED79650016851F /* AppDelegate.swift in Sources */,
 				9582B6832FE993A70072D4E8 /* SceneDelegate.swift in Sources */,
 				B30000000000000000000001 /* LedgerFilesPlugin.swift in Sources */,
+				F50000000000000000000001 /* LedgerAppearancePlugin.swift in Sources */,
 				E12000000000000000000001 /* LedgerDataFiles.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -298,6 +425,22 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		F10000000000000000000007 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				F10000000000000000000002 /* CapacityTests/CapacityTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		F20000000000000000000007 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				F20000000000000000000002 /* CapacityColdTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -310,6 +453,16 @@
 			isa = PBXTargetDependency;
 			target = 504EC3031FED79650016851F /* App */;
 			targetProxy = C50000000000000000000014 /* PBXContainerItemProxy */;
+		};
+		F10000000000000000000013 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 504EC3031FED79650016851F /* App */;
+			targetProxy = F10000000000000000000014 /* PBXContainerItemProxy */;
+		};
+		F20000000000000000000013 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 504EC3031FED79650016851F /* App */;
+			targetProxy = F20000000000000000000014 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -458,7 +611,9 @@
 				);
 				MARKETING_VERSION = 0.1.0;
 				OTHER_SWIFT_FLAGS = "$(inherited) -DDEBUG";
-				PRODUCT_BUNDLE_IDENTIFIER = com.mybill.offline;
+				MYBILL_APP_ID = com.mybill.offline;
+				MYBILL_APP_NAME = "我的账单";
+				PRODUCT_BUNDLE_IDENTIFIER = "$(MYBILL_APP_ID)";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SUPPORTS_MACCATALYST = NO;
 				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
@@ -483,7 +638,9 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 0.1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.mybill.offline;
+				MYBILL_APP_ID = com.mybill.offline;
+				MYBILL_APP_NAME = "我的账单";
+				PRODUCT_BUNDLE_IDENTIFIER = "$(MYBILL_APP_ID)";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SUPPORTS_MACCATALYST = NO;
 				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
@@ -582,6 +739,94 @@
 			};
 			name = Release;
 		};
+		F10000000000000000000011 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 27.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.mybill.offline.CapacityTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/App.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/App";
+			};
+			name = Debug;
+		};
+		F10000000000000000000012 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 27.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.mybill.offline.CapacityTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/App.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/App";
+			};
+			name = Release;
+		};
+		F20000000000000000000011 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 27.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.mybill.offline.CapacityColdTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_VERSION = 5.0;
+				TEST_TARGET_NAME = App;
+				SUPPORTS_MACCATALYST = NO;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		F20000000000000000000012 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 27.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.mybill.offline.CapacityColdTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_VERSION = 5.0;
+				TEST_TARGET_NAME = App;
+				SUPPORTS_MACCATALYST = NO;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -617,6 +862,24 @@
 			buildConfigurations = (
 				C50000000000000000000011 /* Debug */,
 				C50000000000000000000012 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		F10000000000000000000010 /* Build configuration list for PBXNativeTarget "CapacityTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				F10000000000000000000011 /* Debug */,
+				F10000000000000000000012 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		F20000000000000000000010 /* Build configuration list for PBXNativeTarget "CapacityColdTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				F20000000000000000000011 /* Debug */,
+				F20000000000000000000012 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

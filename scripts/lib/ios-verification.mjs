@@ -11,6 +11,7 @@ import { assertScriptReport } from './ios-test-reports.mjs'
 export const controlInputs = [
   'scripts/ios-app.sh',
   'scripts/ios-app.mjs',
+  'scripts/ios-capacity-report.mjs',
   'scripts/lib',
   'scripts/fixtures/dictionary-touch.py',
   'scripts/fixtures/ios-ui-baseline.py',
@@ -632,6 +633,10 @@ export function observeFull(attempt, { now = Date.now, limits = budgets } = {}) 
           throw new Error(`${phase.stage} 阶段超时，停止并保留对应局部目标：${phase.coverage.join(', ')}`)
         return
       }
+      if (phase.testCaseMs !== undefined &&
+          (!Number.isSafeInteger(phase.testCaseMs) || phase.testCaseMs < 1 || phase.testCaseMs > limits.testCase))
+        throw new Error('单用例阶段预算不合法。')
+      const testCaseMs = phase.testCaseMs ?? limits.testCase
       const boundary = attempt.evidenceRoot ?? path.dirname(attempt.run)
       if (
         !path.isAbsolute(phase.log) ||
@@ -676,7 +681,7 @@ export function observeFull(attempt, { now = Date.now, limits = budgets } = {}) 
       if (phase.expectedFailure) {
         if (now() - phase.startedAt > limits.interruption)
           throw new Error('主动中断准备阶段超时，先执行同阶段成对局部恢复。')
-      } else if (active && now() - active.startedAt > limits.testCase) failCase(active.id, '单用例 60 秒预算')
+      } else if (active && now() - active.startedAt > testCaseMs) failCase(active.id, `单用例 ${testCaseMs / 1000} 秒预算`)
       else if (!active && now() - lastActivity > limits.startup)
         throw new Error(
           anyStarted ? '测试会话结束/用例交接超时。' : '测试启动阶段超时；构建和安装时间不计入该阶段。'

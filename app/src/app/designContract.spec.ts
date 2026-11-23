@@ -28,13 +28,31 @@ function assertOriginalTemplate(name: string, template: string, originalHash: st
   }
 }
 
+function assertOriginalStyle(name: string, style: string, originalHash: string): void {
+  if (name !== 'tokens.css') { expect(digest(style), name).toBe(originalHash); return }
+  expect(digest(style)).toBe(baseline.styleAdaptations['tokens.css'].sha256)
+  const marker = '\n/* iOS keyboard adaptation: apply the existing keyboard rules in landscape too. */\n'
+  const parts = style.split(marker)
+  expect(parts).toHaveLength(2)
+  const lowHeight = '\n/* 低高度编辑时暂时让出固定页头，收键盘后恢复原位置。 */\n@media (max-height: 599px) {\n  .app-shell.keyboard-open [data-page-key="ledger-entry"] > .page-workspace-header { display: none; }\n  .app-shell.keyboard-open .anchored-dropdown .dropdown-toolbar { position: static; }\n}\n'
+  expect(parts[1]!.endsWith(lowHeight)).toBe(true)
+  const rules = parts[1]!.slice(0,-lowHeight.length).trimEnd().split('\n').map(line => '  '+line).join('\n')
+  const original = parts[0]!.replace('\n\n}\n\n/* 小图标识别任务', rules+'\n\n}\n\n/* 小图标识别任务')
+  expect(digest(original), '原键盘规则与完整布局基线').toBe(originalHash)
+}
+
 describe('沿用原界面的 iPhone 设计契约', () => {
  it('关键共享组件的模板与全局样式保持原基线，不建立第二套视觉', () => {
    for (const [name, hash] of Object.entries(baseline.components)) {
      const file = read(`components/${name}.vue`)
      assertOriginalTemplate(name, file.includes('<template>') ? file.slice(file.indexOf('<template>')) : file, hash)
    }
-   for (const [name, hash] of Object.entries(baseline.styles)) expect(digest(read('styles/'+name))).toBe(hash)
+   for (const [name, hash] of Object.entries(baseline.styles)) assertOriginalStyle(name,read('styles/'+name),hash)
+ })
+ it('横屏键盘例外不豁免其他布局或字号变化', () => {
+   const style = read('styles/tokens.css')
+   expect(() => assertOriginalStyle('tokens.css',style.replace('display: none;', 'display: block;'),baseline.styles['tokens.css'])).toThrow()
+   expect(() => assertOriginalStyle('tokens.css',style.replace('position: static;', 'position: fixed;'),baseline.styles['tokens.css'])).toThrow()
  })
  it('已登记输入适配不豁免搜索框布局或其他行为变化', () => {
    const file = read('components/GlobalLedgerSearch.vue')

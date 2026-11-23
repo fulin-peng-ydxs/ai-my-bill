@@ -34,5 +34,11 @@
     "tokens.css": "29f57ae096597f42ea01c5455691106299d76073772b9128f6cce60528d4904c",
     "focus.css": "2c1e7cd2dfa643970bce28d31e0960252cc1f6eef142947281e193b366625972",
     "motion.css": "3cb573e99204120d33d2cce290b0acb6554d43637d325a71e6018bc2fa801686"
+  },
+  "styleAdaptations": {
+    "tokens.css": {
+      "sha256": "228eb19e4f4abf87c369ff36288bb540293da63ceca20fd4c9434989baf23b7a",
+      "reason": "T14：键盘避让覆盖横屏；仅低高度记一笔编辑时暂隐页头，短屏候选工具条随列表滚动。其他布局与原规则仍须反向匹配原摘要。"
+    }
   }
 }

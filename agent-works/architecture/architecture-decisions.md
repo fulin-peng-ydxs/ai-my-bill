@@ -12,7 +12,9 @@
 
 [nativeConnection](../../app/src/infrastructure/database/nativeConnection.ts) 是最小原生连接边界：只允许 iOS 且必须存在 CapacitorSQLite 插件，拒绝浏览器替代存储。[nativeAdapter](../../app/src/infrastructure/database/nativeAdapter.ts) 只注册 CapacitorSQLite 原生插件并持有有界于实际连接数的注册表，不导入插件的 Web 实现；所有 SQL 操作仍委托锁定插件。正式账本经 createIosDatabase 创建并接管句柄后再打开，打开失败由同一生命周期释放；原生探针沿用 openIosDatabase 的独立打开/清理入口。插件配置将数据库放在沙盒 `Library/OfflineLedger`，并设置系统备份排除标记；该标记已经由模拟器上的原生测试读取确认。[LedgerDatabase](../../app/src/data/ledgerDatabase.ts) 在这一边界之上管理账本连接、生命周期与事务；启动和本地业务服务共用 appDatabase 单一所有者；页面不持有连接或执行 SQL。
 
-App 的 API DTO 沿用旧接口类型维持页面兼容；字典 API 与支出商品候选调用本地 DictionaryService/ProductService；收支 API 调用 EntryService，均不经过 HTTP。八类字典的新增、改名、停用/恢复、分页搜索、同级排序、引用保护及商品合并已经接通。其他未接通业务由 `api/http.ts` 明确拒绝，不返回假数据。localOperation 将未知存储错误包装为安全提示，保留内部原因；字典变更通知仅在事务提交后发布。运行期 Pinia 偏好和 useLedgerDraft 通过下述个人状态服务消费原生 SQLite，维持页面缓存与持久化状态；不使用浏览器持久化。账号、管理员和 PWA 入口不进入 App 路由。原 UI 的 PageWorkspace、AppDrawer/AppDialog、CachedPageView、键盘可见视口及未保存作用域继续复用，样式与模板基线由设计契约保护。图表与报表页面按需分包。
+App 的 API DTO 沿用旧接口类型维持页面兼容；字典 API 与支出商品候选调用本地 DictionaryService/ProductService；收支 API 调用 EntryService，均不经过 HTTP。八类字典的新增、改名、停用/恢复、分页搜索、同级排序、引用保护及商品合并已经接通。其他未接通业务由 `api/http.ts` 明确拒绝，不返回假数据。localOperation 将未知存储错误包装为安全提示，保留内部原因；字典变更通知仅在事务提交后发布。运行期 Pinia 偏好和 useLedgerDraft 通过下述个人状态服务消费原生 SQLite，维持页面缓存与持久化状态；不使用浏览器持久化。账号、管理员和 PWA 入口不进入 App 路由。原 UI 的 PageWorkspace、AppDrawer/AppDialog、CachedPageView、键盘可见视口及未保存作用域继续复用，样式与模板基线由设计契约保护。图表与报表页面按需分包。 候选定位把可见视口偏移与文档滚动换算到同一 DOMRect 坐标，不重复叠加键盘平移；短屏编辑差异受 DESIGN 的可逆基线限制。
+
+[LedgerAppearance](../../app/ios/App/App/LedgerAppearancePlugin.swift) 独立承接系统文字大小通知和状态栏明暗；前端共享入口先订阅再读取初态，拒绝迟到初态覆盖新通知，卸载释放监听。主题仍以原生 SQLite 偏好为源，系统模式不改写 UIKit 系统主题，桥失败不阻断账本。LedgerFiles 继续只负责原文件与生命周期职责，外观不复用草稿后台窗口。
 
 `NativeTests` 是 hosted XCTest target，运行于真实 App 进程，通过 WKWebView 注入仅存在于 test bundle 的 [sqliteProbe](../../app/native-tests/sqliteProbe.ts)，再调用同一原生连接入口。探针以随机库名执行绑定、事务提交/回滚、关闭重开与最小升级，定点整数以字符串绑定并 `CAST(... AS TEXT)` 读取，避免桥接到 JavaScript Number 时丢失精度。探针消费 App 的权威金额函数，不调用旧 API，并验证 SQLite 64 位聚合溢出明确失败；实验结束关闭并删除本轮数据库，生产入口不含探针开关。该验证不替代正式迁移器、容量或真机验收。
 
@@ -80,6 +82,8 @@ CleanupService 在启动/回到前台执行一次有界轮次，最多 5 批，�
 [多维聚合](../../app/src/data/reports/dimensionReports.ts) 覆盖九类支出及五类收入，使用同一有效账目过滤；可空二级分类/购买渠道/地点以稳定缺失标识下钻，不与用户同名字典混淆。商品与价格按商品＋单位分组，金额、数量、平均填写单价与平均实付单位成本分别计算；价格和均值排行先按未舍入结果排序，再格式化。历史 NULL 量价不回填为零，不拿较早单价冒充最近值；整组没有填写单价时，价格维度返回可行动空态。缺少必要分组资料的旧记录明确拒绝该维度，仍可查看总览或缩小筛选。频次保留最近记录、精确平均间隔和有效商品的长期未购线索；历史下钻使用其最近记录与绝对日期。
 
 [精确报表数学](../../app/src/data/reports/reportMath.ts) 使用 BigInt 有理数、平衡均值合并及 Fenwick 滑窗中位数，不以浮点比较阈值。expense-quality-v1 保留过去 180 天、同商品同单位至少 3 条且严格早于当前时刻的样本，超过中位数 50% 才提示高价；同商品/实付/资金渠道的稳定前序记录在 10 分钟内（含边界）提示重复。同时间记录不互作价格历史，回收站/无效记录不参与，线索不改账。质量历史复用快照候选商品集合，每组最多 128 个商品，按商品/时间/创建时间/ID 游标读取，每次跨桥最多 256 条，不逐页重新查询候选账目。续页合并当前商品的完整尾游标与后续商品的时间范围两条索引流；当前商品不重复叠加原时间下界，以免同时间分页退化为前缀重扫。收集后按全局时间/创建时间/ID 重排，保持滑窗过期及稳定前序语义。普通维度与频次仍用日期/时间/创建时间/ID 游标；质量点最多 100、普通排行最多 50，并明确截断。既有 [v8 索引](../../app/src/data/migrations/0008_report_dimensions.sql) 服务同商品历史范围，读取策略无需新增迁移；不修改既有迁移、账目或用户配置，升级仍走已有保护快照与事务。
+
+[Capacity scheme](../../app/ios/App/App.xcodeproj/xcshareddata/xcschemes/Capacity.xcscheme) 提供 Release hosted 页面/原生容量探针及外部冷启动 runner，单独使用 `com.mybill.offline.capacity`，编译和执行均拒绝正式 Bundle。测试代码和合成数据不进入生产资源；同一夹具由正式迁移/服务生成，模拟器脚本验证归属、摘要与数据集后仅替换隔离 App 沙盒。模拟器 RSS、服务计时与页面端到端计时分别登记，不能替代目标真机指标。执行入口、样本与报告拒绝规则统一见[验证规范](../testing/guide.md#ios-交互与容量复核)。
 
 ## 保留的 Web 运行拓扑
 

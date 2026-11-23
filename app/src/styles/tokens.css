@@ -2448,11 +2448,7 @@ body:has(dialog[open]) {
   .overlay-header, .overlay-body, .overlay-actions { padding: var(--space-md); }
   .app-drawer .overlay-header, .app-drawer .overlay-body, .app-drawer .overlay-actions { padding-inline: max(var(--space-md), env(safe-area-inset-left)) max(var(--space-md), env(safe-area-inset-right)); }
   .app-drawer .overlay-actions { padding-bottom: max(var(--space-md), env(safe-area-inset-bottom)); }
-  .keyboard-open .bottom-navigation { display: none; }
-  /* iOS 会平移可见视口；外壳同时跟随顶部和高度，避免正文留在键盘前的坐标里。 */
-  .app-shell.keyboard-open:not(.admin-shell) { position: fixed; top: var(--app-viewport-top, 0px); left: 0; right: 0; padding-bottom: 0; }
-  /* 输入时主动作回归自然流，避免保存栏悬在键盘上挤压候选。 */
-  .keyboard-open .entry-savebar { position: static; }
+
 
 }
 
@@ -2552,3 +2548,16 @@ body:has(dialog[open]) {
 .reorder-before::before, .reorder-after::after { content: ''; position: absolute; left: 0; right: 0; height: 2px; background: var(--color-primary); pointer-events: none; }
 .reorder-before::before { top: 0; }
 .reorder-after::after { bottom: 0; }
+
+/* iOS keyboard adaptation: apply the existing keyboard rules in landscape too. */
+.keyboard-open .bottom-navigation { display: none; }
+/* iOS 会平移可见视口；外壳同时跟随顶部和高度，避免正文留在键盘前的坐标里。 */
+.app-shell.keyboard-open:not(.admin-shell) { position: fixed; top: var(--app-viewport-top, 0px); left: 0; right: 0; padding-bottom: 0; }
+/* 输入时主动作回归自然流，避免保存栏悬在键盘上挤压候选。 */
+.keyboard-open .entry-savebar { position: static; }
+
+/* 低高度编辑时暂时让出固定页头，收键盘后恢复原位置。 */
+@media (max-height: 599px) {
+  .app-shell.keyboard-open [data-page-key="ledger-entry"] > .page-workspace-header { display: none; }
+  .app-shell.keyboard-open .anchored-dropdown .dropdown-toolbar { position: static; }
+}

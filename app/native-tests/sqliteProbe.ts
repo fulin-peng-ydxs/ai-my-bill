@@ -121,3 +121,4 @@ export { ledgerQueries } from './ledgerQueryProbe'
 
 export { reportQueries, dimensionReports } from './reportProbe'
 export { dataManagement } from './dataManagementProbe'
+export { reviewPages, capacity, prepareCapacity, capacityPages } from './iosReviewProbe'

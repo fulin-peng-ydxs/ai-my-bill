@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
 import { resolveTheme, type ThemeMode, type ResolvedTheme } from '../theme/theme'
+import { setNativeTheme } from '../platform/appearance'
 
 /** 主题渲染消费统一 SQLite 偏好；自身不建立第二套持久化。 */
 export const useThemeStore = defineStore('theme', {
@@ -27,6 +28,7 @@ export const useThemeStore = defineStore('theme', {
       document.documentElement.dataset.themeMode = this.mode
       document.documentElement.dataset.theme = this.resolved
       document.documentElement.style.colorScheme = this.resolved
+      void setNativeTheme(this.resolved)
     },
   },
 })

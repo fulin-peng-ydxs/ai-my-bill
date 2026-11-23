@@ -394,5 +394,8 @@ public class LedgerFilesPlugin: CAPPlugin, CAPBridgedPlugin {
 }
 
 class LedgerBridgeViewController: CAPBridgeViewController {
-    override func capacitorDidLoad() { bridge?.registerPluginInstance(LedgerFilesPlugin()) }
+    override func capacitorDidLoad() {
+        bridge?.registerPluginInstance(LedgerFilesPlugin())
+        bridge?.registerPluginInstance(LedgerAppearancePlugin())
+    }
 }

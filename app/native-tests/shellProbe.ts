@@ -24,7 +24,9 @@ export async function shell() {
     click(`.bottom-navigation a[href="${path}"]`)
     await waitFor(() => document.querySelector('h1')?.textContent?.trim() === heading, `页面 ${path} 未就绪`)
     headings.push(heading!)
-    requireValue(!document.querySelector('input[type=password]'), '存在登录/密码入口')
+    // 完整备份/恢复合法使用密码；认证退役检查针对身份路由及登录入口。
+    requireValue(!router.getRoutes().some(route => /^\/(login|admin|organizations)(\/|$)/.test(route.path))
+      && !document.querySelector('a[href^="/login"],[data-page-key="login"]'), '存在联网身份入口')
     requireValue(document.documentElement.scrollWidth <= innerWidth + 1, `${path} 横向溢出`)
   }
   requireValue(document.querySelector<HTMLInputElement>('#expense-unit-price')?.value === '12.3456', '返回丢失单价')
@@ -48,7 +50,7 @@ export async function shell() {
   await waitFor(() => !document.querySelector('#profile-setting[open]'), '抽屉关闭未完成')
   await waitFor(() => document.activeElement === setting, '关闭后焦点没有返回原入口')
 
-  // 业务尚未接通，嵌套编辑采用 test bundle 中的共享组件夹具，不伪造账目数据。
+  // 独立覆盖嵌套关闭协议，夹具只挂载在 test bundle，不写业务账目。
   await nestedOverlay()
   await router.push('/entry')
   await waitFor(() => !!document.querySelector('#expense-unit-price'), '记账页未恢复')

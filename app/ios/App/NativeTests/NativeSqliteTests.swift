@@ -105,6 +105,73 @@ final class NativeSqliteTests: XCTestCase {
         print("IPHONE_SHELL_EVIDENCE " + String(decoding: try JSONSerialization.data(withJSONObject: evidence, options: [.sortedKeys]), as: UTF8.self))
     }
 
+    func testIosInteractionMatrix() async throws {
+        let webView = try await readyWebView()
+        let script = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "sqlite-probe", withExtension: "js"))
+        _ = try await webView.evaluateJavaScript(String(contentsOf: script, encoding: .utf8) + ";void 0;")
+        let original = webView.frame
+        defer { webView.frame = original }
+        for size in [CGSize(width: 360, height: 800), CGSize(width: 390, height: 844),
+                     CGSize(width: 430, height: 932), CGSize(width: 844, height: 390)] {
+            webView.frame = CGRect(origin: original.origin, size: size)
+            try await Task.sleep(for: .milliseconds(150))
+            let evidence = try await webView.callAsyncJavaScript("return await MyBillNativeProbe.reviewPages()", arguments: [:], in: nil, contentWorld: .page)
+            let actualWidth = try await webView.evaluateJavaScript("innerWidth")
+            XCTAssertEqual((actualWidth as? NSNumber)?.intValue, Int(size.width))
+            print("IOS_INTERACTION_MATRIX " + String(decoding: try JSONSerialization.data(withJSONObject: try XCTUnwrap(evidence), options: [.sortedKeys]), as: UTF8.self))
+            let attachment = XCTAttachment(image: webView.snapshotView(afterScreenUpdates: true).map { view in
+                UIGraphicsImageRenderer(bounds: view.bounds).image { _ in view.drawHierarchy(in: view.bounds, afterScreenUpdates: true) }
+            } ?? UIGraphicsImageRenderer(size: size).image { _ in })
+            attachment.name = "matrix-\(Int(size.width))x\(Int(size.height))"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+        }
+    }
+
+    func testIosTextScale() async throws {
+        let webView = try await readyWebView()
+        let script = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "sqlite-probe", withExtension: "js"))
+        _ = try await webView.evaluateJavaScript(String(contentsOf: script, encoding: .utf8) + ";void 0;")
+        func change(_ category: UIContentSizeCategory) {
+            NotificationCenter.default.post(name: UIContentSizeCategory.didChangeNotification, object: nil,
+                userInfo: [UIContentSizeCategory.newValueUserInfoKey:category])
+        }
+        defer { change(UIApplication.shared.preferredContentSizeCategory) }
+        change(.large)
+        try await Task.sleep(for: .milliseconds(150))
+        let normalValue = try await webView.evaluateJavaScript("parseFloat(getComputedStyle(document.body).fontSize)")
+        let normal = try XCTUnwrap(normalValue as? NSNumber)
+        change(.accessibilityExtraExtraExtraLarge)
+        try await Task.sleep(for: .milliseconds(150))
+        let largeValue = try await webView.evaluateJavaScript("parseFloat(getComputedStyle(document.body).fontSize)")
+        let large = try XCTUnwrap(largeValue as? NSNumber)
+        XCTAssertGreaterThan(large.doubleValue, normal.doubleValue * 1.5)
+        let fields = try await webView.evaluateJavaScript("JSON.stringify([...document.querySelectorAll('input')].filter(e=>e.getBoundingClientRect().height).map(e=>({id:e.id,height:e.clientHeight,font:getComputedStyle(e).fontSize,line:getComputedStyle(e).lineHeight,scroll:e.scrollHeight})))")
+        print("IOS_LARGE_TEXT_FIELDS \(fields)")
+        _ = try await webView.callAsyncJavaScript("return await MyBillNativeProbe.reviewPages()", arguments: [:], in: nil, contentWorld: .page)
+        print("IOS_TEXT_SCALE_EVIDENCE normal=\(normal) large=\(large)")
+    }
+
+    func testIosStatusBarTheme() async throws {
+        let web = try await readyWebView()
+        let windows = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.flatMap { $0.windows }
+        let controller = try XCTUnwrap(windows.compactMap { $0.rootViewController as? LedgerBridgeViewController }.first)
+        let systemDark = try await web.evaluateJavaScript("matchMedia('(prefers-color-scheme: dark)').matches")
+        for mode in ["dark","light","system"] {
+            let resolved = try await web.callAsyncJavaScript("document.querySelector('#app').__vue_app__.config.globalProperties.$pinia._s.get('theme').setMode(mode);return document.documentElement.dataset.theme;",
+                arguments:["mode":mode],in:nil,contentWorld:.page) as? String
+            let expected:UIStatusBarStyle = resolved == "dark" ? .lightContent : .darkContent
+            for _ in 0..<20 {
+                if controller.preferredStatusBarStyle == expected { break }
+                try await Task.sleep(for:.milliseconds(20))
+            }
+            XCTAssertEqual(controller.preferredStatusBarStyle,expected)
+            let currentSystem = try await web.evaluateJavaScript("matchMedia('(prefers-color-scheme: dark)').matches")
+            XCTAssertEqual(currentSystem as? Bool,systemDark as? Bool,"状态栏不能反向覆盖系统主题媒体查询")
+        }
+        print("IOS_STATUS_BAR_THEME_VERIFIED dark/light/system")
+    }
+
     func testClosedDatabaseSidecarPolicy() throws {
         let fm = FileManager.default
         let folder = fm.temporaryDirectory.appendingPathComponent("ledger-sidecar-" + UUID().uuidString)

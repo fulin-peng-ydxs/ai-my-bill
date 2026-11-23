@@ -5,7 +5,12 @@ import path from 'node:path'
 export const APP_ID = 'com.mybill.offline'
 export const RUNTIME = 'com.apple.CoreSimulator.SimRuntime.iOS-27-0'
 export const DEVICE_TYPE = 'com.apple.CoreSimulator.SimDeviceType.iPhone-14-Pro-Max'
+export const capacityColdCases = Array.from({ length:5 },(_,i) => `CapacityColdTests/CapacityColdTests/testColdLaunch0${i+1}`)
+export const capacityScenarios = [10000,100000].flatMap(count => ['', '-prepare','-native','-pages','-cold'].map(phase => 'scale-'+count+phase))
 export const nativeCases = [
+  'testIosInteractionMatrix',
+  'testIosTextScale',
+  'testIosStatusBarTheme',
   'testBundledEntryAndNativeSqliteBridge',
   'testClosedDatabaseSidecarPolicy',
   'testLedgerLifecycleAndProtection',
@@ -80,13 +85,16 @@ export const uiCases = [
   'test42IncomePayerName',
   'test42IncomeFrequency',
   'test44DataCsv','test45DataBackupSave','test46DataWrongPassword','test47DataRestorePreviewCancel',
-  'test48DataRestoreConfirm','test49DataClearCancelConfirm','test50DataExternalRestore','test45DataBackupCancel'
+  'test48DataRestoreConfirm','test49DataClearCancelConfirm','test50DataExternalRestore','test45DataBackupCancel',
+  'test51IosKeyboardNavigation','test52IosCandidatesAndDate','test53IosLandscapeCandidates'
 ]
 
 export const recoveryPhases = ['snapshot-ready', 'migration-recorded', 'upgrade-committed']
 export const recoveryScenarios = [...recoveryPhases.map((p) => 'interruption-' + p), 'interruption-all']
 
 export const uiScenarios = {
+  'ios-interaction':[61,62,63],
+  'ios-candidates':[62,63],
   'paging-merge': [11, 12],
   'paging-disable': [13, 14],
   'merge-relaunch': [9, 10],
@@ -123,7 +131,7 @@ export function needsSimulatorRecovery(directory) {
     .sort((a, b) => fs.statSync(path.join(directory, a)).birthtimeMs - fs.statSync(path.join(directory, b)).birthtimeMs)
     .findLast(name => {
       const run = path.join(directory, name)
-      if (fs.existsSync(path.join(run, 'test.log'))) return true
+      if (['test.log','capacity-cold.log'].some(file => fs.existsSync(path.join(run,file)))) return true
       // 尚未进入 XCTest 的启动超时/中断同样需要恢复。夹具已开始则启动和终止已完成，
       // 不因夹具拒绝而额外重启；仍继续追溯更早的自动化或启动故障。
       const uiLaunch = fs.existsSync(path.join(run, 'ui-launch.log'))
@@ -139,6 +147,17 @@ export function needsSimulatorRecovery(directory) {
 /** 前置用例显式列出；只补必要环境与导航，不能暗中扩展为完整触摸套件。 */
 export function selection(kind, name, nativeScenarios) {
   if (kind === '--scenario') {
+    if (name === 'ios-review') return { scheme:'App',configuration:'Debug',cases:[
+      'testIosInteractionMatrix','testIosStatusBarTheme','testIosTextScale','testOriginalShellNavigationAndOverlays'
+    ].map(name => 'NativeTests/NativeSqliteTests/'+name) }
+    if (capacityScenarios.includes(name)) {
+      const [,count,phase = 'all'] = name.split('-'), cases = [
+        'CapacityTests/CapacityTests/testPrepareCapacityFixture','CapacityTests/CapacityTests/testNativeCapacity',
+        'CapacityTests/CapacityTests/testPageCapacity',...capacityColdCases]
+      return { scheme:'Capacity',configuration:'Release',capacity:Number(count),capacityPhase:phase,
+        appId:'com.mybill.offline.capacity',testCaseMs:['prepare','cold'].includes(phase) ? 60_000 : 600_000,
+        cases:phase === 'all' ? cases : phase === 'cold' ? capacityColdCases : [cases[['prepare','native','pages'].indexOf(phase)]] }
+    }
     if (recoveryScenarios.includes(name))
       return {
         scheme: 'App',
@@ -185,6 +204,8 @@ export function selection(kind, name, nativeScenarios) {
   throw new Error('未知用例或场景；使用 debug list 查看允许项，不接受任意测试过滤器。')
 }
 function uiSelection(indices) {
+  if (indices.every(index => index >= 61)) return { scheme:'DictionaryTouch',configuration:'Release',
+    cases:indices.map(index => 'DictionaryUITests/DictionaryTouchTests/'+uiCases[index]) }
   return {
     scheme: 'DictionaryTouch',
     configuration: 'Release',

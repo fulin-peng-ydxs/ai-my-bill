@@ -7,6 +7,7 @@ import {
   APP_ID,
   RUNTIME,
   DEVICE_TYPE,
+  capacityScenarios,
   nativeCases,
   uiCases,
   uiScenarios,
@@ -202,7 +203,8 @@ async function nativeToolchain() {
 }
 
 async function tracked(run, stage, coverage, program, args, options = {}) {
-  startPhase(run, { stage, coverage, log: options.log, report: options.report, scenario: options.scenario })
+  startPhase(run, { stage, coverage, log: options.log, report: options.report, scenario: options.scenario,
+    testCaseMs: options.testCaseMs })
   return command(program, args, { ...options, timeout: options.timeout ?? budgets[stage] ?? 900_000 })
 }
 
@@ -296,7 +298,7 @@ function needsRepair(key, environment) {
   return needsPhaseRepair(root, key, environment)
 }
 async function prepareBuild(session, selected, run, toolchain) {
-  const derived = path.join(session.directory, 'DerivedData', selected.configuration)
+  const derived = path.join(session.directory, 'DerivedData', selected.capacity ? 'Capacity-'+selected.configuration : selected.configuration)
   const products = path.join(derived, 'Build/Products')
   const fingerprint = sourceHash(root, toolchain)
   const layers = {}
@@ -322,7 +324,7 @@ async function prepareBuild(session, selected, run, toolchain) {
       { log: path.join(run, 'normalize.log') })
   })
   // DictionaryTouch 不加载 hosted 探针；只在 App scheme 编译资源需要时准备。
-  if (selected.scheme === 'App')
+  if (['App','Capacity'].includes(selected.scheme))
     hits.probe = await use('probe', ['app/.native-test/sqlite-probe.js'], () =>
       tracked(run, 'build', ['check/probe-build'], 'npm', ['--prefix', 'app', 'run', 'probe:bundle'],
         { log: path.join(run, 'probe.log') }))
@@ -335,7 +337,8 @@ async function prepareBuild(session, selected, run, toolchain) {
       '-configuration', selected.configuration, '-destination',
       `platform=iOS Simulator,id=${session.context.simulatorId}`, '-derivedDataPath', derived,
       '-clonedSourcePackagesDirPath', '.local/ios/SourcePackages', '-disableAutomaticPackageResolution',
-      'CODE_SIGNING_ALLOWED=NO', `MYBILL_TEST_CONTEXT_FILE=${session.file}`
+      'CODE_SIGNING_ALLOWED=NO', `MYBILL_TEST_CONTEXT_FILE=${session.file}`,
+      ...(selected.capacity ? ['MYBILL_APP_ID=com.mybill.offline.capacity','MYBILL_APP_NAME=我的账单容量验收'] : [])
     ], { log: path.join(run, 'build.log'), timeout: budgets.build }
   ), needsRepair(`native-build/${selected.scheme}/${selected.configuration}`, toolchain))
   console.log(hits.native ? 'BUILD_CACHE_HIT：复用已核验原生产物。' : 'BUILD_CACHE_MISS：已构建原生测试。')
@@ -371,7 +374,8 @@ async function runPartial(session, selected, toolchain, requested) {
     result.coverage = []
     if (invocation) invocation.phase = 'execution'
     result.verificationHash = verificationHash(root, toolchain)
-    phaseObserver = observeFull({ run, root, evidenceRoot: temporary })
+    phaseObserver = observeFull({ run, root, evidenceRoot: temporary },
+      { limits: { ...budgets, testCase: selected.testCaseMs ?? budgets.testCase } })
     if (selected.recoveryPhases) {
       writeJson(path.join(run, 'active.json'), {
         ownerPid: process.pid,
@@ -409,7 +413,7 @@ async function runPartial(session, selected, toolchain, requested) {
     }
     startPhase(run, { stage: 'boot', coverage: ['native-boot'], log: path.join(run, 'boot.log') })
     // 失败的 UI 自动化会话可能在 launchd 中遗留 runner；只重启本轮设备，保留 UUID 和产物。
-    if (needsRecovery && selected.scheme === 'DictionaryTouch' && device.state !== 'Shutdown') {
+    if (needsRecovery && (selected.scheme === 'DictionaryTouch' || selected.cases.some(name => name.startsWith('CapacityColdTests/'))) && device.state !== 'Shutdown') {
       await command('xcrun', ['simctl', 'shutdown', device.udid], {
         log: path.join(run, 'recover-device.log')
       })
@@ -418,6 +422,15 @@ async function runPartial(session, selected, toolchain, requested) {
     }
     if (device.state !== 'Booted') await simctl('boot', device.udid)
     await command('xcrun', ['simctl', 'bootstatus', device.udid, '-b'], { log: path.join(run, 'boot.log') })
+    if (selected.capacity) {
+      const { runScaleSimulator } = await import('./lib/ios-scale-run.mjs')
+      const scale = await runScaleSimulator({ root,run,session,selected,toolchain,command,tracked,prepareBuild })
+      if (interrupted) throw new Error(`已取消：${interrupted}`)
+      if (verificationHash(root, toolchain) !== result.verificationHash) throw new Error('容量执行期间输入变化。')
+      result = { ...result,...scale,status:'passed',coverage:[...selectedCoverage(selected),...finishPhases(run).flatMap(p => p.coverage)] }
+      console.log('容量局部观测通过；模拟器不计作真机容量验收。')
+      return
+    }
     const build = await prepareBuild(session, selected, run, toolchain)
     result = { ...result, sourceHash: build.sourceHash, cacheHit: build.cacheHit, buildLayers: build.buildLayers }
     session.context.scenario = selected.scenario
@@ -531,9 +544,13 @@ async function runPartial(session, selected, toolchain, requested) {
         session.file, container, appHash, fixture, selected.fixture], { log: path.join(run, 'data-intent.log') })
     // 局部夹具已落盘且连接已关闭；让首屏与 runner 准备并行，避免重复冷启动挤占业务用例。
     // XCTest 仍建立原生自动化会话并执行原断言；不把预启动记为冷启动/正式初始化通过。
-    if (ui) await command('xcrun', ['simctl', 'launch', device.udid, APP_ID], {
-      log: path.join(run, 'ui-launch.log')
-    })
+    if (ui) {
+      const streams = ['app-stdout.log','app-stderr.log'].map(name => path.join(run,name))
+      for (const file of streams) fs.writeFileSync(file,'',{ flag:'wx',mode:0o600 })
+      await command('xcrun', ['simctl', 'launch', '--stdout='+streams[0], '--stderr='+streams[1], device.udid, APP_ID], {
+        log: path.join(run, 'ui-launch.log')
+      })
+    }
     const testLog = path.join(run, 'test.log')
     let testFailure
     try {
@@ -553,7 +570,7 @@ async function runPartial(session, selected, toolchain, requested) {
           '-test-timeouts-enabled',
           'YES',
           '-maximum-test-execution-time-allowance',
-          '60',
+          String((selected.testCaseMs ?? budgets.testCase) / 1000),
           '-collect-test-diagnostics',
           'never',
           ...selected.cases.map((name) => '-only-testing:' + name),
@@ -737,7 +754,7 @@ async function main(args) {
       [
         ...nativeCases.map((x) => `--case NativeTests/NativeSqliteTests/${x}`),
         ...uiCases.map((x) => `--case DictionaryUITests/DictionaryTouchTests/${x}`),
-        ...[...scenarios, ...Object.keys(uiScenarios), ...recoveryScenarios].map((x) => `--scenario ${x}`),
+        ...[...scenarios, ...Object.keys(uiScenarios), ...recoveryScenarios,...capacityScenarios,'ios-review'].map((x) => `--scenario ${x}`),
         ...checkNames.map((x) => `check --check ${x}`)
       ].join('\n')
     )

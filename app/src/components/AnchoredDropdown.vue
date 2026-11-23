@@ -20,8 +20,9 @@ async function place(reveal = false): Promise<void> {
   if (!props.anchor || !props.open || revealing) return
   const rect = props.anchor.getBoundingClientRect()
   const viewport = globalThis.window.visualViewport
-  const viewportLeft = viewport?.offsetLeft ?? 0
-  const viewportTop = viewport?.offsetTop ?? 0
+  const viewportLeft = Math.max(0, (viewport?.offsetLeft ?? 0) - globalThis.window.scrollX)
+  // DOMRect 已随文档滚动移动；iOS 键盘平移不能再次计入可见区域。
+  const viewportTop = Math.max(0, (viewport?.offsetTop ?? 0) - globalThis.window.scrollY)
   const scrollBody = props.anchor.closest<globalThis.HTMLElement>('.overlay-body, [data-page-scroll]')
   const body = scrollBody?.getBoundingClientRect()
   const topEdge = Math.max(viewportTop, body?.top ?? viewportTop)

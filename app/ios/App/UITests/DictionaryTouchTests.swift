@@ -149,6 +149,140 @@ final class DictionaryTouchTests: XCTestCase {
         print("DEBUG_NATIVE_KEYBOARD_READY")
     }
 
+    func test51IosKeyboardNavigation() {
+        let original = XCUIDevice.shared.orientation
+        defer { XCUIDevice.shared.orientation = original }
+        for orientation in [UIDeviceOrientation.portrait,.landscapeLeft] {
+            XCUIDevice.shared.orientation = orientation
+            let rotated = XCTNSPredicateExpectation(predicate:NSPredicate { _,_ in
+                let size = self.app.windows.firstMatch.frame.size
+                return orientation == .portrait ? size.height > size.width : size.width > size.height
+            },object:nil)
+            XCTAssertEqual(XCTWaiter.wait(for:[rotated],timeout:3),.completed,"实际 App 未切换到目标方向")
+            tap("收支明细")
+            let search = app.searchFields.firstMatch
+            XCTAssertTrue(search.waitForExistence(timeout: 3))
+            search.tap()
+            search.typeText("中文输入")
+            expectValue(search,"中文输入")
+            search.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue,count:4))
+            dismissSearchKeyboard()
+            tap("记一笔")
+            if orientation == .portrait {
+                replaceEntryField("expense-unit-price","单价","12.3456")
+            } else {
+                // 横屏复核保留值、重新唤起数值键盘与保存可达；金额替换由既有专项覆盖。
+                let price = entryField("expense-unit-price","单价")
+                expectValue(price,"12.3456")
+                price.tap()
+                XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout:3))
+                dismissEntryKeyboard()
+            }
+            let save = app.buttons.matching(NSPredicate(format:"label == %@","保存支出")).firstMatch
+            for _ in 0..<5 {
+                if save.exists && save.isHittable { break }
+                app.webViews.firstMatch.swipeUp()
+            }
+            XCTAssertTrue(save.exists && save.isHittable,"键盘收起后保存不可达")
+            tap("我的")
+            tap("记一笔")
+            expectValue(entryField("expense-unit-price","单价"),"12.3456")
+        }
+        print("IOS_KEYBOARD_NAVIGATION_VERIFIED")
+    }
+
+    func test52IosCandidatesAndDate() {
+        let original = XCUIDevice.shared.orientation
+        defer { XCUIDevice.shared.orientation = original }
+        XCUIDevice.shared.orientation = .portrait
+        tap("收入")
+        let category = app.staticTexts.matching(NSPredicate(format:"label == %@","收入分类")).firstMatch
+        if !category.exists || !category.isHittable { tap("分类") }
+        tap("收入分类")
+        tap("搜索或新增")
+        entryField("income-category-search","搜索收入分类").typeText("其他")
+        tap("其他收入")
+        tap("支出")
+        app.webViews.firstMatch.swipeUp()
+        let dateCount = app.datePickers.count, wheelCount = app.pickerWheels.count
+        let hadKeyboard = app.keyboards.firstMatch.exists
+        tap("消费时间")
+        let picker = XCTNSPredicateExpectation(predicate:NSPredicate { _,_ in
+            self.app.datePickers.count > dateCount || self.app.pickerWheels.count > wheelCount
+                || !hadKeyboard && self.app.keyboards.firstMatch.exists
+        },object:nil)
+        XCTAssertEqual(XCTWaiter.wait(for:[picker],timeout:3),.completed,"原生日期选择未打开")
+        let done = app.buttons.matching(NSPredicate(format:"label IN %@",["Done","完成"])).allElementsBoundByIndex.last(where: { $0.isHittable })
+        if let done { done.tap() } else { app.coordinate(withNormalizedOffset:CGVector(dx:0.1,dy:0.085)).tap() }
+        tap("我的")
+        tap("记一笔")
+        print("IOS_CANDIDATE_DATE_VERIFIED")
+    }
+
+    func test53IosLandscapeCandidates() {
+        let original = XCUIDevice.shared.orientation
+        defer { XCUIDevice.shared.orientation = original }
+        XCUIDevice.shared.orientation = .landscapeLeft
+        let rotated = XCTNSPredicateExpectation(predicate:NSPredicate { _,_ in
+            self.app.windows.firstMatch.frame.width > self.app.windows.firstMatch.frame.height
+        },object:nil)
+        XCTAssertEqual(XCTWaiter.wait(for:[rotated],timeout:3),.completed)
+        tap("收入")
+        let category = app.staticTexts.matching(NSPredicate(format:"label == %@","收入分类")).firstMatch
+        if !category.exists || !category.isHittable { tap("分类") }
+        let input = entryField("income-category","收入分类")
+        // WebKit 的 hittable 可包含被固定保存栏覆盖的字段；先把命中中心带入正文。
+        for _ in 0..<5 {
+            let y = input.frame.midY
+            if y > 125 && y < 230 && input.isHittable { break }
+            let web = app.webViews.firstMatch
+            web.coordinate(withNormalizedOffset:CGVector(dx:0.5,dy:0.48)).press(forDuration:0.1,
+                thenDragTo:web.coordinate(withNormalizedOffset:CGVector(dx:0.5,dy:y >= 230 ? 0.38 : 0.58)),
+                withVelocity:.slow,thenHoldForDuration:0.2)
+        }
+        XCTAssertTrue(input.frame.midY > 125 && input.frame.midY < 230,"候选输入中心未进入横屏正文")
+        input.tap()
+        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout:3))
+        let previous = input.value as? String ?? ""
+        if !previous.isEmpty && previous != input.placeholderValue {
+            input.coordinate(withNormalizedOffset:CGVector(dx:0.99,dy:0.5)).tap()
+            input.typeText(String(repeating:XCUIKeyboardKey.delete.rawValue,count:previous.count))
+        }
+        let proof = XCTAttachment(screenshot:XCUIScreen.main.screenshot())
+        proof.name = "landscape-candidate-before-selection"; proof.lifetime = .keepAlways; add(proof)
+        let choice = app.otherElements.matching(NSPredicate(format:"label == %@","工资")).firstMatch
+        XCTAssertTrue(choice.waitForExistence(timeout:3),app.debugDescription)
+        let clear = app.buttons.matching(NSPredicate(format:"label == %@","清除选择")).firstMatch
+        if clear.exists {
+            let top = clear.frame.minY, bottom = input.frame.minY - 4, x = input.frame.midX
+            let origin = app.coordinate(withNormalizedOffset:.zero)
+            for _ in 0..<3 {
+                let center = choice.frame.midY
+                if center > top && center < bottom { break }
+                // 从工具条空白处开始，越过面板边缘拖动；不把短拖动误点成“清除”。
+                let from = center >= bottom ? bottom-3 : top+3
+                let to = center >= bottom ? max(1,top-12) : bottom+30
+                origin.withOffset(CGVector(dx:x,dy:from)).press(forDuration:0.1,
+                    thenDragTo:origin.withOffset(CGVector(dx:x,dy:to)),withVelocity:.slow,thenHoldForDuration:0.2)
+            }
+            XCTAssertTrue(choice.frame.midY > top && choice.frame.midY < bottom,"候选中心仍被工具条/输入遮挡")
+        }
+        XCTAssertTrue(choice.isHittable,app.debugDescription)
+        choice.tap()
+        dismissSearchKeyboard()
+        expectValue(input,"工资")
+        appears("记一笔")
+        // 选择完成后原有下拉关闭，金额与提交动作仍可访问。
+        XCTAssertTrue(entryField("income-amount","收入金额").exists)
+        let save = app.buttons.matching(NSPredicate(format:"label == %@","保存收入")).firstMatch
+        for _ in 0..<4 {
+            if save.exists && save.isHittable { break }
+            app.webViews.firstMatch.swipeUp()
+        }
+        XCTAssertTrue(save.exists && save.isHittable)
+        print("IOS_LANDSCAPE_CANDIDATE_VERIFIED")
+    }
+
     private func openKind(_ label: String) {
         openIndex()
         tap(label)

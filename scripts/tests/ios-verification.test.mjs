@@ -519,6 +519,36 @@ test('构建/安装/启动/单用例分别计时，长构建不误耗启动预�
   )
 })
 
+test('容量冷启动的启动和收尾不挤占单例预算，混合场景仍保留 60 秒限制', (t) => {
+  const p = project(t), run = fs.mkdtempSync(path.join(p.base, 'ios-full-')),
+    log = p.write('.local/ios/tmp/ai-agent/cold-clock/test.log', '')
+  let time = 1000
+  t.mock.method(Date, 'now', () => time)
+  const observer = observeFull({ run, evidenceRoot:p.base },
+    { now:() => time, limits:{ ...budgets,testCase:600000 } })
+  const id = 'CapacityColdTests/CapacityColdTests/testColdLaunch'
+  startPhase(run,{ stage:'test',coverage:['case/'+id],log,testCaseMs:60000 })
+  time += 37000
+  observer.poll()
+  fs.appendFileSync(log,"Test Case '-[CapacityColdTests.CapacityColdTests testColdLaunch]' started.\n")
+  observer.poll()
+  time += 55000
+  observer.poll()
+  fs.appendFileSync(log,"Test Case '-[CapacityColdTests.CapacityColdTests testColdLaunch]' passed (55 seconds).\n")
+  observer.poll()
+  time += 10000
+  observer.poll()
+  assert.deepEqual(observer.failedCases,[])
+  startPhase(run,{ stage:'test',coverage:['case/'+id],log,testCaseMs:60000 })
+  fs.writeFileSync(log,"Test Case '-[CapacityColdTests.CapacityColdTests testColdLaunch]' started.\n")
+  observer.poll()
+  time += 60001
+  assert.throws(() => observer.poll(),/60 秒预算/)
+  assert.deepEqual(observer.failedCases,[id])
+  startPhase(run,{ stage:'test',coverage:['case/'+id],log,testCaseMs:60001 })
+  assert.throws(() => observeFull({ run,evidenceRoot:p.base }).poll(),/预算不合法/)
+})
+
 test('各阶段超时与没有进入测试的启动超时明确分类，阶段内日志分块仍识别首败', (t) => {
   const p = project(t)
   let now = 1000
@@ -1108,6 +1138,8 @@ else if (args[0] === 'build-for-testing') {
     assert.deepEqual(lines.slice(fixture + 1, lines.indexOf('test')), ['sim:launch'],
       '夹具完成后启动且保持前台，不在 runner 之前再次终止')
     const run = result.stdout.match(/^EVIDENCE=(.+)$/m)[1]
+    for (const file of ['app-stdout.log','app-stderr.log'])
+      assert.equal(fs.statSync(path.join(run,file)).mode & 0o777,0o600,'App 原生日志保持私有')
     assert.equal(JSON.parse(fs.readFileSync(path.join(run, 'result.json'))).executedCases.length, 1)
   })
 

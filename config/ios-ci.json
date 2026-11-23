@@ -160,6 +160,12 @@
       "scenario": "data-cycle",
       "runner": "macos",
       "description": "CSV 文件、加密备份、恢复拒绝/确认与清空后的外部恢复"
+    },
+    "ui-ios-interaction": {
+      "kind": "ui",
+      "runner": "macos",
+      "description": "原生横竖屏中文/数字键盘、日期与候选、保存可达和返回草稿",
+      "scenario": "ios-interaction"
     }
   },
   "profiles": {
@@ -417,7 +423,8 @@
         "app/src/components/CachedPageView.vue",
         "app/src/components/AppToast.vue",
         "app/src/components/ComboboxField.vue",
-        "app/src/components/DictionaryCombobox.vue"
+        "app/src/components/DictionaryCombobox.vue",
+        "app/src/components/AnchoredDropdown.vue"
       ],
       "suites": [
         "ui-entry",
@@ -438,7 +445,8 @@
         "ui-dictionary-6",
         "ui-dictionary-7",
         "ui-report-dimensions",
-        "ui-data-management"
+        "ui-data-management",
+        "ui-ios-interaction"
       ],
       "exclude": [
         "**/*.spec.ts"
@@ -492,6 +500,26 @@
       "suites": [
         "ui-data-management"
       ]
+    },
+    {
+      "paths": [
+        "app/src/platform/textScale*",
+        "app/src/composables/useKeyboardViewport*",
+        "app/src/components/AppShell.vue",
+        "app/src/components/PageWorkspace.vue",
+        "app/src/main.ts",
+        "app/ios/App/UITests/**",
+        "app/src/App.vue",
+        "app/src/components/EntrySaveBar.vue",
+        "app/src/components/BottomNavigation.vue",
+        "app/ios/App/App/LedgerFilesPlugin.swift",
+        "app/src/platform/appearance*",
+        "app/ios/App/App/LedgerAppearancePlugin.swift",
+        "app/src/components/AnchoredDropdown.vue"
+      ],
+      "suites": [
+        "ui-ios-interaction"
+      ]
     }
   ],
   "supersedes": {
@@ -520,7 +548,8 @@
       "ui-dictionary-6",
       "ui-dictionary-7",
       "ui-report-dimensions",
-      "ui-data-management"
+      "ui-data-management",
+      "ui-ios-interaction"
     ]
   },
   "scriptSkips": {

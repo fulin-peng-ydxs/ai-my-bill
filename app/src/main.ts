@@ -12,11 +12,14 @@ import { useBootstrapStore } from './stores/bootstrap'
 import { installDraftLifecycle } from './platform/draftLifecycle'
 import { installCleanupLifecycle } from './platform/cleanupLifecycle'
 import { snapshotForeground } from './platform/backupLifecycle'
+import { installTextScale } from './platform/textScale'
 const pinia = createPinia()
 useThemeStore(pinia).initialize()
 installInputModality()
 installBeforeUnloadGuard()
 installDraftLifecycle()
+const textScale = installTextScale()
+if (import.meta.hot) import.meta.hot.dispose(() => { void textScale.stop() })
 // 首个 Vue 业务帧前恢复 SQLite 偏好/主题，不以浏览器缓存作为第二个事实源。
 await useBootstrapStore(pinia).initialize()
 createApp(App).use(pinia).use(router).mount('#app')

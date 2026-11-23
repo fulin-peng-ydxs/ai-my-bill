@@ -105,8 +105,10 @@ CI 规划入口消费 Actions 的 GITHUB_EVENT_PATH、GITHUB_EVENT_NAME、GITHUB
 | `SIMULATOR_UDID` | 模拟器测试进程的系统环境，由守卫与清单 simulatorId 比较 | 不是用户指定测试设备的配置入口；设备须由受管命令创建或复用 |
 | `MYBILL_FULL_ATTEMPT` | 调度器向内部 Shell 传递当前活动许可及阶段进度目录，common/ios-build 和完整原生入口均消费 | 子流程在生成资源前核对许可与工作区命令锁；外部提供同名变量不能替代有效许可 |
 | `MYBILL_FULL_SESSION` | 完整 simulator/touch 显式选择 `--session` 后，调度器传递已校验会话路径，子脚本在重置前再次校验设备 | 未选择会话时调度器清空该内部变量，不接受外部环境注入；借用与新建设备的生命周期按验证规范执行 |
+| `MYBILL_APP_ID` / `MYBILL_APP_NAME` | Xcode App 构建设置，默认 `com.mybill.offline` / `我的账单`；Capacity 构建显式传入独立 Bundle / 名称 | Capacity 两个测试 target 的构建前置和运行守卫只接受 `com.mybill.offline.capacity`，不放宽 NativeTests/DictionaryUITests 的模拟器守卫；显示名称用于区分验收 App |
+| `MYBILL_CAPACITY_CONTEXT` | 每次容量运行生成 JSON，经临时 xctestrun 传入：runId、mode、deviceId、count、sourceHash、artifactHash，页面/冷启动另绑定 datasetId | 最大 4096 字节，规模仅 10000/100000；测试核对 Bundle、环境和模拟器 UDID。device 模式仅供连接目标手机的可信 Mac；报告继续核对 Release、签名及完整采样，不接受模拟器代跑 |
 
-上述配置不进入 Run/Archive 环境或正式 App 资源，也不读取 `.local/web`。失败锁、证据与阶段预算、分层缓存、安装/沙盒迁移及会话清理的完整规则统一见[原生局部调试与完整验收](../testing/guide.md#原生局部调试与完整验收)；清单缺失负例及实际数据未写入判据见[工程检查](../testing/guide.md#工程检查)。
+测试上下文配置不进入 Run/Archive 环境或正式 App 资源；App 身份/显示名构建设置除外，也不读取 `.local/web`。失败锁、证据与阶段预算、分层缓存、安装/沙盒迁移及会话清理的完整规则统一见[原生局部调试与完整验收](../testing/guide.md#原生局部调试与完整验收)；清单缺失负例及实际数据未写入判据见[工程检查](../testing/guide.md#工程检查)。
 
 ### iOS 复测配置
 

@@ -114,6 +114,12 @@ test('分层缓存命中与失效按真实依赖传播，Swift/脚本/测试修�
   assert.notEqual(layerInputs(root, 'toolchain', selected, { assets: 'new-assets' }).native, original.native)
   assert.equal(layerInputs(root, 'toolchain', selected, { assets: 'assets', probe: 'new-probe' }).native, original.native,
     'UI target 不消费 hosted 探针')
+  const capacity = { scheme:'Capacity',configuration:'Release',appId:'com.mybill.offline.capacity' }
+  const base = layerInputs(root,'toolchain',capacity,{ assets:'assets',probe:'probe' })
+  assert.notEqual(layerInputs(root,'toolchain',capacity,{ assets:'assets',probe:'new-probe' }).native,base.native,
+    '容量 target 消费 hosted 探针，不能复用旧测试载荷')
+  assert.notEqual(layerInputs(root,'toolchain',{ ...capacity,appId:'com.mybill.offline' },{ assets:'assets',probe:'probe' }).native,base.native,
+    '不同 Bundle 身份不能混用容量构建')
   assert.notEqual(layerInputs(root, 'toolchain', { scheme: 'App', configuration: 'Debug' },
     { assets: 'assets', probe: 'new-probe' }).native,
   layerInputs(root, 'toolchain', { scheme: 'App', configuration: 'Debug' },

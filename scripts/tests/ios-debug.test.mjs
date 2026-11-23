@@ -1008,3 +1008,14 @@ test('T12 完整触摸沿用业务操作前的默认参照，清空回读拒绝�
     fs.writeFileSync(file,valid)
   }
 })
+
+test('容量冷启动自动化失败保留同一设备恢复需求，成功冷启动解除',async t => {
+  const root = temporary(t)
+  for (const [index,status] of ['failed','passed'].entries()) {
+    await new Promise(resolve => setTimeout(resolve,5))
+    const run = path.join(root,'run-Cold'+index); fs.mkdirSync(run)
+    fs.writeFileSync(path.join(run,'capacity-cold.log'),'cold')
+    fs.writeFileSync(path.join(run,'result.json'),JSON.stringify({ status }))
+    assert.equal(needsSimulatorRecovery(root),status !== 'passed')
+  }
+})

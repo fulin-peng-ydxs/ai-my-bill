@@ -34,8 +34,8 @@ export function layerInputs(root, toolchain, selected, outputs = {}) {
     types: digest(types + '\0' + toolchain),
     assets: digest(assets + '\0' + toolchain),
     probe: digest(probe + '\0' + toolchain),
-    native: digest([native, outputs.assets, selected.scheme === 'App' ? outputs.probe : '',
-      toolchain, selected.scheme, selected.configuration].join('\0'))
+    native: digest([native, outputs.assets, ['App','Capacity'].includes(selected.scheme) ? outputs.probe : '',
+      toolchain, selected.scheme, selected.configuration,selected.appId ?? ''].join('\0'))
   }
 }
 

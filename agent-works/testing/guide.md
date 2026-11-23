@@ -28,7 +28,7 @@
 
 App 检查统一从 [ios-app.sh](../../scripts/ios-app.sh) 进入 [命令调度器](../../scripts/ios-app.mjs)，完整检查委托 [完整流程](../../scripts/lib/ios-app-full.sh)，需先按 [README](../../README.md#离线-ios-app-开发入口) 安装 app 锁定依赖。各入口只证明本次回执中实际执行的范围；基础 sqliteProbe 使用受控实验数据，不能代替正式记账、完整升级/恢复、容量或真机验证。金额、时间及文本实现统一位于 app/src/domain；旧 Web 对应模块仅重导出，兼容回归无需启动旧服务。模拟器入口通过 test bundle 调用正式 LedgerDatabase.open→upgrade，在保护快照完成、迁移 SQL/履历已写但事务未提交、升级事务已提交三个阶段分别挂起；脚本动态定位本轮沙盒，观察到匹配阶段信号后仅终止本 App。每次故障步骤须返回预期 65，恢复 XCTest 必须核对已提交基线、版本/结构/履历及重试结果，并回读保护快照排除标记。另外通过原生文件守卫用例验证完整头中 magic 清零的非热 journal 可保留（包括其余头字段仍有值的情况），热 journal、短头和非空 WAL 拒绝复制；正式中断重试用例必须能重新生成快照。原始 SQLite 事务探针不能代替这组正式流程验证；模拟器不验证实体文件保护等级。
 
-App 设计门禁由 [designContract.spec.ts](../../app/src/app/designContract.spec.ts) 经 check:app 同一入口执行：Vue/TypeScript 解析真实导入和模板消费，核对九个核心组件登记、个人页面的唯一角色/路径及实际路由，拒绝私有颜色、注释假导入、缺登记与重复角色反例。21 个关键共享组件模板及三份全局样式的 SHA 基线来自准备提交 6419b93；未作为检查目标的业务消费者仍须按改动复核。四态及初始化重试由组件/状态测试覆盖，不用它们证明原生呈现。
+App 设计门禁由 [designContract.spec.ts](../../app/src/app/designContract.spec.ts) 经 check:app 同一入口执行：Vue/TypeScript 解析真实导入和模板消费，核对九个核心组件登记、个人页面的唯一角色/路径及实际路由，拒绝私有颜色、注释假导入、缺登记与重复角色反例。21 个关键共享组件模板及三份全局样式的 SHA 基线来自准备提交 6419b93；已登记的搜索输入绑定及横屏键盘样式适配均须可逆还原并匹配原摘要，例外不豁免其他布局变化；未作为检查目标的业务消费者仍须按改动复核。四态及初始化重试由组件/状态测试覆盖，不用它们证明原生呈现。
 
 [关闭重试回归](../../app/src/data/ledgerDatabase.spec.ts) 经 check:app 执行，在原生桥边界注入失败，覆盖关闭后禁止读写、保留所有权、重复关闭、直接重开及打开/校验与关闭同时失败的原因链；它不模拟真实 SQL 持久化。check:ios-app:simulator 的 lifecycleProbe 在真实原生库上补充注入关闭拒绝，恢复后调用真实关闭/重开，核对数据集、已提交金额和同名账本交接；故障包装仅存在于 test bundle，finally 恢复，不进入生产入口。
 
@@ -42,7 +42,7 @@ App 设计门禁由 [designContract.spec.ts](../../app/src/app/designContract.sp
 
 NativeTests 与 DictionaryUITests 只支持 simulator SDK，并由共享 [OwnedSimulatorTestContext](../../app/ios/App/NativeTests/OwnedSimulatorTestContext.swift) 在注入探针或启动 UI 操作前核对本轮设备；物理设备测试编译直接拒绝。生产 App 不编译守卫、不读取清单。清单来源及传递见[环境架构](../architecture/environment-configuration.md#离线-app-原生测试配置)，不手工绕过 Xcode 直接测试的拒绝。原生守卫用例覆盖平台、缺失/不匹配设备、路径、App ID、大小及无效内容；touch 脚本另在本轮空模拟器对两个入口去掉清单，要求具体用例以隔离守卫错误失败、xcodebuild 返回 65，再只读确认业务行未增加。普通测试失败返回 65 不能充当该负例成功。
 
-脚本先构建、安装并等待专用模拟器正式账本完成初始化，结束宿主后再执行测试，以分离首次运行时准备；准备有界等待不属于冷启动性能测量，也不改变原生入口 20 秒等待和单用例 60 秒预算。局部入口的启动、账本就绪和结束宿主分别保留 initialize-launch.log、initialize.log、stop-initialize.log；启动/终止输出直接写文件，以命令退出状态判断完成，避免辅助进程继承输出管道导致已退出命令仍等待 EOF。缺少就绪标记或终止失败仍拒绝准备夹具，整个初始化阶段继续受同一 60 秒预算约束。自动回归的 TestAction 不挂载调试器，日常 Run 调试设置保持；正式性能验收仍按目标真机 Release 规则执行。
+脚本先构建、安装并等待专用模拟器正式账本完成初始化，结束宿主后再执行测试，以分离首次运行时准备；准备有界等待不属于冷启动性能测量，也不改变原生入口 20 秒等待和普通单用例 60 秒预算。局部入口的启动、账本就绪和结束宿主分别保留 initialize-launch.log、initialize.log、stop-initialize.log；启动/终止输出直接写文件，以命令退出状态判断完成，避免辅助进程继承输出管道导致已退出命令仍等待 EOF。缺少就绪标记或终止失败仍拒绝准备夹具，整个初始化阶段继续受同一 60 秒预算约束。自动回归的 TestAction 不挂载调试器，日常 Run 调试设置保持；正式性能验收仍按目标真机 Release 规则执行。
 
 [原生触摸用例](../../app/ios/App/UITests/DictionaryTouchTests.swift)由独立 DictionaryTouch scheme 执行，使用 XCUITest 的 tap/typeText/原生选择器操作 Release App，不注入 JavaScript、不替换业务 API。与 hosted XCTest 的 DOM 事件场景分别记录，不将两者混称为真实触摸。check:ios-app:touch 先验证正式初始化并结束宿主，再用[受限夹具](../../scripts/fixtures/dictionary-touch.py)准备本轮空模拟器账本的历史引用；夹具拒绝已有自定义数据，不清空、不连接真机。缺少归属清单的预期拒绝完成后，先重启同一受管模拟器以释放 UI runner 会话，再准备正例夹具；设备 UUID、账本和清单保留。原有 11 项 UI 用例顺序共用本轮交互会话，各用例保留截图，最后验证重启；回读后追加 21 项商品/单位夹具，以另 4 项用例验证搜索末页合并、启用筛选末页停用后的有效页回退及条件保留，再只读核验结果。脚本结束 App 后回读稳定 ID、引用、模板、行版本、金额、名称快照、事件和幂等回执，执行完整性及外键检查；用例按操作链路拆分并保留原 60 秒执行预算配置，不上调超时；改名与局部键盘准备输入后以 3 秒有界等待核对 AX 精确值，不重放输入或改写页面；搜索收键盘只选择当前可触摸的“完成”按钮，并断言键盘消失，拒绝遗留的同名 AX 节点；合并保留商品的“请选择”提示值不依赖 AX label，以截图定位后原生触摸；触摸定位仍可用本机 Vision OCR 定位截图文字，再由 XCUITest 坐标触摸，不将 OCR 通过作为无障碍验收。此流程只证明开发模拟器的页面链路，不代替目标真机性能和最终交付。
 
@@ -76,7 +76,7 @@ NativeTests 与 DictionaryUITests 只支持 simulator SDK，并由共享 [OwnedS
 | 完整验收失败、取消或宿主中断 | 工作区状态保留失败/未完成锁；旧回执、失败之前的回执、无关用例以及改跑另一完整套件均拒绝。失败的用例、具体场景、Vitest 精确目标、资源目标或构建/安装阶段必须由新局部成功证据覆盖；首次完整验证及完整失败后的局部新故障也须有相关修复证据；当前输入的各套件结论从完整历史取得，不能以其他输入后来通过覆盖旧输入的失败；不将无用例名称的失败降级成任意原生烟测，缺入口先补入口 |
 | 同一输入复验再次失败 | 每个输入和故障事件只允许初验加一次相关局部证据解锁的复验；A→B→A 保留 A 的历史次数。再次失败/中断后须修正相关输入并重新局部验证，不能靠换输入再切回或刷绿色重置次数 |
 | 完整验收已通过且输入未变 | 默认拒绝再次启动。若通过后实际观察到同输入的新局部失败，须记录真实失败事件，并在其后取得覆盖全部相关目标的新成功回执，才开放该故障事件的复验；空匹配、取消、旧证据或无故重跑绿色不能解锁。README、规范措辞和生成物不使完整证据失效 |
-| 分阶段超时 | 所有根目录入口（含 common / ios-build）的单次构建 10 分钟、显式安装 2 分钟、设备启动 2 分钟、初始化 1 分钟、非原生检查 5 分钟；build-for-testing、simctl install 和 test-without-building 分开计时并写 timings.json。测试启动/用例交接等待 180 秒，单用例仍为 60 秒；预期中断准备为 120 秒。XCTest 可能再次校验或安装 runner，其耗时属于测试准备，不包含编译 |
+| 分阶段超时 | 所有根目录入口（含 common / ios-build）的单次构建 10 分钟、显式安装 2 分钟、设备启动 2 分钟、初始化 1 分钟、非原生检查 5 分钟；build-for-testing、simctl install 和 test-without-building 分开计时并写 timings.json。测试启动/用例交接等待 180 秒，普通单用例仍为 60 秒（容量 native/pages 的明确例外见下节）；预期中断准备为 120 秒。XCTest 可能再次校验或安装 runner，其耗时属于测试准备，不包含编译 |
 | 整轮超预算 | 调度器从入口建立单调时钟截止时间，SDK、runtime、Xcode 查询、证据检查及后续构建/执行共用剩余预算，不在进入验收体时重新计时。debug 局部调试与 ios-smoke 为 15 分钟；覆盖字典、收支、个人状态、生命周期、明细、报表及数据管理的 ios-touch 独立为 40 分钟，common / ios-build 仍为 40 分钟。预算由 totalBudgetFor 同时供入口截止时间和完整子流程使用，不受命令参数或环境变量覆写。CI `checks` 矩阵中的原生组全部步骤共用外层 45 分钟，脚本/通用组为 10 分钟。其中每个构建/检查阶段仍分别受 10/5 分钟限制，单条工具链查询最多 5 分钟，实际取阶段/子命令上限与整轮剩余时间的较小值。超时终止后最多再给清理 10 秒；各阶段和单用例预算仍独立生效；完整触摸的总预算匹配多阶段范围，不把局部调试、单用例或初始化故障改成更长等待 |
 
 输入摘要覆盖 App、测试/探针、Vitest 执行配置、工程、依赖锁、Node、宿主系统/架构，以及执行器、夹具和资源门禁；原生证据另绑定 Xcode、iOS SDK 与模拟器 runtime build，Node 检查不要求安装 Xcode。局部构建缓存与执行证据摘要分别维护，不因夹具修改无谓重编原生包。`.local/ios/tmp/ai-agent/ios-verification-state.json` 与 `ios-full-*/result.json` 保存尝试、来源证据、失败锁和次数；schema 2 保留全部历史及新局部失败事件，从 v1 合并已有逐轮回执并保留次数，不因关闭调试会话删除。禁止删除状态、换会话/工作目录或直接调用内部 Shell 规避限制，也不得用无关注释/格式改动刷摘要重置次数；内部 Shell 在生成资源前核对调度器活动许可。进程被 SIGKILL 留下 running 状态时按未完成处理，不自动放行。
@@ -150,6 +150,22 @@ UI 重置在移动目录前以权限 600 写入本会话 ui-reset.json，绑定�
 局部 result.json 的 buildLayers 逐层记录命中；installationReused、runnerInstallationReused、fixtureBaselineReused 分别记录 App、runner 和空账本基线复用，containerRebound 记录已核验的沙盒搬迁，未执行的能力不计入本轮覆盖。会话 layer-*.json 仅保存准备层摘要，close 回收本会话 DerivedData、基线和安装回执，保留日志、xcresult 及工作区失败锁。缓存与数据隔离优先执行 `node --test scripts/tests/ios-cache.test.mjs`，覆盖输入/产物缺失与篡改、失败不缓存、依赖传播、App/runner 独立核验、跨场景重铺、偏好/草稿/快照隔离、归属/摘要/链接拒绝、沙盒搬迁、替换失败回滚与四处终止后的连续恢复；统一 CLI 的初始化失败后缓存恢复、卸载前错误回执拒绝与合法新包迁移、UI/Release→App/Debug→UI/Release 切换及安装失败重试、完整借用重置/卸载失败、跨组沙盒迁移后回读路径刷新及完整失败锁回归位于 ios-verification.test.mjs。真实 SQLite 的新包数据集隔离及冷替换前跨数据集拒绝位于 ios-cache.test.mjs。登记的工具回归和 App 工程套件与 `debug check --check script-tests` 纳入同一文件，原生 job 归档分层回执。不为脚本回归额外启动完整原生验收。
 
 SPM 准备机制见[构建架构](../architecture/architecture-decisions.md#离线-ios-原生入口)。ios-cache.test.mjs 的干净检出场景在临时工程中使用真实 native:sync、锁定 Capacitor CLI 和独立插件副本；仅将未受影响的 Vue 编译替换为最小资源准备，不调用 Xcode、模拟器或网络包解析。断言首次无 CapApp-SPM/Podfile 时同步成功、生成 Swift target 源与 iOS 27.0 清单、重复同步与缺失骨架恢复不覆盖项目，并拒绝链接写入。该结果证明 SPM 初始化和同步，不代表原生编译或页面验收。统一 script-tests 在 Linux/macOS 消费同一场景；局部分层构建在 sync 前另记录 spm-prepare.log，沿用原构建阶段预算。
+
+#### iOS 交互与容量复核
+
+沿用 `npm run debug:ios-app -- run --session <本轮独立会话>`，单例选 `--case`，场景选 `--scenario`。`ios-review` 核查六个实际页面在 360×800、390×844、430×932、844×390 下的名称、溢出和网络资源，以及状态栏、Dynamic Type 通知和原外壳。`ios-interaction` 分成三个 XCUITest：横竖屏中文/数值键盘、保存可达与草稿保持，竖屏候选搜索/原生日期，横屏候选选择与收键盘后的页头恢复；`ios-candidates` 仅组合后两项，保留前一项已选分类的真实前置。仅低高度“记一笔”键盘状态临时让出固定页头，短屏候选工具条允许随列表滚动，避免工具条独占可见区；正常页面与样式仍按原基线；hosted DOM 证据与原生触摸分开登记；不声称模拟器执行了 VoiceOver 或真机硬件检查。合法备份密码字段不属于登录入口，外壳守卫按真实登录/组织/管理路由及入口拒绝。
+
+容量采用 `--scenario scale-10000` / `scale-100000`，支持 `-prepare`、`-native`、`-pages`、`-cold` 子阶段。完整场景按准备、原生服务、页面、冷启动执行；局部失败仅复验目标子阶段，不重复完整验收；冷启动自动化故障按既有恢复规则仅重启本轮设备，保留 UUID、数据与有效构建缓存。Capacity-Release 独立缓存与 Bundle 不替换普通调试 App；安装绑定本轮设备、会话和新旧制品。夹具在检查摘要、schema、数量、datasetId、完整性/FK 后才原子安装至隔离 App 的动态沙盒；外部安装、错误回执和未关闭旁路文件拒绝接管。已验证兼容的夹具可复用，测量仍绑定新运行/源码/制品，不拼接多轮局部成功。
+
+合成夹具经正式迁移/服务生成，含两类收支、365 天、退款与约 10% 回收站（保留原始支出用于编辑），500 条有界批次；回收期限从执行时计算。服务阶段观测真实 SQLite 与加密备份/保护恢复；页面阶段通过正式路由、表单和桥调用测量明细/筛选、保存、总览、五种时间粒度、九类支出和五类收入，等待当前查询与渲染、回读精确金额，不能以旧快照或服务耗时代替页面。冷启动从进程退出计至可用表单，XCUITest 结果标为自动化保守上界；同一测试会话内执行五个独立用例，每例输出一份带序号的原始样本。汇总必须恰好收到本轮同源码/制品/设备/数据集的五份无重复样本，缺失或混轮拒绝，不拼接旧结果。模拟器记录基线提交、实际工作区源码摘要和 workingTree 标记，不把未提交源码冒充已验证提交；服务取 3 次、文件 1 次、页面各 1 次、冷启动 5 次，仅为开发观测；App 与唯一关联 WebContent 的 RSS 合计单列，不能混入其他任务或冒充真机门槛。
+
+容量 native/pages 单例预算 600 秒，prepare/cold 及其他单例仍 60 秒；冷启动每例单独计时，自动化启动和收尾各受既有 180 秒约束，不能把三段压成 90 秒命令上限，也不延长 900 秒局部整轮预算。既有构建/安装/初始化预算累计、失败锁保持。普通 smoke 使用 App scheme 的 NativeTests，不加载 Capacity scheme，日常检查不暗中跑大数据。当前登记 `ui-ios-interaction`，规模 CI 汇总接入由 T15 承接，远端仍按需触发。
+
+真机执行器为 `Capacity` Release scheme，两个测试 target 支持 iPhone SDK，原有模拟器守卫不放宽。可信 Mac 按[容量配置](../architecture/environment-configuration.md#离线-app-原生测试配置)设置独立 Bundle、名称及目标设备，签名后执行同组 XCTest，冷启动不挂调试器。`node scripts/ios-capacity-report.mjs receipt.json native-test.log report.json [device-capture.json]` 只消费一次真实成功输出，不触发重跑、不覆盖旧报告。device 报告必须绑定同一运行、源码、制品、夹具和设备，要求干净工作区的 Release 候选，包含端到端时间窗、至少 30 次交互/各 5 次重操作、完整窗口 App/WebView 组合内存与正确性结论；缺项、样本不足或环境不符拒绝通过。组合内存同样绑定运行、源码、制品、设备和规模；冷启动连续测量段的进程缺席必须显式标注，不能用零值掩盖其他操作缺测；MB 按十进制计。服务计时、协议单测和未签名编译不证明真机性能。V14 真机容量、VoiceOver、文件选择/分享、锁屏/重启等随 T17 最终候选集中执行，未完成前保持待验证。
+
+局部 UI 预启动将 App 的原生 stdout/stderr 写入本轮 `app-stdout.log` / `app-stderr.log`（600）；只在受管模拟器及本机私有证据目录保留，不开启远程 Web Inspector。候选原生命中检查使用实际节点类型与可见区域，不能仅凭 WebKit 的 isHittable 点击被工具条或固定栏盖住的行。
+
+协议/隔离回归用 `node --test scripts/tests/ios-capacity.test.mjs`；外观通知乱序与释放、容量夹具及原设计基线使用对应 App Vitest 局部文件。采样停止或部分证据落盘失败仍尝试停止隔离 App，保留主失败与补偿失败，不能改记测量成功。
 
 #### 统一套件、按需 CI 与最终验收
 
