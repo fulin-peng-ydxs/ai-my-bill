@@ -162,8 +162,16 @@ export function resolveScaleProcesses(services,processes,simulatorId) {
   return { at:Date.now(),appPid:app.pid,webPid:views[0].pid,appBytes:app.bytes,webBytes:views[0].bytes }
 }
 
-function sampleMemory(root,run,sim) {
+/** 原始 RSS 与本轮清单、数据集和采集窗口绑定；模拟器观测不充当真机指标。 */
+export function scaleMemoryReport(context,samples,unavailable,windowStart,windowEnd) {
+  return { ...context,scope:'isolated-simulator-active-process-rss-observation',windowStart,windowEnd,samples,unavailable,
+    peakBytes:samples.length ? Math.max(...samples.map(x => x.appBytes+x.webBytes)) : null,
+    deviceAcceptance:'not-verified' }
+}
+
+function sampleMemory(root,run,context) {
   let stopped = false,serial = 0
+  const sim = context.deviceId, windowStart = Date.now()
   const samples = [], unavailable = []
   const loop = (async () => {
     while (!stopped) {
@@ -181,9 +189,7 @@ function sampleMemory(root,run,sim) {
   })()
   return { async stop() {
     stopped = true; await loop
-    return { scope:'isolated-simulator-active-process-rss-observation',samples,unavailable,
-      peakBytes:samples.length ? Math.max(...samples.map(x => x.appBytes+x.webBytes)) : null,
-      deviceAcceptance:'not-verified' }
+    return scaleMemoryReport(context,samples,unavailable,windowStart,Date.now())
   } }
 }
 
@@ -194,7 +200,7 @@ export async function finishScale({ sampler, save, stop, failure }) {
     try { await save(await sampler.stop()) } catch (error) { errors.push(error) }
   }
   try { await stop() } catch (error) { errors.push(error) }
-  if (errors.length) throw new AggregateError(failure ? [failure,...errors] : errors,'容量测试补偿失败：'+errors.map(error => error.message).join('；'))
+  if (errors.length) throw new AggregateError(failure ? [failure,...errors] : errors,'容量测试补偿失败。')
 }
 
 /** 共享既有锁、阶段时钟、进程清理和分层构建；只新增独立 Bundle 的规模场景。 */
@@ -287,7 +293,8 @@ export async function runScaleSimulator({ root,run,session,selected,toolchain,co
       replaceScaleFixture(path.join(data,'Library/OfflineLedger'),source,fixture,identity)
       context.datasetId = fixture.datasetId
     }
-    if (phase !== 'prepare' && !selected.capacityColdIndices) sampler = sampleMemory(root,run,sim)
+    if (fixture) context.datasetId = fixture.datasetId
+    if (phase !== 'prepare' && !selected.capacityColdIndices) sampler = sampleMemory(root,run,context)
     if (wants('native')) {
       const log = path.join(run,'capacity-native.log')
       await execute('CapacityTests/CapacityTests/testNativeCapacity',log,600)

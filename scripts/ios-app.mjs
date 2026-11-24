@@ -42,6 +42,7 @@ import {
 
 import { checkNames, checkDefinition } from './lib/ios-checks.mjs'
 import { spawnManaged } from './lib/ios-processes.mjs'
+import { errorMessage } from './lib/ios-errors.mjs'
 import { cachedLayer, layerInputs, assetOutputs, installationMatches,
   inspectInstallation, recordInstallation, forgetInstallation } from './lib/ios-cache.mjs'
 
@@ -267,7 +268,7 @@ async function runCheck(args) {
     deadline?.remaining()
     result.status = 'passed'
   } catch (error) {
-    result.error = error.message
+    result.error = errorMessage(error)
     result.cancelled = Boolean(interrupted)
     result.failure = failureDetails({ run, root })
     if (name === 'app-tests') {
@@ -423,11 +424,20 @@ async function runPartial(session, selected, toolchain, requested) {
     if (device.state !== 'Booted') await simctl('boot', device.udid)
     await command('xcrun', ['simctl', 'bootstatus', device.udid, '-b'], { log: path.join(run, 'boot.log') })
     if (selected.capacity) {
-      const { runScaleSimulator } = await import('./lib/ios-scale-run.mjs')
+      const { runScaleSimulator,readScaleCold } = await import('./lib/ios-scale-run.mjs')
       const scale = await runScaleSimulator({ root,run,session,selected,toolchain,command,tracked,prepareBuild })
       if (interrupted) throw new Error(`已取消：${interrupted}`)
       if (verificationHash(root, toolchain) !== result.verificationHash) throw new Error('容量执行期间输入变化。')
-      result = { ...result,...scale,status:'passed',coverage:[...selectedCoverage(selected),...finishPhases(run).flatMap(p => p.coverage)] }
+      const candidate = { ...result,...scale,status:'passed',coverage:[...selectedCoverage(selected),...finishPhases(run).flatMap(p => p.coverage)] }
+      if (selected.capacityPhase === 'all') {
+        const { validateScenario } = await import('./lib/ios-scenario-evidence.mjs')
+        validateScenario(root,requested.name,{...candidate,completedAt:Date.now()},
+          name => fs.readFileSync(path.join(run,name),'utf8'),name => readScaleCold(path.join(run,name)))
+      }
+      // 共享对账通过后才发布成功；校验失败保持初始 failed，不留下局部绿色。
+      if (interrupted) throw new Error(`已取消：${interrupted}`)
+      deadline?.remaining()
+      result = candidate
       console.log('容量局部观测通过；模拟器不计作真机容量验收。')
       return
     }
@@ -587,7 +597,7 @@ async function runPartial(session, selected, toolchain, requested) {
         await command('python3', ['-I', 'scripts/fixtures/ios-ui-baseline.py', 'settle-data',
           session.file, container, appHash, fixture], { log: path.join(run, 'data-transition.log') })
       } catch (error) {
-        if (testFailure) testFailure.message += `；换库终态登记失败：${error.message}`
+        if (testFailure) testFailure.message += `；换库终态登记失败：${errorMessage(error)}`
         else throw error
       }
     }
@@ -646,7 +656,7 @@ async function runPartial(session, selected, toolchain, requested) {
     result.status = 'passed'
     console.log(`局部验证通过（${selected.cases.length} 项，不能替代完整验收）；保留本轮模拟器供下一次调试。`)
   } catch (error) {
-    result.error = error.message
+    result.error = errorMessage(error)
     result.cancelled = Boolean(interrupted)
     result.failure = failureDetails({ run, root }, phaseObserver?.failedCases)
     throw error
@@ -730,7 +740,7 @@ async function main(args) {
       if (guarded) finishFull(root, attempt)
     } catch (error) {
       if (guarded) finishFull(root, attempt, error, observer.failedCases)
-      else attempt.error = error.message
+      else attempt.error = errorMessage(error)
       throw error
     } finally {
       if (!guarded) {
@@ -802,7 +812,7 @@ async function main(args) {
         if (devices.length > 1) throw new Error('创建补偿发现归属不唯一，未删除设备')
         for (const device of devices) await simctl('delete', device.udid)
       } catch (cleanupError) {
-        throw new Error(`${error.message}；创建补偿失败：${cleanupError.message}，归属清单：${pending}`)
+        throw new Error(`${errorMessage(error)}；创建补偿失败：${errorMessage(cleanupError)}，归属清单：${pending}`)
       } finally {
         interrupted = signal
         deadline = validationDeadline
@@ -894,10 +904,10 @@ try {
 } catch (error) {
   if (invocation) {
     invocation.status = 'failed'
-    invocation.error = error.message
+    invocation.error = errorMessage(error)
     invocation.cancelled = Boolean(interrupted)
   }
-  console.error(error.message)
+  console.error(errorMessage(error))
   process.exitCode = interrupted === 'SIGINT' ? 130 : interrupted ? 143 : 1
 } finally {
   try {

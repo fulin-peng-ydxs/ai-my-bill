@@ -291,6 +291,19 @@ function finishAttempt(p, hash, proof, failed = true, required = [target]) {
   return a
 }
 
+test('T15 聚合主失败及补偿原因同时进入完整失败锁、历史和原始回执',t=>{
+  const p=project(t),proof=p.evidence()
+  const attempt=beginFull(p.root,'ios-touch',proof,p.hash(),process.pid,p.context())
+  const failure=new AggregateError([new Error('PRIMARY_FAILURE',{cause:new Error('ROOT_CAUSE')}),new Error('CLEANUP_FAILURE')],'combined')
+  finishFull(p.root,attempt,failure,[target])
+  const state=readState(p.root),result=JSON.parse(fs.readFileSync(path.join(attempt.run,'result.json')))
+  for(const record of [state.attempts['ios-touch'],state.history.at(-1),result]){
+    assert.equal(record.status,'failed')
+    for(const message of ['PRIMARY_FAILURE','ROOT_CAUSE','CLEANUP_FAILURE'])assert.ok(record.error.includes(message))
+    assert.ok(record.failure.required.includes(caseKey(target)))
+  }
+})
+
 for (const interruption of ['cancelled', 'timed-out']) {
   test(`T12 真实 CLI 换库后 ${interruption} 保留意图且停止续发，下轮先恢复再准备`,
     { timeout: 30000, skip: process.platform !== 'darwin' }, t => {

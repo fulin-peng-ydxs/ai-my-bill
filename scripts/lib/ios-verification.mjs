@@ -7,6 +7,7 @@ import { performance } from 'node:perf_hooks'
 import { readSession, sourceHash, hashPaths, selection } from './ios-debug.mjs'
 import { checkDefinition, scriptTestFiles } from './ios-checks.mjs'
 import { assertScriptReport } from './ios-test-reports.mjs'
+import { errorMessage } from './ios-errors.mjs'
 
 export const controlInputs = [
   'scripts/ios-app.sh',
@@ -510,7 +511,7 @@ export function finishFull(root, attempt, error, failedCases = []) {
     finishedAt: Date.now(),
     failedCases,
     failure: error ? failureDetails({ ...attempt, root }, failedCases) : undefined,
-    error: error?.message,
+    error: error ? errorMessage(error) : undefined,
     timings: finishPhases(attempt.run, error)
   }
   state.attempts[attempt.mode] = result
@@ -708,7 +709,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
       })
     else if (action !== 'permit') throw new Error('未知内部操作。')
   } catch (error) {
-    console.error(error.message)
+    console.error(errorMessage(error))
     process.exitCode = 1
   }
 }

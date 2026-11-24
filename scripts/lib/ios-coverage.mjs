@@ -30,10 +30,24 @@ export function coverageReport(root,coverage,summary) {
   const raw = Object.entries(coverage).map(([name,value]) => [normalize(name),value])
   if (raw.length !== expected.length || new Set(raw.map(([name]) => name)).size !== raw.length ||
       raw.some(([name]) => !expected.includes(name))) throw new Error('覆盖率遗漏源码或混入其他范围。')
-  const keys = value => Object.keys(value ?? {}).sort().join(',')
+  const record = value => value !== null && typeof value === 'object' && !Array.isArray(value)
+  const keys = value => JSON.stringify(Object.keys(value).sort())
+  // Istanbul/V8 用 end.column=null 表示行尾；该合法哨兵不能误判为缺失。
+  const position = (value,end = false) => Number.isSafeInteger(value?.line) && value.line > 0 &&
+    (end && value.column === null || Number.isSafeInteger(value?.column) && value.column >= 0)
+  // Vue 源映射可返回逆序坐标；隐含 else 可没有源码位置，仍须保持分支计数与位置槽位一一对应。
+  const location = value => position(value?.start) && position(value?.end,true)
+  const branchLocation = value => location(value) || record(value?.start) && record(value?.end) &&
+    Object.keys(value.start).length === 0 && Object.keys(value.end).length === 0
   for (const [name,value] of raw) {
-    if (normalize(value.path ?? '') !== name || keys(value.s) !== keys(value.statementMap) ||
+    if (!record(value) || ['s','f','b','statementMap','fnMap','branchMap'].some(key => !record(value[key])) ||
+        normalize(value.path ?? '') !== name || keys(value.s) !== keys(value.statementMap) ||
         keys(value.f) !== keys(value.fnMap) || keys(value.b) !== keys(value.branchMap)) throw new Error('覆盖率映射缺失。')
+    if (Object.values(value.statementMap).some(x => !location(x)) ||
+        Object.values(value.fnMap).some(x => !location(x?.loc) || !location(x?.decl)) ||
+        Object.entries(value.b).some(([key,counts]) => !Array.isArray(counts) || !counts.length ||
+          !Array.isArray(value.branchMap[key]?.locations) || counts.length !== value.branchMap[key].locations.length ||
+          value.branchMap[key].locations.some(x => !branchLocation(x)))) throw new Error('覆盖率位置或分支映射无效。')
     const counts = [...Object.values(value.s),...Object.values(value.f),...Object.values(value.b).flat()]
     if (counts.some(n => !Number.isSafeInteger(n) || n < 0)) throw new Error('覆盖率计数无效。')
   }
@@ -68,6 +82,8 @@ export function coverageReport(root,coverage,summary) {
       throw new Error('覆盖率汇总与逐文件不符。')
     totals[metric] = summary.total[metric]
   }
+  // 允许纯类型文件无执行点，也允许真实的 0% 基线；整轮没有任何执行点不能冒充 100%。
+  if (totals.statements.total === 0) throw new Error('覆盖率整轮未采集到可执行语句。')
   const sourceHash = createHash('sha256')
   for (const file of expected) sourceHash.update(file+'\0').update(fs.readFileSync(path.join(root,file)))
   return { schema:1,status:'passed',sourceHash:sourceHash.digest('hex'),files:expected,totals,

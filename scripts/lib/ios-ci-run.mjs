@@ -13,6 +13,7 @@ import { validateScenario } from './ios-scenario-evidence.mjs'
 import { readScaleCold } from './ios-scale-run.mjs'
 import { coverageReport } from './ios-coverage.mjs'
 import { spawnManaged } from './ios-processes.mjs'
+import { errorMessage } from './ios-errors.mjs'
 
 const read = (file) => JSON.parse(plainFile(file))
 
@@ -295,7 +296,7 @@ export async function executeGroup(root, directory, group, { command = runComman
       } catch (e) {
         receipt.status = 'failed'
         receipt.exit = 1
-        receipt.error = e.message
+        receipt.error = errorMessage(e)
         throw e
       } finally {
         receipt.completedAt = Date.now()
@@ -324,7 +325,7 @@ export async function executeGroup(root, directory, group, { command = runComman
       schema: 1,
       plan: plan.id,
       status: error ? 'failed' : 'passed',
-      error: error?.message,
+      error: error ? errorMessage(error) : undefined,
       budgetMs,
       durationMs: performance.now() - groupStarted
     })
@@ -534,7 +535,7 @@ export function reconcile(root, directory, jobsStatus) {
       row.status = 'passed'
     } catch (e) {
       row.status = e.code === 'ENOENT' ? 'not-executed' : 'failed'
-      row.reason = e.message
+      row.reason = errorMessage(e)
     }
     rows.push(row)
   }

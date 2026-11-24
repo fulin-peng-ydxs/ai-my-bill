@@ -298,7 +298,13 @@
       ],
       "suites": [
         "ui-entry",
-        "ui-personal"
+        "ui-personal",
+        "scale-10000",
+        "scale-100000"
+      ],
+      "exclude": [
+        "**/*.spec.ts",
+        "**/*.d.ts"
       ]
     },
     {
@@ -308,7 +314,13 @@
       "suites": [
         "ui-query",
         "ui-reports",
-        "ui-report-dimensions"
+        "ui-report-dimensions",
+        "scale-10000",
+        "scale-100000"
+      ],
+      "exclude": [
+        "**/*.spec.ts",
+        "**/*.d.ts"
       ]
     },
     {
@@ -326,10 +338,13 @@
         "app/src/api/localEntries.ts"
       ],
       "suites": [
-        "ui-entry"
+        "ui-entry",
+        "scale-10000",
+        "scale-100000"
       ],
       "exclude": [
-        "**/*.spec.ts"
+        "**/*.spec.ts",
+        "**/*.d.ts"
       ]
     },
     {
@@ -383,10 +398,13 @@
       ],
       "suites": [
         "ui-query",
-        "ui-query-input"
+        "ui-query-input",
+        "scale-10000",
+        "scale-100000"
       ],
       "exclude": [
-        "**/*.spec.ts"
+        "**/*.spec.ts",
+        "**/*.d.ts"
       ]
     },
     {
@@ -398,10 +416,13 @@
       ],
       "suites": [
         "ui-reports",
-        "ui-report-dimensions"
+        "ui-report-dimensions",
+        "scale-10000",
+        "scale-100000"
       ],
       "exclude": [
-        "**/*.spec.ts"
+        "**/*.spec.ts",
+        "**/*.d.ts"
       ]
     },
     {
@@ -449,7 +470,8 @@
         "app/src/components/AppToast.vue",
         "app/src/components/ComboboxField.vue",
         "app/src/components/DictionaryCombobox.vue",
-        "app/src/components/AnchoredDropdown.vue"
+        "app/src/components/AnchoredDropdown.vue",
+        "app/src/components/PageWorkspace.vue"
       ],
       "suites": [
         "ui-entry",
@@ -471,10 +493,13 @@
         "ui-dictionary-7",
         "ui-report-dimensions",
         "ui-data-management",
-        "ui-ios-interaction"
+        "ui-ios-interaction",
+        "scale-10000",
+        "scale-100000"
       ],
       "exclude": [
-        "**/*.spec.ts"
+        "**/*.spec.ts",
+        "**/*.d.ts"
       ]
     },
     {
@@ -494,10 +519,13 @@
         "app/src/composables/useReportData*"
       ],
       "exclude": [
-        "**/*.spec.ts"
+        "**/*.spec.ts",
+        "**/*.d.ts"
       ],
       "suites": [
-        "ui-report-dimensions"
+        "ui-report-dimensions",
+        "scale-10000",
+        "scale-100000"
       ]
     },
     {
@@ -567,10 +595,16 @@
         "app/src/views/ReportView.vue",
         "app/src/views/LedgerView.vue",
         "app/src/components/Report*",
-        "app/src/stores/bootstrap.ts"
+        "app/src/stores/bootstrap.ts",
+        "app/src/api/**",
+        "app/src/composables/useReport*",
+        "app/src/composables/reportChartRuntime.ts",
+        "app/src/composables/useIncrementalLedgerQuery.ts"
       ],
       "exclude": [
-        "**/*.spec.ts"
+        "**/*.spec.ts",
+        "**/*.d.ts",
+        "app/src/api/generated/**"
       ],
       "suites": [
         "scale-10000",

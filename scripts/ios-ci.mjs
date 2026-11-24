@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url'
 import { createPlan, registry, executionMatrix } from './lib/ios-ci-plan.mjs'
 import { resultsDirectory, executeGroup, reconcile, archiveGroup,runCommand } from './lib/ios-ci-run.mjs'
 import { requestedScope } from './lib/ios-ci.mjs'
+import { errorMessage } from './lib/ios-errors.mjs'
 
 const root = fs.realpathSync(path.join(path.dirname(fileURLToPath(import.meta.url)), '..'))
 const args = process.argv.slice(2)
@@ -110,13 +111,13 @@ try {
         result = reconcile(root, directory, process.env.IOS_CI_CHECKS_STATUS)
       } catch (error) {
         // 汇总损坏也刷新机器结论，不能遗留上次绿色；原计划和失败报告不修改。
-        result = { schema: 1, status: 'incomplete', completeCandidate: false, error: error.message }
+        result = { schema: 1, status: 'incomplete', completeCandidate: false, error: errorMessage(error) }
         fs.writeFileSync(path.join(directory, 'ci-result.json'), JSON.stringify(result, null, 2), {
           mode: 0o600
         })
         fs.writeFileSync(
           path.join(directory, 'ci-result.md'),
-          `CI incomplete: ${error.message}\n`,
+          `CI incomplete: ${errorMessage(error)}\n`,
           { mode: 0o600 }
         )
       }
@@ -130,6 +131,6 @@ try {
       '用法：ci:ios-app -- check|list；plan [change|scripts|app|final|套件] --base SHA；run --results PATH --group linux|macos；result --results PATH。'
     )
 } catch (error) {
-  console.error(error.message)
+  console.error(errorMessage(error))
   process.exitCode = 1
 }

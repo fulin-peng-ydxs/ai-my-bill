@@ -186,9 +186,13 @@ SPM 准备机制见[构建架构](../architecture/architecture-decisions.md#离�
 | `install-gate` | 仅可信 Mac 显式提供安装材料时执行，未接入自动触发；缺手机/报告/签名或候选不符保持未完成，不能由工程绿色兜底 |
 | `dependency-audit` 或其他登记套件名 | 本地可只规划单套件；远端除上述范围外仅提供独立依赖审计，避免引入多套入口 |
 
-覆盖率随既有 App 测试一次采集，固定最多两个 worker 控制插桩并发开销，不延长单测默认时限，也不再单独重跑同一套测试；V8 provider 与 Vitest 同版本锁定。范围为 app/src 的可执行 TS/Vue，排除 spec、声明与生成 API 类型。覆盖率目录独立于执行日志，包含未导入源码；对账重新计算逐文件与总计、校验完整源码清单及摘要，缺文件、坏计数或手填汇总不能通过。当前先记录真实基线，不设虚构百分比阈值；原始 coverage-final/summary 与 proof 随同一 attempt 归档。ios-delivery.test.mjs 用真实局部 V8 采集及坏报告反例验证，不把协议夹具当成真机采样。
+覆盖率随既有 App 测试一次采集，固定最多两个 worker 控制插桩并发开销，不延长单测默认时限，也不再单独重跑同一套测试；V8 provider 与 Vitest 同版本锁定。范围为 app/src 的可执行 TS/Vue，排除 spec、声明与生成 API 类型。覆盖率目录独立于执行日志，包含未导入源码；对账重新计算逐文件与总计、校验完整源码清单及摘要，缺文件、坏计数、映射缺失或整轮零执行点不能通过；纯类型文件可以没有执行点，真实 0% 基线仍保留，不用零采集伪装 100%。位置校验兼容 V8 的行尾 null、Vue 源映射逆序和隐含 else 空位置。当前先记录真实基线，不设虚构百分比阈值；原始 coverage-final/summary 与 proof 随同一 attempt 归档。ios-delivery.test.mjs 用真实局部 V8 采集及坏报告反例验证，不把协议夹具当成真机采样。
 
-原生执行组可在本机 `run --group macos --session "$IOS_DEBUG_SESSION"` 显式复用已核验的本轮会话，结束只 suspend、保留缓存；未提供时创建本组设备并在结束 close。外部/闭合会话拒绝，失败与完整锁仍按原规则保留。按路径命中的存储、查询、报表、启动和依赖变更选择规模专项；无已知专项归属的 app/src 运行源码保守追加原生和两种规模，spec/声明/生成类型不走这条兜底。
+原生执行组可在本机 `run --group macos --session "$IOS_DEBUG_SESSION"` 显式复用已核验的本轮会话，结束只 suspend、保留缓存；未提供时创建本组设备并在结束 close。外部/闭合会话拒绝，失败与完整锁仍按原规则保留。性能页面、共享组件的所属规则同时登记 UI 与两种规模，命中 UI 不代表容量已覆盖；API、查询/报表组合逻辑、存储、启动和依赖按各自影响选择规模专项，单测、声明与生成类型排除，字典管理等无容量消费的页面不因此追加规模；无已知专项归属的 app/src 运行源码保守追加原生和两种规模，spec/声明/生成类型不走这条兜底。
+
+本地完整规模在发布成功前与 CI 收集/汇总共用同一报告校验器，失败不登记绿色。规模对账核验冷启动设备、mode 与 automation-upper-bound 口径；页面/冷启动时间窗必须落在真实执行阶段内。RSS 报告由同一采样器绑定 runId、源码/制品、设备、规模、mode、datasetId 及 windowStart/windowEnd，时间必须有限、单调且位于本轮窗口，原生/页面/冷启动阶段均有实际观测，不以峰值自洽代替来源。新增字段缺失的历史报告仍是原版本证据，不能补字段后冒充当前完整规模汇总；需要新汇总时由原执行器采集。模拟器仍只作观测，不套用真机绝对门槛或要求真机连续采样。
+
+CLI、局部回执、CI 汇总及完整失败锁共用 ios-errors.mjs 的有界原因链，主失败、嵌套 cause 与各补偿失败均保留；循环及过大链截断，不输出堆栈或任意对象属性，不改变失败/取消状态和清理预算。
 
 可信手动交付入口（T17 实际签名候选才执行）：
 
@@ -197,9 +201,9 @@ npm run ci:ios-app -- signing-check --app "$IOS_SIGNED_APP" --candidate "$IOS_CA
 npm run ci:ios-app -- install-gate --input "$IOS_INSTALL_INPUT" --output "$IOS_INSTALL_REPORT"
 ```
 
-以上变量为本次命令参数，不是 App 运行环境配置。candidate JSON 保存 source（同 CI 的 commit/hash）、configuration=Release、workingTree=false、debugger=false、正式 appId、artifactHash、capacityArtifactHash、measurementSourceHash、teamId、version、buildVersion、deviceId。正式 App 与独立容量 App 的制品摘要分开，测量源码、版本和 Team 必须一致。signing-check 在干净检出上核对实际 App 摘要、codesign、Info.plist 和描述文件的 Team/设备/有效期，临时描述文件处理后回收，不生成或更新证书。签名检查不证明已安装或真实业务已验。
+以上变量为本次命令参数，不是 App 运行环境配置。candidate JSON 保存 source（同 CI 的 commit/hash）、configuration=Release、workingTree=false、debugger=false、正式 appId、artifactHash、capacityArtifactHash、measurementSourceHash、teamId、version、buildVersion、deviceId。正式 App 与独立容量 App 的制品摘要分开，测量源码、版本和 Team 必须一致。signing-check 在干净检出上核对实际 App 摘要、codesign、Info.plist 和描述文件的 Team/设备/有效期，并提取实际签名 entitlements 与叶证书：App ID 精确匹配或合法尾部通配、独立 App ID prefix、权限不超过 profile allowlist、实际证书在授权列表内；App 主动收窄布尔权限可以接纳。授权证据随 signature.authorization 保存，install-gate 使用同一校验器重新核验；缺少该证据的旧签名摘要须重新运行 signing-check，不能手填通过标记。临时描述文件及提取材料处理后回收，不生成或更新证书。签名检查不证明已安装或真实业务已验。
 
-install-input JSON 的 ci/candidate/signature 为对应文件路径，devices 为两份 `{receipt, observation, capture}` 原始真机材料路径数组（含 1 万/10 万条）。ci 必须是现有结果目录的 ci-result.json，入口重新对账其计划、实际原报告及同源码完整候选；候选工作区不干净、签名过期、缺设备/指标、Debug、模拟器、错误候选及稳定性失败均拒绝。1 万条硬指标必须通过，10 万条仅性能超目标可观测；原始材料和逐项判定保留到 install-report.json。也可先 `plan install-gate`，在该结果目录显式放置 install-input.json 后运行 macos 组；不将它追加到普通 final 以自动索取手机/证书。真实性能、安装/升级及 VoiceOver 等仍按最终候选另验，协议测试不代跑。
+install-input JSON 的 ci/candidate/signature 为对应文件路径，devices 为两份 `{receipt, observation, capture}` 原始真机材料路径数组（含 1 万/10 万条）。ci 必须是现有结果目录的 ci-result.json，入口重新对账其计划、实际原报告及同源码完整候选；候选工作区不干净、签名过期、缺设备/指标、Debug、模拟器、错误候选及稳定性失败均拒绝。1 万条硬指标必须通过，10 万条仅性能超目标可观测；原始材料和逐项判定保留到 install-report.json。也可先 `plan install-gate`，在该结果目录显式放置 install-input.json 后运行 macos 组；不将它追加到普通 final 以自动索取手机/证书。真实性能、安装/升级及 VoiceOver 等仍按最终候选另验，协议测试不代跑。ios-delivery.test.mjs 覆盖空采集/合法零覆盖、性能专项分流、规模来源/窗口及落盘原因；ios-signing.test.mjs 用合成授权和受控 codesign/security/plutil 验证共享授权规则、真实 CLI 提取/拒绝接线和临时文件回收，Linux/macOS 均由普通工具回归自动发现。受控工具不证明真实签名或安装通过；失败锁原因链由 ios-verification.test.mjs 的 T15 用例核验。
 
 日常定位仍先使用上面的 `debug check --file/--name`、原生单用例或小场景，不为取得新登记回执重复测试。需要有固定范围与正式报告的集中检查时，在仓库根目录执行：
 

@@ -31,6 +31,8 @@ export function validateScenario(root,scenario,result,raw,readCold) {
   const coldLog = raw('capacity-cold.log')
   if (!/\*\* TEST (?:EXECUTE )?SUCCEEDED \*\*/.test(coldLog)) fail('冷启动未完成')
   const cold = readCold('capacity-cold.log')
+  if (cold.deviceId !== receipt.deviceId || cold.mode !== receipt.mode ||
+      cold.clockDefinition !== 'automation-upper-bound' || native.mode !== receipt.mode) fail('设备、模式或冷启动口径不符')
   const testLogs = ['capacity-prepare.log','capacity-native.log','capacity-pages.log','capacity-cold.log'].map(raw).join('\n')
   for (const id of selected.cases) if (!testLogs.includes(` ${id.split('/').at(-1)}]' passed`)) fail('实际用例未完整通过')
   for (const value of [fixture,native,pages,cold]) if (value.runId !== receipt.runId || value.sourceHash !== receipt.sourceHash ||
@@ -44,12 +46,33 @@ export function validateScenario(root,scenario,result,raw,readCold) {
   const metrics = ['list','filter','save','overview',...['DAY','WEEK','MONTH','QUARTER','YEAR'].map(x=>'time.'+x),
     ...['CATEGORY','PRODUCT','FUNDING_CHANNEL','PURCHASE_CHANNEL','LOCATION','HABIT','PRICE','FREQUENCY','QUALITY'].map(x=>'EXPENSE.'+x),
     ...['CATEGORY','FUNDING_CHANNEL','PAYER','NAME','FREQUENCY'].map(x=>'INCOME.'+x)]
-  if (pages.correctness !== true || pages.crashed !== false) fail('页面正确性未通过')
+  if (pages.scope !== 'page-e2e' || pages.correctness !== true || pages.crashed !== false) fail('页面正确性未通过')
   for (const key of metrics) if (!pages.samples?.[key]?.length || pages.samples[key].some(x=>!Number.isFinite(x)||x<=0) ||
     pages.spans?.[key]?.length !== pages.samples[key].length || pages.spans[key].some((window,i)=>!Number.isFinite(window.start)||!Number.isFinite(window.end)||Math.abs(window.end-window.start-pages.samples[key][i])>1)) fail('页面缺少指标或时间窗')
-  if (!(report.memory?.samples?.length >= 2) || report.memory.samples.some(x =>
+  const memory = report.memory, windows = result.timings
+  if (!Number.isFinite(result.completedAt) || windows.some(x => !Number.isFinite(x.startedAt) ||
+      !Number.isFinite(x.finishedAt) || x.finishedAt < x.startedAt)) fail('执行时间窗缺失')
+  const runStart = Math.min(...windows.map(x => x.startedAt))
+  const pagePhase = windows.find(x => x.coverage?.includes('case/'+selected.cases[2]))
+  if (!pagePhase || metrics.some(key => pages.spans[key].some(x => x.start < pagePhase.startedAt || x.end > pagePhase.finishedAt)))
+    fail('页面时间窗不符')
+  if (!memory || ['runId','sourceHash','artifactHash','deviceId','count','mode'].some(key => memory[key] !== receipt[key]) ||
+      memory.datasetId !== fixture.datasetId || memory.scope !== 'isolated-simulator-active-process-rss-observation' ||
+      !Number.isFinite(memory.windowStart) || !Number.isFinite(memory.windowEnd) ||
+      memory.windowStart < runStart || memory.windowEnd > result.completedAt || memory.windowEnd <= memory.windowStart)
+    fail('内存来源或采集窗口不符')
+  if (!(memory.samples?.length >= 2) || memory.samples.some((x,i,all) =>
+      !Number.isFinite(x.at) || x.at < memory.windowStart || x.at > memory.windowEnd || i && x.at <= all[i-1].at ||
       !Number.isSafeInteger(x.appPid) || x.appPid <= 0 || !Number.isSafeInteger(x.webPid) || x.webPid <= 0 || x.appPid === x.webPid || !Number.isFinite(x.appBytes) || !Number.isFinite(x.webBytes) || !(x.appBytes>0) || !(x.webBytes>0))) fail('组合内存缺失')
-  if (report.memory.peakBytes !== Math.max(...report.memory.samples.map(x=>x.appBytes+x.webBytes))) fail('内存峰值与样本不符')
+  if (memory.peakBytes !== Math.max(...memory.samples.map(x=>x.appBytes+x.webBytes))) fail('内存峰值与样本不符')
+  // 每个实际观测阶段都有本轮 RSS；不要求模拟器达到真机连续采样/绝对门槛。
+  for (const id of selected.cases.slice(1)) {
+    const phase = windows.find(x => x.coverage?.includes('case/'+id))
+    if (!phase || !memory.samples.some(x => x.at >= phase.startedAt && x.at <= phase.finishedAt)) fail('内存未覆盖实际观测阶段')
+  }
+  const coldPhase = windows.find(x => x.coverage?.includes('case/'+selected.cases[3]))
+  if (!coldPhase || cold.spans.some((x,i,all) => x.start < coldPhase.startedAt || x.end > coldPhase.finishedAt ||
+      x.end <= x.start || i && x.start < all[i-1].end)) fail('冷启动时间窗不符')
   for (const id of selected.cases) if (!result.coverage?.includes('case/'+id) ||
       !result.timings.some(p=>p.coverage?.includes('case/'+id))) fail('缺少必需阶段')
 }

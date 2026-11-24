@@ -1,5 +1,6 @@
 import { isDeepStrictEqual as same } from 'node:util'
 import { capacityReport } from './ios-capacity.mjs'
+import { signingAuthorization } from './ios-signing.mjs'
 
 const fail = message => { throw new Error('安装交付未完成：'+message) }
 const hash = value => typeof value === 'string' && /^[a-f0-9]{64}$/.test(value)
@@ -16,6 +17,7 @@ export function installationGate(ci,candidate,devices,signature,now = Date.now()
       ['artifactHash','appId','teamId'].some(key=>signature[key]!==candidate[key]) || !signature.deviceId ||
       !Number.isFinite(Date.parse(signature.checkedAt)) || Date.parse(signature.checkedAt)>now ||
       !(Date.parse(signature.profileExpiresAt)>now)) fail('签名未核验、归属不符或已过期')
+  signingAuthorization(candidate,signature.authorization)
   if (!Array.isArray(devices) || devices.length !== 2) fail('缺少两种规模的目标真机报告')
   const counts = new Set(), observations = []
   for (const value of devices) {
