@@ -184,6 +184,22 @@ test('冷启动五单例仅聚合本轮同源样本，缺失、重复和混轮�
   for(const name of ['scale-10000-cold-00','scale-10000-cold-06','scale-10000-native-02'])
     assert.throws(()=>selection('--scenario',name,[]),/未知用例/)
 
+  const short = structuredClone(events)
+  short[0].samples=[0.5]
+  short[0].spans[0].end=short[0].spans[0].start+0.5
+  write(short)
+  assert.equal(readScaleCold(file).samples[0],0.5)
+  write([short[0]])
+  assert.equal(readScaleCold(file,[0]).samples[0],0.5)
+  for(const duration of [0,-0.25]) {
+    const invalid=structuredClone(short)
+    invalid[0].spans[0].end=invalid[0].spans[0].start+duration
+    write(invalid)
+    assert.throws(()=>readScaleCold(file),/有效样本/)
+    write([invalid[0]])
+    assert.throws(()=>readScaleCold(file,[0]),/有效样本/)
+  }
+
   for (const mutate of [xs => xs.pop(),xs => xs.push(xs[0]),xs => xs[4].sampleIndex=0,
     ...['runId','datasetId','deviceId','sourceHash','artifactHash','mode','clockDefinition','count'].map(key => xs => xs[4][key]='other'),
     xs => xs[4].spans[0].end+=2,xs => xs[4].samples=[NaN]]) {

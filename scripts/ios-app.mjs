@@ -428,7 +428,10 @@ async function runPartial(session, selected, toolchain, requested) {
       const scale = await runScaleSimulator({ root,run,session,selected,toolchain,command,tracked,prepareBuild })
       if (interrupted) throw new Error(`已取消：${interrupted}`)
       if (verificationHash(root, toolchain) !== result.verificationHash) throw new Error('容量执行期间输入变化。')
-      const candidate = { ...result,...scale,status:'passed',coverage:[...selectedCoverage(selected),...finishPhases(run).flatMap(p => p.coverage)] }
+      // 校验与最终回执消费同一份已结束阶段；不能等 finally 才补 timings。
+      const timings = finishPhases(run)
+      const candidate = { ...result,...scale,status:'passed',timings,
+        coverage:[...selectedCoverage(selected),...timings.flatMap(p => p.coverage)] }
       if (selected.capacityPhase === 'all') {
         const { validateScenario } = await import('./lib/ios-scenario-evidence.mjs')
         validateScenario(root,requested.name,{...candidate,completedAt:Date.now()},

@@ -25,6 +25,7 @@ export function readScaleCold(file,indices = [0,1,2,3,4]) {
     keys.some(key => x[key] === undefined || x[key] !== events[0][key]) ||
     x.samples?.length !== 1 || !Number.isFinite(x.samples[0]) || x.samples[0] <= 0 ||
     x.spans?.length !== 1 || !Number.isFinite(x.spans[0].start) || !Number.isFinite(x.spans[0].end) ||
+    x.spans[0].end <= x.spans[0].start ||
     Math.abs(x.spans[0].end-x.spans[0].start-x.samples[0]) > 1))
     throw new Error('冷启动必须包含本轮同源、无重复的'+(indices.length===5 ? '五份' : indices.length+'份')+'有效样本。')
   events.sort((a,b) => a.sampleIndex-b.sampleIndex)

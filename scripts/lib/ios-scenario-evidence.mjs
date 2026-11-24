@@ -47,8 +47,11 @@ export function validateScenario(root,scenario,result,raw,readCold) {
     ...['CATEGORY','PRODUCT','FUNDING_CHANNEL','PURCHASE_CHANNEL','LOCATION','HABIT','PRICE','FREQUENCY','QUALITY'].map(x=>'EXPENSE.'+x),
     ...['CATEGORY','FUNDING_CHANNEL','PAYER','NAME','FREQUENCY'].map(x=>'INCOME.'+x)]
   if (pages.scope !== 'page-e2e' || pages.correctness !== true || pages.crashed !== false) fail('页面正确性未通过')
+  // 误差容忍仅用于正时间窗，不能让零长度或逆序窗口借亚毫秒样本通过。
   for (const key of metrics) if (!pages.samples?.[key]?.length || pages.samples[key].some(x=>!Number.isFinite(x)||x<=0) ||
-    pages.spans?.[key]?.length !== pages.samples[key].length || pages.spans[key].some((window,i)=>!Number.isFinite(window.start)||!Number.isFinite(window.end)||Math.abs(window.end-window.start-pages.samples[key][i])>1)) fail('页面缺少指标或时间窗')
+    pages.spans?.[key]?.length !== pages.samples[key].length || pages.spans[key].some((window,i) =>
+      !Number.isFinite(window.start) || !Number.isFinite(window.end) || window.end <= window.start ||
+      Math.abs(window.end-window.start-pages.samples[key][i]) > 1)) fail('页面缺少指标或时间窗')
   const memory = report.memory, windows = result.timings
   if (!Number.isFinite(result.completedAt) || windows.some(x => !Number.isFinite(x.startedAt) ||
       !Number.isFinite(x.finishedAt) || x.finishedAt < x.startedAt)) fail('执行时间窗缺失')

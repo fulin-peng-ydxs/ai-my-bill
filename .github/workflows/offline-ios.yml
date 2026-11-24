@@ -147,6 +147,7 @@ jobs:
           merge-multiple: true
       # 同一对账器核验必需阶段/构建成功记录及 TAP 的 TODO、平台跳过，不只检查退出码。
       # 覆盖率拒绝空采集；规模重验设备/计时/RSS 窗口。签名授权仍只在可信手动入口核验。
+      # 完整规模先归集结束阶段；共享表单/抽屉按跨页分流，非正时间窗拒绝。
       # 各组复制原报告及摘要；结果目录与源码一致，不从历史绿色继承结果。
       - name: Reconcile required and executed checks
         id: result

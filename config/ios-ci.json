@@ -471,7 +471,9 @@
         "app/src/components/ComboboxField.vue",
         "app/src/components/DictionaryCombobox.vue",
         "app/src/components/AnchoredDropdown.vue",
-        "app/src/components/PageWorkspace.vue"
+        "app/src/components/PageWorkspace.vue",
+        "app/src/components/AppDrawer.vue",
+        "app/src/components/FormField.vue"
       ],
       "suites": [
         "ui-entry",
@@ -538,8 +540,6 @@
         "app/src/platform/backupLifecycle.ts",
         "app/src/views/ProfileView.vue",
         "app/src/stores/bootstrap.ts",
-        "app/src/components/AppDrawer.vue",
-        "app/src/components/FormField.vue",
         "app/src/components/SettingsGroup.vue",
         "app/ios/App/App/LedgerDataFiles.swift",
         "app/ios/App/App/LedgerFilesPlugin.swift",

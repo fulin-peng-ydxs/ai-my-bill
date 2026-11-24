@@ -107,6 +107,22 @@ test('T15 schema/seed/查询/恢复/锁与未知数据路径选择规模专项�
   assert.ok(mixed.includes('ui-report-dimensions')&&mixed.includes('scale-10000'))
 })
 
+test('T15 表单与抽屉共享组件选择跨页及容量专项，单测/声明排除且混合变更保留',()=>{
+  const r=registry(repository)
+  const shared=selectSuites(r,'change',['app/src/components/AppShell.vue']).map(x=>x.name)
+  for(const suite of ['ui-entry','ui-personal','ui-lifecycle','ui-query','ui-reports','ui-report-dimensions',
+    'ui-data-management','ui-dictionary-0','ui-ios-interaction','scale-10000','scale-100000']) assert.ok(shared.includes(suite),suite)
+  for(const component of ['FormField','AppDrawer']) {
+    const implementation='app/src/components/'+component+'.vue'
+    const spec='app/src/components/'+component+'.spec.ts', declaration='app/src/components/'+component+'.d.ts'
+    assert.deepEqual(selectSuites(r,'change',[implementation]).map(x=>x.name),shared)
+    assert.deepEqual(selectSuites(r,'change',[spec,declaration]).map(x=>x.name),['secrets','app-common'])
+    assert.deepEqual(selectSuites(r,'change',[spec,declaration,implementation]).map(x=>x.name),shared)
+  }
+  assert.ok(!shared.includes('touch') && !shared.includes('install-gate'))
+  assert.ok(!selectSuites(r,'change',['app/src/components/SettingsGroup.vue']).some(x=>x.name.startsWith('scale-')))
+})
+
 test('T15 规模原始报告拒绝缺阶段、少跑、混轮、过时源码及伪造页面/内存指标',async t=>{
   const {validateScenario}=await import('../lib/ios-scenario-evidence.mjs')
   const {selection,sourceHash}=await import('../lib/ios-debug.mjs')
@@ -147,6 +163,22 @@ test('T15 规模原始报告拒绝缺阶段、少跑、混轮、过时源码及�
     const report=JSON.parse(p.logs['capacity-report.json']);report.cold=readScaleCold(file);p.logs['capacity-report.json']=JSON.stringify(report)
   }
   const alterMemory=(p,change)=>{const report=JSON.parse(p.logs['capacity-report.json']);change(report.memory);p.logs['capacity-report.json']=JSON.stringify(report)}
+  // 同步原始页面日志及派生报告，确保拒绝来自时间窗语义，而非副本不一致。
+  const alterPageWindow=(p,duration)=>{
+    const report=JSON.parse(p.logs['capacity-report.json']),pages=report.pages
+    pages.samples.list[0]=0.5
+    pages.spans.list[0].end=pages.spans.list[0].start+duration
+    p.logs['capacity-pages.log']=p.logs['capacity-pages.log'].replace(/^IOS_CAPACITY_PAGES .*$/m,'IOS_CAPACITY_PAGES '+JSON.stringify(pages))
+    p.logs['capacity-report.json']=JSON.stringify(report)
+  }
+  const subMillisecond={result:structuredClone(result),logs:{...logs}}
+  alterPageWindow(subMillisecond,0.5)
+  assert.doesNotThrow(()=>check(subMillisecond),'合法亚毫秒时间窗仍接纳')
+  for(const duration of [0,-0.25]) {
+    const p={result:structuredClone(result),logs:{...logs}}
+    alterPageWindow(p,duration)
+    assert.throws(()=>check(p),/页面缺少指标或时间窗/)
+  }
   for(const mutate of [
     p=>alterCold(p,'deviceId','foreign-device'),p=>alterCold(p,'mode','device'),p=>alterCold(p,'clockDefinition','launch-only'),
     p=>alterMemory(p,m=>m.runId='other'),p=>alterMemory(p,m=>m.deviceId='other'),p=>alterMemory(p,m=>m.datasetId='other'),
@@ -154,7 +186,8 @@ test('T15 规模原始报告拒绝缺阶段、少跑、混轮、过时源码及�
     p=>alterMemory(p,m=>m.samples.reverse()),p=>alterMemory(p,m=>m.samples[1].at=m.samples[0].at),
     p=>alterMemory(p,m=>m.windowStart=0),p=>alterMemory(p,m=>m.windowEnd=9999),
     p=>alterMemory(p,m=>m.samples=[{...m.samples[0],at:3100},{...m.samples[1],at:3110}]),
-    p=>delete p.logs['capacity-native.log'],p=>p.result.timings.pop(),p=>p.result.status='cancelled',
+    p=>delete p.logs['capacity-native.log'],p=>delete p.result.timings,p=>p.result.timings.pop(),
+    p=>p.result.timings[0].status='running',p=>p.result.status='cancelled',
     p=>p.result.sourceHash='f'.repeat(64),p=>p.logs['capacity-cold.log']=p.logs['capacity-cold.log'].replace("testColdLaunch05]' passed", "testColdLaunch05]' skipped"),
     p=>{const r=JSON.parse(p.logs['capacity-report.json']);r.pages.datasetId='foreign';p.logs['capacity-report.json']=JSON.stringify(r)},
     p=>{const r=JSON.parse(p.logs['capacity-report.json']);r.memory.peakBytes=1;p.logs['capacity-report.json']=JSON.stringify(r)},

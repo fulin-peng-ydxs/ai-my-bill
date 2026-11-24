@@ -80,15 +80,15 @@ test('CI 启动入口与共享消费者选择必要专项，测试文件和局�
   for (const suite of ['native-sqlite', 'ui-dictionary-0', 'ui-entry', 'ui-personal',
     'ui-query', 'ui-reports', 'ui-lifecycle']) assert.ok(root.includes(suite), 'App.vue/' + suite)
   assert.ok(!root.includes('touch'))
-  for (const name of ['AnchoredDropdown', 'ComboboxField', 'DictionaryCombobox', 'AppStateBlock', 'AppAsyncRegion', 'AppRequestError', 'CachedPageView', 'AppToast']) {
+  for (const name of ['AnchoredDropdown', 'ComboboxField', 'DictionaryCombobox', 'AppStateBlock', 'AppAsyncRegion', 'AppRequestError', 'CachedPageView', 'AppToast', 'FormField', 'AppDrawer']) {
     const names = selected(`app/src/components/${name}.vue`)
     for (const suite of ['ui-entry', 'ui-personal', 'ui-query', 'ui-reports', 'ui-dictionary-0'])
       assert.ok(names.includes(suite), name + '/' + suite)
     assert.ok(!names.includes('touch'))
   }
   for (const name of ['ProductCombobox', 'NameSuggestionCombobox'])
-    assert.deepEqual(selected(`app/src/components/${name}.vue`), ['secrets', 'app-common', 'ui-entry', 'ui-personal'])
-  assert.deepEqual(selected('app/src/components/DictionaryFilterPicker.vue'), ['secrets', 'app-common', 'ui-query', 'ui-reports', 'ui-report-dimensions'])
+    assert.deepEqual(selected(`app/src/components/${name}.vue`), ['secrets', 'app-common', 'ui-entry', 'ui-personal', 'scale-10000', 'scale-100000'])
+  assert.deepEqual(selected('app/src/components/DictionaryFilterPicker.vue'), ['secrets', 'app-common', 'ui-query', 'ui-reports', 'ui-report-dimensions', 'scale-10000', 'scale-100000'])
   assert.deepEqual(selected('app/src/components/ComboboxField.spec.ts'), ['secrets', 'app-common'])
   assert.deepEqual(selected('app/src/stores/bootstrap.spec.ts'), ['secrets', 'app-common'])
 })

@@ -1101,6 +1101,56 @@ ${originalXcrun.replace(/^#![^\n]*\n/, '')}`)
   }
 )
 
+test('T15 完整规模 CLI 在校验前传入结束阶段，拒绝后不发布成功回执', { timeout:15000 }, t => {
+  const p = project(t)
+  // 只替换昂贵的规模执行与校验边界，真实 CLI 负责阶段归集、调用顺序及回执。
+  // 报告内容规则另由 ios-delivery 的真实 validateScenario 回归覆盖。
+  p.write('scripts/lib/ios-scale-run.mjs', `
+import { startPhase } from './ios-verification.mjs'
+export async function runScaleSimulator({run,selected}) {
+  for (const id of selected.cases) startPhase(run,{stage:'test',coverage:['case/'+id]})
+  return {sourceHash:'controlled-scale-source'}
+}
+export function readScaleCold() { throw new Error('unexpected cold log read') }
+`)
+  p.write('scripts/lib/ios-scenario-evidence.mjs', `
+import fs from 'node:fs'
+import path from 'node:path'
+export function validateScenario(root,scenario,result) {
+  fs.writeFileSync(path.join(root,'validation-input.json'),JSON.stringify({scenario,result}))
+  if (fs.existsSync(path.join(root,'reject-report'))) throw new Error('CONTROLLED_REPORT_REJECTED')
+}
+`)
+  const platform = p.write('platform.mjs', "Object.defineProperty(process,'platform',{value:'darwin'});\n")
+  const run = name => p.run(['debug','run','--session',p.session,'--scenario',name],{NODE_OPTIONS:'--import='+platform})
+  for (const count of [10000,100000]) {
+    const name = 'scale-'+count, child = run(name)
+    assert.equal(child.status,0,child.stderr)
+    const directory = child.stdout.match(/^EVIDENCE=(.+)$/m)?.[1]
+    assert.ok(directory,child.stdout)
+    const observed = JSON.parse(fs.readFileSync(path.join(p.root,'validation-input.json')))
+    const result = JSON.parse(fs.readFileSync(path.join(directory,'result.json')))
+    assert.equal(observed.scenario,name)
+    assert.ok(observed.result.timings?.length,'共享校验器收到阶段记录，不能依赖 finally 事后补齐')
+    assert.deepEqual(observed.result.timings,result.timings)
+    for (const id of selection('--scenario',name,[]).cases) {
+      const phase = observed.result.timings.find(x=>x.coverage.includes('case/'+id))
+      assert.equal(phase?.status,'passed',id)
+      assert.ok(phase.finishedAt>=phase.startedAt && phase.finishedAt<=observed.result.completedAt,id)
+    }
+    assert.equal(result.status,'passed')
+  }
+  p.write('reject-report','controlled report rejection')
+  const rejected = run('scale-10000')
+  assert.equal(rejected.status,1,rejected.stderr)
+  assert.match(rejected.stderr,/CONTROLLED_REPORT_REJECTED/)
+  assert.doesNotMatch(rejected.stdout,/^EVIDENCE=|容量局部观测通过/m)
+  const directory = rejected.stdout.match(/^证据：(.+)$/m)?.[1]
+  const result = JSON.parse(fs.readFileSync(path.join(directory,'result.json')))
+  assert.equal(result.status,'failed')
+  assert.match(result.error,/CONTROLLED_REPORT_REJECTED/)
+})
+
 test('UI 局部 CLI 只在夹具关闭后预启动，runner 准备复用前台 App，不扩大用例',
   { timeout: 15000, skip: process.platform !== 'darwin' }, t => {
     const p = project(t)
