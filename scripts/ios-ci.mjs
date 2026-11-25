@@ -3,7 +3,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createPlan, registry, executionMatrix } from './lib/ios-ci-plan.mjs'
 import { resultsDirectory, executeGroup, reconcile, archiveGroup,runCommand } from './lib/ios-ci-run.mjs'
-import { requestedScope } from './lib/ios-ci.mjs'
+import { requestedScope, requireJobs } from './lib/ios-ci.mjs'
 import { errorMessage } from './lib/ios-errors.mjs'
 
 const root = fs.realpathSync(path.join(path.dirname(fileURLToPath(import.meta.url)), '..'))
@@ -37,7 +37,10 @@ try {
             : []
   if (Object.keys(options).some((k) => !allowed.includes(k)))
     throw new Error('参数不适用于该 CI 命令。')
-  if (['signing-check','install-gate'].includes(mode)) {
+  if (mode === 'require-jobs') {
+    requireJobs(process.env.IOS_CI_PLAN_STATUS, process.env.IOS_CI_CHECKS_STATUS)
+    console.log('所有必需作业成功。')
+  } else if (['signing-check','install-gate'].includes(mode)) {
     const names = mode==='signing-check' ? ['--app','--candidate','--output'] : ['--input','--output']
     if (names.some(name=>!options[name])) throw new Error('缺少可信手动入口参数。')
     const parent = path.join(root,'.local/ios/tmp/ai-agent')
@@ -70,7 +73,7 @@ try {
       )
     const plan = createPlan(root, selected.profile, {
       base: selected.base,
-      head: options['--head']
+      head: selected.head ?? options['--head']
     })
     const directory =
       options['--results'] ??
@@ -108,7 +111,10 @@ try {
     } else {
       let result
       try {
-        result = reconcile(root, directory, process.env.IOS_CI_CHECKS_STATUS)
+        const remote = process.env.GITHUB_ACTIONS === 'true'
+        result = reconcile(root, directory,
+          process.env.IOS_CI_CHECKS_STATUS ?? (remote ? 'missing' : undefined),
+          process.env.IOS_CI_PLAN_STATUS ?? (remote ? 'missing' : undefined))
       } catch (error) {
         // 汇总损坏也刷新机器结论，不能遗留上次绿色；原计划和失败报告不修改。
         result = { schema: 1, status: 'incomplete', completeCandidate: false, error: errorMessage(error) }

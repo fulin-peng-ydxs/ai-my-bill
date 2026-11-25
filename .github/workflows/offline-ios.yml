@@ -1,7 +1,9 @@
 name: offline-ios
 
-# 日常分支 push/PR 不运行远端；请求范围由同一登记、规划器和结果对账器维护。
+# PR 自动按变更检查；完整验收和容量仍按需。规划、执行、对账与本地同源。
 on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review, edited]
   push:
     tags:
       - 'ios-ci/scripts/**'
@@ -52,6 +54,8 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
       - uses: actions/setup-node@v4
         with:
           node-version-file: .nvmrc
@@ -79,6 +83,8 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
       - uses: actions/setup-node@v4
         with:
           node-version-file: .nvmrc
@@ -123,7 +129,8 @@ jobs:
           if-no-files-found: warn
 
   result:
-    if: always() && needs.plan.result == 'success'
+    name: ${{ github.event_name == 'pull_request' && 'CI common result' || format('CI suite {0} result', needs.plan.outputs.profile || github.event.inputs.verification || 'request') }}
+    if: always()
     needs: [plan, checks]
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -133,14 +140,18 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
       - uses: actions/setup-node@v4
         with:
           node-version-file: .nvmrc
       - uses: actions/download-artifact@v4
+        if: needs.plan.result == 'success'
         with:
           name: ${{ needs.plan.outputs.artifact }}
           path: ${{ needs.plan.outputs.directory }}
       - uses: actions/download-artifact@v4
+        if: needs.plan.result == 'success'
         with:
           pattern: ios-ci-executed-*
           path: ${{ needs.plan.outputs.directory }}/archives
@@ -151,15 +162,18 @@ jobs:
       # 各组复制原报告及摘要；结果目录与源码一致，不从历史绿色继承结果。
       - name: Reconcile required and executed checks
         id: result
+        if: always() && needs.plan.result == 'success'
         env:
           IOS_CI_RESULTS: ${{ needs.plan.outputs.directory }}
+          IOS_CI_PLAN_STATUS: ${{ needs.plan.result }}
           IOS_CI_CHECKS_STATUS: ${{ needs.checks.result }}
         run: npm run ci:ios-app -- result --results "$IOS_CI_RESULTS"
-      - name: Require selected jobs
+      - name: Require every selected job
         if: always()
         env:
-          CHECKS_RESULT: ${{ needs.checks.result }}
-        run: test "$CHECKS_RESULT" = success
+          IOS_CI_PLAN_STATUS: ${{ needs.plan.result }}
+          IOS_CI_CHECKS_STATUS: ${{ needs.checks.result }}
+        run: npm run ci:ios-app -- require-jobs
       - uses: actions/upload-artifact@v4
         if: always()
         with:

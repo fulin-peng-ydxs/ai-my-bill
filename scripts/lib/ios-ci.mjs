@@ -1,5 +1,11 @@
-/** 远端只接受显式请求；change 的起点来自输入或标签，不查询历史绿色和计费 API。 */
+/** PR 自动按变更规划；其余远端执行仍需显式请求，不查询历史绿色或计费 API。 */
 export function requestedScope(eventName, event) {
+  if (eventName === 'pull_request') {
+    const base = event.pull_request?.base?.sha, head = event.pull_request?.head?.sha
+    if (![base, head].every(value => /^[a-f0-9]{40}$/i.test(value ?? '') && !/^0+$/.test(value)))
+      throw new Error('PR 必须提供可核实的完整 base/head SHA。')
+    return { profile: 'pull-request', base, head }
+  }
   if (eventName === 'workflow_dispatch') {
     const profile = event.inputs?.verification === undefined ? 'scripts' : event.inputs.verification
     if (!['scripts', 'app', 'final', 'change', 'dependency-audit', 'recovery', 'scale-10000', 'scale-100000'].includes(profile))
@@ -14,5 +20,11 @@ export function requestedScope(eventName, event) {
     const change = /^refs\/tags\/ios-ci\/change\/([a-f0-9]{40})\/(.+)$/i.exec(event.ref ?? '')
     if (change) return { profile: 'change', base: change[1] }
   }
-  throw new Error('远端 CI 仅接受手动请求或有效 ios-ci 请求标签。')
+  throw new Error('远端 CI 仅接受 PR、手动请求或有效 ios-ci 请求标签。')
+}
+
+/** 汇总门禁必须实际成功；空值、取消和跳过均不能通过。 */
+export function requireJobs(planStatus, checksStatus) {
+  if (planStatus !== 'success' || checksStatus !== 'success')
+    throw new Error(`CI 必需作业未成功：plan=${planStatus ?? 'missing'}, checks=${checksStatus ?? 'missing'}。`)
 }

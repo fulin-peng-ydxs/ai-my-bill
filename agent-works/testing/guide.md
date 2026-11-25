@@ -2,7 +2,7 @@
 
 按改动风险选择最低充分检查，覆盖实际入口、处理、结果和适用失败边界。命令均在仓库根目录执行，先满足 [README 工具链前提](../../README.md#2-检查环境并安装依赖)。页面开发前读取本文页面复测部分和 [DESIGN 响应式契约](../../DESIGN.md#8-responsive-behavior)。
 
-本分支仅保留离线 iOS 的按需 CI；日常 push/PR 不自动运行远端验证。旧 Web/服务端的 release-gate（含 PostgreSQL、Java、浏览器及服务器部署检查）已撤下，不再安装 PostgreSQL 16。仓库通用 secret 检查拆出为 scripts/check-secrets.sh，由离线流水线保留，不依赖 Java 或旧端依赖。下表旧端命令仅供手工回溯现有源码；它们不是离线 App 的构建或交付依赖。
+本分支仅保留离线 iOS CI：PR 自动按变更检查，完整验收及容量专项按需触发；没有 PR 的普通分支 push 不运行远端验证。旧 Web/服务端的 release-gate（含 PostgreSQL、Java、浏览器及服务器部署检查）已撤下，不再安装 PostgreSQL 16。仓库通用 secret 检查拆出为 scripts/check-secrets.sh，由离线流水线保留，不依赖 Java 或旧端依赖。下表旧端命令仅供手工回溯现有源码；它们不是离线 App 的构建或交付依赖。
 
 ## 工程检查
 
@@ -171,12 +171,13 @@ SPM 准备机制见[构建架构](../architecture/architecture-decisions.md#离�
 
 [套件登记](../../config/ios-ci.json)统一维护本项目已有检查的执行类型、Linux/macOS 归属、固定范围、专项影响路径、测试文件排除及确有覆盖关系的去重。登记只接入离线 App 的现有执行器，不注册旧 Web、Java、PostgreSQL、服务器部署或尚未实现的真机性能能力。[CI 规划器](../../scripts/lib/ios-ci-plan.mjs)、[执行与对账](../../scripts/lib/ios-ci-run.mjs)由本地和远端同一入口调用；不查询历史绿色或计费，不继承旧提交的验收结论。
 
-验证范围分为日常局部、固定集合和变更专项。日常局部用 `debug check --file/--name` 或原生 `--case/--scenario` 选择目标；固定集合定义该集合一旦执行就必须完成的内容，不表示每次保存、提交或推送都执行。`change` 则按本轮变更选择固定工程集合及必要专项；只规划不执行，须显式调用 `run` 才开始检查。
+验证范围分为日常局部、固定集合和变更专项。日常局部用 `debug check --file/--name` 或原生 `--case/--scenario` 选择目标；固定集合定义该集合一旦执行就必须完成的内容，不表示每次保存、提交或推送都执行。`change` 则按本轮变更选择固定工程集合及必要专项。本地 `plan` 只规划不执行，须显式调用 `run` 才开始检查；远端 PR 的 `prepare`、`run`、`result` 由工作流自动串联。
 
 专项以套件为选择单位，不自动把所有套件缩成单文件。例如 App 改动通常会选中 `app-common`，它会运行全部 App 单测及工程检查；`.spec.ts` 变更不因此额外选中 UI 专项。需要快速定位时先用日常局部入口，不为生成正式 CI 报告重复已经充分且适用的局部验证。
 
 | 范围 | 实际覆盖与使用条件 |
 | --- | --- |
+| `pull-request` | PR 事件绑定 base/head，在共同祖先到实际 head 的范围内自动按变更选择；固定 secret 检查并追加受影响的工程/原生/UI/审计专项；`onDemandSuites` 中的完整 touch、容量和手动安装不自动执行，命中的延期专项保存在计划 `deferred`，不计为已通过 |
 | `change` | 显式 base/head 的变更验收：基础 secret 检查，按登记追加 App 工程、原生、具体 UI 场景及依赖审计；同一专项合并多条理由，不自动运行完整 touch |
 | `scripts` | Linux/macOS 验证工具回归与 secret 检查；不编译 App、不启动模拟器 |
 | `app-common` | 常用固定工程套件（根目录 `npm run check:app`）：全部 App 单测及同次执行的 V8 覆盖率、验证工具回归、类型检查、随包资源与探针构建、资源/设计门禁；不启动模拟器 |
@@ -225,11 +226,11 @@ npm run ci:ios-app -- result --results "$IOS_CI_RESULTS"
 
 `result`逐项对账必跑与实际，生成 `ci-result.json/md`：缺项、失败、取消、额外套件、错误环境/版本/范围、原报告缺失或被篡改均不能通过。原生实际用例、App 单测数量和脚本回归摘要须与原报告对应。由 [报告校验器](../../scripts/lib/ios-test-reports.mjs) 按 mode 核对工程/资源、原生构建/安装/初始化及相应测试、恢复或回读的必需阶段和原日志；原生构建须有实际成功信号，缺少阶段不能靠重新计算摘要补足。脚本调试、完整入口和 CI 共用 TAP 执行与校验：必须有实际通过用例，失败、取消、TODO、空执行及计数不完整均拒绝；Linux 仅允许套件登记 `scriptSkips.linux` 中明确列出的 macOS 专用测试，逐项 SKIP 名称和数量必须对应，重复、未登记及错误平台跳过均拒绝，macOS 不允许跳过。独立脚本 runner 清除继承的 Node 测试上下文，输出上限 16 MiB，超出或执行失败不能取得成功回执。单组通过不代表整体完成；只有 `final` 全部必需项及组清理通过才输出完整候选标记。[共享进程清理器](../../scripts/lib/ios-processes.mjs) 同时供外层 CI 与内层 App 命令使用：每个外层命令建立独立的私有父子登记，内层启动时持续登记本分支进程组，取消后新建的补偿组也归属原调用。补偿工具须在进程组登记完成后才经内部管道放行；父进程在登记前后退出则管道关闭，实际工具不启动。超时/取消同时采集 PID/PPID/进程组快照以覆盖未使用执行器的现有后代，再通知直接进程组退出；最终清理先关闭当前登记分支，读取其中仍活动的组，再强杀内层和外层组。关闭标记写入失败仍继续读取并清理已登记组，同时保留清理失败；不增加等待或延长宽限。关闭后拒绝续建，其他分支和其他调用的范围不能混用。快照只读取进程标识，不读取命令参数，其中进程查询上限为 500 毫秒并计入既有 10 秒宽限；读取失败保留清理失败，不能判成功。重复停止不延长宽限，完成后迟到回调失效；已耗尽的创建补偿保持零宽限，不额外扫描或等待。正常完成仍保留原退出结果，不扫描进程树；仅回收当前命令自己遗留的直属/已登记组，不清理其他任务。活动索引在叶子完成后摘除，不逐轮扫描已完成的测试历史。私有登记位于 `.local/ios/tmp/ai-agent/ios-process-*`，仅含归属令牌、父子 ID 和 PID；正常关闭后回收，清理失败保留给既有 CI 诊断制品，不作为构建缓存或验收证据复用。JSON/Markdown 是工具本轮产物，不新增开发计划或阶段报告。
 
-本节执行规则的局部回归运行 `node --test scripts/tests/ios-ci.test.mjs`，覆盖逐项缺少必需阶段、启动及共享组件分流、TODO/非法与合法平台跳过、真实临时进程的超时/取消清理、嵌套独立进程组及外层先强杀、取消后补偿新建组、关闭标记落盘失败后的登记组清理、登记前后中断的工具拒绝、慢预检就绪与独立预算、父子/跨调用隔离、正常命令与其他任务保护、迟到回调和快照失败、attempt 隔离与审计受阻；正式 `script-tests` 自动发现同一测试文件。调试单项可用 `--test-name-pattern`；嵌套清理场景还可用 `--test-skip-pattern` 排除其他子场景，例如只定位外层超时：`node --test --test-name-pattern 'CI 真实内外层' --test-skip-pattern 'outer-SIGTERM|outer-SIGINT|outer-force|inner-' scripts/tests/ios-ci.test.mjs`。不将过滤执行当成整套成功证据。进程回归将执行预算与清理宽限分别设置，不以全局毫秒匹配混改两类计时器；仅通过 `runCommand` 内部参数 `cleanupGraceMs` 将清理宽限缩至 0–10000 毫秒，正式调用仍默认 10 秒，没有 CLI 或环境覆盖入口。取消从创建进程的就绪信号后触发，慢预检超过缩短后的宽限仍须进入目标场景；真实超时仍由独立的执行预算触发，清理耗时不能从预检开始计算。这里只改变调度和报告契约时，无需构建 App 或启动模拟器；远端仍按需触发。
+本节执行规则的局部回归运行 `node --test scripts/tests/ios-ci.test.mjs`，覆盖逐项缺少必需阶段、启动及共享组件分流、TODO/非法与合法平台跳过、真实临时进程的超时/取消清理、嵌套独立进程组及外层先强杀、取消后补偿新建组、关闭标记落盘失败后的登记组清理、登记前后中断的工具拒绝、慢预检就绪与独立预算、父子/跨调用隔离、正常命令与其他任务保护、迟到回调和快照失败、attempt 隔离与审计受阻；正式 `script-tests` 自动发现同一测试文件。调试单项可用 `--test-name-pattern`；嵌套清理场景还可用 `--test-skip-pattern` 排除其他子场景，例如只定位外层超时：`node --test --test-name-pattern 'CI 真实内外层' --test-skip-pattern 'outer-SIGTERM|outer-SIGINT|outer-force|inner-' scripts/tests/ios-ci.test.mjs`。不将过滤执行当成整套成功证据。进程回归将执行预算与清理宽限分别设置，不以全局毫秒匹配混改两类计时器；仅通过 `runCommand` 内部参数 `cleanupGraceMs` 将清理宽限缩至 0–10000 毫秒，正式调用仍默认 10 秒，没有 CLI 或环境覆盖入口。取消从创建进程的就绪信号后触发，慢预检超过缩短后的宽限仍须进入目标场景；真实超时仍由独立的执行预算触发，清理耗时不能从预检开始计算。这里只改变调度和报告契约时，本地无需构建 App 或启动模拟器；PR 自动跑所选工具组，其余远端范围仍按需。
 
 依赖审计复用 [OSV querybatch](https://google.github.io/osv.dev/post-v1-querybatch/)，仅收集 `app/package-lock.json` 的 npm 直接/传递/开发/可选依赖及 Xcode 提交的 `Package.resolved` 中 Swift URL+版本（无版本时使用锁定 revision）。锁损坏、空集合、不支持项、网络/HTTP/格式错误、返回缺项、循环分页或超出预算均保留未通过，已知漏洞直接阻断该套件；不自动升级依赖、接受风险或添加豁免。审计报告列出全部受检锁项、时间和发现；不证明操作系统、未锁定外部制品或所有原生代码无漏洞。依赖输入变化自动加入 `change`，`final`必跑，也可单独按需执行；不新增每日或定时远端任务。
 
-[远端工作流](../../.github/workflows/offline-ios.yml)仅手动或专用标签触发，普通分支 push/PR 和普通标签不启动。计划生成 Linux/macOS 分组矩阵；各组读取同一计划并归档原报告，总结果 job 合并并对账，失败/取消 job 不能被报告绿色遮蔽。通用/脚本组沿用 10 分钟、原生组沿用 45 分钟外层预算；本地组执行也从前置检查累计同一预算，各阶段及单用例上限继续独立生效。普通请求标签为 `ios-ci/<scripts|app|final|dependency-audit>/<唯一名称>`；`change` 标签须写明起点：`ios-ci/change/<完整 base SHA>/<唯一名称>`。例如仅请求脚本回归：
+[远端工作流](../../.github/workflows/offline-ios.yml)在 PR opened/synchronize/reopened/ready_for_review/edited 时自动按变更触发，不设路径过滤，以保证仅文档 PR 仍有通用门禁；edited 包含更换目标分支后的重新规划。同一 PR 新运行取消旧运行，取消不能通过。普通分支 push 和普通标签不启动；手动或专用标签保留显式范围入口。计划生成 Linux/macOS 分组矩阵；各组读取同一计划并归档原报告，总结果 job 合并并对账，失败/取消 job 不能被报告绿色遮蔽。通用/脚本组沿用 10 分钟、原生组沿用 45 分钟外层预算；本地组执行也从前置检查累计同一预算，各阶段及单用例上限继续独立生效。普通请求标签为 `ios-ci/<scripts|app|final|dependency-audit>/<唯一名称>`；`change` 标签须写明起点：`ios-ci/change/<完整 base SHA>/<唯一名称>`。例如仅请求脚本回归：
 
 ```bash
 IOS_CI_TAG="ios-ci/scripts/$(date +%Y%m%d-%H%M%S)-$(git rev-parse --short HEAD)"
@@ -241,7 +242,9 @@ git push origin "refs/tags/$IOS_CI_TAG"
 
 最终候选稳定后集中到一次 `final` 请求，不因提交、推送再本地全跑；远端受阻时可完成本地必需验证继续交付准备，远端运行能力仍待验。完整失败先回到相关局部修复，没有新证据不重复完整验收。指定 iPhone 的 Release 签名安装、断网冷启动、升级及 D07 容量性能仍独立验收，模拟器或完整候选标记不替代真机条件；未完成前不宣布最终交付通过。
 
-普通工具回归按 `scripts/tests/ios-*.test.mjs` 自动发现，局部和完整入口共用同一叶子执行器与文件集合；新增文件同时使输入证据失效，不接入旧端测试。新增 UI 用例须同时接入现有选择器与单例/场景登记；未接入的 Swift UI 测试会被 check 拒绝。原生交互专项的源码通配路径排除 `**/*.spec.ts`；仅改 textScale、appearance 或 useKeyboardViewport 单测时只选 secrets/app-common，实现或混合变更仍选原生交互，分流回归位于 ios-ci.test.mjs 的 `T14 单测变更`。新增/调整套件须同步登记与影响路径、原执行器和报告语义，并先执行 `npm run ci:ios-app -- check` 及 ios-ci.test.mjs 中受影响的定向用例（`--test-name-pattern`）；共享协议受影响时再扩大范围。涉及原生编排且低层无法覆盖的变化才补相关独立模拟器局部场景。该回归经既有 `script-tests`、App common 及按需 CI 同源消费，覆盖改名双向路径、范围隔离、计划篡改、失败/缺失/空报告、跨目录对账、失败锁保护与依赖审计故障，不用受控执行器测试冒充 App 页面或远端验收。
+PR 与手动请求使用不同汇总名称：PR 固定为 **CI common result**，供分支规则选择；其他请求为 `CI suite <profile> result`，不以某个专项的成功覆盖 PR 门禁。`result` 无论 plan/checks 成败都启动，`require-jobs` 与报告对账同时要求 plan、checks 为 success；failure、cancelled、skipped、空值和缺失状态均不通过。远端 result 缺少作业状态不得退回本地模式；计划或制品缺失也使汇总失败。各作业统一检出 PR 实际 head，关闭凭据持久化，不用 `pull_request_target` 执行 PR 代码，也不接入证书/真实账本。分支规则只选 `CI common result`（来源 GitHub Actions），不要求可能不适用的单个矩阵组或手动专项；需在该检查实际运行后才能搜索到。PR 合并与分支规则配置仍由用户操作，不由本地检查自动执行。
+
+普通工具回归按 `scripts/tests/ios-*.test.mjs` 自动发现，局部和完整入口共用同一叶子执行器与文件集合；新增文件同时使输入证据失效，不接入旧端测试。新增 UI 用例须同时接入现有选择器与单例/场景登记；未接入的 Swift UI 测试会被 check 拒绝。原生交互专项的源码通配路径排除 `**/*.spec.ts`；仅改 textScale、appearance 或 useKeyboardViewport 单测时只选 secrets/app-common，实现或混合变更仍选原生交互，分流回归位于 ios-ci.test.mjs 的 `T14 单测变更`。新增/调整套件须同步登记与影响路径、原执行器和报告语义，并先执行 `npm run ci:ios-app -- check` 及 ios-ci.test.mjs 中受影响的定向用例（`--test-name-pattern`）；共享协议受影响时再扩大范围。涉及原生编排且低层无法覆盖的变化才补相关独立模拟器局部场景。PR 分流、真实 prepare/result/require-jobs 入口与失败/取消/跳过拒绝可局部运行 `node --test --test-name-pattern 'PR 计划|PR prepare|CI common result|CI 工作流' scripts/tests/ios-ci.test.mjs`；验证共同祖先范围、head 绑定、延期专项、手动结果隔离与始终汇总，不运行 App 完整验收。该回归经既有 `script-tests`、App common 及远端 CI 同源消费，覆盖改名双向路径、范围隔离、计划篡改、失败/缺失/空报告、跨目录对账、失败锁保护与依赖审计故障，不用受控执行器测试冒充 App 页面或远端验收。
 
 非原生局部检查保存于 ios-check-*；原生局部运行在会话的 run-* 下保存独立日志、xcresult、SQLite 回读和 `result.json`，标明 scope=partial、所选/实际用例、构建与执行输入摘要、完成时间、缓存命中、状态及耗时，成功时输出 EVIDENCE=路径；局部绿色不更新完整验收状态。[脚本回归](../../scripts/tests/ios-debug.test.mjs) 经 check:app 执行，覆盖选择/前置、会话与设备拒绝、内容摘要失效、夹具拒绝与回读、命令锁与脚本快照边界；[执行约束回归](../../scripts/tests/ios-verification.test.mjs) 经同一入口检查缺少/失效证据、跨会话及跨版本/跨套件失败锁、A→B→A 历史次数、多份跨层证据及逐目标时序、具体场景隔离、common/ios-build 实际 CLI 阶段超时与许可、真实新故障复验、无关修复/空匹配拒绝、分阶段及入口累计时钟、前置检查超时/活动进程取消/创建失败补偿上限、修复后缓存恢复且失败锁仍保留、成对恢复、内部入口许可、首败取消与清理；测试使用隔离临时工程与可控子进程，不冒充 App 页面验收；成对恢复、普通场景、UI 安装/预启动及创建补偿 CLI 的受管模拟器分支回归仅在 macOS 执行，使用受控工具替身验证编排，Linux 的 common 检查明确跳过这些受管分支，macOS 验证 job 再执行。真实原生运行、设备复用及关闭仍需通过 CLI 在独立模拟器验证。新增入口及完整入口变更纳入同一 Actions 触发路径；不放宽原超时、断言或真机 Release 性能要求。
 

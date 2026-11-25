@@ -93,7 +93,7 @@ flowchart TD
 
 ### 离线 App 原生测试配置
 
-CI 规划入口消费 Actions 的 GITHUB_EVENT_PATH、GITHUB_EVENT_NAME、GITHUB_RUN_ID、GITHUB_RUN_ATTEMPT 和 GITHUB_OUTPUT；从事件读取手动 verification/base_revision 或显式 ios-ci 标签，生成同一提交/源码/登记绑定的计划和执行分组。执行与对账 job 通过 IOS_CI_RESULTS 传入本轮结果目录、IOS_CI_GROUP 传入分组，归档通过 IOS_CI_ATTEMPT 绑定本次 attempt，汇总通过 IOS_CI_CHECKS_STATUS 核对实际 job 结论；本地使用等价 --results/--group 参数，不需要这些 Actions 变量。入口不读取 GH_TOKEN、不查询历史绿色或计费、不需要 actions:read，也不加载 `.local/web`。普通 push/PR 不启动远端，本地不依赖 GitHub；统一套件、依赖审计及受阻处理见[验证策略](../testing/guide.md#统一套件按需-ci-与最终验收)。
+CI 规划入口消费 Actions 的 GITHUB_EVENT_PATH、GITHUB_EVENT_NAME、GITHUB_RUN_ID、GITHUB_RUN_ATTEMPT 和 GITHUB_OUTPUT；从 PR 事件读取 base/head SHA，或读取手动 verification/base_revision 与显式 ios-ci 标签，生成同一提交/源码/登记绑定的计划和执行分组。执行与对账 job 通过 IOS_CI_RESULTS 传入本轮结果目录、IOS_CI_GROUP 传入分组，归档通过 IOS_CI_ATTEMPT 绑定本次 attempt，汇总及 require-jobs 通过 IOS_CI_PLAN_STATUS、IOS_CI_CHECKS_STATUS 核对计划和执行 job 结论；GITHUB_ACTIONS=true 时缺少任一结论不得回退本地模式；本地使用等价 --results/--group 参数，不需要这些 Actions 变量。入口不读取 GH_TOKEN、不查询历史绿色或计费、不需要 actions:read，也不加载 `.local/web`。PR 自动按变更执行，普通分支 push 不单独启动；完整验收与容量专项仍按需，本地不依赖 GitHub；统一套件、依赖审计及受阻处理见[验证策略](../testing/guide.md#统一套件按需-ci-与最终验收)。
 
 [进程清理器](../../scripts/lib/ios-processes.mjs)内部传递 `MYBILL_PROCESS_SCOPE`，绑定本次命令树的私有目录、随机令牌和父登记 ID；目录及成员校验由[归属登记](../../scripts/lib/ios-process-scope.mjs)统一处理。它由执行器生成并随子进程环境继承，不从开发配置加载，也不参与验收授权。登记目录为 `.local/ios/tmp/ai-agent/ios-process-*`（700），文件为 600；仅记录 PID 和父子归属，不承载账本、安装回执或缓存。补偿命令经内部启动管道确认登记后才执行；正常关闭回收目录，清理失败保留诊断，不能手工复用旧范围。执行预算和清理规则见[验证策略](../testing/guide.md#统一套件按需-ci-与最终验收)。
 

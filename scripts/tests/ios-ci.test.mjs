@@ -13,7 +13,7 @@ import {
   changedPaths
 } from '../lib/ios-ci-plan.mjs'
 import { resultsDirectory, executeGroup, reconcile, runCommand } from '../lib/ios-ci-run.mjs'
-import { requestedScope } from '../lib/ios-ci.mjs'
+import { requestedScope, requireJobs } from '../lib/ios-ci.mjs'
 import { audit, auditDependencies, swiftLock } from '../lib/ios-audit.mjs'
 import { assertScriptReport, assertModePhases, requiredModePhases } from '../lib/ios-test-reports.mjs'
 import { checkDefinition } from '../lib/ios-checks.mjs'
@@ -225,7 +225,7 @@ function processFixture(t) {
   return p
 }
 
-test('CI 登记复用现有执行器与专项；固定范围、按需触发和非法请求拒绝', (t) => {
+test('CI 登记复用现有执行器与专项；PR 自动、固定范围和非法请求拒绝', (t) => {
   const p = fixture(t),
     r = registry(p.root)
   assert.equal(
@@ -266,6 +266,100 @@ test('CI 登记复用现有执行器与专项；固定范围、按需触发和�
   r.rules[0].suites.push('unknown')
   p.write('config/ios-ci.json', r)
   assert.throws(() => registry(p.root), /未知/)
+})
+
+test('PR 计划使用实际 head 和共同祖先，按变更专项且完整触摸和容量仅按需', (t) => {
+  const p = fixture(t)
+  p.git('checkout', '-qb', 'feature')
+  p.write('app/src/views/LedgerView.vue', 'feature')
+  const head = p.commit()
+  p.git('checkout', '-qb', 'target', p.base)
+  p.write('app/src/views/DictionaryView.vue', 'base-only')
+  const base = p.commit()
+  p.git('checkout', '-q', 'feature')
+  const selected = requestedScope('pull_request', { pull_request: { base: { sha: base }, head: { sha: head } } })
+  assert.deepEqual(selected, { profile: 'pull-request', base, head })
+  const plan = createPlan(p.root, selected.profile, selected)
+  assert.deepEqual(plan.range, { base, head, mergeBase: p.base })
+  assert.deepEqual(plan.files, ['app/src/views/LedgerView.vue'])
+  assert.ok(plan.suites.some(s => s.name === 'ui-query-input'))
+  assert.ok(plan.suites.some(s => s.name === 'app-common'))
+  assert.ok(plan.deferred.some(s => s.name === 'scale-10000'))
+  assert.ok(plan.deferred.some(s => s.name === 'scale-100000'))
+  assert.ok(plan.suites.every(s => !registry(p.root).onDemandSuites.includes(s.name)))
+  assert.doesNotThrow(() => assertPlan(p.root, plan))
+  const tampered = structuredClone(plan)
+  tampered.deferred = []
+  assert.throws(() => assertPlan(p.root, tampered), /失效/)
+  assert.throws(() => createPlan(p.root, selected.profile, { base, head: base }), /当前检出/)
+  for (const sha of [undefined, '', '0'.repeat(40), 'not-a-sha'])
+    assert.throws(() => requestedScope('pull_request', { pull_request: { base: { sha }, head: { sha: head } } }), /完整/)
+  const r = registry(p.root)
+  assert.deepEqual(selectSuites(r, 'pull-request', ['agent-works/note.md']).map(s => s.name), ['secrets'])
+  const scripts = selectSuites(r, 'pull-request', ['scripts/lib/ios-ci.mjs']).map(s => s.name)
+  assert.deepEqual(scripts, ['secrets', 'scripts', 'scripts-macos'])
+  const change = createPlan(p.root, 'change', { base: p.base, head })
+  assert.ok(change.suites.some(s => s.name === 'scale-10000'), '显式 change 保留容量')
+  assert.ok(selectSuites(r, 'final').some(s => s.name === 'touch'))
+  r.onDemandSuites.push('app-common')
+  p.write('config/ios-ci.json', r)
+  assert.throws(() => registry(p.root), /仅包含/)
+})
+
+test('CI common result 拒绝失败、取消、跳过和缺失作业，真实成功报告不能遮蔽作业失败', async (t) => {
+  const p = fixture(t), { directory } = prepare(p)
+  await executeGroup(p.root, directory, 'linux')
+  for (const status of ['failure', 'cancelled', 'skipped', 'running', '', undefined]) {
+    for (const [plan, checks] of [[status, 'success'], ['success', status]]) {
+      assert.throws(() => requireJobs(plan, checks), /未成功/)
+      const result = reconcile(p.root, directory, checks ?? 'missing', plan ?? 'missing')
+      assert.equal(result.status, 'incomplete', `${plan}/${checks}`)
+      assert.equal(result.completeCandidate, false)
+    }
+  }
+  assert.doesNotThrow(() => requireJobs('success', 'success'))
+  assert.equal(reconcile(p.root, directory, 'success', 'success').status, 'passed')
+  assert.equal(reconcile(p.root, directory).status, 'passed', '本地不要求 GitHub 环境')
+  for (const [plan, checks, exit] of [['failure','success',1],['success','cancelled',1],['success','skipped',1],['','',1],['success','success',0]]) {
+    const run = spawnSync(process.execPath, [path.join(repository, 'scripts/ios-ci.mjs'), 'require-jobs'], {
+      encoding: 'utf8', env: { ...process.env, IOS_CI_PLAN_STATUS: plan, IOS_CI_CHECKS_STATUS: checks }
+    })
+    assert.equal(run.status, exit, run.stderr)
+  }
+})
+
+test('PR prepare 真实入口绑定事件源码，远端 result 缺少作业状态不能回退本地成功', async (t) => {
+  const p = processFixture(t)
+  p.write('scripts/ios-ci.mjs', fs.readFileSync(path.join(repository, 'scripts/ios-ci.mjs'), 'utf8'))
+  const base = p.commit()
+  p.write('scripts/pr-example.mjs', '// changed')
+  const head = p.commit()
+  const event = p.write('.local/ios/event.json', { pull_request: { base: { sha: base }, head: { sha: head } } })
+  const output = p.write('.local/ios/output', '')
+  const env = { ...process.env, GITHUB_EVENT_NAME: 'pull_request', GITHUB_EVENT_PATH: event,
+    GITHUB_RUN_ID: '123', GITHUB_RUN_ATTEMPT: '2', GITHUB_OUTPUT: output }
+  const cli = (args, extra = {}) => spawnSync(process.execPath, ['scripts/ios-ci.mjs', ...args], {
+    cwd: p.root, encoding: 'utf8', env: { ...env, ...extra }
+  })
+  const prepared = cli(['prepare'])
+  assert.equal(prepared.status, 0, prepared.stderr)
+  const generated = JSON.parse(prepared.stdout)
+  const plan = JSON.parse(fs.readFileSync(path.join(p.root, generated.directory, 'ci-plan.json')))
+  assert.equal(plan.profile, 'pull-request')
+  assert.equal(plan.source.commit, head)
+  assert.deepEqual(plan.files, ['scripts/pr-example.mjs'])
+  assert.match(fs.readFileSync(output, 'utf8'), /artifact=ios-ci-plan-2/)
+  const { directory } = prepare(p, 'secrets', 'remote-status')
+  await executeGroup(p.root, directory, 'linux')
+  const missing = cli(['result', '--results', directory], {
+    GITHUB_ACTIONS: 'true', IOS_CI_PLAN_STATUS: '', IOS_CI_CHECKS_STATUS: 'success'
+  })
+  assert.equal(missing.status, 1, missing.stderr)
+  assert.equal(JSON.parse(missing.stdout).status, 'incomplete')
+  const passed = cli(['result', '--results', directory], {
+    GITHUB_ACTIONS: 'true', IOS_CI_PLAN_STATUS: 'success', IOS_CI_CHECKS_STATUS: 'success'
+  })
+  assert.equal(passed.status, 0, passed.stderr)
 })
 
 test('CI 真实 Git 改名双向选择专项，普通文档和旧端不误触发 App/完整触摸', (t) => {
@@ -458,14 +552,24 @@ test('CI 依赖审计拒绝网络/HTTP/缺项/异常 JSON/循环分页/超预算
   assert.throws(() => auditDependencies(p.root), /无法审计/)
 })
 
-test('CI 工作流矩阵由计划驱动，总对账与最终标记独立，不存在自动分支/定时运行或旧端服务', () => {
+test('CI 工作流 PR 自动、通用门禁始终对账，手动结果隔离且不自动完整验收或旧端服务', () => {
   const workflow = fs.readFileSync(
     path.join(repository, '.github/workflows/offline-ios.yml'),
     'utf8'
   )
   const trigger = workflow.slice(workflow.indexOf('on:\n'), workflow.indexOf('\npermissions:'))
   assert.match(trigger, /push:\n    tags:/)
-  assert.doesNotMatch(trigger, /pull_request:|branches:|schedule:|paths:/)
+  assert.match(trigger, /pull_request:\n    types: \[opened, synchronize, reopened, ready_for_review, edited\]/)
+  assert.doesNotMatch(trigger, /pull_request_target:|branches:|schedule:|paths:/)
+  const result = workflow.slice(workflow.indexOf('\n  result:'), workflow.indexOf('\n  # 只有最终'))
+  assert.match(result, /github.event_name == 'pull_request' && 'CI common result' \|\| format\('CI suite/)
+  assert.match(result, /\n    if: always\(\)\n    needs: \[plan, checks\]/)
+  assert.match(result, /IOS_CI_PLAN_STATUS: \$\{\{ needs.plan.result \}\}/)
+  assert.match(result, /IOS_CI_CHECKS_STATUS: \$\{\{ needs.checks.result \}\}/)
+  assert.match(result, /name: Require every selected job\n        if: always\(\)/)
+  assert.match(result, /run: npm run ci:ios-app -- require-jobs/)
+  assert.equal(workflow.match(/ref: \$\{\{ github.event.pull_request.head.sha \|\| github.sha \}\}/g).length, 3)
+  assert.equal(workflow.match(/persist-credentials: false/g).length, 3)
   assert.match(workflow, /matrix: \$\{\{ fromJSON\(needs.plan.outputs.matrix\) \}\}/)
   assert.match(workflow, /run --results "\$IOS_CI_RESULTS" --group "\$IOS_CI_GROUP"/)
   assert.match(workflow, /result --results "\$IOS_CI_RESULTS"/)

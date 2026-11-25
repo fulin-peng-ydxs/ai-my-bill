@@ -687,5 +687,11 @@
       "scale-10000",
       "scale-100000"
     ]
-  }
+  },
+  "onDemandSuites": [
+    "touch",
+    "scale-10000",
+    "scale-100000",
+    "install-gate"
+  ]
 }

@@ -495,7 +495,7 @@ function validateReports(root, directory, suite, receipt) {
 }
 
 /** 计划与实际逐项对账；未知/缺失/失败/取消/旧版本/篡改报告均不通过，不覆盖原失败回执。 */
-export function reconcile(root, directory, jobsStatus) {
+export function reconcile(root, directory, jobsStatus, planStatus) {
   mergeArchives(root, directory)
   const plan = assertPlan(root, read(path.join(directory, 'ci-plan.json')))
   const rows = []
@@ -545,14 +545,18 @@ export function reconcile(root, directory, jobsStatus) {
     profile: plan.profile,
     source: plan.source,
     status:
-      rows.every((r) => r.status === 'passed') && (!jobsStatus || jobsStatus === 'success')
+      rows.every((r) => r.status === 'passed') &&
+      (jobsStatus === undefined || jobsStatus === 'success') &&
+      (planStatus === undefined || planStatus === 'success')
         ? 'passed'
         : 'incomplete',
     jobsStatus: jobsStatus ?? 'local',
+    planStatus: planStatus ?? 'local',
     completeCandidate:
       plan.profile === 'final' &&
       rows.every((r) => r.status === 'passed') &&
-      (!jobsStatus || jobsStatus === 'success'),
+      (jobsStatus === undefined || jobsStatus === 'success') &&
+      (planStatus === undefined || planStatus === 'success'),
     suites: rows
   }
   writeJson(path.join(directory, 'ci-result.json'), result)

@@ -56,6 +56,12 @@ export function registry(root) {
   }
   for (const p of ['scripts', 'app', 'final']) validateNames(r.profiles[p])
   validateNames(r.changeBase)
+  validateNames(r.onDemandSuites)
+  const onDemand = names.filter(name => r.suites[name].mode === 'ios-touch' ||
+    r.suites[name].kind === 'installation' ||
+    (r.suites[name].kind === 'scenario' && /^scale-\d+$/.test(r.suites[name].scenario)))
+  if (JSON.stringify([...r.onDemandSuites].sort()) !== JSON.stringify(onDemand.sort()))
+    throw new Error('CI 按需套件必须且仅包含完整触摸、容量和手动安装。')
   for (const rule of [...r.rules,...(r.unknownSource ? [r.unknownSource] : [])]) {
     if (
       !Array.isArray(rule.paths) ||
@@ -187,11 +193,12 @@ export function sourceIdentity(root) {
 
 /** 选中的专项可有多条理由；完整 touch 覆盖局部 UI，但局部不会反向替代完整。 */
 export function selectSuites(r, profile, files = []) {
-  if (!['change', ...Object.keys(r.profiles), ...Object.keys(r.suites)].includes(profile))
+  if (!['change', 'pull-request', ...Object.keys(r.profiles), ...Object.keys(r.suites)].includes(profile))
     throw new Error('未知 CI 范围。')
-  const chosen = new Set(profile === 'change' ? r.changeBase : (r.profiles[profile] ?? [profile]))
+  const change = ['change', 'pull-request'].includes(profile)
+  const chosen = new Set(change ? r.changeBase : (r.profiles[profile] ?? [profile]))
   const reasons = Object.fromEntries([...chosen].map((n) => [n, [profile]]))
-  if (profile === 'change')
+  if (change)
     for (const rule of r.rules) {
       const hits = files.filter(
         (file) =>
@@ -204,7 +211,7 @@ export function selectSuites(r, profile, files = []) {
           reasons[name] = [...new Set([...(reasons[name] ?? []), ...hits])]
         }
     }
-  if (profile==='change' && r.unknownSource) {
+  if (change && r.unknownSource) {
     const fallback = r.unknownSource
     for (const file of files) {
       const known = r.rules.some(rule=>rule.suites.some(name=>!['secrets','app-common','scripts','scripts-macos'].includes(name)) &&
@@ -213,6 +220,7 @@ export function selectSuites(r, profile, files = []) {
         for (const name of fallback.suites) {chosen.add(name);reasons[name]=[...(reasons[name] ?? []),'unknown:'+file]}
     }
   }
+  if (profile === 'pull-request') for (const name of r.onDemandSuites) chosen.delete(name)
   for (const name of chosen) for (const covered of r.supersedes[name] ?? []) chosen.delete(covered)
   return Object.keys(r.suites)
     .filter((name) => chosen.has(name))
@@ -224,16 +232,28 @@ export function createPlan(root, profile, { base, head } = {}) {
     source = sourceIdentity(root)
   head ??= source.commit
   if (head !== source.commit) throw new Error('被测 head 必须等于当前检出提交。')
-  const files = profile === 'change' ? changedPaths(root, base, head) : []
+  let files = [], range = null
+  if (['change', 'pull-request'].includes(profile)) {
+    files = changedPaths(root, base, head)
+    range = { base, head }
+    if (profile === 'pull-request') {
+      range.mergeBase = git(root, 'merge-base', base, head).trim()
+      files = changedPaths(root, range.mergeBase, head)
+    }
+  }
   const suites = selectSuites(r, profile, files)
+  const deferred = profile === 'pull-request'
+    ? selectSuites(r, 'change', files).filter(s => r.onDemandSuites.includes(s.name))
+    : []
   const plan = {
     schema: 1,
     profile,
     source,
-    range: profile === 'change' ? { base, head } : null,
+    range,
     registryHash: digest(r),
     files,
-    suites
+    suites,
+    ...(profile === 'pull-request' ? { deferred } : {})
   }
   return { ...plan, id: digest(plan) }
 }
