@@ -19,8 +19,9 @@ export function spawnManaged(program, args, options, { root, graceMs = 10_000 })
   const gated = scope.inherited && graceMs === 0
   let child, cleanup
   try {
-    child = spawn(gated ? process.execPath : program,
-      gated ? [fileURLToPath(new URL('./ios-process-launch.mjs', import.meta.url)), program, ...args] : args,
+    const shellGate=gated && fs.existsSync('/bin/zsh')
+    child = spawn(gated ? (shellGate?'/bin/zsh':process.execPath) : program,
+      gated ? [...(shellGate?['-f']:[]),fileURLToPath(new URL(shellGate?'./ios-process-launch.sh':'./ios-process-launch.mjs', import.meta.url)), program, ...args] : args,
       { ...options, env: scope.env, stdio: gated ? [...options.stdio, 'pipe', 'pipe'] : options.stdio })
     const channel = gated ? child.stdio[3] : undefined
     channel?.on('error', (error) => child.emit('error', error))

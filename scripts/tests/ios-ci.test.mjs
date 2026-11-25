@@ -313,7 +313,7 @@ test('CI 启动环境专项只运行新会话启动及关闭，拒绝旧回执�
     const selected=selectSuites(registry(p.root),'pull-request',['scripts/lib/ios-processes.mjs']).map(x=>x.name)
     assert.deepEqual(selected,['secrets','scripts','simulator-boot','scripts-macos'])
     assert.equal(selected.filter(name=>registry(p.root).suites[name].runner==='macos')[0],'simulator-boot','冷启动预检必须先于工具压力回归')
-    for(const file of ['scripts/lib/ios-host-diagnostics.py','scripts/lib/ios-app-full.sh','scripts/lib/ios-simctl.mjs','scripts/lib/ios-boot-proof.mjs','scripts/lib/ios-ci-run.mjs'])
+    for(const file of ['scripts/lib/ios-process-launch.sh','scripts/lib/ios-host-diagnostics.py','scripts/lib/ios-app-full.sh','scripts/lib/ios-simctl.mjs','scripts/lib/ios-boot-proof.mjs','scripts/lib/ios-ci-run.mjs'])
       assert.ok(selectSuites(registry(p.root),'pull-request',[file]).some(x=>x.name==='simulator-boot'),file)
     assert.ok(!selectSuites(registry(p.root),'pull-request',['scripts/tests/ios-ci.test.mjs']).some(x=>x.name==='simulator-boot'))
     const borrowed=prepare(p,'simulator-boot','borrowed')
@@ -1124,8 +1124,9 @@ const r=spawnSync('/bin/ps',process.argv.slice(2),{stdio:'inherit'});process.exi
 })
 
 test('CI 放行帧不等待父流 EOF，半帧和非法帧拒绝，启动轨迹不污染命令输出', {timeout:12000}, async t => {
+  for(const shellGate of fs.existsSync('/bin/zsh')?[false,true]:[false])
   for(const frame of ['GO\n','fragmented','G','','GO\nextra']) {
-    const child=spawn(process.execPath,[path.join(repository,'scripts/lib/ios-process-launch.mjs'),process.execPath,'-e',"console.log('CONTROLLED_GATE_TOOL')"],
+    const child=spawn(shellGate?'/bin/zsh':process.execPath,[...(shellGate?['-f']:[]),path.join(repository,'scripts/lib/ios-process-launch.'+(shellGate?'sh':'mjs')),process.execPath,'-e',"console.log('CONTROLLED_GATE_TOOL '+process.pid)"],
       {detached:true,stdio:['ignore','pipe','pipe','pipe','pipe']})
     let stdout='',stderr='',trace=''
     child.stdout.on('data',b=>stdout+=b);child.stderr.on('data',b=>stderr+=b);child.stdio[4].on('data',b=>trace+=b)
@@ -1146,7 +1147,7 @@ test('CI 放行帧不等待父流 EOF，半帧和非法帧拒绝，启动轨迹�
       } else child.stdio[3].end(frame)
       const code=await ended
       assert.equal(code,valid?0:1,stderr)
-      assert.equal(stdout,valid?'CONTROLLED_GATE_TOOL\n':'')
+      if(valid) {assert.match(stdout,/^CONTROLLED_GATE_TOOL \d+\n$/);if(shellGate)assert.equal(stdout,'CONTROLLED_GATE_TOOL '+child.pid+'\n','macOS 放行后 exec 原位替换，不额外创建 Node 或改变进程组长')} else assert.equal(stdout,'')
       const events=trace.trim().split('\n').map(JSON.parse)
       assert.equal(events[0].stage,'waiting');assert.ok(events.every(v=>v.pid===child.pid&&v.uid===process.getuid()))
       assert.equal(events.some(v=>v.stage==='started'),valid)

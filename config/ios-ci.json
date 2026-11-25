@@ -244,6 +244,7 @@
       "paths": [
         "scripts/lib/ios-processes.mjs",
         "scripts/lib/ios-process-scope.mjs",
+        "scripts/lib/ios-process-launch.sh",
         "scripts/lib/ios-process-launch.mjs",
         "scripts/ios-app.mjs",
         "scripts/lib/ios-app-full.sh",
