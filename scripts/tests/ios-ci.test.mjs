@@ -684,7 +684,8 @@ test('CI 真实内外层命令统一清理嵌套独立进程组，超时/取消�
           const descendant = `process.on('SIGTERM',()=>{});process.on('SIGINT',()=>{});require('node:fs').writeFileSync(${JSON.stringify(ready)},String(process.pid));setInterval(()=>{},1000)`
           p.write('leader.cjs', `require('node:fs').writeFileSync(${JSON.stringify(leaderFile)},JSON.stringify({pid:process.pid,parent:process.ppid}));${mode === 'outer-force' ? "process.on('SIGTERM',()=>{});" : ''}require('node:child_process').spawn(process.execPath,['-e',${JSON.stringify(descendant)}],{detached:true,stdio:'ignore'});setInterval(()=>{},1000)`)
           // 使用真实 ios-app.mjs 的 command/信号处理，只替换本轮工程检查体；不构建、不接触模拟器。
-          p.write('scripts/lib/ios-app-full.sh', 'exec node leader.cjs\n')
+          p.write('scripts/lib/ios-app-full.sh',
+            (mode === 'outer-force' ? "node -e 'setTimeout(()=>{},1100)'\n" : '') + 'exec node leader.cjs\n')
           const env = { ...process.env, PATH: path.dirname(process.execPath) + path.delimiter + process.env.PATH }
           delete env.NODE_TEST_CONTEXT
           const direct = mode.startsWith('inner-')
@@ -693,7 +694,7 @@ test('CI 真实内外层命令统一清理嵌套独立进程组，超时/取消�
             const clock = p.write('.local/short-check-clock.mjs', `const original=globalThis.setTimeout;globalThis.setTimeout=(fn,ms,...args)=>original(fn,ms>60000?900:ms,...args);\n`)
             args = [...(mode === 'inner-timeout' ? ['--import', clock] : []), 'scripts/ios-app.mjs', 'common']
           } else {
-            const worker = p.write('worker.mjs', `import {runCommand} from ${JSON.stringify(new URL('../lib/ios-ci-run.mjs', import.meta.url).href)};try{await runCommand(${JSON.stringify(p.root)},process.execPath,['scripts/ios-app.mjs','common'],${JSON.stringify(path.join(p.root, 'outer.log'))},${mode.endsWith('timeout') || mode === 'outer-force' ? 900 : 10000},${mode === 'outer-force' ? '{cleanupGraceMs:60}' : '{}'});process.exitCode=2}catch{process.exitCode=1}`)
+            const worker = p.write('worker.mjs', `import {runCommand} from ${JSON.stringify(new URL('../lib/ios-ci-run.mjs', import.meta.url).href)};try{await runCommand(${JSON.stringify(p.root)},process.execPath,['scripts/ios-app.mjs','common'],${JSON.stringify(path.join(p.root, 'outer.log'))},${mode.endsWith('timeout') ? 900 : 10000},${mode === 'outer-force' ? '{cleanupGraceMs:60}' : '{}'});process.exitCode=2}catch{process.exitCode=1}`)
             args = [worker]
           }
           const worker = spawn(process.execPath, args, { cwd: p.root, env, detached: true, stdio: 'ignore' })
@@ -704,7 +705,7 @@ test('CI 真实内外层命令统一清理嵌套独立进程组，超时/取消�
             assert.ok(isRunningProcess(child))
             assert.equal(Number(spawnSync('ps', ['-p', String(child), '-o', 'pgid='], { encoding: 'utf8' }).stdout.trim()), child,
               '后代实际另起进程组')
-            if (mode.endsWith('SIGTERM')) worker.kill('SIGTERM')
+            if (mode.endsWith('SIGTERM') || mode === 'outer-force') worker.kill('SIGTERM')
             if (mode.endsWith('SIGINT')) worker.kill('SIGINT')
             assert.equal(await ended, direct && mode.endsWith('SIGTERM') ? 143 : direct && mode.endsWith('SIGINT') ? 130 : 1)
             await waitForProcessState(() => !isRunningProcess(child))
