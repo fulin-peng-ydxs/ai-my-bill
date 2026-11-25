@@ -4,10 +4,12 @@
 主命令、阶段预算与进程清理仍由既有 CI 入口负责。
 """
 import ctypes
+from collections import Counter
 import json
 import os
 from pathlib import Path
 import signal
+import shutil
 import subprocess
 import sys
 import time
@@ -36,10 +38,30 @@ def observer():
             return {"pid": pid, "unavailable": ctypes.get_errno(), "bytes": count}
         return {**{key: getattr(info, key) for key in ("pid", "ppid", "pgid", "status", "flags", "uid", "ruid", "svuid")},
                 "comm": info.comm.decode("utf-8", errors="replace")}
+    def summary():
+        # 只在明确请求的托管宿主取聚合数量；不输出其他任务的 PID、路径或参数。
+        pids = (ctypes.c_int * 2048)()
+        count = library.proc_listallpids(pids, ctypes.sizeof(pids))
+        names, states = Counter(), Counter()
+        for pid in pids[:max(0, min(count, len(pids)))]:
+            info = read(pid)
+            if "comm" in info:
+                names[info["comm"]] += 1
+                states[str(info["status"])] += 1
+        return {"processCount": count, "truncated": count >= len(pids),
+                "names": names.most_common(20), "states": states}
+    library.proc_listallpids.argtypes = [ctypes.c_void_p, ctypes.c_int]
+    library.proc_listallpids.restype = ctypes.c_int
+    read.summary = summary
     return read
 
 
 def run(args):
+    host_summary = bool(args and args[0] == "--host-summary")
+    if host_summary:
+        if os.environ.get("GITHUB_ACTIONS") != "true" or os.environ.get("RUNNER_OS") != "macOS":
+            raise ValueError("host summary requires the hosted macOS job")
+        args = args[1:]
     if not args or args[0] != "--" or len(args) < 2:
         raise ValueError("usage: ios-host-diagnostics.py -- command [args]")
     base = Path.cwd() / ".local/ios/tmp/ai-agent"
@@ -53,6 +75,14 @@ def run(args):
         try:
             read = observer()
             emit({"scope": "diagnostic", "self": read(os.getpid())})
+            if host_summary:
+                tools = [shutil.which("xcrun"), "/usr/bin/xcrun",
+                         os.environ.get("DEVELOPER_DIR", "") + "/usr/bin/simctl"]
+                for tool in tools:
+                    if tool and Path(tool).is_file():
+                        with open(tool, "rb") as binary:
+                            magic = binary.read(4).hex()
+                        emit({"tool": tool, "realpath": str(Path(tool).resolve()), "magic": magic})
         except (OSError, RuntimeError) as error:
             read = None
             emit({"scope": "diagnostic", "unavailable": str(error)})
@@ -68,6 +98,7 @@ def run(args):
         signal.signal(signal.SIGTERM, forward)
         signal.signal(signal.SIGINT, forward)
         scopes, last = set(), {}
+        next_summary = time.monotonic()
         def belongs(pid, state=None):
             visited = set()
             while pid > 1 and pid not in visited and pid != child.pid:
@@ -99,8 +130,9 @@ def run(args):
                             if last.get(pid) != state:
                                 emit({"member": record["id"], "process": state})
                                 last[pid] = state
-                    if time.monotonic() % 5 < 0.5:
-                        emit({"load": os.getloadavg()})
+                    if time.monotonic() >= next_summary:
+                        emit({"load": os.getloadavg(), **(read.summary() if host_summary else {})})
+                        next_summary = time.monotonic() + 10
                 except (OSError, ValueError, KeyError) as error:
                     # 记录并发摘除/诊断失败；不改变主命令或伪造验证成功。
                     emit({"observationError": str(error)})

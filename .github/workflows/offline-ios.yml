@@ -108,7 +108,7 @@ jobs:
           IOS_CI_GROUP: ${{ matrix.group }}
         run: |
           if [ "$IOS_CI_GROUP" = macos ]; then
-            python3 scripts/lib/ios-host-diagnostics.py -- npm run ci:ios-app -- run --results "$IOS_CI_RESULTS" --group "$IOS_CI_GROUP"
+            python3 scripts/lib/ios-host-diagnostics.py --host-summary -- npm run ci:ios-app -- run --results "$IOS_CI_RESULTS" --group "$IOS_CI_GROUP"
           else
             npm run ci:ios-app -- run --results "$IOS_CI_RESULTS" --group "$IOS_CI_GROUP"
           fi

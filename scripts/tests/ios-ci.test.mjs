@@ -1657,7 +1657,7 @@ test('CI 预热宿主观察器保留主退出码，仅记录本轮树的实际 P
     })();
   `
   const child=spawn('python3',[path.join(repository,'scripts/lib/ios-host-diagnostics.py'),'--',process.execPath,'-e',code],
-    {cwd:p.root,stdio:['ignore','pipe','pipe']})
+    {cwd:p.root,detached:true,stdio:['ignore','pipe','pipe']})
   let stderr='';child.stderr.on('data',b=>stderr+=b);child.stdout.resume()
   const status=await new Promise((resolve,reject)=>{child.once('error',reject);child.once('close',resolve)})
   assert.equal(status,7,stderr)
@@ -1668,7 +1668,22 @@ test('CI 预热宿主观察器保留主退出码，仅记录本轮树的实际 P
   if(process.platform==='darwin') {
     assert.equal(rows[0].self.pid,child.pid)
     assert.equal(rows[0].self.uid,process.getuid())
+    assert.equal(rows[0].self.ppid,process.pid)
+    assert.equal(rows[0].self.pgid,child.pid)
     assert.ok(rows.some(r=>r.process?.ppid===child.pid&&r.process.uid===process.getuid()&&r.process.pgid>1))
     assert.ok(rows.every(r=>r.process?.pid!==child.pid),'外部父进程不能被登记冒充为本轮命令树')
   } else assert.match(rows[0].unavailable,/requires Darwin/)
+})
+
+
+test('CI 宿主聚合必须显式请求且只在托管 macOS 开放，本机拒绝前不启动命令', t => {
+  const p=fixture(t),marker=path.join(p.root,'should-not-run')
+  for(const env of [{GITHUB_ACTIONS:'false',RUNNER_OS:'macOS'},{GITHUB_ACTIONS:'true',RUNNER_OS:'Linux'}]) {
+    const result=spawnSync('python3',[path.join(repository,'scripts/lib/ios-host-diagnostics.py'),'--host-summary','--',
+      process.execPath,'-e',`require('node:fs').writeFileSync(${JSON.stringify(marker)},'unexpected')`],
+      {cwd:p.root,env:{...process.env,...env},encoding:'utf8',timeout:3000})
+    assert.equal(result.status,1,result.stderr)
+    assert.match(result.stderr,/host summary requires/)
+    assert.equal(fs.existsSync(marker),false)
+  }
 })
