@@ -4,7 +4,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import os from 'node:os'
 import { randomUUID } from 'node:crypto'
-import { spawnSync } from 'node:child_process'
+import { spawnSync, spawn } from 'node:child_process'
 import { selection, APP_ID, RUNTIME, DEVICE_TYPE } from '../lib/ios-debug.mjs'
 import { executionMatrix, registry, selectSuites } from '../lib/ios-ci-plan.mjs'
 import {
@@ -1101,6 +1101,73 @@ ${originalXcrun.replace(/^#![^\n]*\n/, '')}`)
     assert.equal(readState(p.root).attempts['ios-smoke'].status, 'failed', '局部修复不清除完整失败锁')
   }
 )
+
+test('模拟器启动预检不构建 App，共享启动预算，失败和取消只清理本次设备', { timeout:20000 }, async t => {
+  for (const mode of ['passed','failed','expired','cancelled']) await t.test(mode, async t => {
+    const p = project(t), id = randomUUID(), sentinel = randomUUID()
+    const state = p.write('.local/boot-state.json', JSON.stringify({ device:null }))
+    const trace = p.write('.local/boot-trace.json','[]'), clockFile = p.write('.local/boot-clock','0')
+    const ready = path.join(p.root,'.local/boot-waiting')
+    const platform = p.write('.local/boot-platform.mjs', `import fs from 'node:fs';import {performance} from 'node:perf_hooks';
+Object.defineProperty(process,'platform',{value:'darwin'});
+const original=performance.now.bind(performance);Object.defineProperty(performance,'now',{value:()=>original()+Number(fs.readFileSync(${JSON.stringify(clockFile)},'utf8'))});`)
+    const executable = p.write('bin/xcrun', `#!${process.execPath}
+const fs=require('node:fs'),a=process.argv.slice(2),file=${JSON.stringify(state)},trace=${JSON.stringify(trace)},clock=${JSON.stringify(clockFile)};
+const state=JSON.parse(fs.readFileSync(file)),calls=JSON.parse(fs.readFileSync(trace));calls.push(a);fs.writeFileSync(trace,JSON.stringify(calls));
+const save=()=>fs.writeFileSync(file,JSON.stringify(state));
+if(a[0]!=='simctl')console.log('27.0');
+else if(a[1]==='list'&&a[2]==='runtimes')console.log(JSON.stringify({runtimes:[{identifier:${JSON.stringify(RUNTIME)},isAvailable:true,buildversion:'TEST'}]}));
+else if(a[1]==='list')console.log(JSON.stringify({devices:{[${JSON.stringify(RUNTIME)}]:[
+{udid:${JSON.stringify(sentinel)},name:'OTHER_TASK',state:'Booted',deviceTypeIdentifier:${JSON.stringify(DEVICE_TYPE)}},...(state.device?[state.device]:[])]}}));
+else if(a[1]==='create'){state.device={udid:${JSON.stringify(id)},name:a[2],deviceTypeIdentifier:a[3],state:'Shutdown',isAvailable:true};save();console.log(state.device.udid)}
+else if(!state.device||a[2]!==state.device.udid)throw new Error('wrong ownership');
+else if(a[1]==='boot'){state.device.state='Booting';save();if(${JSON.stringify(mode)}==='expired')fs.writeFileSync(clock,'80000')}
+else if(a[1]==='bootstatus'){
+if(${JSON.stringify(mode)}==='failed')process.exit(9);
+if(${JSON.stringify(mode)}==='cancelled'){fs.writeFileSync(${JSON.stringify(ready)},'ready');setInterval(()=>{},1000)}
+else {state.device.state='Booted';save();if(${JSON.stringify(mode)}==='expired')fs.writeFileSync(clock,'160000');console.log('Booted')}
+}else if(a[1]==='shutdown'){state.device.state='Shutdown';save()}
+else if(a[1]==='delete'){state.device=null;save()}
+else throw new Error('unexpected simulator command');
+`)
+    fs.chmodSync(executable,0o755)
+    const env = {NODE_OPTIONS:'--import='+platform,DEVELOPER_DIR:''}
+    let child
+    if (mode==='cancelled') {
+      const processHandle = spawn(process.execPath,['scripts/ios-app.mjs','debug','create','--boot'],{
+        cwd:p.root,env:{...process.env,...env,PATH:path.join(p.root,'bin')+path.delimiter+process.env.PATH},stdio:['ignore','pipe','pipe']
+      })
+      let stdout='',stderr=''
+      processHandle.stdout.on('data',b=>stdout+=b);processHandle.stderr.on('data',b=>stderr+=b)
+      const ended = new Promise((resolve,reject)=>{processHandle.once('error',reject);processHandle.once('close',status=>resolve({status,stdout,stderr}))})
+      try {
+        const until=Date.now()+5000
+        while(!fs.existsSync(ready)) {
+          assert.ok(Date.now()<until,'boot status did not become ready')
+          await new Promise(resolve=>setTimeout(resolve,20))
+        }
+        processHandle.kill('SIGTERM');child=await ended
+      } finally {processHandle.kill('SIGKILL');await ended}
+    } else child=p.run(['debug','create','--boot'],env)
+    const calls=JSON.parse(fs.readFileSync(trace)), devices=JSON.parse(fs.readFileSync(state))
+    assert.ok(calls.some(a=>a[1]==='boot')&&calls.some(a=>a[1]==='bootstatus'))
+    assert.ok(calls.filter(a=>['boot','bootstatus','shutdown','delete'].includes(a[1])).every(a=>a[2]===id))
+    const folders=fs.readdirSync(p.base).filter(name=>name.startsWith('ios-debug-')&&path.join(p.base,name)!==p.session)
+    assert.equal(folders.length,1)
+    const readiness=JSON.parse(fs.readFileSync(path.join(p.base,folders[0],'boot-readiness.json')))
+    assert.equal(readiness.scope,'environment');assert.equal(readiness.budgetMs,120000)
+    if(mode==='passed') {
+      assert.equal(child.status,0,child.stderr);assert.match(child.stdout,/SESSION=/)
+      assert.equal(devices.device.state,'Booted');assert.equal(readiness.status,'passed')
+    } else {
+      assert.notEqual(child.status,0);assert.doesNotMatch(child.stdout,/^SESSION=|^EVIDENCE=/m)
+      assert.equal(readiness.status,'failed');assert.equal(devices.device,null)
+      assert.ok(calls.some(a=>a[1]==='shutdown')&&calls.some(a=>a[1]==='delete'))
+      assert.match(readiness.error, mode==='expired' ? /超时/ : mode==='failed' ? /exit=9/ : /取消|SIGTERM|143/)
+    }
+    assert.equal(fs.existsSync(path.join(p.root,'app/dist')),false,'环境预检不编译 App')
+  })
+})
 
 test('T15 完整规模 CLI 在校验前传入结束阶段，拒绝后不发布成功回执', { timeout:15000 }, t => {
   const p = project(t)

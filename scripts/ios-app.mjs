@@ -2,7 +2,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
-import { constants, release } from 'node:os'
+import { constants, release, totalmem, freemem } from 'node:os'
 import {
   APP_ID,
   RUNTIME,
@@ -780,7 +780,8 @@ async function main(args) {
   if (managing) await selectDeveloperTools()
   const toolchain = managing ? '' : await nativeToolchain()
   if (args[1] === 'create') {
-    if (args.length !== 2) throw new Error('create 不接受已有设备或会话参数。')
+    const boot = args.length === 3 && args[2] === '--boot'
+    if (args.length !== 2 && !boot) throw new Error('create 仅接受可选 --boot，不接受已有设备或会话参数。')
     const directory = fs.mkdtempSync(path.join(temporary, 'ios-debug-'))
     const runId = randomUUID()
     const context = {
@@ -798,6 +799,37 @@ async function main(args) {
       if (invocation) invocation.phase = 'execution'
       context.simulatorId = (await simctl('create', context.name, DEVICE_TYPE, RUNTIME)).text.trim()
       writeContext({ file: path.join(directory, 'test-context.json'), context })
+      if (boot) {
+        const file = path.join(directory, 'boot-readiness.json')
+        const readiness = { scope: 'environment', status: 'running', simulatorId: context.simulatorId,
+          runId, environment: toolchain, startedAt: Date.now(), budgetMs: budgets.boot,
+          host: { totalMemory: totalmem(), freeMemory: freemem() } }
+        const bootDeadline = createDeadline(Math.min(budgets.boot, deadline.remaining()))
+        writeJson(file, readiness)
+        console.log(`模拟器启动预检：${file}；只验证环境，不编译或运行 App。`)
+        try {
+          await command('xcrun', ['simctl','boot',context.simulatorId], {
+            log: path.join(directory,'boot-request.log'), timeout: bootDeadline.remaining()
+          })
+          await command('xcrun', ['simctl','bootstatus',context.simulatorId,'-b'], {
+            log: path.join(directory,'boot-status.log'), timeout: bootDeadline.remaining()
+          })
+          const devices = JSON.parse((await command('xcrun', ['simctl','list','devices','--json'], {
+            timeout: bootDeadline.remaining()
+          })).text)
+          if (assertDevice(context, devices).state !== 'Booted') throw new Error('模拟器尚未处于 Booted 状态。')
+          bootDeadline.remaining()
+          readiness.status = 'passed'
+        } catch (error) {
+          readiness.status = 'failed'
+          readiness.error = errorMessage(error)
+          throw new Error('模拟器启动预检未通过；原生业务尚未执行。', { cause: error })
+        } finally {
+          readiness.completedAt = Date.now()
+          readiness.elapsedMs = readiness.completedAt - readiness.startedAt
+          writeJson(file, readiness)
+        }
+      }
       deadline?.remaining()
       fs.unlinkSync(pending)
     } catch (error) {
@@ -813,7 +845,10 @@ async function main(args) {
           .flat()
           .filter((d) => d.name === context.name && d.deviceTypeIdentifier === DEVICE_TYPE)
         if (devices.length > 1) throw new Error('创建补偿发现归属不唯一，未删除设备')
-        for (const device of devices) await simctl('delete', device.udid)
+        for (const device of devices) {
+          if (device.state !== 'Shutdown') await simctl('shutdown',device.udid)
+          await simctl('delete', device.udid)
+        }
       } catch (cleanupError) {
         throw new Error(`${errorMessage(error)}；创建补偿失败：${errorMessage(cleanupError)}，归属清单：${pending}`)
       } finally {

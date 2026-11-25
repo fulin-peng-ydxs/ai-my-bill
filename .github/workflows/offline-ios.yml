@@ -133,6 +133,8 @@ jobs:
             .local/ios/tmp/ai-agent/ios-check-*/check.log
             .local/ios/tmp/ai-agent/ios-check-*/result.json
             .local/ios/tmp/ai-agent/ios-debug-*/run-*/*.xcresult
+            .local/ios/tmp/ai-agent/ios-debug-*/boot-*.log
+            .local/ios/tmp/ai-agent/ios-debug-*/boot-readiness.json
             .local/ios/tmp/ai-agent/native-*/*.xcresult
             .local/ios/tmp/ai-agent/native-*/*.log
             .local/ios/tmp/ai-agent/native-*/app-tests.json

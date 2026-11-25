@@ -217,6 +217,38 @@ function prepare(p, profile = 'secrets', suffix = 'result', range) {
   return { plan, directory }
 }
 
+test('CI 新会话先预检再编译，失败不执行套件，成功后只关闭同一会话', async t => {
+  const original = Object.getOwnPropertyDescriptor(process, 'platform')
+  Object.defineProperty(process, 'platform', { value:'darwin' })
+  try {
+    for (const booted of [false,true]) {
+      const p = fixture(t), {directory} = prepare(p,'app', 'boot-'+booted)
+      const session = path.join(p.root,'.local/ios/tmp/ai-agent/ios-debug-controlled')
+      const calls = []
+      await assert.rejects(executeGroup(p.root,directory,'macos',{command:async (_root,_program,args) => {
+        calls.push(args)
+        if (args[2]==='create') {
+          assert.deepEqual(args,['scripts/ios-app.sh','debug','create','--boot'])
+          if (!booted) throw new Error('CONTROLLED_BOOT_FAILURE')
+          return 'SESSION='+session+'\n'
+        }
+        if (args[2]==='close') {
+          assert.deepEqual(args,['scripts/ios-app.sh','debug','close','--session',session])
+          return ''
+        }
+        assert.ok(booted)
+        throw new Error('CONTROLLED_AFTER_BOOT')
+      }}), booted ? /CONTROLLED_AFTER_BOOT/ : /CONTROLLED_BOOT_FAILURE/)
+      assert.equal(calls.length,booted?3:1)
+      if (booted) assert.deepEqual(calls[1],['scripts/ios-app.sh','ios-build'])
+      const result=JSON.parse(fs.readFileSync(path.join(directory,'group-macos.json')))
+      assert.equal(result.status,'failed')
+      assert.match(result.error,booted?/CONTROLLED_AFTER_BOOT/:/CONTROLLED_BOOT_FAILURE/)
+      if (!booted) assert.equal(fs.existsSync(path.join(directory,'native-build')),false)
+    }
+  } finally {Object.defineProperty(process,'platform',original)}
+})
+
 function processFixture(t) {
   const p = fixture(t)
   fs.cpSync(path.join(repository, 'scripts/lib'), path.join(p.root, 'scripts/lib'), { recursive: true })
@@ -602,6 +634,7 @@ test('CI 工作流 PR 自动、通用门禁始终对账，手动结果隔离且�
   assert.match(workflow, /\.local\/ios\/tmp\/ai-agent\/ios-check-\*\/check\.log/)
   assert.match(workflow, /\.local\/ios\/tmp\/ai-agent\/native-\*\/\*\.log/)
   assert.match(workflow, /\.local\/ios\/tmp\/ai-agent\/native-\*\/app-tests\.json/)
+  assert.match(workflow, /\.local\/ios\/tmp\/ai-agent\/ios-debug-\*\/boot-readiness\.json/)
   assert.doesNotMatch(workflow, /GH_TOKEN:|actions: read|postgres|setup-java|--prefix (web|server)/)
   assert.ok(
     fs

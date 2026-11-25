@@ -180,7 +180,7 @@ export async function executeGroup(root, directory, group, { command = runComman
         await command(
           root,
           'bash',
-          ['scripts/ios-app.sh', 'debug', 'create'],
+          ['scripts/ios-app.sh', 'debug', 'create', '--boot'],
           path.join(directory, 'create-session.log'),
           Math.min(300_000, remaining())
         ),
@@ -189,6 +189,8 @@ export async function executeGroup(root, directory, group, { command = runComman
     return session
   }
   try {
+    // 新宿主先验证最小可启动环境；同一受管会话随后用于业务测试，不先消耗 SDK 编译。
+    if (!borrowedSession && suites.some(s => ['full','ui','scenario'].includes(s.kind))) await ensureSession()
     for (const suite of suites) {
       assertPlan(root, plan)
       const dest = path.join(directory, suite.name)
