@@ -16,7 +16,7 @@ export function observeBootProcess(root, directory, stage, pid, budgetMs, { run 
     }
   }
   let work, cleanupFailure, closed = false
-  // 在启动预算内部取一秒栈，最多三秒；离命令截止至少留出七秒，不顺延验收。
+  // 等待五秒仍未返回即取一秒栈，避免拖到故障尾部才启动取证工具；最多三秒且不顺延验收。
   const timer = budgetMs>10_000 ? schedule(() => {
     if (closed) return
     // 定时回调的同步写入与异步失败均归入 work，不能形成未处理异常并遗留启动请求。
@@ -40,7 +40,7 @@ export function observeBootProcess(root, directory, stage, pid, budgetMs, { run 
         report.sampleFinishedAt=Date.now()
         try {save()} catch(error) {cleanupFailure ??= error}
       })
-  },Math.min(90_000,budgetMs-10_000)) : undefined
+  },Math.min(5_000,budgetMs-10_000)) : undefined
   return async () => {
     closed = true
     if (timer!==undefined) unschedule(timer)

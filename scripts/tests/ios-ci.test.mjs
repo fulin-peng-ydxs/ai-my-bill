@@ -1139,7 +1139,7 @@ test('CI 启动取证只采样当前 PID，不延长预算，快速返回和取�
     let fire
     const failure=Object.assign(new Error('controlled diagnostic cleanup failure'),{code:'IOS_PROCESS_CLEANUP_FAILED'})
     const close=observeBootProcess(p.root,p.root,'boot-ready',200401,120000,{
-      schedule(fn,ms){assert.equal(ms,90000);fire=fn;return 1},unschedule(id){assert.equal(id,1)},
+      schedule(fn,ms){assert.equal(ms,5000);fire=fn;return 1},unschedule(id){assert.equal(id,1)},
       run:async(root,program,args,log,budget,options)=>{
         calls.push({root,program,args,log,budget,options})
         assert.equal(program,'/usr/bin/sample');assert.deepEqual(args.slice(0,3),['200401','1','10'])

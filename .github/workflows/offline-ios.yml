@@ -142,6 +142,21 @@ jobs:
           retention-days: 7
           if-no-files-found: warn
 
+      # runner 临时宿主上的系统日志只作故障取证，不充当启动/测试成功证据。
+      - name: Preserve simulator host diagnostics
+        if: failure() && matrix.group == 'macos'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-host-diagnostics-${{ github.run_attempt }}
+          path: |
+            ~/Library/Logs/CoreSimulator/CoreSimulator.log
+            ~/Library/Logs/DiagnosticReports/simctl*.ips
+            ~/Library/Logs/DiagnosticReports/node*.ips
+            ~/Library/Logs/DiagnosticReports/sample*.ips
+            ~/Library/Logs/DiagnosticReports/CoreSimulatorService*.ips
+          retention-days: 7
+          if-no-files-found: warn
+
   result:
     name: ${{ github.event_name == 'pull_request' && 'CI common result' || format('CI suite {0} result', needs.plan.outputs.profile || github.event.inputs.verification || 'request') }}
     if: always()
