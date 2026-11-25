@@ -283,6 +283,7 @@ test('CI 启动环境专项只运行新会话启动及关闭，拒绝旧回执�
     assert.ok(!selectSuites(registry(p.root),'pull-request',['scripts/tests/ios-ci.test.mjs']).some(x=>x.name==='simulator-boot'))
     const borrowed=prepare(p,'simulator-boot','borrowed')
     await assert.rejects(executeGroup(p.root,borrowed.directory,'macos',{command,session}),/不能复用旧启动回执/)
+    assert.equal(calls.length,2,'拒绝旧会话前不启动、关闭或暂停该设备')
   } finally {Object.defineProperty(process,'platform',original)}
 })
 

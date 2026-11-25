@@ -169,6 +169,8 @@ export async function executeGroup(root, directory, group, { command = runComman
   if (group === 'macos' && process.platform !== 'darwin')
     throw new Error('macOS 专项必须在 macOS 执行。')
   if (borrowedSession && group!=='macos') throw new Error('仅 macOS 原生组可复用模拟器。')
+  if (borrowedSession && suites.some(s=>s.kind==='environment'))
+    throw new Error('启动环境专项要求本轮新会话，不能复用旧启动回执。')
   if (borrowedSession) readSession(path.join(root,'.local/ios/tmp/ai-agent'),borrowedSession)
   const groupFile = path.join(directory, `group-${group}.json`)
   fs.writeFileSync(groupFile, JSON.stringify({ status: 'running', plan: plan.id }), {
@@ -226,7 +228,6 @@ export async function executeGroup(root, directory, group, { command = runComman
       }
       try {
         if (suite.kind === 'environment') {
-          if (borrowedSession) throw new Error('启动环境专项要求本轮新会话，不能复用旧启动回执。')
           const directory = await ensureSession()
           const owned = readSession(path.join(root,'.local/ios/tmp/ai-agent'),directory)
           const readiness = read(path.join(directory,'boot-readiness.json'))
