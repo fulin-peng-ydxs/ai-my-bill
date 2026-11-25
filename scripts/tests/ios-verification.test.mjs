@@ -1103,7 +1103,7 @@ ${originalXcrun.replace(/^#![^\n]*\n/, '')}`)
 )
 
 test('模拟器启动预检不构建 App，共享启动预算，失败和取消只清理本次设备', { timeout:20000 }, async t => {
-  for (const mode of ['passed','direct','failed','journal-failed','expired','cancelled']) await t.test(mode, async t => {
+  for (const mode of ['passed','direct','failed','journal-failed','invalid-terminal','wrong-terminal','expired','cancelled']) await t.test(mode, async t => {
     const p = project(t)
     const succeeds=['passed','direct'].includes(mode), id = randomUUID(), sentinel = randomUUID()
     const state = p.write('.local/boot-state.json', JSON.stringify({ device:null }))
@@ -1154,7 +1154,7 @@ else {
   const until=Date.now()+1000;while(!fs.existsSync(${JSON.stringify(serviceReady)})&&Date.now()<until)Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,20);
   if(!fs.existsSync(${JSON.stringify(serviceReady)}))throw new Error('successful boot killed device service');process.kill(state.helperPid,0);
  }
- state.device.state='Booted';save();if(${JSON.stringify(mode)}==='expired')fs.writeFileSync(clock,'160000');console.log('Booted')}
+ state.device.state='Booted';save();if(${JSON.stringify(mode)}==='expired')fs.writeFileSync(clock,'160000');console.log('Monitoring boot status for '+state.device.name+' ('+(${JSON.stringify(mode)}==='wrong-terminal'?${JSON.stringify(sentinel)}:state.device.udid)+').\\n'+(${JSON.stringify(mode)}==='invalid-terminal'?'Status=0, isTerminal=NO\\n':'Status=4294967295, isTerminal=YES, Elapsed=00:01.\\n\\tFinished\\n'))}
 
 }else if(a[1]==='shutdown'){state.device.state='Shutdown';save()}
 else if(a[1]==='delete'){state.device=null;save()}
@@ -1202,20 +1202,25 @@ else throw new Error('unexpected simulator command');
     assert.equal(folders.length,1)
     const readiness=JSON.parse(fs.readFileSync(path.join(p.base,folders[0],'boot-readiness.json')))
     assert.equal(readiness.scope,'environment');assert.equal(readiness.budgetMs,120000)
-    assert.equal(readiness.schema,2);assert.equal(readiness.startupMode,'bootstatus-b')
+    assert.equal(readiness.schema,3);assert.equal(readiness.startupMode,'bootstatus-b')
     if(mode==='direct')assert.ok(readiness.commands.every(step=>step.program===directProgram),'启动及状态核对均绕过 SDK 包装器')
     assert.ok(readiness.commands.every(step=>step.pid>1 || step.status==='failed'))
-    if(succeeds)assert.deepEqual(readiness.commands.map(x=>[x.stage,x.status]),[['boot-ready','passed'],['verify-state','passed']])
+    if(succeeds)assert.deepEqual(readiness.commands.map(x=>[x.stage,x.status]),[['verify-device','passed'],['boot-ready','passed']])
     if(mode==='failed')assert.equal(readiness.stage,'boot-ready')
     if(succeeds) {
       assert.equal(child.status,0,child.stderr);assert.match(child.stdout,/SESSION=/)
       assert.equal(devices.device.state,'Booted');assert.equal(readiness.status,'passed')
+      assert.equal(readiness.initialDevice.state,'Shutdown')
+      const bootIndex=calls.findIndex(a=>a[1]==='bootstatus')
+      assert.ok(!calls.slice(bootIndex+1).some(a=>a[1]==='list'),'就绪后不重新启动查询客户端')
+      const alive=spawnSync('ps',['-p',String(helperPid),'-o','stat='],{encoding:'utf8'})
+      assert.equal(alive.status,0);assert.ok(!alive.stdout.trim().startsWith('Z'),'成功交接后的设备服务仍存活')
     } else {
       assert.notEqual(child.status,0);assert.doesNotMatch(child.stdout,/^SESSION=|^EVIDENCE=/m)
       assert.equal(readiness.status,'failed');assert.equal(devices.device,null)
       if(mode==='journal-failed')assert.match(readiness.error,/controlled boot journal failure/)
       assert.ok(calls.some(a=>a[1]==='shutdown')&&calls.some(a=>a[1]==='delete'))
-      assert.match(readiness.error, mode==='expired' ? /超时/ : ['failed','journal-failed'].includes(mode) ? /exit=9/ : /取消|SIGTERM|143/)
+      assert.match(readiness.error, mode==='expired' ? /超时/ : ['failed','journal-failed'].includes(mode) ? /exit=9/ : ['invalid-terminal','wrong-terminal'].includes(mode) ? /原生启动成功终态/ : /取消|SIGTERM|143/)
     }
     assert.equal(fs.existsSync(path.join(p.root,'app/dist')),false,'环境预检不编译 App')
   })
@@ -1681,10 +1686,11 @@ for (const kind of ['preflight', 'execution', 'within-budget']) {
     p.write('scripts/lib/ios-app-full.sh', '#!/bin/bash\nexit 0\n')
     const proof = p.evidence('NativeTests/NativeSqliteTests/testLedgerLifecycleAndProtection')
     const durations =
+      // 新增入口解析后有四次查询；execution 的预检累计仍为原来的 720000ms。
       kind === 'preflight'
         ? { syntax: 240000, toolchain: 240000, body: 0 }
         : kind === 'execution'
-          ? { syntax: 0, toolchain: 240000, body: 300000 }
+          ? { syntax: 0, toolchain: 180000, body: 300000 }
           : { syntax: 0, toolchain: 100000, body: 100000 }
     const preload = virtualClock(p, durations)
     const result = p.run(['ios-smoke', '--from', proof.run], {
@@ -1754,7 +1760,8 @@ echo SHOULD_NOT_CONTINUE > continued
 `
   )
   const proof = p.evidence('NativeTests/NativeSqliteTests/testLedgerLifecycleAndProtection')
-  const preload = virtualClock(p, { syntax: 0, toolchain: 299000, body: 0 })
+  // 四次受控工具链查询共 897000ms，仍给执行体留下原来的约三秒；不调整生产预算。
+  const preload = virtualClock(p, { syntax: 0, toolchain: 224250, body: 0 })
   const result = p.run(['ios-smoke', '--from', proof.run], {
     DEVELOPER_DIR: '/controlled/sdk',
     NODE_OPTIONS: '--import=' + preload

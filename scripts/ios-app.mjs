@@ -44,6 +44,7 @@ import { checkNames, checkDefinition } from './lib/ios-checks.mjs'
 import { spawnManaged, finishCleanup } from './lib/ios-processes.mjs'
 import { errorMessage } from './lib/ios-errors.mjs'
 import { resolveSimctl } from './lib/ios-simctl.mjs'
+import { assertBootStatus } from './lib/ios-boot-proof.mjs'
 import { cachedLayer, layerInputs, assetOutputs, installationMatches,
   inspectInstallation, recordInstallation, forgetInstallation } from './lib/ios-cache.mjs'
 
@@ -821,7 +822,7 @@ async function main(args) {
       writeContext({ file: path.join(directory, 'test-context.json'), context })
       if (boot) {
         const file = path.join(directory, 'boot-readiness.json')
-        const readiness = { schema: 2, startupMode: 'bootstatus-b', scope: 'environment', status: 'running', tool: simctlExecution, simulatorId: context.simulatorId,
+        const readiness = { schema: 3, startupMode: 'bootstatus-b', scope: 'environment', status: 'running', tool: simctlExecution, simulatorId: context.simulatorId,
           runId, environment: toolchain, startedAt: Date.now(), budgetMs: budgets.boot,
           host: { totalMemory: totalmem(), freeMemory: freemem() }, commands:[] }
         const bootDeadline = createDeadline(Math.min(budgets.boot, deadline.remaining()))
@@ -834,7 +835,7 @@ async function main(args) {
             throw error
           }
         }
-        const bootCommand = async (stage,args,log) => {
+        const bootCommand = async (stage,args,log,validate) => {
           const step={stage,status:'running',startedAt:Date.now()}
           let failure
           readiness.stage=stage
@@ -846,18 +847,26 @@ async function main(args) {
               step.program=program
               writeJson(file,readiness)
             }})
+            const value=validate ? validate(result) : result
+            bootDeadline.remaining()
             step.status='passed'
-            return result
+            return value
           } catch(error) {failure=error;step.status='failed';step.error=errorMessage(error);throw error}
           finally {step.completedAt=Date.now();persist(failure)}
         }
         try {
-          // 官方 -b 在同一进程完成启动与等待，避免冷启动期间再次经过 SDK Shell/辅助进程。
-          await bootCommand('boot-ready',['simctl','bootstatus',context.simulatorId,'-b'],path.join(directory,'boot-status.log'))
-          const devices=JSON.parse((await bootCommand('verify-state',['simctl','list','devices','--json'])).text)
-          if (assertDevice(context, devices).state !== 'Booted') throw new Error('模拟器尚未处于 Booted 状态。')
-          bootDeadline.remaining()
-          readiness.deviceState = 'Booted'
+          // 身份核对放在冷启动前；完成后由同一原生 bootstatus 的成功终态证明就绪，
+          // 避免高负载时再启动查询客户端/SDK 包装器，并非以 Booting 或退出码独自充当成功。
+          readiness.initialDevice=await bootCommand('verify-device',['simctl','list','devices','--json'],undefined,result=>{
+            const device=assertDevice(context,JSON.parse(result.text))
+            if(device.state!=='Shutdown')throw new Error('新建调试设备不处于 Shutdown，拒绝冒充冷启动。')
+            return Object.fromEntries(['udid','name','deviceTypeIdentifier','state','isAvailable'].map(key=>[key,device[key]]))
+          })
+          const log=path.join(directory,'boot-status.log')
+          readiness.deviceState=await bootCommand('boot-ready',['simctl','bootstatus',context.simulatorId,'-b'],log,()=>{
+            if(fs.statSync(log).size>262144)throw new Error('原生启动终态日志过大。')
+            return assertBootStatus(fs.readFileSync(log,'utf8'),context.simulatorId)
+          })
           readiness.status = 'passed'
         } catch (error) {
           readiness.status = 'failed'

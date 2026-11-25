@@ -1,10 +1,11 @@
 import fs from 'node:fs'
 import path from 'node:path'
+import {createHash} from 'node:crypto'
 
 const framework = '/Library/Developer/PrivateFrameworks/CoreSimulator.framework'
 const installed = framework + '/Versions/A/Resources/bin/simctl'
 const plist = framework + '/Versions/A/Resources/Info.plist'
-const fallback = { program:'xcrun', prefix:['simctl'], mode:'sdk-wrapper' }
+const fallback = (entry,reason,details={}) => ({program:'xcrun',prefix:['simctl'],mode:'sdk-wrapper',entry,reason,...details})
 const magic = new Set(['cafebabe','bebafeca','cafebabf','cffaedfe','feedfacf','cefaedfe','feedface'])
 
 function versionParts(value) {
@@ -25,12 +26,15 @@ function atLeast(current, expected) {
 /** 冷启动前解析一次官方入口；不修改 SDK，不运行会安装组件/接受许可的包装路径。 */
 export async function resolveSimctl(command, { files=fs }={}) {
   const entry=(await command('xcrun',['--find','simctl'])).text.trim()
-  if(!path.isAbsolute(entry) || !files.existsSync(entry))return {...fallback}
+  if(!path.isAbsolute(entry) || !files.existsSync(entry))return fallback(entry,'entry-unavailable')
   const trusted = file => {
     const stat=files.statSync(file)
     return stat.isFile() && stat.uid===0 && !(stat.mode&0o022) && Boolean(stat.mode&0o111)
   }
-  if(!trusted(entry))return {...fallback}
+  // 入口原本就是 xcrun 选择的 SDK 程序；安装者可为当前用户，不额外强加 root 归属。
+  // 实际绕过包装器执行的系统工具仍必须 root 拥有且不可被组/其他用户写入。
+  const entryStat=files.statSync(entry)
+  if(!entryStat.isFile() || !(entryStat.mode&0o111))return fallback(entry,'entry-not-executable')
   const readPrefix=file=>{
     const fd=files.openSync(file,'r'),buffer=Buffer.alloc(16384)
     try {return buffer.subarray(0,files.readSync(fd,buffer,0,buffer.length,0))}
@@ -40,8 +44,11 @@ export async function resolveSimctl(command, { files=fs }={}) {
   if(magic.has(source.subarray(0,4).toString('hex')))
     return {program:entry,prefix:[],mode:'sdk-binary'}
   const wrapper=source.toString('utf8')
-  const expected=wrapper.match(/^EXPECTED_VERSION="([\d.]+)"$/m)?.[1]
-  if(!expected || !wrapper.includes('exec "'+installed+'" "${@}"'))return {...fallback}
+  const expected=wrapper.match(/^\s*EXPECTED_VERSION=["']([\d.]+)["']\s*$/m)?.[1]
+  const forwardsArgs=['"${@}"','"$@"'].some(args=>wrapper.includes('exec "'+installed+'" '+args))
+  if(!expected || !forwardsArgs)return fallback(entry,'unrecognized-wrapper',{
+    owner:entryStat.uid,mode:entryStat.mode,wrapperHash:createHash('sha256').update(source).digest('hex'),
+    hasExpectedVersion:Boolean(expected),hasCanonicalExec:forwardsArgs})
   // 只绕过已识别的官方版本检查 Shell：先复现其最低组件要求，未知包装器保持原语义。
   const current=(await command('/usr/libexec/PlistBuddy',['-c','Print :CFBundleVersion',plist])).text.trim()
   if(!atLeast(current,expected))throw new Error('CoreSimulator 组件低于所选 SDK 要求；请先在 Xcode 完成组件准备。')

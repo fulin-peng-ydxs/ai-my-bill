@@ -6,7 +6,7 @@ import { assertPlan, digest, executionMatrix } from './ios-ci-plan.mjs'
 import { audit, auditDependencies } from './ios-audit.mjs'
 import { inputHash, requireEvidence, writeJson } from './ios-verification.mjs'
 import { contentHash } from './ios-cache.mjs'
-import { selection, nativeCases, uiCases,readSession } from './ios-debug.mjs'
+import { selection, nativeCases, uiCases,readSession,DEVICE_TYPE } from './ios-debug.mjs'
 import { assertScriptReport, assertModePhases } from './ios-test-reports.mjs'
 import { installationGate } from './ios-install-gate.mjs'
 import { validateScenario } from './ios-scenario-evidence.mjs'
@@ -14,6 +14,7 @@ import { readScaleCold } from './ios-scale-run.mjs'
 import { coverageReport } from './ios-coverage.mjs'
 import { runCommand } from './ios-processes.mjs'
 import { errorMessage } from './ios-errors.mjs'
+import { assertBootStatus } from './ios-boot-proof.mjs'
 
 const read = (file) => JSON.parse(plainFile(file))
 
@@ -307,19 +308,22 @@ function validateReports(root, directory, suite, receipt) {
     const {source,readiness:r} = read(path.join(directory,'environment.json'))
     const environment = JSON.parse(r?.environment ?? 'null')
     const uuid=/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i
-    if (!isDeepStrictEqual(source,receipt.source) || r?.schema!==2 || r.startupMode!=='bootstatus-b' || r?.scope!=='environment' || r.status!=='passed' ||
-      r.deviceState!=='Booted' || !uuid.test(r.simulatorId??'') || !uuid.test(r.runId??'') ||
+    if (!isDeepStrictEqual(source,receipt.source) || r?.schema!==3 || r.startupMode!=='bootstatus-b' || r?.scope!=='environment' || r.status!=='passed' ||
+      r.deviceState!=='Booted' || r.initialDevice?.udid!==r.simulatorId ||
+      r.initialDevice?.state!=='Shutdown' || r.initialDevice?.name!=='我的账单调试-'+r.runId ||
+      r.initialDevice?.deviceTypeIdentifier!==DEVICE_TYPE || r.initialDevice?.isAvailable!==true || !uuid.test(r.simulatorId??'') || !uuid.test(r.runId??'') ||
       r.budgetMs!==120000 || !Number.isFinite(r.startedAt) || !Number.isFinite(r.completedAt) ||
       r.completedAt<=r.startedAt || r.completedAt>(receipt.completedAt??Date.now()) ||
       !/^27\./.test(environment?.sdk??'') || !/^Xcode 27\./.test(environment?.xcode??'') || !environment?.runtime || r.elapsedMs!==r.completedAt-r.startedAt || r.elapsedMs>r.budgetMs ||
       !receipt.reports.some(x=>x.path==='boot-status.log') ||
       typeof r.tool?.program!=='string' || !['sdk-wrapper','sdk-binary','installed-binary'].includes(r.tool?.mode) ||
       !Array.isArray(r.commands) || r.commands.length!==2 ||
-      r.commands.some((step,index)=>step.program!==r.tool.program || step.stage!==['boot-ready','verify-state'][index] || step.status!=='passed' ||
+      r.commands.some((step,index)=>step.program!==r.tool.program || step.stage!==['verify-device','boot-ready'][index] || step.status!=='passed' ||
         !Number.isSafeInteger(step.pid) || step.pid<=1 || !Number.isFinite(step.startedAt) ||
         !Number.isFinite(step.completedAt) || step.completedAt<step.startedAt || step.startedAt<r.startedAt ||
         step.completedAt>r.completedAt || (index>0 && step.startedAt<r.commands[index-1].completedAt)))
       throw new Error('模拟器启动环境回执未通过、范围或来源不符。')
+    assertBootStatus(plainFile(path.join(directory,'boot-status.log')).toString('utf8'),r.simulatorId)
     return
   }
   if (suite.kind === 'installation') {

@@ -22,6 +22,7 @@ import { requireEvidence } from '../lib/ios-verification.mjs'
 import { processCleanup, finishCleanup } from '../lib/ios-processes.mjs'
 import { commandScope } from '../lib/ios-process-scope.mjs'
 import { resolveSimctl } from '../lib/ios-simctl.mjs'
+import { assertBootStatus } from '../lib/ios-boot-proof.mjs'
 
 const repository = new URL('../../', import.meta.url).pathname
 
@@ -261,12 +262,14 @@ test('CI 启动环境专项只运行新会话启动及关闭，拒绝旧回执�
     const context=p.write('.local/ios/tmp/ai-agent/ios-debug-fixture/test-context.json',{
       kind:'ios-debug',schema:1,state:'open',appId:'com.mybill.offline',simulatorId:id,runId,name:'我的账单调试-'+runId})
     fs.chmodSync(context,0o600)
-    const now=Date.now(),r={schema:2,startupMode:'bootstatus-b',tool:{program:'xcrun',prefix:['simctl'],mode:'sdk-wrapper'},scope:'environment',status:'passed',deviceState:'Booted',simulatorId:id,runId,
+    const now=Date.now(),r={schema:3,startupMode:'bootstatus-b',tool:{program:'xcrun',prefix:['simctl'],mode:'sdk-wrapper'},scope:'environment',status:'passed',deviceState:'Booted',simulatorId:id,runId,
+      initialDevice:{udid:id,name:'我的账单调试-'+runId,state:'Shutdown',isAvailable:true,deviceTypeIdentifier:'com.apple.CoreSimulator.SimDeviceType.iPhone-14-Pro-Max'},
       environment:JSON.stringify({sdk:'27.0',xcode:'Xcode 27.0',runtime:'TEST'}),budgetMs:120000,startedAt:now-5,completedAt:now,elapsedMs:5,commands:[
-        {stage:'boot-ready',program:'xcrun',status:'passed',pid:200501,startedAt:now-5,completedAt:now-2},
-        {stage:'verify-state',program:'xcrun',status:'passed',pid:200502,startedAt:now-2,completedAt:now}]}
+        {stage:'verify-device',program:'xcrun',status:'passed',pid:200501,startedAt:now-5,completedAt:now-2},
+        {stage:'boot-ready',program:'xcrun',status:'passed',pid:200502,startedAt:now-2,completedAt:now}]}
     p.write('.local/ios/tmp/ai-agent/ios-debug-fixture/boot-readiness.json',r)
-    for(const name of ['boot-status.log'])p.write('.local/ios/tmp/ai-agent/ios-debug-fixture/'+name,'')
+    const bootLog='Monitoring boot status for owned ('+id+').\nStatus=4294967295, isTerminal=YES, Elapsed=00:01.\n\tFinished\n'
+    p.write('.local/ios/tmp/ai-agent/ios-debug-fixture/boot-status.log',bootLog)
     const command=async(_root,_program,args)=>{calls.push(args);return args[2]==='create'?'SESSION='+session+'\n':''}
     await executeGroup(p.root,directory,'macos',{command})
     assert.deepEqual(calls,[['scripts/ios-app.sh','debug','create','--boot'],['scripts/ios-app.sh','debug','close','--session',session]])
@@ -275,7 +278,8 @@ test('CI 启动环境专项只运行新会话启动及关闭，拒绝旧回执�
     const receiptFile=path.join(directory,'simulator-boot/receipt.json'),reportFile=path.join(directory,'simulator-boot/environment.json')
     const originalReport=JSON.parse(fs.readFileSync(reportFile))
     for (const change of [v=>v.source.commit='0'.repeat(40),v=>v.readiness.status='failed',v=>v.readiness.deviceState='Shutdown',
-      v=>delete v.readiness.tool,v=>v.readiness.commands[1].program='other-tool',v=>delete v.readiness.schema,v=>v.readiness.startupMode='split-boot',
+      v=>delete v.readiness.initialDevice,v=>v.readiness.initialDevice.state='Booted',
+      v=>v.readiness.initialDevice.udid=runId,v=>v.readiness.initialDevice.name='other',v=>delete v.readiness.tool,v=>v.readiness.commands[1].program='other-tool',v=>delete v.readiness.schema,v=>v.readiness.startupMode='split-boot',
       v=>v.readiness.commands.pop(),v=>v.readiness.commands[0].status='running',v=>v.readiness.commands[1].pid=0,
       v=>v.readiness.commands[1].startedAt=v.readiness.startedAt-1,
       v=>v.readiness.elapsedMs=120001,v=>v.readiness.scope='partial',v=>v.readiness.environment='{}',v=>v.readiness.completedAt=Date.now()+60000]) {
@@ -284,10 +288,19 @@ test('CI 启动环境专项只运行新会话启动及关闭，拒绝旧回执�
       fs.writeFileSync(receiptFile,JSON.stringify(receipt))
       assert.equal(reconcile(p.root,directory).status,'incomplete')
     }
+    fs.writeFileSync(reportFile,JSON.stringify(originalReport))
+    const rawLog=path.join(directory,'simulator-boot/boot-status.log')
+    for(const text of ['Monitoring boot status for owned ('+id+').\nStatus=0, isTerminal=NO\n',bootLog.replace(id,runId),bootLog]) {
+      fs.writeFileSync(rawLog,text)
+      const receipt=JSON.parse(fs.readFileSync(receiptFile))
+      for(const name of ['environment.json','boot-status.log'])receipt.reports.find(x=>x.path===name).hash=digest(fs.readFileSync(path.join(directory,'simulator-boot',name)))
+      fs.writeFileSync(receiptFile,JSON.stringify(receipt))
+      assert.equal(reconcile(p.root,directory).status,text===bootLog?'passed':'incomplete')
+    }
     const selected=selectSuites(registry(p.root),'pull-request',['scripts/lib/ios-processes.mjs']).map(x=>x.name)
     assert.deepEqual(selected,['secrets','scripts','simulator-boot','scripts-macos'])
     assert.equal(selected.filter(name=>registry(p.root).suites[name].runner==='macos')[0],'simulator-boot','冷启动预检必须先于工具压力回归')
-    for(const file of ['scripts/lib/ios-host-diagnostics.py','scripts/lib/ios-app-full.sh','scripts/lib/ios-simctl.mjs'])
+    for(const file of ['scripts/lib/ios-host-diagnostics.py','scripts/lib/ios-app-full.sh','scripts/lib/ios-simctl.mjs','scripts/lib/ios-boot-proof.mjs'])
       assert.ok(selectSuites(registry(p.root),'pull-request',[file]).some(x=>x.name==='simulator-boot'),file)
     assert.ok(!selectSuites(registry(p.root),'pull-request',['scripts/tests/ios-ci.test.mjs']).some(x=>x.name==='simulator-boot'))
     const borrowed=prepare(p,'simulator-boot','borrowed')
@@ -859,7 +872,8 @@ test('CI 取消后新补偿组仍归外层清理，登记前后中断不放行�
           const executionBudget = mode === 'timeout' ? 5000 : 10000
           const xcrun = p.write('bin/xcrun', `#!${process.execPath}
 const fs=require('node:fs'),a=process.argv.slice(2);
-if(a[0]==='--sdk'){${mode === 'slow-preflight' ? 'Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,650);' : ''}console.log('27.0')}
+if(a[0]==='--find')console.log('/controlled/sdk/usr/bin/simctl');
+else if(a[0]==='--sdk'){${mode === 'slow-preflight' ? 'Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,650);' : ''}console.log('27.0')}
 else if(a[2]==='runtimes')console.log(JSON.stringify({runtimes:[{identifier:'com.apple.CoreSimulator.SimRuntime.iOS-27-0',isAvailable:true,buildversion:'TEST'}]}));
 else if(a[1]==='create'){fs.writeFileSync(${JSON.stringify(initial)},JSON.stringify({pid:process.pid,parent:process.ppid}));setInterval(()=>{},1000)}
 else if(a[2]==='devices'){process.on('SIGTERM',()=>{});fs.writeFileSync(${JSON.stringify(late)},String(process.pid));setInterval(()=>{},1000)}
@@ -1654,12 +1668,12 @@ test('CI 冷启动前解析官方 simctl 原生工具，校验版本、许可准
   const target=framework+'/Versions/A/Resources/bin/simctl'
   const entry='/Applications/Xcode.app/Contents/Developer/usr/bin/simctl'
   const wrapper='#!/bin/bash\nEXPECTED_VERSION="1171.7"\nexec "'+target+'" "${@}"\n'
-  for(const mode of ['valid','equal','old','bad-version','bad-owner','writable','bad-target','outside','unknown','binary']) {
+  for(const mode of ['valid','equal','sdk-user-owned','quote-variant','old','bad-version','bad-owner','writable','bad-target','outside','unknown','binary']) {
     const calls=[],closed=[]
-    const bytes=file=>file===entry&&mode!=='binary'?Buffer.from(mode==='unknown'?'#!/bin/sh\nexec custom-tool "$@"':wrapper):
+    const bytes=file=>file===entry&&mode!=='binary'?Buffer.from(mode==='unknown'?'#!/bin/sh\nexec custom-tool "$@"':mode==='quote-variant'?wrapper.replace('EXPECTED_VERSION="1171.7"',"EXPECTED_VERSION='1171.7'").replace('"${@}"','"$@"'):wrapper):
       Buffer.from(mode==='bad-target'?'not executable':'cffaedfe','hex')
-    const files={existsSync:()=>true,statSync:file=>({isFile:()=>true,uid:file===target&&mode==='bad-owner'?501:0,
-      mode:file===target&&mode==='writable'?0o100777:0o100755}),
+    const files={existsSync:()=>true,statSync:file=>({isFile:()=>true,uid:file===target&&mode==='bad-owner'?process.getuid()+1:file===entry&&mode==='sdk-user-owned'?process.getuid():0,
+      mode:file===target&&mode==='writable'?0o100777:file===entry&&mode==='sdk-user-owned'?0o100775:0o100755}),
       realpathSync:()=>mode==='outside'?'/tmp/other':target,
       openSync:file=>file,closeSync:file=>closed.push(file),
       readSync:(file,buffer)=>{const value=bytes(file);value.copy(buffer);return value.length}}
@@ -1675,9 +1689,22 @@ test('CI 冷启动前解析官方 simctl 原生工具，校验版本、许可准
       const result=await resolveSimctl(command,{files})
       assert.equal(result.program,mode==='unknown'?'xcrun':mode==='binary'?entry:target)
       assert.deepEqual(result.prefix,mode==='unknown'?['simctl']:[])
-      if(mode==='valid'||mode==='equal')assert.equal(calls.filter(c=>c[0]==='xcodebuild').length,1)
+      if(['valid','equal','sdk-user-owned','quote-variant'].includes(mode))assert.equal(calls.filter(c=>c[0]==='xcodebuild').length,1)
+      if(mode==='unknown')assert.equal(result.reason,'unrecognized-wrapper')
     }
     assert.ok(!calls.some(c=>c.includes('-runFirstLaunch')))
     assert.equal(closed.filter(f=>f===entry).length,1)
   }
+})
+
+
+test('原生启动终态必须匹配单个本轮 UUID，未完成、错误设备及空日志不能通过', () => {
+  const id='11111111-1111-4111-8111-111111111111'
+  const header='Monitoring boot status for owned ('+id+').\n'
+  const finished='Status=4294967295, isTerminal=YES, Elapsed=00:01.\n\tFinished\n'
+  assert.equal(assertBootStatus(header+finished,id),'Booted')
+  assert.equal(assertBootStatus(header+'Device already booted, nothing to do.\n',id),'Booted')
+  for(const text of ['',finished,header+'Status=0, isTerminal=NO\n',header+finished+header,header+finished+'Status=0, isTerminal=NO\n',
+    (header+finished).replace(id,'22222222-2222-4222-8222-222222222222')])assert.throws(()=>assertBootStatus(text,id),/原生启动成功终态/)
+  assert.throws(()=>assertBootStatus('x'.repeat(262145),id),/过大/)
 })
