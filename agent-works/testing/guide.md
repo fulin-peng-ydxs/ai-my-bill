@@ -232,7 +232,7 @@ npm run ci:ios-app -- result --results "$IOS_CI_RESULTS"
 
 依赖审计复用 [OSV querybatch](https://google.github.io/osv.dev/post-v1-querybatch/)，仅收集 `app/package-lock.json` 的 npm 直接/传递/开发/可选依赖及 Xcode 提交的 `Package.resolved` 中 Swift URL+版本（无版本时使用锁定 revision）。锁损坏、空集合、不支持项、网络/HTTP/格式错误、返回缺项、循环分页或超出预算均保留未通过，已知漏洞直接阻断该套件；不自动升级依赖、接受风险或添加豁免。审计报告列出全部受检锁项、时间和发现；不证明操作系统、未锁定外部制品或所有原生代码无漏洞。依赖输入变化自动加入 `change`，`final`必跑，也可单独按需执行；不新增每日或定时远端任务。
 
-[远端工作流](../../.github/workflows/offline-ios.yml)在 PR opened/synchronize/reopened/ready_for_review/edited 时自动按变更触发，不设路径过滤，以保证仅文档 PR 仍有通用门禁；edited 包含更换目标分支后的重新规划。同一 PR 新运行取消旧运行，取消不能通过。普通分支 push 和普通标签不启动；手动或专用标签保留显式范围入口。计划生成 Linux/macOS 分组矩阵；各组读取同一计划并归档原报告，总结果 job 合并并对账，失败/取消 job 不能被报告绿色遮蔽。通用/脚本组沿用 10 分钟、原生组沿用 45 分钟外层预算；本地组执行也从前置检查累计同一预算，各阶段及单用例上限继续独立生效。普通请求标签为 `ios-ci/<scripts|app|final|dependency-audit>/<唯一名称>`；`change` 标签须写明起点：`ios-ci/change/<完整 base SHA>/<唯一名称>`。例如仅请求脚本回归：
+[远端工作流](../../.github/workflows/offline-ios.yml)在 PR opened/synchronize/reopened/ready_for_review/edited 时自动按变更触发，不设路径过滤，以保证仅文档 PR 仍有通用门禁；edited 包含更换目标分支后的重新规划。同一 PR 新运行取消旧运行，取消不能通过。普通分支 push 和普通标签不启动；手动或专用标签保留显式范围入口。计划生成 Linux/macOS 分组矩阵；各组读取同一计划并归档原报告，总结果 job 合并并对账，失败/取消 job 不能被报告绿色遮蔽。命令尚未生成套件报告就失败时，仍归档 ios-check-* 的 check.log/result.json，保留实际 TAP 失败原因供局部定位，不只保存外层错误路径。通用/脚本组沿用 10 分钟、原生组沿用 45 分钟外层预算；本地组执行也从前置检查累计同一预算，各阶段及单用例上限继续独立生效。普通请求标签为 `ios-ci/<scripts|app|final|dependency-audit>/<唯一名称>`；`change` 标签须写明起点：`ios-ci/change/<完整 base SHA>/<唯一名称>`。例如仅请求脚本回归：
 
 ```bash
 IOS_CI_TAG="ios-ci/scripts/$(date +%Y%m%d-%H%M%S)-$(git rev-parse --short HEAD)"

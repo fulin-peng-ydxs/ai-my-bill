@@ -593,6 +593,7 @@ test('CI 工作流 PR 自动、通用门禁始终对账，手动结果隔离且�
   assert.match(workflow, /needs.result.outputs.complete == 'true'/)
   assert.match(workflow, /needs.checks.result == 'success'/)
   assert.match(workflow, /include-hidden-files: true/)
+  assert.match(workflow, /\.local\/ios\/tmp\/ai-agent\/ios-check-\*\/check\.log/)
   assert.doesNotMatch(workflow, /GH_TOKEN:|actions: read|postgres|setup-java|--prefix (web|server)/)
   assert.ok(
     fs

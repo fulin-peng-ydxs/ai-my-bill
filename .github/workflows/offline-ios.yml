@@ -122,6 +122,8 @@ jobs:
             .local/ios/tmp/ai-agent/ios-invocation-*/*.json
             .local/ios/tmp/ai-agent/ios-verification-state.json
             .local/ios/tmp/ai-agent/ios-process-*/*.json
+            .local/ios/tmp/ai-agent/ios-check-*/check.log
+            .local/ios/tmp/ai-agent/ios-check-*/result.json
             .local/ios/tmp/ai-agent/ios-debug-*/run-*/*.xcresult
             .local/ios/tmp/ai-agent/native-*/*.xcresult
           include-hidden-files: true
