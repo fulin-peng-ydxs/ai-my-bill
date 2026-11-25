@@ -756,7 +756,7 @@ test('CI 真实内外层命令统一清理嵌套独立进程组，超时/取消�
           const p = processFixture(t), ready = path.join(p.root, 'child.pid'), leaderFile = path.join(p.root, 'leader.json')
           const descendant = `process.on('SIGTERM',()=>{});process.on('SIGINT',()=>{});require('node:fs').writeFileSync(${JSON.stringify(ready)},String(process.pid));setInterval(()=>{},1000)`
           p.write('leader.cjs', `require('node:fs').writeFileSync(${JSON.stringify(leaderFile)},JSON.stringify({pid:process.pid,parent:process.ppid}));${mode === 'outer-force' ? "process.on('SIGTERM',()=>{});" : ''}require('node:child_process').spawn(process.execPath,['-e',${JSON.stringify(descendant)}],{detached:true,stdio:'ignore'});setInterval(()=>{},1000)`)
-          // 使用真实 ios-app.mjs 的 command/信号处理，只替换本轮工程检查体；不构建、不接触模拟器。
+          // 使用真实 command/信号处理。外层 500ms 留出快照时间，仍先于内层 10s 强杀；预检 1100ms 不属于清理宽限。
           p.write('scripts/lib/ios-app-full.sh',
             (mode === 'outer-force' ? "node -e 'setTimeout(()=>{},1100)'\n" : '') + 'exec node leader.cjs\n')
           const env = { ...process.env, PATH: path.dirname(process.execPath) + path.delimiter + process.env.PATH }
@@ -767,7 +767,7 @@ test('CI 真实内外层命令统一清理嵌套独立进程组，超时/取消�
             const clock = p.write('.local/short-check-clock.mjs', `const original=globalThis.setTimeout;globalThis.setTimeout=(fn,ms,...args)=>original(fn,ms>60000?900:ms,...args);\n`)
             args = [...(mode === 'inner-timeout' ? ['--import', clock] : []), 'scripts/ios-app.mjs', 'common']
           } else {
-            const worker = p.write('worker.mjs', `import {runCommand} from ${JSON.stringify(new URL('../lib/ios-ci-run.mjs', import.meta.url).href)};try{await runCommand(${JSON.stringify(p.root)},process.execPath,['scripts/ios-app.mjs','common'],${JSON.stringify(path.join(p.root, 'outer.log'))},${mode.endsWith('timeout') ? 900 : 10000},${mode === 'outer-force' ? '{cleanupGraceMs:60}' : '{}'});process.exitCode=2}catch{process.exitCode=1}`)
+            const worker = p.write('worker.mjs', `import {runCommand} from ${JSON.stringify(new URL('../lib/ios-ci-run.mjs', import.meta.url).href)};try{await runCommand(${JSON.stringify(p.root)},process.execPath,['scripts/ios-app.mjs','common'],${JSON.stringify(path.join(p.root, 'outer.log'))},${mode.endsWith('timeout') ? 900 : 10000},${mode === 'outer-force' ? '{cleanupGraceMs:500}' : '{}'});process.exitCode=2}catch{process.exitCode=1}`)
             args = [worker]
           }
           const worker = spawn(process.execPath, args, { cwd: p.root, env, detached: true, stdio: 'ignore' })
