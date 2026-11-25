@@ -203,7 +203,7 @@ npm run verify:local
 npm run push:local
 ```
 
-`setup:local` 设置本仓库的 `.githooks`，保留并串联原 hook，不改全局 Git；目标分支和原 hook 路径保存在 Git 私有目录。它在 macOS 钥匙串创建 Ed25519 私钥，只把公钥追加到仓库变量 `IOS_LOCAL_EVIDENCE_SIGNERS`；读取或登记失败不得默认为成功。私钥、账本、原始日志及本机路径不上传。其他开发者须独立安装并登记自己的公钥，不能复制现有私钥。
+`setup:local` 将本仓库 Git 挂到完整的 `.git/codex/hooks-*` 受管转发目录，不改全局 Git。pre-commit/post-commit/pre-push 加载版本化 `.githooks` 并串联原 hook；其他可执行 hook 按原路径 exec，保留参数、stdin、退出码及基于原始路径的资源定位，原文件不修改。整代文件完整写入后才切换 core.hooksPath；半写不启用，切换失败保留意图并复用完整目录恢复，孤立残缺目录不参与重试；同配置重装幂等，受管文件外部变更拒绝覆盖。旧代可能仍被 Git 进程使用，不在重装时删除。目标分支、原 hook 路径及启用状态保存在 Git 私有配置。它在 macOS 钥匙串创建 Ed25519 私钥，只把公钥追加到仓库变量 `IOS_LOCAL_EVIDENCE_SIGNERS`；读取或登记失败不得默认为成功。私钥、账本、原始日志及本机路径不上传。其他开发者须独立安装并登记自己的公钥，不能复制现有私钥。
 
 | 时点 | 动作与阻断条件 |
 | --- | --- |

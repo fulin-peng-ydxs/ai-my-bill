@@ -2,6 +2,7 @@ import { localGate } from '../lib/ios-local-gate.mjs'
 import { automaticLocalGate, rememberLocalResult, sealEvidence, verifyEnvelope, requiredLocalSuites, publishEnvelope, readEnvelope, noteParent, notesRef } from '../lib/ios-local-delivery.mjs'
 import { registryBlock, registryDocumentation } from '../lib/ios-ci-docs.mjs'
 import { generateKeyPairSync, sign } from 'node:crypto'
+import { installLocalHooks } from '../lib/ios-local-hooks.mjs'
 import { coverageReport } from '../lib/ios-coverage.mjs'
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
@@ -2248,4 +2249,92 @@ test('自动本地门禁：干净检出首次生成 Python 字节码不使计划
   fs.chmodSync(source, 0o644)
   p.write('scripts/fixtures/cache_input.py', 'value = 2\n')
   assert.throws(() => assertPlan(p.root, plan), /失效/, '不能排除真实 Python 源码')
+})
+
+function hookInstallationFixture(t) {
+  const p = processFixture(t)
+  for (const file of ['scripts/ios-local.mjs', 'scripts/ios-local.sh', 'scripts/toolchain.sh',
+    '.githooks/pre-commit', '.githooks/post-commit', '.githooks/pre-push']) {
+    p.write(file, fs.readFileSync(path.join(repository, file), 'utf8'))
+    if (file.startsWith('.githooks/')) fs.chmodSync(path.join(p.root, file), 0o755)
+  }
+  p.write('.nvmrc', process.version.slice(1))
+  p.git('branch', '-M', 'main'); const base = p.commit()
+  p.git('update-ref', 'refs/remotes/origin/main', base)
+  const origin = path.join(p.root, ".local/original hooks' directory")
+  fs.mkdirSync(origin, { recursive: true })
+  const config = { schema: 1, base: 'main', remote: 'origin', remoteUrl: 'fixture', repository: 'example/bill', previousHooks: origin, signer: {} }
+  const configFile = p.write('.git/codex/local-gate.json', config), gitDirectory = path.join(p.root, '.git')
+  p.git('config', 'core.hooksPath', origin)
+  const hook = (name, body) => { const file = p.write(path.relative(p.root, path.join(origin, name)), '#!/bin/sh\n' + body); fs.chmodSync(file, 0o755); return file }
+  return { ...p, origin, config, configFile, gitDirectory, hook,
+    install: options => installLocalHooks(p.root, gitDirectory, configFile, JSON.parse(fs.readFileSync(configFile)), options) }
+}
+
+test('受管 hook：真实 Git 保留其他类型、原始路径资源、参数/stdin/退出码，并只串联一次', t => {
+  const p = hookInstallationFixture(t), events = path.join(p.root, '.local/hook-events')
+  const quote = value => "'" + value.replaceAll("'", "'\"'\"'") + "'"
+  p.hook('pre-commit', 'printf "pre\\n" >> ' + quote(events) + '\n')
+  p.hook('post-commit', 'printf "post\\n" >> ' + quote(events) + '\n')
+  const message = p.hook('commit-msg', 'printf "\\noriginal-message\\n" >> "$1"\ncat "$(dirname "$0")/support.txt" >> "$1"\n')
+  p.write(path.relative(p.root, path.join(p.origin, 'support.txt')), 'original-directory-resource\n')
+  p.hook('reference-transaction', 'printf "reference:%s\\n" "$1" >> ' + quote(events) + '\ncat >> ' + quote(events) + '\n')
+  p.hook('post-rewrite', 'printf "%s\\n" "$1" > ' + quote(events + '.args') + '\ncat > ' + quote(events + '.stdin') + '\nexit 7\n')
+  const original = fs.readFileSync(message), installed = p.install()
+  assert.deepEqual(installed.forwarded, ['commit-msg', 'post-rewrite', 'reference-transaction'])
+  assert.equal(p.install().directory, installed.directory, '同配置重装不新增 generation')
+  p.write('note.txt', 'committed work'); p.git('add', 'note.txt')
+  const env = { ...process.env, GITHUB_ACTIONS: 'false' }
+  const committed = spawnSync('git', ['-c', 'commit.gpgsign=false', 'commit', '-m', 'actual hook integration'], { cwd: p.root, env, encoding: 'utf8' })
+  assert.equal(committed.status, 0, committed.stderr)
+  const body = p.git('log', '-1', '--format=%B')
+  assert.match(body, /original-message\noriginal-directory-resource/)
+  const lines = fs.readFileSync(events, 'utf8').split('\n')
+  assert.equal(lines.filter(s => s === 'pre').length, 1)
+  assert.equal(lines.filter(s => s === 'post').length, 1)
+  assert.ok(lines.includes('reference:prepared') && lines.includes('reference:committed'))
+  assert.ok(lines.some(s => s.includes('refs/heads/main')), '引用事务 stdin 未丢失')
+  const rewritten = spawnSync(path.join(installed.directory, 'post-rewrite'), ['rebase'], { cwd: p.root, input: 'old new\n', encoding: 'utf8' })
+  assert.equal(rewritten.status, 7)
+  assert.equal(fs.readFileSync(events + '.args', 'utf8'), 'rebase\n')
+  assert.equal(fs.readFileSync(events + '.stdin', 'utf8'), 'old new\n')
+  assert.deepEqual(fs.readFileSync(message), original, '不修改原 hook')
+  p.hook('commit-msg', 'exit 23\n'); const head = p.git('rev-parse', 'HEAD')
+  p.write('note.txt', 'should refuse'); p.git('add', 'note.txt')
+  const refused = spawnSync('git', ['-c', 'commit.gpgsign=false', 'commit', '-m', 'must refuse'], { cwd: p.root, env, encoding: 'utf8' })
+  assert.notEqual(refused.status, 0)
+  assert.equal(p.git('rev-parse', 'HEAD'), head, '原 hook 的拒绝仍阻断提交')
+})
+
+test('受管 hook：完整写入后才激活，配置切换失败保留意图并复用完整 generation 恢复', t => {
+  const p = hookInstallationFixture(t)
+  p.hook('commit-msg', 'exit 29\n')
+  assert.throws(() => p.install({ activate: () => { throw new Error('activation failed') } }), /activation failed/)
+  const interrupted = JSON.parse(fs.readFileSync(p.configFile))
+  assert.equal(p.git('config', '--local', '--get', 'core.hooksPath'), p.origin)
+  assert.equal(interrupted.hookActivation.from, p.origin)
+  assert.equal(fs.readdirSync(interrupted.hooksPath).length, 4)
+  const resumed = p.install()
+  assert.equal(resumed.reused, true)
+  assert.equal(resumed.directory, interrupted.hooksPath)
+  assert.equal(p.git('config', '--local', '--get', 'core.hooksPath'), resumed.directory)
+  assert.equal(JSON.parse(fs.readFileSync(p.configFile)).hookActivation, undefined)
+  assert.equal(spawnSync(path.join(resumed.directory, 'commit-msg'), ['unused'], { cwd: p.root }).status, 29)
+})
+
+test('受管 hook：半写失败不切换或覆盖原配置，孤立残缺目录不阻塞重试，外部改动不覆盖', t => {
+  const p = hookInstallationFixture(t), before = fs.readFileSync(p.configFile)
+  let writes = 0
+  assert.throws(() => p.install({ write: (...args) => { if (++writes === 2) throw new Error('partial write'); fs.writeFileSync(...args) } }), /partial write/)
+  assert.deepEqual(fs.readFileSync(p.configFile), before)
+  assert.equal(p.git('config', '--local', '--get', 'core.hooksPath'), p.origin)
+  const orphan = path.join(p.gitDirectory, 'codex/hooks-orphan')
+  fs.mkdirSync(orphan); fs.writeFileSync(path.join(orphan, 'pre-commit'), 'partial')
+  const installed = p.install()
+  assert.notEqual(installed.directory, orphan)
+  const file = path.join(installed.directory, 'pre-commit'); fs.appendFileSync(file, '# external change\n')
+  const modified = fs.readFileSync(file)
+  assert.throws(() => p.install(), /外部改动/)
+  assert.deepEqual(fs.readFileSync(file), modified)
+  assert.equal(p.git('config', '--local', '--get', 'core.hooksPath'), installed.directory)
 })

@@ -11,6 +11,7 @@ import { resultsDirectory, reconcile } from './lib/ios-ci-run.mjs'
 import { executeLocalGroup } from './lib/ios-local-delivery.mjs'
 import { writeJson } from './lib/ios-verification.mjs'
 import { errorMessage } from './lib/ios-errors.mjs'
+import { installLocalHooks, managedHookOrigin } from './lib/ios-local-hooks.mjs'
 
 const root = fs.realpathSync(path.join(path.dirname(fileURLToPath(import.meta.url)), '..'))
 const gitDirectory = git(root, 'rev-parse', '--path-format=absolute', '--git-common-dir')
@@ -92,7 +93,7 @@ async function main() {
     else {
       const previous = spawnSync('git', ['config', '--path', '--get', 'core.hooksPath'], { cwd: root, encoding: 'utf8' })
       if (![0, 1].includes(previous.status)) throw new Error('无法读取已有 hooks 配置。')
-      if (previous.stdout.trim() && path.resolve(root, previous.stdout.trim()) === path.join(root, '.githooks')) throw new Error('已有受管 hook 但缺少配置，先核对归属。')
+      if (previous.stdout.trim() && managedHookOrigin(root, gitDirectory, previous.stdout.trim())) throw new Error('已有受管 hook 但缺少配置，先核对归属。')
       config = { schema: 1, base: args[1], remote: 'origin', repository: JSON.parse(gh(['repo', 'view', '--json', 'nameWithOwner'])).nameWithOwner,
         remoteUrl: git(root, 'remote', 'get-url', '--push', 'origin'),
         previousHooks: previous.stdout.trim() || path.join(gitDirectory, 'hooks'), signer: createSigner() }
@@ -109,7 +110,7 @@ async function main() {
     else if (!response.stdout.includes('"status":"404"') && !response.stdout.includes('"status": "404"')) throw new Error('无法读取远端公钥登记。')
     signers[config.signer.keyId] = config.signer.publicKey
     gh(['variable', 'set', 'IOS_LOCAL_EVIDENCE_SIGNERS', '--repo', config.repository, '--body', JSON.stringify(signers)])
-    git(root, 'config', '--local', 'core.hooksPath', '.githooks')
+    installLocalHooks(root, gitDirectory, configFile, config)
     console.log('本地 hook 与公钥登记已安装；私钥仅在本机钥匙串。')
     return
   }
