@@ -25,6 +25,9 @@ on:
       base_revision:
         description: 'change 必填：变更起点完整 SHA'
         type: string
+  schedule:
+    # 05:17 Asia/Shanghai; GitHub may queue this default-branch audit.
+    - cron: '17 21 * * *'
 
 permissions:
   contents: read
@@ -53,7 +56,9 @@ jobs:
           node-version-file: .nvmrc
       - name: Validate registry and plan required suites
         id: plan
-        run: npm run ci:ios-app -- prepare
+        run: |
+          npm run ci:ios-app -- docs
+          npm run ci:ios-app -- prepare
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ steps.plan.outputs.artifact }}
@@ -90,7 +95,8 @@ jobs:
           test -d "$DEVELOPER_DIR"
           xcodebuild -version
           xcrun --sdk iphoneos --show-sdk-version
-      - run: npm --prefix app ci --ignore-scripts
+      - if: needs.plan.outputs.profile != 'dependency-audit'
+        run: npm --prefix app ci --ignore-scripts
       - uses: actions/download-artifact@v4
         with:
           name: ${{ needs.plan.outputs.artifact }}
@@ -152,10 +158,31 @@ jobs:
           retention-days: 7
           if-no-files-found: warn
 
+  local_evidence:
+    name: Verify PR local receipt
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+      # Read-only bootstrap/common consumer; protected status is separately published from trusted base code.
+      - env:
+          IOS_LOCAL_EVIDENCE_SIGNERS: ${{ vars.IOS_LOCAL_EVIDENCE_SIGNERS }}
+          IOS_EVIDENCE_HEAD: ${{ github.event.pull_request.head.sha }}
+          IOS_EVIDENCE_BASE: ${{ github.event.pull_request.base.sha }}
+        run: node scripts/ios-evidence.mjs
+
   result:
     name: ${{ github.event_name == 'pull_request' && 'CI common result' || format('CI suite {0} result', needs.plan.outputs.profile || github.event.inputs.verification || 'request') }}
     if: always()
-    needs: [plan, checks]
+    needs: [plan, checks, local_evidence]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
@@ -191,12 +218,16 @@ jobs:
           IOS_CI_RESULTS: ${{ needs.plan.outputs.directory }}
           IOS_CI_PLAN_STATUS: ${{ needs.plan.result }}
           IOS_CI_CHECKS_STATUS: ${{ needs.checks.result }}
+          IOS_CI_LOCAL_STATUS: ${{ needs.local_evidence.result }}
+          IOS_CI_IS_PR: ${{ github.event_name == 'pull_request' }}
         run: npm run ci:ios-app -- result --results "$IOS_CI_RESULTS"
       - name: Require every selected job
         if: always()
         env:
           IOS_CI_PLAN_STATUS: ${{ needs.plan.result }}
           IOS_CI_CHECKS_STATUS: ${{ needs.checks.result }}
+          IOS_CI_LOCAL_STATUS: ${{ needs.local_evidence.result }}
+          IOS_CI_IS_PR: ${{ github.event_name == 'pull_request' }}
         run: npm run ci:ios-app -- require-jobs
       - uses: actions/upload-artifact@v4
         if: always()

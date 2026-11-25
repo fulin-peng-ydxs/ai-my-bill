@@ -2,7 +2,8 @@ import { isDeepStrictEqual } from 'node:util'
 import fs from 'node:fs'
 import path from 'node:path'
 import { performance } from 'node:perf_hooks'
-import { assertPlan, digest, executionMatrix } from './ios-ci-plan.mjs'
+import { assertPlan, assertMeasuredPlan, digest, executionMatrix } from './ios-ci-plan.mjs'
+import { measurementHost } from './ios-evidence-inputs.mjs'
 import { audit, auditDependencies } from './ios-audit.mjs'
 import { inputHash, requireEvidence, writeJson } from './ios-verification.mjs'
 import { contentHash } from './ios-cache.mjs'
@@ -114,7 +115,8 @@ export async function executeGroup(root, directory, group, { command = runComman
     throw new Error('启动环境专项要求本轮新会话，不能复用旧启动回执。')
   if (borrowedSession) readSession(path.join(root,'.local/ios/tmp/ai-agent'),borrowedSession)
   const groupFile = path.join(directory, `group-${group}.json`)
-  fs.writeFileSync(groupFile, JSON.stringify({ status: 'running', plan: plan.id }), {
+  const groupStartedAt = Date.now()
+  fs.writeFileSync(groupFile, JSON.stringify({ status: 'running', plan: plan.id, startedAt: groupStartedAt }), {
     flag: 'wx',
     mode: 0o600
   })
@@ -168,6 +170,7 @@ export async function executeGroup(root, directory, group, { command = runComman
         source: plan.source,
         platform: process.platform,
         node: process.version,
+        measurementHost: measurementHost(),
         status: 'running',
         startedAt,
         reports: []
@@ -291,6 +294,7 @@ export async function executeGroup(root, directory, group, { command = runComman
     writeJson(groupFile, {
       schema: 1,
       plan: plan.id,
+      startedAt: groupStartedAt,
       status: error ? 'failed' : 'passed',
       error: error ? errorMessage(error) : undefined,
       budgetMs,
@@ -496,9 +500,11 @@ function validateReports(root, directory, suite, receipt,plan) {
 }
 
 /** 计划与实际逐项对账；未知/缺失/失败/取消/旧版本/篡改报告均不通过，不覆盖原失败回执。 */
-export function reconcile(root, directory, jobsStatus, planStatus) {
-  mergeArchives(root, directory)
-  const plan = assertPlan(root, read(path.join(directory, 'ci-plan.json')))
+export function reconcile(root, directory, jobsStatus, planStatus, { reuse = false, localEvidenceStatus } = {}) {
+  // Historical local reports cannot import archives from unrelated remote attempts.
+  if (reuse && fs.existsSync(path.join(directory, 'archives'))) throw new Error('历史本地证据不能导入远端归档。')
+  if (!reuse) mergeArchives(root, directory)
+  const plan = (reuse ? assertMeasuredPlan : assertPlan)(root, read(path.join(directory, 'ci-plan.json')))
   const rows = []
   const allowed = new Set(plan.suites.map((s) => s.name))
   for (const name of fs.readdirSync(directory)) {
@@ -527,6 +533,7 @@ export function reconcile(root, directory, jobsStatus, planStatus) {
         (suite.runner === 'macos' && receipt.platform !== 'darwin')
       )
         throw new Error('套件回执失败、版本或执行环境不符。')
+      if (reuse && receipt.measurementHost !== measurementHost()) throw new Error('历史证据的宿主/Node 环境失效。')
       if (receipt.status !== 'passed' || receipt.exit !== 0)
         throw new Error(receipt.error ?? '套件未完成或取消。')
       const group = read(path.join(directory, `group-${suite.runner}.json`))
@@ -550,11 +557,13 @@ export function reconcile(root, directory, jobsStatus, planStatus) {
     source: plan.source,
     status:
       rows.every((r) => r.status === 'passed') &&
+      (localEvidenceStatus === undefined || localEvidenceStatus === 'success') &&
       (jobsStatus === undefined || jobsStatus === 'success') &&
       (planStatus === undefined || planStatus === 'success')
         ? 'passed'
         : 'incomplete',
     jobsStatus: jobsStatus ?? 'local',
+    localEvidenceStatus,
     planStatus: planStatus ?? 'local',
     completeCandidate:
       plan.profile === 'final' &&
@@ -563,14 +572,17 @@ export function reconcile(root, directory, jobsStatus, planStatus) {
       (planStatus === undefined || planStatus === 'success'),
     suites: rows
   }
-  writeJson(path.join(directory, 'ci-result.json'), result)
-  fs.writeFileSync(
+  // Revalidation must not mutate the historical result or relabel its source commit.
+  if (!reuse) {
+    writeJson(path.join(directory, 'ci-result.json'), result)
+    fs.writeFileSync(
     path.join(directory, 'ci-result.md'),
     `CI ${plan.profile}: ${result.status}\n执行位置：${plan.execution}；完整候选：${result.completeCandidate}\n\n` +
       rows.map((r) => `- ${r.suite}: ${r.status}${r.reason ? ' — ' + r.reason : ''}`).join('\n') +
       '\n' + (result.localRequired.length?'本地专项（本运行未验证）：'+result.localRequired.map(x=>x.suite).join(', ')+'\n':''),
     { mode: 0o600 }
   )
+  }
   return result
 }
 

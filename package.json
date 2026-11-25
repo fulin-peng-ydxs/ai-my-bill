@@ -32,6 +32,10 @@
     "release": "bash scripts/release.sh",
     "contracts:generate": "bash scripts/run-frontend.sh contract:generate",
     "debug:ios-app": "bash scripts/ios-app.sh debug",
-    "ci:ios-app": "bash scripts/ios-ci.sh"
+    "ci:ios-app": "bash scripts/ios-ci.sh",
+    "setup:local": "bash scripts/ios-local.sh setup",
+    "verify:local": "bash scripts/ios-local.sh verify",
+    "status:local": "bash scripts/ios-local.sh status",
+    "push:local": "bash scripts/ios-local.sh push"
   }
 }

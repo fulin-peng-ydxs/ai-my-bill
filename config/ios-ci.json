@@ -249,6 +249,7 @@
       "paths": [
         "scripts/**",
         ".github/**",
+        ".githooks/**",
         "config/ios-ci.json",
         "package.json",
         ".nvmrc",

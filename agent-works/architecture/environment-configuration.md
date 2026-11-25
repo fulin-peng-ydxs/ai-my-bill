@@ -93,7 +93,11 @@ flowchart TD
 
 ### 离线 App 原生测试配置
 
-CI 规划入口消费 Actions 的 GITHUB_EVENT_PATH、GITHUB_EVENT_NAME、GITHUB_RUN_ID、GITHUB_RUN_ATTEMPT 和 GITHUB_OUTPUT；从 PR 事件读取 base/head SHA，或读取手动 verification/base_revision 与显式 ios-ci 标签，生成同一提交/源码/登记绑定的计划和执行分组。执行与对账 job 通过 IOS_CI_RESULTS 传入本轮结果目录、IOS_CI_GROUP 传入分组，归档通过 IOS_CI_ATTEMPT 绑定本次 attempt，汇总及 require-jobs 通过 IOS_CI_PLAN_STATUS、IOS_CI_CHECKS_STATUS 核对计划和执行 job 结论；GITHUB_ACTIONS=true 时缺少任一结论不得回退本地模式；本地使用等价 --results/--group 参数，不需要这些 Actions 变量。安全工具固定版本及校验缓存位于 `.local/ios/tools`，下载沿用系统 curl 的 HTTPS 证书验证，不注入 App 环境。local-gate 仅可信本机使用 --results/--input，不向远端上传账本或本地证据。入口不读取 GH_TOKEN、不查询历史绿色或计费、不需要 actions:read，也不加载 `.local/web`。macOS 执行组在工作流中显式选择 DEVELOPER_DIR=/Applications/Xcode_27.app/Contents/Developer（Xcode 27.0），开跑前核验目录、Xcode 和 SDK；不继承镜像浮动的默认版本，也不修改本机 xcode-select。实际版本仍随原生报告保存，安装列表变更应更新并复验此基线。PR 自动按变更执行常规检查，不启动模拟器；本地按变更执行模拟器专项，完整候选及容量最终集中本地验收；普通分支 push 不单独启动，本地不依赖 GitHub；统一套件、依赖审计及受阻处理见[验证策略](../testing/guide.md#统一套件按需-ci-与最终验收)。
+CI 规划消费 GITHUB_EVENT_PATH、GITHUB_EVENT_NAME、GITHUB_RUN_ID、GITHUB_RUN_ATTEMPT 和 GITHUB_OUTPUT；PR 提供 base/head，手动提供 verification/base_revision，schedule 固定依赖审计。IOS_CI_RESULTS、IOS_CI_GROUP、IOS_CI_ATTEMPT 分别绑定结果目录、平台组与 attempt；IOS_CI_PLAN_STATUS、IOS_CI_CHECKS_STATUS 绑定实际作业，PR 另通过 IOS_CI_IS_PR=true 和 IOS_CI_LOCAL_STATUS 核验回执作业，缺失/失败不能回退成功。普通本地命令使用 --results/--group，不需要 Actions 变量，不加载 `.local/web`。
+
+本地 hook 的仓库/目标分支/原 hook/公钥信息位于 Git 私有目录 `codex/local-gate.json`，私钥仅在 macOS 钥匙串的随机 com.mybill.local-evidence 服务项；本地尝试索引和报告位于 `.local/ios/tmp/ai-agent/`，不进入 App。仓库变量 IOS_LOCAL_EVIDENCE_SIGNERS 是 keyId 到 PEM 公钥的 JSON 映射，不含私钥；IOS_EVIDENCE_HEAD/BASE 用于 PR 只读核验，可信工作流通过 IOS_EVIDENCE_PR 和 IOS_EVIDENCE_PUBLISH=true 读取实际 PR 并发布状态。该可信任务独享 GH_TOKEN 的 contents/pull-requests 只读及 statuses 写权限，普通 PR 代码不得接触写令牌。回执通过 refs/notes/ios-local-evidence 发布，字段及信任边界见[统一验证策略](../testing/guide.md#统一套件按需-ci-与最终验收)。
+
+安全工具固定缓存为 `.local/ios/tools`，下载沿用系统 curl 的 TLS 校验。macOS 远端常规组固定 DEVELOPER_DIR=/Applications/Xcode_27.app/Contents/Developer（Xcode 27.0），运行前核验 SDK，不修改全局选择，不启动模拟器。日常本地按变更选择独立模拟器，远端只做常规/回执/日审计，最终集中本地与真机验收；准确操作、失效及受阻规则统一见上述验证策略。
 
 [进程清理器](../../scripts/lib/ios-processes.mjs)内部传递 `MYBILL_PROCESS_SCOPE`，绑定本次命令树的私有目录、随机令牌和父登记 ID；目录及成员校验由[归属登记](../../scripts/lib/ios-process-scope.mjs)统一处理。它由执行器生成并随子进程环境继承，不从开发配置加载，也不参与验收授权。登记目录为 `.local/ios/tmp/ai-agent/ios-process-*`（700），文件为 600；仅记录 PID 和父子归属，不承载账本、安装回执或缓存。补偿命令经内部启动管道确认登记后才执行；正常关闭回收目录，清理失败保留诊断，不能手工复用旧范围。执行预算和清理规则见[验证策略](../testing/guide.md#统一套件按需-ci-与最终验收)。
 

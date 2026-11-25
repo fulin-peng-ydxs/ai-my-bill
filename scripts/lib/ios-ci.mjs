@@ -1,5 +1,6 @@
 /** PR 自动按变更规划；其余远端执行仍需显式请求，不查询历史绿色或计费 API。 */
 export function requestedScope(eventName, event) {
+  if (eventName === 'schedule') return { profile: 'dependency-audit' }
   if (eventName === 'pull_request') {
     const base = event.pull_request?.base?.sha, head = event.pull_request?.head?.sha
     if (![base, head].every(value => /^[a-f0-9]{40}$/i.test(value ?? '') && !/^0+$/.test(value)))
@@ -24,9 +25,10 @@ export function requestedScope(eventName, event) {
 }
 
 /** 汇总门禁必须实际成功；空值、取消和跳过均不能通过。 */
-export function requireJobs(planStatus, checksStatus) {
+export function requireJobs(planStatus, checksStatus, localStatus, requireLocal = false) {
   if (planStatus !== 'success' || checksStatus !== 'success')
     throw new Error(`CI 必需作业未成功：plan=${planStatus ?? 'missing'}, checks=${checksStatus ?? 'missing'}。`)
+  if (requireLocal && localStatus !== 'success') throw new Error('PR 本地专项回执未通过：' + (localStatus ?? 'missing'))
 }
 
 /** 公共 runner 的锁定包必须来自官方 HTTPS 源；不在依赖安装阶段才等待私有镜像超时。 */

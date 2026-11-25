@@ -6,6 +6,8 @@ import { resultsDirectory, executeGroup, reconcile, archiveGroup,runCommand } fr
 import { requestedScope, requireJobs } from './lib/ios-ci.mjs'
 import { localGate } from './lib/ios-local-gate.mjs'
 import { errorMessage } from './lib/ios-errors.mjs'
+import { registryDocumentation } from './lib/ios-ci-docs.mjs'
+import { executeLocalGroup } from './lib/ios-local-delivery.mjs'
 
 const root = fs.realpathSync(path.join(path.dirname(fileURLToPath(import.meta.url)), '..'))
 const args = process.argv.slice(2)
@@ -15,6 +17,10 @@ const guardRemote = directory => {
   if(plan.execution!=='remote' || plan.suites.some(s=>!remoteSuite(s)))throw new Error('远端拒绝本地计划或模拟器专项。')
 }
 try {
+  if (args[0] === 'docs') {
+    if (args.length > 2 || (args[1] && args[1] !== '--write')) throw new Error('docs 仅接受 --write。')
+    console.log(JSON.stringify(registryDocumentation(root, args[1] === '--write')))
+  } else {
   const mode = args.shift(),
     options = {},
     explicit = args[0] && !args[0].startsWith('--') ? args.shift() : undefined
@@ -51,7 +57,7 @@ try {
     console.log(JSON.stringify(result, null, 2))
     if (result.status !== 'passed') process.exitCode = 1
   } else if (mode === 'require-jobs') {
-    requireJobs(process.env.IOS_CI_PLAN_STATUS, process.env.IOS_CI_CHECKS_STATUS)
+    requireJobs(process.env.IOS_CI_PLAN_STATUS, process.env.IOS_CI_CHECKS_STATUS, process.env.IOS_CI_LOCAL_STATUS, process.env.IOS_CI_IS_PR === 'true')
     console.log('所有必需作业成功。')
   } else if (['signing-check','install-gate'].includes(mode)) {
     const names = mode==='signing-check' ? ['--app','--candidate','--output'] : ['--input','--output']
@@ -124,7 +130,7 @@ try {
       console.log(archiveGroup(root, directory, options['--group'], options['--attempt']))
     } else if (mode === 'run') {
       guardRemote(directory)
-      await executeGroup(root, directory, options['--group'],{session:options['--session']})
+      await (process.env.GITHUB_ACTIONS === 'true' ? executeGroup : executeLocalGroup)(root, directory, options['--group'], { session: options['--session'] })
       console.log('所选执行组通过；完整结论须由 result 对账。')
     } else {
       let result
@@ -133,7 +139,8 @@ try {
         const remote = process.env.GITHUB_ACTIONS === 'true'
         result = reconcile(root, directory,
           process.env.IOS_CI_CHECKS_STATUS ?? (remote ? 'missing' : undefined),
-          process.env.IOS_CI_PLAN_STATUS ?? (remote ? 'missing' : undefined))
+          process.env.IOS_CI_PLAN_STATUS ?? (remote ? 'missing' : undefined),
+          { localEvidenceStatus: process.env.IOS_CI_IS_PR === 'true' ? process.env.IOS_CI_LOCAL_STATUS ?? 'missing' : undefined })
       } catch (error) {
         // 汇总损坏也刷新机器结论，不能遗留上次绿色；原计划和失败报告不修改。
         result = { schema: 1, status: 'incomplete', completeCandidate: false, error: errorMessage(error) }
@@ -155,6 +162,7 @@ try {
     throw new Error(
       '用法：ci:ios-app -- check|list；plan [change|scripts|common|app|final|套件] --base SHA；local-gate --results PATH --input JSON；run --results PATH --group linux|macos；result --results PATH。'
     )
+  }
 } catch (error) {
   console.error(errorMessage(error))
   process.exitCode = 1
