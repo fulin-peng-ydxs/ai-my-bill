@@ -1632,3 +1632,43 @@ test('T12 CSV 索引迁移和受管续作分别进入原生与脚本套件，不
     assert.ok(!names.includes('touch'),file)
   }
 })
+
+
+test('CI 预热宿主观察器保留主退出码，仅记录本轮树的实际 PGID 和 UID', {timeout:15000}, async t => {
+  const p=fixture(t)
+  const code=`
+    const fs=require('node:fs'),path=require('node:path');
+    (async()=>{
+      const {commandScope}=await import(${JSON.stringify(new URL('../lib/ios-process-scope.mjs',import.meta.url).href)});
+      const own=commandScope(process.cwd(),{});own.bind(process.pid);
+      const foreign=commandScope(process.cwd(),{});foreign.bind(process.ppid);
+      const directory=JSON.parse(foreign.env.MYBILL_PROCESS_SCOPE).directory;
+      const header=path.join(directory,'scope.json'),value=JSON.parse(fs.readFileSync(header));
+      value.owner=process.ppid;fs.writeFileSync(header,JSON.stringify(value));
+      const base=path.join(process.cwd(),'.local/ios/tmp/ai-agent');
+      const until=Date.now()+8000;
+      const timer=setInterval(()=>{
+        const file=fs.readdirSync(base).find(n=>n.startsWith('ios-host-processes-'));
+        const text=file?fs.readFileSync(path.join(base,file),'utf8'):'';
+        if(process.platform!=='darwin'||text.includes('"process": {"pid": '+process.pid)) {
+          clearInterval(timer);process.exit(7);
+        } else if(Date.now()>until){clearInterval(timer);process.exit(8)}
+      },20);
+    })();
+  `
+  const child=spawn('python3',[path.join(repository,'scripts/lib/ios-host-diagnostics.py'),'--',process.execPath,'-e',code],
+    {cwd:p.root,stdio:['ignore','pipe','pipe']})
+  let stderr='';child.stderr.on('data',b=>stderr+=b);child.stdout.resume()
+  const status=await new Promise((resolve,reject)=>{child.once('error',reject);child.once('close',resolve)})
+  assert.equal(status,7,stderr)
+  const base=path.join(p.root,'.local/ios/tmp/ai-agent')
+  const file=fs.readdirSync(base).find(n=>n.startsWith('ios-host-processes-'))
+  const rows=fs.readFileSync(path.join(base,file),'utf8').trim().split('\n').map(JSON.parse)
+  assert.equal(rows.at(-1).commandExit,7)
+  if(process.platform==='darwin') {
+    assert.equal(rows[0].self.pid,child.pid)
+    assert.equal(rows[0].self.uid,process.getuid())
+    assert.ok(rows.some(r=>r.process?.ppid===child.pid&&r.process.uid===process.getuid()&&r.process.pgid>1))
+    assert.ok(rows.every(r=>r.process?.pid!==child.pid),'外部父进程不能被登记冒充为本轮命令树')
+  } else assert.match(rows[0].unavailable,/requires Darwin/)
+})

@@ -106,7 +106,12 @@ jobs:
       - env:
           IOS_CI_RESULTS: ${{ needs.plan.outputs.directory }}
           IOS_CI_GROUP: ${{ matrix.group }}
-        run: npm run ci:ios-app -- run --results "$IOS_CI_RESULTS" --group "$IOS_CI_GROUP"
+        run: |
+          if [ "$IOS_CI_GROUP" = macos ]; then
+            python3 scripts/lib/ios-host-diagnostics.py -- npm run ci:ios-app -- run --results "$IOS_CI_RESULTS" --group "$IOS_CI_GROUP"
+          else
+            npm run ci:ios-app -- run --results "$IOS_CI_RESULTS" --group "$IOS_CI_GROUP"
+          fi
       - name: Preserve this attempt independently
         if: always()
         env:
@@ -130,6 +135,7 @@ jobs:
             .local/ios/tmp/ai-agent/ios-invocation-*/*.json
             .local/ios/tmp/ai-agent/ios-verification-state.json
             .local/ios/tmp/ai-agent/ios-process-*/*.json
+            .local/ios/tmp/ai-agent/ios-host-processes-*.jsonl
             .local/ios/tmp/ai-agent/ios-check-*/check.log
             .local/ios/tmp/ai-agent/ios-check-*/result.json
             .local/ios/tmp/ai-agent/ios-debug-*/run-*/*.xcresult
