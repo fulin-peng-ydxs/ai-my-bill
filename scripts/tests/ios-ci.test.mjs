@@ -279,7 +279,8 @@ test('CI 启动环境专项只运行新会话启动及关闭，拒绝旧回执�
       assert.equal(reconcile(p.root,directory).status,'incomplete')
     }
     const selected=selectSuites(registry(p.root),'pull-request',['scripts/lib/ios-processes.mjs']).map(x=>x.name)
-    assert.deepEqual(selected,['secrets','scripts','scripts-macos','simulator-boot'])
+    assert.deepEqual(selected,['secrets','scripts','simulator-boot','scripts-macos'])
+    assert.equal(selected.filter(name=>registry(p.root).suites[name].runner==='macos')[0],'simulator-boot','冷启动预检必须先于工具压力回归')
     assert.ok(!selectSuites(registry(p.root),'pull-request',['scripts/tests/ios-ci.test.mjs']).some(x=>x.name==='simulator-boot'))
     const borrowed=prepare(p,'simulator-boot','borrowed')
     await assert.rejects(executeGroup(p.root,borrowed.directory,'macos',{command,session}),/不能复用旧启动回执/)

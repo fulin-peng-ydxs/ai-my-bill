@@ -12,6 +12,11 @@
       "runner": "linux",
       "description": "验证工具回归"
     },
+    "simulator-boot": {
+      "kind": "environment",
+      "runner": "macos",
+      "description": "独立模拟器启动与关闭，不编译或验收 App"
+    },
     "scripts-macos": {
       "kind": "check",
       "check": "script-tests",
@@ -189,11 +194,6 @@
       "kind": "installation",
       "runner": "macos",
       "description": "可信手动输入：完整工程候选、签名检查与两种规模真机报告汇总"
-    },
-    "simulator-boot": {
-      "kind": "environment",
-      "runner": "macos",
-      "description": "独立模拟器启动与关闭，不编译或验收 App"
     }
   },
   "profiles": {
