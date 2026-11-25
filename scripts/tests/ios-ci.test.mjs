@@ -1044,6 +1044,21 @@ test('CI 清理直接发送实际信号，拒绝真实 EPERM，保留执行主�
   } finally {process.kill=original}
 })
 
+test('CI 设备服务成功交接仅释放本组，取消时仍强杀且不误清理其他任务', () => {
+  const original=process.kill,calls=[]
+  try {
+    process.kill=(pid,signal)=>{calls.push([pid,signal]);return true}
+    const scope={seal(){},groups(){return new Set([200301,200302])},finish(){}}
+    processCleanup(200301,{graceMs:0,scope}).finish({handoff:true})
+    assert.deepEqual(calls,[[-200302,'SIGKILL']])
+    calls.length=0
+    const cancelled=processCleanup(200301,{graceMs:0,scope})
+    cancelled.stop('SIGKILL');cancelled.finish({handoff:true})
+    assert.ok(calls.some(([pid,signal])=>pid===-200301&&signal==='SIGKILL'),'取消不能以交接跳过清理')
+    assert.ok(calls.every(([pid])=>[-200301,-200302].includes(pid)))
+  } finally {process.kill=original}
+})
+
 test('CI 慢快照计入既有宽限，内外层失败不被快照故障覆盖', {timeout:10000}, async t => {
   const p=processFixture(t), original=process.env.PATH
   const ps=p.write('bin/ps', `#!${process.execPath}

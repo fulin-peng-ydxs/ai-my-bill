@@ -4,8 +4,8 @@ import { fileURLToPath } from 'node:url'
 import { commandScope } from './ios-process-scope.mjs'
 
 /** 清理失败追加到原执行原因之后，不能以 finally 的异常覆盖超时、取消或命令失败。 */
-export function finishCleanup(cleanup, primary) {
-  try { cleanup?.finish() } catch (error) {
+export function finishCleanup(cleanup, primary, options) {
+  try { cleanup?.finish(options) } catch (error) {
     if (primary) throw new AggregateError([primary, error], '执行失败且清理未完成。')
     throw error
   }
@@ -88,7 +88,7 @@ export function processCleanup(pid, { graceMs = 10_000, scope } = {}) {
       if (e.code !== 'ESRCH') error ??= new Error(`清理进程组 ${group} 的 ${signal} 失败（${e.code ?? 'unknown'}）。`, { cause:e })
     }
   }
-  const force = () => {
+  const force = (handoff = false) => {
     if (finished) return
     if (scope) {
       try {
@@ -103,6 +103,8 @@ export function processCleanup(pid, { graceMs = 10_000, scope } = {}) {
         error ??= e
       }
     }
+    // 成功的设备启动请求将本组服务交给 UUID 级生命周期；仍关闭登记并回收其他受管子组。
+    if (handoff) groups.delete(pid)
     // 先回收内层组，再回收外层组长，防止外层强杀先于内层自己的宽限计时器。
     for (const group of groups)
       if (group !== pid) kill(group, 'SIGKILL')
@@ -125,11 +127,11 @@ export function processCleanup(pid, { graceMs = 10_000, scope } = {}) {
       // 快照也消耗既有宽限；创建补偿耗尽时仍保持零宽限，不叠加第二轮等待。
       timer = setTimeout(force, Math.max(0, graceMs - (performance.now() - started)))
     },
-    finish() {
+    finish({ handoff = false } = {}) {
       if (finished) return
       try {
         // 命令结束也关闭自己的登记分支，避免成功退出的组长遗留后台成员后丢失归属。
-        if (stopping || scope) force()
+        if (stopping || scope) force(handoff && !stopping)
         if (error) throw error
       } finally {
         finished = true

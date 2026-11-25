@@ -85,7 +85,7 @@ async function command(
   let timer
   let watching
   let observationError
-  let child, cleanup, primaryError
+  let child, cleanup, primaryError, serviceHandoff = false
   const stop = (error) => {
     if (observationError) return
     observationError = error
@@ -158,6 +158,8 @@ async function command(
         `${program} 未通过（exit=${status}${timedOut ? ', timeout/output-limit' : ''}）${log ? `，日志：${log}` : `：${text.trim()}`}`
       )
     }
+    // 设备服务/App 由对应 UUID 的 shutdown/terminate 管理，不能在成功请求返回后杀掉其组。
+    serviceHandoff = status === 0 && program === 'xcrun' && args[0] === 'simctl' && ['boot','launch'].includes(args[1])
     return { status, text }
   } catch (error) {
     primaryError = error
@@ -167,7 +169,7 @@ async function command(
     clearTimeout(timer)
     clearInterval(watching)
     try {
-      finishCleanup(cleanup, primaryError)
+      finishCleanup(cleanup, primaryError, { handoff: serviceHandoff })
     } finally {
       if (activeCleanup === cleanup) activeCleanup = undefined
       if (output !== undefined) fs.closeSync(output)

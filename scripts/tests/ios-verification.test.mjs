@@ -1108,6 +1108,9 @@ test('模拟器启动预检不构建 App，共享启动预算，失败和取消�
     const state = p.write('.local/boot-state.json', JSON.stringify({ device:null }))
     const trace = p.write('.local/boot-trace.json','[]'), clockFile = p.write('.local/boot-clock','0')
     const ready = path.join(p.root,'.local/boot-waiting')
+    const serviceReady=path.join(p.root,'.local/boot-service-ready')
+    let helperPid
+    t.after(()=>{if(helperPid)try{process.kill(helperPid,'SIGKILL')}catch(e){if(e.code!=='ESRCH')throw e}})
     const platform = p.write('.local/boot-platform.mjs', `import fs from 'node:fs';import {performance} from 'node:perf_hooks';
 Object.defineProperty(process,'platform',{value:'darwin'});
 const original=performance.now.bind(performance);Object.defineProperty(performance,'now',{value:()=>original()+Number(fs.readFileSync(${JSON.stringify(clockFile)},'utf8'))});`)
@@ -1121,11 +1124,24 @@ else if(a[1]==='list')console.log(JSON.stringify({devices:{[${JSON.stringify(RUN
 {udid:${JSON.stringify(sentinel)},name:'OTHER_TASK',state:'Booted',deviceTypeIdentifier:${JSON.stringify(DEVICE_TYPE)}},...(state.device?[state.device]:[])]}}));
 else if(a[1]==='create'){state.device={udid:${JSON.stringify(id)},name:a[2],deviceTypeIdentifier:a[3],state:'Shutdown',isAvailable:true};save();console.log(state.device.udid)}
 else if(!state.device||a[2]!==state.device.udid)throw new Error('wrong ownership');
-else if(a[1]==='boot'){state.device.state='Booting';save();if(${JSON.stringify(mode)}==='expired')fs.writeFileSync(clock,'80000')}
+else if(a[1]==='boot'){
+state.device.state='Booting';
+if(${JSON.stringify(mode)}==='passed'){
+ const script='require("node:fs").writeFileSync('+JSON.stringify(${JSON.stringify(serviceReady)})+',"ready");setInterval(()=>{},1000)';
+ const child=require('node:child_process').spawn(process.execPath,['-e',script],{stdio:'ignore'});state.helperPid=child.pid;child.unref();
+}
+save();if(${JSON.stringify(mode)}==='expired')fs.writeFileSync(clock,'80000')}
+
 else if(a[1]==='bootstatus'){
 if(${JSON.stringify(mode)}==='failed')process.exit(9);
 if(${JSON.stringify(mode)}==='cancelled'){fs.writeFileSync(${JSON.stringify(ready)},'ready');setInterval(()=>{},1000)}
-else {state.device.state='Booted';save();if(${JSON.stringify(mode)}==='expired')fs.writeFileSync(clock,'160000');console.log('Booted')}
+else {
+ if(${JSON.stringify(mode)}==='passed'){
+  const until=Date.now()+1000;while(!fs.existsSync(${JSON.stringify(serviceReady)})&&Date.now()<until)Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,20);
+  if(!fs.existsSync(${JSON.stringify(serviceReady)}))throw new Error('successful boot killed device service');process.kill(state.helperPid,0);
+ }
+ state.device.state='Booted';save();if(${JSON.stringify(mode)}==='expired')fs.writeFileSync(clock,'160000');console.log('Booted')}
+
 }else if(a[1]==='shutdown'){state.device.state='Shutdown';save()}
 else if(a[1]==='delete'){state.device=null;save()}
 else throw new Error('unexpected simulator command');
@@ -1150,6 +1166,7 @@ else throw new Error('unexpected simulator command');
       } finally {processHandle.kill('SIGKILL');await ended}
     } else child=p.run(['debug','create','--boot'],env)
     const calls=JSON.parse(fs.readFileSync(trace)), devices=JSON.parse(fs.readFileSync(state))
+    helperPid=devices.helperPid
     assert.ok(calls.some(a=>a[1]==='boot')&&calls.some(a=>a[1]==='bootstatus'))
     assert.ok(calls.filter(a=>['boot','bootstatus','shutdown','delete'].includes(a[1])).every(a=>a[2]===id))
     const folders=fs.readdirSync(p.base).filter(name=>name.startsWith('ios-debug-')&&path.join(p.base,name)!==p.session)
