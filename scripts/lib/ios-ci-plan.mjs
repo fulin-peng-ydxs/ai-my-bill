@@ -57,8 +57,10 @@ export function registry(root) {
   }
   for (const p of ['scripts', 'app', 'final']) validateNames(r.profiles[p])
   validateNames(r.changeBase)
+  if (!r.changeBase.some(name => r.suites[name].kind === 'secrets'))
+    throw new Error('CI 变更范围缺少必需 secret 门禁。')
   validateNames(r.onDemandSuites)
-  const onDemand = names.filter(name => r.suites[name].mode === 'ios-touch' ||
+  const onDemand = names.filter(name => (r.suites[name].kind === 'full' && r.suites[name].mode === 'ios-touch') ||
     r.suites[name].kind === 'installation' ||
     (r.suites[name].kind === 'scenario' && /^scale-\d+$/.test(r.suites[name].scenario)))
   if (JSON.stringify([...r.onDemandSuites].sort()) !== JSON.stringify(onDemand.sort()))

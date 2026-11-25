@@ -151,22 +151,41 @@ describe('T11 多维原生查询', () => {
     const unrelated = noise ? await f.dictionaries.create('product', '无关历史') : undefined
     const columns = await db.read(sql => sql.query('PRAGMA table_info(ledger_entry)'))
     await db.write(async sql => {
-      const insert = `INSERT INTO ledger_entry(${columns.map(column => column.name).join(',')}) SELECT ${columns.map(column =>
-        ['id','product_id','business_time','business_date','search_text'].includes(String(column.name)) ? '?' : column.name).join(',')}
-        FROM ledger_entry WHERE id=?`
-      const values = (id: string, product: string, date: string, query: string) => {
-        const row: Record<string, string> = { id, product_id: product, business_time: date + 'T01:00:00.000Z',
+      // 批量复制真实首笔账目，避免数千次 JS/桥调用把夹具准备误变成测试瓶颈。
+      const insert = async (rows: number, prefix: string, productIds: string[], date: string, query: string) => {
+        const bindings: (string | number)[] = [rows, ...productIds]
+        const row: Record<string, string> = { business_time: date + 'T01:00:00.000Z',
           business_date: date, search_text: query }
-        return columns.filter(column => Object.hasOwn(row, String(column.name))).map(column => row[String(column.name)]!)
+        const fields = columns.map(column => {
+          const name = String(column.name)
+          if (name === 'product_id') return 'p.product_id'
+          if (name === 'id') { bindings.push(prefix); return "? || printf('%012d',sequence.i)" }
+          if (Object.hasOwn(row, name)) { bindings.push(row[name]!); return '?' }
+          return 'original.' + name
+        })
+        await sql.run(`WITH RECURSIVE sequence(i) AS (SELECT 0 UNION ALL SELECT i+1 FROM sequence WHERE i+1<?),
+          products(ordinal,product_id) AS (VALUES ${productIds.map((_,index) => `(${index},?)`).join(',')})
+          INSERT INTO ledger_entry(${columns.map(column => column.name).join(',')}) SELECT ${fields.join(',')}
+          FROM sequence JOIN products p ON p.ordinal=sequence.i%${productIds.length}
+          CROSS JOIN ledger_entry original WHERE original.id=?`, [...bindings, original.id])
       }
-      for (let index = 0; index < count; index++)
-        await sql.run(insert, [...values(`10000000-0000-0000-0000-${String(index).padStart(12,'0')}`, products[index % productCount]!, '2026-11-20', 'profile-selected'), original.id])
+      await insert(count, '10000000-0000-0000-0000-', products, '2026-11-20', 'profile-selected')
       // 同商品窗外记录，以及窗口内不在候选集合中的商品，均不能放大历史读取工作量。
-      for (let index = 0; index < noise; index++) {
-        await sql.run(insert, [...values(`20000000-0000-0000-0000-${String(index).padStart(12,'0')}`, f.product.id, '2026-01-01', 'profile-noise'), original.id])
-        await sql.run(insert, [...values(`30000000-0000-0000-0000-${String(index).padStart(12,'0')}`, unrelated!.id, '2026-11-20', 'profile-noise'), original.id])
+      if (noise) {
+        await insert(noise, '20000000-0000-0000-0000-', [f.product.id], '2026-01-01', 'profile-noise')
+        await insert(noise, '30000000-0000-0000-0000-', [unrelated!.id], '2026-11-20', 'profile-noise')
       }
       await sql.run('DELETE FROM ledger_entry WHERE id=?', [original.id])
+      const populations = await sql.query(`SELECT search_text,business_date,COUNT(*) AS count,
+        COUNT(DISTINCT product_id) AS products FROM ledger_entry
+        GROUP BY search_text,business_date ORDER BY search_text,business_date`)
+      expect(populations).toEqual([
+        ...(noise ? [
+          { search_text: 'profile-noise', business_date: '2026-01-01', count: noise, products: 1 },
+          { search_text: 'profile-noise', business_date: '2026-11-20', count: noise, products: 1 }
+        ] : []),
+        { search_text: 'profile-selected', business_date: '2026-11-20', count, products: productCount }
+      ])
     })
     return f
   }

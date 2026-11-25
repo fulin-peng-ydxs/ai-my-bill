@@ -278,6 +278,10 @@ test('CI 登记复用现有执行器与专项；PR 自动、固定范围和非�
     assert.throws(() => requestedScope(name, event))
   for (const value of ['', null, true, 'unknown'])
     assert.throws(() => requestedScope('workflow_dispatch', { inputs: { verification: value } }))
+  const noSecrets = structuredClone(r)
+  noSecrets.changeBase = ['scripts']
+  p.write('config/ios-ci.json', noSecrets)
+  assert.throws(() => registry(p.root), /变更范围缺少必需 secret/)
   r.rules[0].suites.push('unknown')
   p.write('config/ios-ci.json', r)
   assert.throws(() => registry(p.root), /未知/)
