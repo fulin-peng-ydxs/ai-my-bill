@@ -126,6 +126,8 @@ jobs:
             .local/ios/tmp/ai-agent/ios-check-*/result.json
             .local/ios/tmp/ai-agent/ios-debug-*/run-*/*.xcresult
             .local/ios/tmp/ai-agent/native-*/*.xcresult
+            .local/ios/tmp/ai-agent/native-*/*.log
+            .local/ios/tmp/ai-agent/native-*/app-tests.json
           include-hidden-files: true
           retention-days: 7
           if-no-files-found: warn
