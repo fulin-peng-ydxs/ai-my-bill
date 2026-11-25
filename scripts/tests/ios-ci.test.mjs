@@ -236,7 +236,7 @@ function environmentSession(p,action='close') {
     p.write('.local/ios/tmp/ai-agent/ios-debug-fixture/boot-status.log',bootLog)
     p.write('.local/ios/tmp/ai-agent/ios-debug-fixture/boot-lifecycle.json',{
       schema:1,action,status:'passed',runId,simulatorId:id,budgetMs:120000,startedAt:now,completedAt:now,durationMs:0,
-      commands:(action==='close'?['shutdown','delete']:['shutdown']).map(operation=>({operation,status:'passed',exit:0,pid:200503,program:'xcrun',startedAt:now,completedAt:now}))})
+      commands:(action==='close'?['delete']:['shutdown']).map(operation=>({operation,status:'passed',exit:0,pid:200503,program:'xcrun',startedAt:now,completedAt:now}))})
     return {session,id,runId,bootLog}
 }
 
@@ -290,7 +290,7 @@ test('CI 启动环境专项只运行新会话启动及关闭，拒绝旧回执�
     assert.equal(reconcile(p.root,directory).completeCandidate,false)
     const receiptFile=path.join(directory,'simulator-boot/receipt.json'),reportFile=path.join(directory,'simulator-boot/environment.json')
     const originalReport=JSON.parse(fs.readFileSync(reportFile))
-    for (const change of [v=>delete v.lifecycle,v=>v.lifecycle.status='running',v=>v.lifecycle.action='unknown',v=>{v.lifecycle.action='suspend';v.lifecycle.commands.pop()},v=>v.lifecycle.commands.pop(),v=>v.lifecycle.simulatorId=runId,v=>v.lifecycle.commands[0].pid=0,v=>v.lifecycle.commands[0].program='wrong',v=>v.lifecycle.durationMs=120001,v=>v.lifecycle.startedAt=v.readiness.startedAt-1,v=>v.source.commit='0'.repeat(40),v=>v.readiness.status='failed',v=>v.readiness.deviceState='Shutdown',
+    for (const change of [v=>delete v.lifecycle,v=>v.lifecycle.status='running',v=>v.lifecycle.action='unknown',v=>{v.lifecycle.action='suspend';v.lifecycle.commands[0].operation='shutdown'},v=>v.lifecycle.commands.pop(),v=>v.lifecycle.simulatorId=runId,v=>v.lifecycle.commands[0].pid=0,v=>v.lifecycle.commands[0].program='wrong',v=>v.lifecycle.durationMs=120001,v=>v.lifecycle.startedAt=v.readiness.startedAt-1,v=>v.source.commit='0'.repeat(40),v=>v.readiness.status='failed',v=>v.readiness.deviceState='Shutdown',
       v=>delete v.readiness.initialDevice,v=>v.readiness.initialDevice.state='Booted',
       v=>v.readiness.initialDevice.udid=runId,v=>v.readiness.initialDevice.name='other',v=>delete v.readiness.tool,v=>v.readiness.commands[1].program='other-tool',v=>delete v.readiness.schema,v=>v.readiness.startupMode='split-boot',
       v=>v.readiness.commands.pop(),v=>v.readiness.commands[0].status='running',v=>v.readiness.commands[1].pid=0,
@@ -810,7 +810,7 @@ test('CI 真实内外层命令统一清理嵌套独立进程组，超时/取消�
           try {
             await waitForProcessState(() => fs.existsSync(ready))
             const child = Number(fs.readFileSync(ready)), leader = JSON.parse(fs.readFileSync(leaderFile))
-            assert.ok(isRunningProcess(child))
+            assert.ok(isRunningProcess(child),'取消前子进程已退出；worker exit='+worker.exitCode+'；outer='+ (fs.existsSync(path.join(p.root,'outer.log'))?fs.readFileSync(path.join(p.root,'outer.log'),'utf8').slice(-4000):'no log'))
             assert.equal(Number(spawnSync('ps', ['-p', String(child), '-o', 'pgid='], { encoding: 'utf8' }).stdout.trim()), child,
               '后代实际另起进程组')
             if (mode.endsWith('SIGTERM') || mode === 'outer-force') worker.kill('SIGTERM')
@@ -1818,6 +1818,36 @@ s=m.StallSample(Path(${JSON.stringify(p.root)}),rows.append,lambda *a,**k:(_ for
 s.poll(2003,{**info,'pid':2003},True,0,lambda:100);assert rows[-1]['stallSample']=='unavailable'
 print('SCOPED_STALL_SAMPLE_VERIFIED')
 `
-  const out=spawnSync('python3',['-c',source],{encoding:'utf8',timeout:3000})
+  const out=spawnSync('python3',['-B','-c',source],{encoding:'utf8',timeout:3000})
   assert.equal(out.status,0,out.stderr);assert.match(out.stdout,/SCOPED_STALL_SAMPLE_VERIFIED/)
+})
+
+test('完整入口销毁只调用 delete，借用只暂停，删除失败及原主失败均保留', t => {
+  const p=fixture(t)
+  const source=fs.readFileSync(path.join(repository,'scripts/lib/ios-app-full.sh'),'utf8')
+  const cleanup=source.match(/^cleanup\(\) \{[\s\S]*?^\}/m)?.[0]
+  assert.ok(cleanup)
+  for(const [name,borrowed,state,deleteExit,prior,expected,operations] of [
+    ['owned',0,'Booted',0,0,0,['delete']],
+    ['borrowed',1,'Booted',0,0,0,['list','shutdown']],
+    ['suspended',1,'Shutdown',0,0,0,['list']],
+    ['delete-failed',0,'Booted',7,0,1,['delete']],
+    ['primary-failed',0,'Booted',0,7,7,['delete']]
+  ]) {
+    const log=path.join(p.root,name+'.log'),id='11111111-1111-4111-8111-111111111111'
+    const script=`SIMULATOR_ID=${id}\nSIMULATOR_BORROWED=${borrowed}\nCRASH_TEST_PID=''\nRUN_DIRECTORY=${JSON.stringify(p.root)}
+xcrun() {
+ printf '%s\\n' "$2" >> ${JSON.stringify(log)}
+ if [[ "$2" = list ]]; then printf '%s\\n' '${JSON.stringify({devices:{runtime:[{udid:id,state}]}})}'; fi
+ if [[ "$2" = delete ]]; then return ${deleteExit}; fi
+ return 0
+}
+${cleanup}
+(exit ${prior})
+cleanup
+`
+    const out=spawnSync('/bin/bash',['--noprofile','--norc','-c',script],{encoding:'utf8',timeout:3000})
+    assert.equal(out.status,expected,out.stderr)
+    assert.deepEqual(fs.readFileSync(log,'utf8').trim().split('\n'),operations,name)
+  }
 })

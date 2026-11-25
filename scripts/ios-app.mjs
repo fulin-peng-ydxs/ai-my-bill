@@ -899,7 +899,7 @@ async function main(args) {
         writeJson(file,life)
         let lifecycleError
         try {
-          for(const operation of afterBoot==='close'?['shutdown','delete']:['shutdown']) {
+          for(const operation of afterBoot==='close'?['delete']:['shutdown']) {
             const step={operation,status:'running',startedAt:Date.now()};life.commands.push(step)
             const result=await command('xcrun',['simctl',operation,context.simulatorId],{timeout:lifecycleDeadline.remaining(),onStarted:(pid,program)=>{
               Object.assign(step,{pid,program});writeJson(file,life)
@@ -978,7 +978,7 @@ async function main(args) {
       .some((d) => d.udid === session.context.simulatorId)
     if (exists) {
       const device = assertDevice(session.context, devices)
-      if (device.state !== 'Shutdown') await simctl('shutdown', device.udid)
+      if (!['Shutdown','Booted'].includes(device.state)) await simctl('shutdown', device.udid)
       await simctl('delete', device.udid)
     }
     session.context.state = 'closed'

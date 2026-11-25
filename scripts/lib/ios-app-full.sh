@@ -37,17 +37,19 @@ cleanup() {
   fi
   # 只操作本命令新建或再次校验的本轮会话设备；借用设备只关闭运行，不销毁。
   if [[ -n "${SIMULATOR_ID}" ]]; then
-    local simulator_state
-    simulator_state="$(xcrun simctl list devices --json | node -e 'let data=""; process.stdin.on("data", c => data += c); process.stdin.on("end", () => console.log(Object.values(JSON.parse(data).devices).flat().find(d => d.udid === process.argv[1])?.state ?? "Missing"))' "${SIMULATOR_ID}")"
-    if [[ "${simulator_state}" != Shutdown && "${simulator_state}" != Missing ]]; then
-      if ! xcrun simctl shutdown "${SIMULATOR_ID}"; then
-        echo '本轮模拟器关闭失败，继续尝试删除。' >&2
+    if [[ "${SIMULATOR_BORROWED}" == 0 ]]; then
+      # delete 自行关闭并删除本轮新建设备，避免再次初始化 shutdown 客户端。
+      if ! xcrun simctl delete "${SIMULATOR_ID}"; then
+        echo "模拟器清理失败；本轮设备标识保留于 ${RUN_DIRECTORY}/simulator.udid" >&2
         status=1
       fi
-    fi
-    if [[ "${SIMULATOR_BORROWED}" == 0 ]] && ! xcrun simctl delete "${SIMULATOR_ID}"; then
-      echo "模拟器清理失败；本轮设备标识保留于 ${RUN_DIRECTORY}/simulator.udid" >&2
-      status=1
+    else
+      local simulator_state
+      simulator_state="$(xcrun simctl list devices --json | node -e 'let data=""; process.stdin.on("data", c => data += c); process.stdin.on("end", () => console.log(Object.values(JSON.parse(data).devices).flat().find(d => d.udid === process.argv[1])?.state ?? "Missing"))' "${SIMULATOR_ID}")"
+      if [[ "${simulator_state}" != Shutdown && "${simulator_state}" != Missing ]] && ! xcrun simctl shutdown "${SIMULATOR_ID}"; then
+        echo '本轮借用模拟器暂停失败，保留会话。' >&2
+        status=1
+      fi
     fi
   fi
   echo "本轮原生构建/测试证据：${RUN_DIRECTORY}"

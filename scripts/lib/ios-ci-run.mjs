@@ -332,7 +332,7 @@ function validateReports(root, directory, suite, receipt,plan) {
         !Number.isFinite(step.completedAt) || step.completedAt<step.startedAt || step.startedAt<r.startedAt ||
         step.completedAt>r.completedAt || (index>0 && step.startedAt<r.commands[index-1].completedAt)))
       throw new Error('模拟器启动环境回执未通过、范围或来源不符。')
-    const operations=life?.action==='close'?['shutdown','delete']:life?.action==='suspend'?['shutdown']:[]
+    const operations=life?.action==='close'?['delete']:life?.action==='suspend'?['shutdown']:[]
     if(life?.schema!==1 || life.action!==(plan.suites.some(s=>s.runner===suite.runner && ['full','ui','scenario'].includes(s.kind))?'suspend':'close') || life.status!=='passed' || life.simulatorId!==r.simulatorId || life.runId!==r.runId ||
       life.budgetMs!==120000 || !Number.isFinite(life.durationMs) || life.durationMs<0 || life.durationMs>120000 ||
       !Number.isFinite(life.startedAt) || !Number.isFinite(life.completedAt) || life.startedAt<r.completedAt || life.completedAt<life.startedAt || life.completedAt>(receipt.completedAt??Date.now()) ||
