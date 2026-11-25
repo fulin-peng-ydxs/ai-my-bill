@@ -138,7 +138,16 @@ describe('T11 多维原生查询', () => {
     const original = await f.service.createExpense({ ...f.expense, unitPrice: '1', quantity: '1', paidAmount: '1.00',
       occurredAt: '2026-11-20T01:00:00.000Z' }, 'history-profile')
     const products = [f.product.id]
-    for (let index = 1; index < productCount; index++) products.push((await f.dictionaries.create('product', `扫描商品${index}`)).id)
+    // 此处验证报表扫描，不重复测量字典创建的逐笔唯一性/排序查询和事务开销。
+    await db.write(async sql => {
+      for (let index = 1; index < productCount; index++) {
+        const id = `40000000-0000-0000-0000-${String(index).padStart(12,'0')}`
+        const name = `扫描商品${index}`
+        await sql.run(`INSERT INTO dictionary_item(id,kind,name,normalized_name,status,sort_order)
+          VALUES(?,'PRODUCT',?,?,'ACTIVE',?)`, [id, name, name, index * 10])
+        products.push(id)
+      }
+    })
     const unrelated = noise ? await f.dictionaries.create('product', '无关历史') : undefined
     const columns = await db.read(sql => sql.query('PRAGMA table_info(ledger_entry)'))
     await db.write(async sql => {
