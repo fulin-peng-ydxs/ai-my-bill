@@ -1615,6 +1615,7 @@ test('T12 CSV 索引迁移和受管续作分别进入原生与脚本套件，不
 
 
 test('CI 预热宿主观察器保留主退出码，仅记录本轮树的实际 PGID 和 UID', {timeout:15000}, async t => {
+  for(const managed of [false,true])await t.test(managed?'观察至管理完成':'启动即停止',async t=>{
   const p=fixture(t)
   const code=`
     const fs=require('node:fs'),path=require('node:path');
@@ -1627,14 +1628,19 @@ test('CI 预热宿主观察器保留主退出码，仅记录本轮树的实际 P
       value.owner=process.ppid;fs.writeFileSync(header,JSON.stringify(value));
       const base=path.join(process.cwd(),'.local/ios/tmp/ai-agent');
       const until=Date.now()+8000;
-      let published=false;
+      let published=false, managedAt=0;
       const timer=setInterval(()=>{
         const file=fs.readdirSync(base).find(n=>n.startsWith('ios-host-processes-'));
         const text=file?fs.readFileSync(path.join(base,file),'utf8'):'';
         if(process.platform!=='darwin') {clearInterval(timer);process.exit(7)}
         if(text.includes('"process": {"pid": '+process.pid)&&!published) {
           const boot=path.join(base,'ios-debug-owned');fs.mkdirSync(boot);
-          fs.writeFileSync(path.join(boot,'boot-readiness.json'),JSON.stringify({scope:'environment',status:'passed'}));published=true;
+          fs.writeFileSync(path.join(boot,'boot-readiness.json'),JSON.stringify({scope:'environment',status:'passed',afterBoot:${managed}?'close':undefined}));published=true;
+          if(${managed}){managedAt=Date.now();fs.writeFileSync(path.join(boot,'boot-lifecycle.json'),JSON.stringify({status:'running',commands:[{pid:process.pid,startedAt:Date.now()}]}))}
+        }
+        if(${managed}&&managedAt>0){
+          if(text.includes('"observationComplete": "boot-ready"')){clearInterval(timer);process.exit(9)}
+          if(Date.now()-managedAt>750){fs.writeFileSync(path.join(base,'ios-debug-owned/boot-lifecycle.json'),JSON.stringify({status:'passed'}));managedAt=-1}
         }
         if(text.includes('"observationComplete": "boot-ready"')) {clearInterval(timer);process.exit(7)}
         else if(Date.now()>until){clearInterval(timer);process.exit(8)}
@@ -1661,6 +1667,7 @@ test('CI 预热宿主观察器保留主退出码，仅记录本轮树的实际 P
     assert.ok(stopped>0)
     assert.ok(rows.slice(stopped+1).every(r=>!r.process&&!r.load),'预检通过后不干扰后续测量')
   } else assert.match(rows[0].unavailable,/requires Darwin/)
+  })
 })
 
 
@@ -1778,4 +1785,39 @@ test('CI 含原生业务先暂停再复用同一会话，环境专项不提前�
     }}),/CONTROLLED_AFTER_ENVIRONMENT/)
     assert.deepEqual(calls.map(a=>a[2]??a[1]),['create','ios-build','close'])
   } finally {Object.defineProperty(process,'platform',original)}
+})
+
+
+test('CI 停滞短栈只读取本轮同用户原生命令，采样失败不覆盖主结果且仅清理自建采样器', t => {
+  const p=fixture(t)
+  const source=`
+import importlib.util, os
+from pathlib import Path
+spec=importlib.util.spec_from_file_location('diagnostics',${JSON.stringify(path.join(repository,'scripts/lib/ios-host-diagnostics.py'))})
+m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
+class Child:
+ def __init__(self): self.code=None; self.kills=0
+ def poll(self): return self.code
+ def kill(self): self.kills+=1; self.code=-9
+ def wait(self,timeout): return self.code
+rows=[]; calls=[]; clock=[100]; children=[]
+def factory(args,**kwargs):
+ calls.append(args); c=Child(); children.append(c); return c
+s=m.StallSample(Path(${JSON.stringify(p.root)}),rows.append,factory,lambda:clock[0])
+info={'pid':2001,'uid':os.getuid(),'comm':'simctl'}
+for owned,state,at in [(False,info,0),(True,{**info,'uid':os.getuid()+1},0),(True,{**info,'comm':'other-task'},0),(True,info,99000),(True,info,float('nan')),(True,{**info,'pid':9999},0)]:
+ s.poll(2001,state,owned,at,lambda:100)
+assert not calls
+s.poll(2001,info,True,0,lambda:100)
+assert len(calls)==1 and calls[0][:4]==['/usr/bin/sample','2001','1','10']
+s.poll(2001,info,True,0,lambda:100); assert len(calls)==1
+clock[0]=106;s.reap();assert children[0].kills==1 and s.active is None
+s.poll(2001,info,True,0,lambda:100);assert len(calls)==1
+s.poll(2002,{**info,'pid':2002},True,0,lambda:100);s.reap(final=True);assert children[-1].kills==1
+s=m.StallSample(Path(${JSON.stringify(p.root)}),rows.append,lambda *a,**k:(_ for _ in ()).throw(OSError('controlled sample unavailable')))
+s.poll(2003,{**info,'pid':2003},True,0,lambda:100);assert rows[-1]['stallSample']=='unavailable'
+print('SCOPED_STALL_SAMPLE_VERIFIED')
+`
+  const out=spawnSync('python3',['-c',source],{encoding:'utf8',timeout:3000})
+  assert.equal(out.status,0,out.stderr);assert.match(out.stdout,/SCOPED_STALL_SAMPLE_VERIFIED/)
 })

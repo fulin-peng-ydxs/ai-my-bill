@@ -834,7 +834,7 @@ async function main(args) {
       writeContext({ file: path.join(directory, 'test-context.json'), context })
       if (boot) {
         const file = path.join(directory, 'boot-readiness.json')
-        const readiness = { schema: 3, startupMode: 'bootstatus-b', scope: 'environment', status: 'running', tool: simctlExecution, simulatorId: context.simulatorId,
+        const readiness = { schema: 3, afterBoot:afterBoot||undefined, startupMode: 'bootstatus-b', scope: 'environment', status: 'running', tool: simctlExecution, simulatorId: context.simulatorId,
           runId, environment: toolchain, startedAt: Date.now(), budgetMs: budgets.boot,
           host: { totalMemory: totalmem(), freeMemory: freemem() }, commands:[] }
         const bootDeadline = createDeadline(Math.min(budgets.boot, deadline.remaining()))

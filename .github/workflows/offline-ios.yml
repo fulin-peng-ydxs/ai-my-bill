@@ -136,6 +136,7 @@ jobs:
             .local/ios/tmp/ai-agent/ios-verification-state.json
             .local/ios/tmp/ai-agent/ios-process-*/*.json
             .local/ios/tmp/ai-agent/ios-host-processes-*.jsonl
+            .local/ios/tmp/ai-agent/ios-stall-sample-*.txt
             .local/ios/tmp/ai-agent/ios-check-*/check.log
             .local/ios/tmp/ai-agent/ios-check-*/result.json
             .local/ios/tmp/ai-agent/ios-debug-*/run-*/*.xcresult

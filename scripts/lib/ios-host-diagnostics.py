@@ -6,6 +6,7 @@
 import ctypes
 from collections import Counter
 import json
+import math
 import os
 from pathlib import Path
 import signal
@@ -56,6 +57,50 @@ def observer():
     return read
 
 
+class StallSample:
+    """只对本轮生命周期中停滞的自有进程取一次短栈；不改变主命令结果。"""
+    def __init__(self, base, emit, factory=subprocess.Popen, clock=time.monotonic):
+        self.base, self.emit, self.factory, self.clock = base, emit, factory, clock
+        self.seen, self.active = set(), None
+
+    def poll(self, pid, info, owned, started_at, now=time.time):
+        self.reap()
+        if (type(pid) is not int or pid <= 1 or info.get("pid") != pid or self.active or pid in self.seen or not owned or info.get("uid") != os.getuid()
+                or info.get("comm") not in {"simctl", "node", "zsh", "xcrun"}
+                or not isinstance(started_at, (int, float)) or not math.isfinite(started_at) or now()*1000-started_at < 20_000):
+            return
+        self.seen.add(pid)
+        file = self.base / ("ios-stall-sample-" + str(pid) + ".txt")
+        try:
+            child = self.factory(["/usr/bin/sample", str(pid), "1", "10", "-file", str(file)],
+                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            self.active = (child, self.clock()+5)
+            self.emit({"stallSample": "started", "target": info, "file": file.name})
+        except OSError as error:
+            self.emit({"stallSample": "unavailable", "error": str(error)})
+
+    def reap(self, final=False):
+        if self.active:
+            child, end = self.active
+            code = child.poll()
+            if code is None and (final or self.clock() >= end):
+                try:
+                    child.kill()  # 只结束观察器亲自启动的采样进程，不向目标或进程组发信号。
+                except ProcessLookupError:
+                    pass
+                except OSError as error:
+                    self.emit({"stallSample": "cleanup-incomplete", "error": str(error)})
+                    return
+                try:
+                    code = child.wait(timeout=1)
+                except subprocess.TimeoutExpired:
+                    self.emit({"stallSample": "cleanup-incomplete"})
+                    return
+            if code is not None:
+                self.emit({"stallSample": "completed", "exit": code})
+                self.active = None
+
+
 def run(args):
     host_summary = bool(args and args[0] == "--host-summary")
     if host_summary:
@@ -86,6 +131,7 @@ def run(args):
         except (OSError, RuntimeError) as error:
             read = None
             emit({"scope": "diagnostic", "unavailable": str(error)})
+        sampler = StallSample(base, emit)
         started = time.time()
         # 不建立新进程组；原命令继承原工作流 stdout/stderr 和预算。
         child = subprocess.Popen(args[1:])
@@ -107,6 +153,7 @@ def run(args):
                 pid = current.get("ppid", 0)
             return pid == child.pid
         while child.poll() is None:
+            sampler.reap()
             if read:
                 try:
                     for header in base.glob("ios-process-*/scope.json"):
@@ -135,9 +182,20 @@ def run(args):
                         if boot.stat().st_mtime >= started:
                             ready = json.loads(boot.read_text())
                             if ready.get("scope") == "environment" and ready.get("status") == "passed":
-                                emit({"observationComplete": "boot-ready"})
-                                read = None
-                                break
+                                after = ready.get("afterBoot")
+                                lifecycle = boot.parent / "boot-lifecycle.json"
+                                life = json.loads(lifecycle.read_text()) if after and lifecycle.exists() else None
+                                if life and life.get("status") == "running" and life.get("commands"):
+                                    step = life["commands"][-1]
+                                    pid = step.get("pid")
+                                    if isinstance(pid, int) and pid > 1:
+                                        state = read(pid)
+                                        sampler.poll(pid, state, belongs(pid, state), step.get("startedAt"))
+                                if not after or (life and life.get("status") == "passed"):
+                                    sampler.reap(final=True)
+                                    emit({"observationComplete": "boot-ready"})
+                                    read = None
+                                    break
                     if read and time.monotonic() >= next_summary:
                         emit({"load": os.getloadavg(), **(read.summary() if host_summary else {})})
                         next_summary = time.monotonic() + 10
@@ -145,6 +203,7 @@ def run(args):
                     # 记录并发摘除/诊断失败；不改变主命令或伪造验证成功。
                     emit({"observationError": str(error)})
             time.sleep(0.5)
+        sampler.reap(final=True)
         status = child.wait()
         emit({"commandExit": status})
         return status if status >= 0 else 128 - status
