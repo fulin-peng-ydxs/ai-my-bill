@@ -157,6 +157,7 @@ elif [ \"$3\" = \"devices\" ]; then printf '%s\\n' '${devices}'; elif [ \"$1\" =
 `
   )
   executable('xcodebuild', '#!/bin/sh\nprintf "Xcode 27.0\\n"\n')
+  executable('xcode-select', '#!/bin/sh\nprintf "/controlled/Xcode/Contents/Developer\\n"\n')
   executable(
     'npm',
     `#!${process.execPath}
@@ -1122,7 +1123,9 @@ export function validateScenario(root,scenario,result) {
 }
 `)
   const platform = p.write('platform.mjs', "Object.defineProperty(process,'platform',{value:'darwin'});\n")
-  const run = name => p.run(['debug','run','--session',p.session,'--scenario',name],{NODE_OPTIONS:'--import='+platform})
+  const run = name => p.run(['debug','run','--session',p.session,'--scenario',name],{
+    NODE_OPTIONS:'--import='+platform, DEVELOPER_DIR:''
+  })
   for (const count of [10000,100000]) {
     const name = 'scale-'+count, child = run(name)
     assert.equal(child.status,0,child.stderr)

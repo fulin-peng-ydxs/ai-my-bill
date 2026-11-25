@@ -22,7 +22,6 @@ const git = (root, ...args) =>
 
 /** 登记只描述现有执行器和场景，不接受任意 Shell，也不注册尚未实现的交付能力。 */
 export function registry(root) {
-  assertNpmSources(JSON.parse(fs.readFileSync(path.join(root, 'app/package-lock.json'), 'utf8')))
   const r = JSON.parse(fs.readFileSync(path.join(root, registryPath), 'utf8'))
   if (r.schema !== 1 || !r.suites || !r.profiles || !Array.isArray(r.rules))
     throw new Error('CI 登记结构无效。')
@@ -230,6 +229,7 @@ export function selectSuites(r, profile, files = []) {
 }
 
 export function createPlan(root, profile, { base, head } = {}) {
+  assertNpmSources(JSON.parse(fs.readFileSync(path.join(root, 'app/package-lock.json'), 'utf8')))
   const r = registry(root),
     source = sourceIdentity(root)
   head ??= source.commit
