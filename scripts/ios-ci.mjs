@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url'
 import { createPlan, registry, executionMatrix, assertPlan, remoteSuite } from './lib/ios-ci-plan.mjs'
 import { resultsDirectory, executeGroup, reconcile, archiveGroup,runCommand } from './lib/ios-ci-run.mjs'
 import { requestedScope, requireJobs } from './lib/ios-ci.mjs'
+import { localGate } from './lib/ios-local-gate.mjs'
 import { errorMessage } from './lib/ios-errors.mjs'
 
 const root = fs.realpathSync(path.join(path.dirname(fileURLToPath(import.meta.url)), '..'))
@@ -37,12 +38,19 @@ try {
           ? ['--results', '--group', '--attempt']
           : mode === 'signing-check' ? ['--app','--candidate','--output']
         : mode === 'install-gate' ? ['--input','--output']
+        : mode === 'local-gate' ? ['--results','--input']
         : mode === 'result'
             ? ['--results']
             : []
   if (Object.keys(options).some((k) => !allowed.includes(k)))
     throw new Error('参数不适用于该 CI 命令。')
-  if (mode === 'require-jobs') {
+  if (mode === 'local-gate') {
+    if (process.env.GITHUB_ACTIONS === 'true') throw new Error('本地专项核验只能在可信本机执行。')
+    if (!options['--results'] || !options['--input']) throw new Error('local-gate 必须提供 --results 与证据清单 --input。')
+    const result = localGate(root, resultsDirectory(root, options['--results']), options['--input'])
+    console.log(JSON.stringify(result, null, 2))
+    if (result.status !== 'passed') process.exitCode = 1
+  } else if (mode === 'require-jobs') {
     requireJobs(process.env.IOS_CI_PLAN_STATUS, process.env.IOS_CI_CHECKS_STATUS)
     console.log('所有必需作业成功。')
   } else if (['signing-check','install-gate'].includes(mode)) {
@@ -145,7 +153,7 @@ try {
     }
   } else
     throw new Error(
-      '用法：ci:ios-app -- check|list；plan [change|scripts|app|final|套件] --base SHA；run --results PATH --group linux|macos；result --results PATH。'
+      '用法：ci:ios-app -- check|list；plan [change|scripts|common|app|final|套件] --base SHA；local-gate --results PATH --input JSON；run --results PATH --group linux|macos；result --results PATH。'
     )
 } catch (error) {
   console.error(errorMessage(error))

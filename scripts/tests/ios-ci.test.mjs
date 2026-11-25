@@ -1,3 +1,4 @@
+import { localGate } from '../lib/ios-local-gate.mjs'
 import { coverageReport } from '../lib/ios-coverage.mjs'
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
@@ -90,17 +91,17 @@ test('CI 启动入口与共享消费者选择必要专项，测试文件和局�
     assert.ok(!names.includes('touch'))
   }
   for (const name of ['ProductCombobox', 'NameSuggestionCombobox'])
-    assert.deepEqual(selected(`app/src/components/${name}.vue`), ['secrets', 'app-common', 'ui-entry', 'ui-personal', 'scale-10000', 'scale-100000'])
-  assert.deepEqual(selected('app/src/components/DictionaryFilterPicker.vue'), ['secrets', 'app-common', 'ui-query', 'ui-reports', 'ui-report-dimensions', 'scale-10000', 'scale-100000'])
-  assert.deepEqual(selected('app/src/components/ComboboxField.spec.ts'), ['secrets', 'app-common'])
-  assert.deepEqual(selected('app/src/stores/bootstrap.spec.ts'), ['secrets', 'app-common'])
+    assert.deepEqual(selected(`app/src/components/${name}.vue`), ['secrets', 'app-common', 'ui-entry', 'ui-personal', 'scale-10000', 'scale-100000', 'workflow-quality'])
+  assert.deepEqual(selected('app/src/components/DictionaryFilterPicker.vue'), ['secrets', 'app-common', 'ui-query', 'ui-reports', 'ui-report-dimensions', 'scale-10000', 'scale-100000', 'workflow-quality'])
+  assert.deepEqual(selected('app/src/components/ComboboxField.spec.ts'), ['secrets', 'app-common', 'workflow-quality'])
+  assert.deepEqual(selected('app/src/stores/bootstrap.spec.ts'), ['secrets', 'app-common', 'workflow-quality'])
 })
 
 test('T14 单测变更不触发原生交互专项，实现和混合变更仍选中',t => {
   const r = registry(fixture(t).root)
   const selected = files => selectSuites(r,'change',files).map(s => s.name)
   for (const file of ['app/src/platform/textScale','app/src/platform/appearance','app/src/composables/useKeyboardViewport']) {
-    assert.deepEqual(selected([file+'.spec.ts']),['secrets','app-common'],file)
+    assert.deepEqual(selected([file+'.spec.ts']),['secrets','app-common', 'workflow-quality'],file)
     assert.ok(selected([file+'.ts']).includes('ui-ios-interaction'),file)
     assert.ok(selected([file+'.spec.ts',file+'.ts']).includes('ui-ios-interaction'),file)
   }
@@ -311,7 +312,7 @@ test('CI 启动环境专项只运行新会话启动及关闭，拒绝旧回执�
       assert.equal(reconcile(p.root,directory).status,text===bootLog?'passed':'incomplete')
     }
     const selected=selectSuites(registry(p.root),'change',['scripts/lib/ios-processes.mjs'],{execution:'local'}).map(x=>x.name)
-    assert.deepEqual(selected,['secrets','scripts','simulator-boot','scripts-macos'])
+    assert.deepEqual(selected,['secrets','scripts','simulator-boot','scripts-macos', 'workflow-quality'])
     assert.equal(selected.filter(name=>registry(p.root).suites[name].runner==='macos')[0],'simulator-boot','冷启动预检必须先于工具压力回归')
     for(const file of ['scripts/lib/ios-process-launch.sh','scripts/lib/ios-host-diagnostics.py','scripts/lib/ios-app-full.sh','scripts/lib/ios-simctl.mjs','scripts/lib/ios-boot-proof.mjs','scripts/lib/ios-ci-run.mjs'])
       assert.ok(selectSuites(registry(p.root),'change',[file],{execution:'local'}).some(x=>x.name==='simulator-boot'),file)
@@ -420,9 +421,9 @@ test('PR 计划使用实际 head 和共同祖先，按变更专项且完整触�
   for (const sha of [undefined, '', '0'.repeat(40), 'not-a-sha'])
     assert.throws(() => requestedScope('pull_request', { pull_request: { base: { sha }, head: { sha: head } } }), /完整/)
   const r = registry(p.root)
-  assert.deepEqual(selectSuites(r, 'pull-request', ['agent-works/note.md']).map(s => s.name), ['secrets'])
+  assert.deepEqual(selectSuites(r, 'pull-request', ['agent-works/note.md']).map(s => s.name), ['secrets', 'workflow-quality'])
   const scripts = selectSuites(r, 'pull-request', ['scripts/lib/ios-ci.mjs']).map(s => s.name)
-  assert.deepEqual(scripts, ['secrets', 'scripts', 'scripts-macos'])
+  assert.deepEqual(scripts, ['secrets', 'scripts', 'scripts-macos', 'workflow-quality'])
   const change = createPlan(p.root, 'change', { base: p.base, head })
   assert.ok(change.deferred.some(s => s.name === 'scale-10000'), '日常本地 change 将容量留给明确请求/最终验收')
   assert.ok(change.suites.some(s=>s.name==='ui-query-input'),'本地按变更仍选择必要 UI 专项')
@@ -514,10 +515,10 @@ test('CI 真实 Git 改名双向选择专项，普通文档和旧端不误触发
   for (const file of ['agent-works/notes/example.md', 'server/src/Old.java', 'web/src/Old.vue'])
     assert.deepEqual(
       selectSuites(r, 'change', [file]).map((s) => s.name),
-      ['secrets']
+      ['secrets', 'workflow-quality']
     )
   const scripts = selectSuites(r, 'change', ['scripts/lib/ios-ci-plan.mjs']).map((s) => s.name)
-  assert.deepEqual(scripts, ['secrets', 'scripts', 'scripts-macos'])
+  assert.deepEqual(scripts, ['secrets', 'scripts', 'scripts-macos', 'workflow-quality'])
   assert.throws(() => createPlan(p.root, 'change'), /完整 base/)
   assert.throws(() => createPlan(p.root, 'change', { base: '0'.repeat(40) }))
 })
@@ -1349,7 +1350,7 @@ test('CI 纯单测和局部草稿组件不误选全部 UI，固定候选不能�
     r = registry(p.root)
   assert.deepEqual(
     selectSuites(r, 'change', ['app/src/composables/useLedgerDraft.spec.ts']).map((s) => s.name),
-    ['secrets', 'app-common']
+    ['secrets', 'app-common', 'workflow-quality']
   )
   const draft = selectSuites(r, 'change', ['app/src/components/DraftBackupNotice.vue']).map(
     (s) => s.name
@@ -1859,7 +1860,7 @@ test('本地按变更与远端常规分流不丢专项，最终仍包含完整�
   const p=fixture(t),r=registry(p.root)
   for(const file of ['app/src/App.vue','app/src/data/ledgerDatabase.ts','scripts/lib/ios-processes.mjs']) {
     const remote=selectSuites(r,'pull-request',[file])
-    assert.ok(remote.every(s=>['secrets','check','engineering','audit'].includes(s.kind)),file)
+    assert.ok(remote.every(s=>['secrets','quality','check','engineering','audit'].includes(s.kind)),file)
     const local=selectSuites(r,'change',[file],{execution:'local'})
     assert.ok(local.some(s=>['full','ui','environment'].includes(s.kind)),file)
     assert.ok(local.every(s=>!r.onDemandSuites.includes(s.name)),file)
@@ -1903,4 +1904,71 @@ test('真实远端入口在任何启动前拒绝本地模拟器计划，result �
   p.write(path.relative(p.root,path.join(directory,'ci-result.json')),{status:'passed',completeCandidate:true})
   const result=invoke('result');assert.equal(result.status,1,result.stderr)
   const value=JSON.parse(result.stdout);assert.equal(value.status,'incomplete');assert.equal(value.completeCandidate,false)
+})
+
+
+test('本地必需证据核验重读原报告，拒绝遗漏、失败、篡改、远端冒充及输入失效并保留历史', async t => {
+  const descriptor = Object.getOwnPropertyDescriptor(process, 'platform')
+  Object.defineProperty(process, 'platform', { value: 'darwin' })
+  try {
+    const p = processFixture(t)
+    const base = p.commit()
+    p.write('scripts/lib/ios-processes.mjs', '// controlled changed implementation')
+    const expected = prepare(p, 'change', 'required', { base })
+    const evidence = prepare(p, 'simulator-boot', 'proof')
+    const { session } = environmentSession(p)
+    const command = async (_root, _program, args) => args[2] === 'create' ? 'SESSION=' + session + '\n' : ''
+    await executeGroup(p.root, evidence.directory, 'macos', { command })
+    const manifest = p.write('.local/ios/local-evidence.json', [])
+    const gate = () => localGate(p.root, expected.directory, manifest)
+    const lock = p.write('.local/ios/tmp/ai-agent/ios-verification-state.json', 'preserve full failure')
+    assert.equal(gate().status, 'incomplete')
+    p.write('.local/ios/local-evidence.json', [evidence.directory])
+    assert.equal(gate().status, 'passed')
+    assert.equal(gate().completeCandidate, false)
+    const receiptFile = path.join(evidence.directory, 'simulator-boot/receipt.json')
+    const receipt = JSON.parse(fs.readFileSync(receiptFile))
+    for (const status of ['failed', 'cancelled', 'running']) {
+      fs.writeFileSync(receiptFile, JSON.stringify({ ...receipt, status }))
+      assert.equal(gate().status, 'incomplete', status)
+    }
+    fs.writeFileSync(receiptFile, JSON.stringify(receipt))
+    const raw = path.join(evidence.directory, 'simulator-boot/boot-status.log')
+    const bytes = fs.readFileSync(raw)
+    fs.appendFileSync(raw, 'tamper')
+    assert.equal(gate().status, 'incomplete')
+    fs.writeFileSync(raw, bytes)
+    assert.equal(gate().status, 'passed')
+    p.write('.local/ios/local-evidence.json', [evidence.directory, evidence.directory])
+    assert.equal(gate().status, 'incomplete', '重复目录不能混用')
+    const remote = prepare(p, 'secrets', 'remote-proof', { execution: 'remote' })
+    p.write('.local/ios/local-evidence.json', [remote.directory])
+    assert.match(gate().error, /本地执行/)
+    p.write('.local/ios/local-evidence.json', [evidence.directory])
+    p.write('scripts/lib/source-drift.mjs', '// source changed')
+    assert.equal(gate().status, 'incomplete')
+    assert.equal(JSON.parse(fs.readFileSync(path.join(expected.directory, 'local-readiness.json'))).status, 'incomplete')
+    assert.ok(fs.readdirSync(expected.directory).filter(n => /^local-readiness-/.test(n)).length >= 9)
+    assert.equal(fs.readFileSync(lock, 'utf8'), 'preserve full failure')
+  } finally {
+    Object.defineProperty(process, 'platform', descriptor)
+  }
+})
+
+test('本地核验真实 CLI 拒绝远端调用、缺参及无效清单，不启动检查或模拟器', t => {
+  const p = processFixture(t)
+  p.write('scripts/ios-ci.mjs', fs.readFileSync(path.join(repository, 'scripts/ios-ci.mjs'), 'utf8'))
+  p.commit()
+  const { directory } = prepare(p, 'change', 'cli-local', { base: p.base })
+  const input = p.write('.local/ios/manifest.json', 'not json')
+  const invoke = (args, remote = false) => spawnSync(process.execPath, ['scripts/ios-ci.mjs', 'local-gate', ...args], {
+    cwd: p.root, env: { ...process.env, GITHUB_ACTIONS: remote ? 'true' : 'false' }, encoding: 'utf8'
+  })
+  assert.equal(invoke([]).status, 1)
+  const args = ['--results', directory, '--input', input]
+  assert.match(invoke(args, true).stderr, /可信本机/)
+  const failed = invoke(args)
+  assert.equal(failed.status, 1, failed.stderr)
+  assert.equal(JSON.parse(failed.stdout).status, 'incomplete')
+  assert.ok(!fs.readdirSync(directory).some(name => name.startsWith('group-')))
 })

@@ -206,11 +206,13 @@ export async function executeGroup(root, directory, group, { command = runComman
           })
           if (report.status !== 'passed')
             throw new Error(`依赖审计发现 ${report.findings.length} 项已知漏洞。`)
+        } else if (suite.kind === 'quality') {
+          await command(root, 'python3', ['scripts/lib/ios-security.py', 'quality'], path.join(dest, 'quality.log'), Math.min(180000, remaining()))
         } else if (suite.kind === 'secrets') {
           await command(
             root,
             'bash',
-            ['scripts/check-secrets.sh'],
+            ['scripts/check-secrets.sh', ...(suite.name === 'secrets-history' ? ['--history'] : plan.range ? ['--base', plan.range.mergeBase ?? plan.range.base] : [])],
             path.join(dest, 'secrets.log'),
             Math.min(300_000, remaining())
           )
@@ -366,6 +368,10 @@ function validateReports(root, directory, suite, receipt,plan) {
       !Number.isFinite(Date.parse(result.checkedAt))
     )
       throw new Error('依赖审计覆盖不足或未通过。')
+    return
+  }
+  if (suite.kind === 'quality') {
+    if (!receipt.reports.some(r => r.path === 'quality.log')) throw new Error('工作流质量检查未执行。')
     return
   }
   if (suite.kind === 'secrets') {

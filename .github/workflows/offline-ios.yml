@@ -1,6 +1,6 @@
 name: offline-ios
 
-# PR 自动按变更运行常规检查；模拟器按变更在本地执行，完整候选集中本地验收。
+# PR 常规始终含固定 actionlint/Gitleaks；模拟器及 local-gate 只在本地，最终集中验收。
 on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review, edited]
@@ -70,7 +70,7 @@ jobs:
       fail-fast: false
       matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
     runs-on: ${{ matrix.runner }}
-    # 同组顺序执行、独立模拟器复用；关闭标记失败仍清理已登记组并保留失败。
+    # 同组顺序执行常规检查；统一进程清理保留主失败及补偿失败，不启动模拟器。
     # 正式执行/清理预算不变；受控回归仅独立缩短清理宽限，等待就绪后取消。
     timeout-minutes: ${{ matrix.timeout }}
     steps:

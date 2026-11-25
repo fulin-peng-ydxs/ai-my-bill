@@ -14,7 +14,7 @@ export const digest = (value) =>
 export const registryPath = 'config/ios-ci.json'
 
 /** 远端常规检查不启动模拟器，也不接管真机签名/安装。 */
-export const remoteSuite = suite => ['secrets','check','engineering','audit'].includes(suite.kind)
+export const remoteSuite = suite => ['secrets','quality','check','engineering','audit'].includes(suite.kind)
 const git = (root, ...args) =>
   execFileSync('git', args, {
     cwd: root,
@@ -44,7 +44,7 @@ export function registry(root) {
       !/^[a-z][a-z0-9-]*$/.test(name) ||
       !['linux', 'macos'].includes(s.runner) ||
       !s.description ||
-      !['secrets', 'check', 'engineering', 'full', 'ui', 'audit','scenario','installation','environment'].includes(s.kind) ||
+      !['secrets', 'quality', 'check', 'engineering', 'full', 'ui', 'audit','scenario','installation','environment'].includes(s.kind) ||
       (s.kind === 'check' && s.check !== 'script-tests') ||
       (s.kind === 'engineering' && !['common', 'ios-build'].includes(s.mode)) ||
       (s.kind === 'full' && !['ios-smoke', 'ios-touch'].includes(s.mode)) ||
@@ -60,8 +60,8 @@ export function registry(root) {
   }
   for (const p of ['scripts','common', 'app', 'final']) validateNames(r.profiles[p])
   validateNames(r.changeBase)
-  if (!r.changeBase.some(name => r.suites[name].kind === 'secrets'))
-    throw new Error('CI 变更范围缺少必需 secret 门禁。')
+  if (!r.changeBase.some(name => r.suites[name].kind === 'secrets') || !r.changeBase.some(name => r.suites[name].kind === 'quality'))
+    throw new Error('CI 变更范围缺少必需 secret/quality 门禁。')
   validateNames(r.onDemandSuites)
   const onDemand = names.filter(name => (r.suites[name].kind === 'full' && r.suites[name].mode === 'ios-touch') ||
     r.suites[name].kind === 'installation' ||
@@ -113,10 +113,10 @@ export function registry(root) {
     throw new Error('Swift UI 新用例未接入局部选择器及套件登记。')
   // 固定候选的最小能力不由可编辑登记任意降级；变更专项和单套件不会生成完整候选。
   for (const [profile, required] of Object.entries({
-    scripts: ['secrets', 'script-linux', 'script-macos'],
-    common: ['secrets','common','ios-build','audit'],
-    app: ['secrets', 'common', 'ios-build', 'ios-smoke'],
-    final: ['secrets', 'common', 'ios-build', 'ios-smoke', 'ios-touch', 'audit','scale-10000','scale-100000']
+    scripts: ['secrets', 'quality', 'script-linux', 'script-macos'],
+    common: ['secrets','quality','common','ios-build','audit'],
+    app: ['secrets', 'quality', 'common', 'ios-build', 'ios-smoke'],
+    final: ['secrets', 'quality', 'common', 'ios-build', 'ios-smoke', 'ios-touch', 'audit','scale-10000','scale-100000']
   })) {
     const selected = selectSuites(r, profile)
     for (const key of required)
@@ -161,6 +161,7 @@ export function sourceIdentity(root) {
     'scripts',
     '.github',
     registryPath,
+    'config/ios-security-exceptions.json',
     'package.json',
     '.nvmrc',
     'DESIGN.md',

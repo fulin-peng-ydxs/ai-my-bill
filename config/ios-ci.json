@@ -194,34 +194,55 @@
       "kind": "installation",
       "runner": "macos",
       "description": "可信手动输入：完整工程候选、签名检查与两种规模真机报告汇总"
+    },
+    "workflow-quality": {
+      "kind": "quality",
+      "runner": "linux",
+      "description": "固定 actionlint 全部工作流语法与表达式检查"
+    },
+    "secrets-history": {
+      "kind": "secrets",
+      "runner": "linux",
+      "description": "显式固定 Gitleaks 全部已获取 Git 历史扫描"
     }
   },
   "profiles": {
-    "common": ["secrets","app-common","native-build","dependency-audit"],
+    "common": [
+      "secrets",
+      "workflow-quality",
+      "app-common",
+      "native-build",
+      "dependency-audit"
+    ],
     "scripts": [
       "secrets",
+      "workflow-quality",
       "scripts",
       "scripts-macos"
     ],
     "app": [
       "secrets",
+      "workflow-quality",
       "app-common",
       "native-build",
       "native-sqlite"
     ],
     "final": [
       "secrets",
+      "workflow-quality",
       "app-common",
       "native-build",
       "native-sqlite",
       "touch",
       "dependency-audit",
       "scale-10000",
-      "scale-100000"
+      "scale-100000",
+      "secrets-history"
     ]
   },
   "changeBase": [
-    "secrets"
+    "secrets",
+    "workflow-quality"
   ],
   "rules": [
     {
@@ -234,7 +255,8 @@
         "AGENTS.md",
         "README.md",
         "agent-works/testing/**",
-        "agent-works/architecture/environment-configuration.md"
+        "agent-works/architecture/environment-configuration.md",
+        "config/ios-security-exceptions.json"
       ],
       "suites": [
         "scripts",

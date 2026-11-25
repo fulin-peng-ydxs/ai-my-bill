@@ -31,6 +31,8 @@ export const controlInputs = [
   'scripts/ios-ci.mjs',
   'scripts/ios-ci.sh',
   'config/ios-ci.json',
+  'config/ios-security-exceptions.json',
+  'scripts/tests/ios-security-cases.py',
   'scripts/toolchain.sh',
   'package.json',
   '.nvmrc'

@@ -179,16 +179,30 @@ SPM 准备机制见[构建架构](../architecture/architecture-decisions.md#离�
 
 | 范围 | 实际覆盖与使用条件 |
 | --- | --- |
-| `pull-request` | 远端常规：共同祖先到实际 head 按变更选择 secret、工具回归、App 工程、必要的未签名 iPhone SDK 编译及审计；不创建模拟器。`localRequired` 列出按变更需在本地执行的原生专项，`deferred` 保留未在该计划执行的影响范围，均不计为通过 |
+| `pull-request` | 远端常规：共同祖先到实际 head 按变更选择 Gitleaks 密钥、actionlint 工作流质量、工具回归、App 工程、必要的未签名 iPhone SDK 编译及审计；不创建模拟器。`localRequired` 列出按变更需在本地执行的原生专项，`deferred` 保留未在该计划执行的影响范围，均不计为通过 |
 | `change` | 默认本地按变更选择常规及必要原生/UI 专项；完整触摸、容量和安装留在 deferred，仅明确请求或最终候选执行。`--execution remote` 只选常规并列出 localRequired；同一专项合并多条理由 |
-| `scripts` | Linux/macOS 验证工具回归与 secret 检查；不编译 App、不启动模拟器 |
+| `scripts` | Linux/macOS 验证工具回归、Gitleaks 密钥及 actionlint 检查；不编译 App、不启动模拟器 |
 | `app-common` | 常用固定工程套件（根目录 `npm run check:app`）：全部 App 单测及同次执行的 V8 覆盖率、验证工具回归、类型检查、随包资源与探针构建、资源/设计门禁；不启动模拟器 |
-| `common` | 固定常规范围：secret、App 工程、未签名 iPhone SDK 编译及依赖审计，不启动模拟器；可本地或远端执行 |
+| `common` | 固定常规范围：Gitleaks、actionlint、App 工程、未签名 iPhone SDK 编译及依赖审计，不启动模拟器；可本地或远端执行 |
 | `app` | 仅本地：App 工程、未签名 iPhone Release 构建及原生 SQLite 集成；不包含完整页面触摸 |
 | `final` | 仅本地最终集中验收：App 工程、Release 构建、原生 SQLite、完整原页面触摸、两种规模模拟器专项及依赖审计；固定最小门禁不能被登记删除或由局部替代 |
 | `recovery`、`scale-10000`、`scale-100000` | 仅本地显式执行，复用成对恢复或 Capacity 原执行器；规模必须包含准备、原生、页面、冷启动及组合 RSS；缺阶段、混轮、少跑和错误指标拒绝。不是目标真机性能通过 |
 | `install-gate` | 仅可信 Mac 显式提供安装材料时执行，未接入自动触发；缺手机/报告/签名或候选不符保持未完成，不能由工程绿色兜底 |
+| `workflow-quality` | 固定 actionlint 检查全部工作流的语法与表达式；每次按变更计划及固定集合必需，不启动设备 |
+| `secrets-history` | 本地显式完整已获取历史扫描；`final` 必含，不在日常 PR 隐式重扫全部历史 |
 | `dependency-audit` 或其他登记套件名 | 本地可只规划单套件；远端除上述范围外仅提供独立依赖审计，避免引入多套入口 |
+
+合并前本地专项核验复用 [local-gate](../../scripts/lib/ios-local-gate.mjs)：先用实际 PR 的完整基线 SHA 生成 `plan change --base "$IOS_BASE"`，再将已完成的、同提交及源码输入的本地 CI 结果目录组成 JSON 数组（例如 `[".local/ios/tmp/ai-agent/ios-ci-entry-check"]`），保存在本轮 `.local/ios/` 文件中，执行：
+
+```bash
+npm run ci:ios-app -- local-gate --results "$IOS_CI_RESULTS" --input "$IOS_LOCAL_EVIDENCE"
+```
+
+`IOS_CI_RESULTS` 是按变更计划目录，`IOS_LOCAL_EVIDENCE` 是上述 JSON 文件路径。该入口不执行测试、构建或启动模拟器，而是对每份证据重新规划、重读原始报告及摘要，用既有 result 对账器核实实际执行、环境、阶段和清理；必需本地专项必须全部匹配。可用单套件计划的结果，无需再运行整个 change。裸 debug 单用例报告不能冒充包含更多检查的登记套件；日常定位仍用 debug，需作为合并证据的专项从同一登记入口组织，不为取得新格式报告重复已充分且仍有效的验收。无相关本地专项时可用空清单；有关联时遗漏、失败、取消、旧源码、篡改、重复目录或远端报告冒充本地均拒绝。每次核验保存独立 `local-readiness-<随机ID>.json`，最新摘要写入 `local-readiness.json`；失败刷新旧绿色并保留历史，不覆盖原回执、不清除完整失败锁、不生成完整候选标记。输入、基线、执行器、工具链或夹具变化仍按既有规则失效，不能改写旧计划以接受旧成功。该核验是可信本机的合并前条件，远端不接收本地材料；`CI common result` 仍只证明常规检查，GitHub 不自动强制本机入口已经执行。
+
+安全工具由 [ios-security.py](../../scripts/lib/ios-security.py)统一固定 actionlint 1.7.12 / Gitleaks 8.30.1。只从官方版本发布下载并核验 SHA-256，仅提取普通可执行文件，完整工具与摘要原子发布至 `.local/ios/tools`；每次命中重新验证缓存内容摘要及版本，不执行 PATH 中的浮动版本。下载和执行有界，拒绝校验失败、损坏缓存、路径链接、空工作流集合、非零退出或不完整扫描报告；不关闭 TLS 校验、不修改系统证书、工具链或全局选择。工作流检查禁用可选 ShellCheck/Pyflakes，范围仍是全部工作流结构及表达式。普通 `secrets` 扫描当前受控/未忽略源码，以及 PR 共同祖先到 head（本地无范围时最近一次提交）的补丁；不复制依赖、私密配置和本地账本。`bash scripts/check-secrets.sh --history` / `plan secrets-history` 显式扫描已获取的全部历史，保留敏感文件名拒绝规则；完整候选包含该历史专项，日常不做重复全历史扫描。
+
+Gitleaks 使用默认规则，禁用行内 allow 注释、外部忽略文件及宽泛目录豁免；唯一例外登记在 [ios-security-exceptions.json](../../config/ios-security-exceptions.json)，必须精确匹配文件、规则和命中行字节 SHA-256，含原因及 UTC 到期日。过期、重复、内容变化或当前已不命中的遗留例外均失败；历史命中按原提交内容核验，不能用当前文件覆盖历史事实。当前仅允许原设计基线 tokens.css 摘要这一非凭据误报，不修改基线原文。输出不含匹配值和代码片段。上述规则变化须同步精确反例，不能扩大豁免来通过。新增安全回归由 `ios-security.test.mjs` 自动接入既有工具套件，实际 Python 夹具覆盖下载/缓存/原子发布、工具失败、范围、路径及例外失效；本地证据回归由 ios-ci.test.mjs 的“本地必需证据”“本地核验真实 CLI”覆盖。工具测试不启动业务服务或模拟器。登记表生成与定时审计尚未接入，本轮不增加。
 
 覆盖率随既有 App 测试一次采集，固定最多两个 worker 控制插桩并发开销，不延长单测默认时限，也不再单独重跑同一套测试；V8 provider 与 Vitest 同版本锁定。范围为 app/src 的可执行 TS/Vue，排除 spec、声明与生成 API 类型。覆盖率目录独立于执行日志，包含未导入源码；对账重新计算逐文件与总计、校验完整源码清单及摘要，缺文件、坏计数、映射缺失或整轮零执行点不能通过；纯类型文件可以没有执行点，真实 0% 基线仍保留，不用零采集伪装 100%。位置校验兼容 V8 的行尾 null、Vue 源映射逆序和隐含 else 空位置。当前先记录真实基线，不设虚构百分比阈值；原始 coverage-final/summary 与 proof 随同一 attempt 归档。ios-delivery.test.mjs 用真实局部 V8 采集及坏报告反例验证，不把协议夹具当成真机采样。
 
