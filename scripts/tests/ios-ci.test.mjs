@@ -592,6 +592,8 @@ test('CI 工作流 PR 自动、通用门禁始终对账，手动结果隔离且�
   assert.equal(workflow.match(/ref: \$\{\{ github.event.pull_request.head.sha \|\| github.sha \}\}/g).length, 3)
   assert.equal(workflow.match(/persist-credentials: false/g).length, 3)
   assert.match(workflow, /matrix: \$\{\{ fromJSON\(needs.plan.outputs.matrix\) \}\}/)
+  assert.match(workflow, /DEVELOPER_DIR: \$\{\{ matrix.group == 'macos' && '\/Applications\/Xcode_27\.app\/Contents\/Developer' \|\| '' \}\}/)
+  assert.match(workflow, /name: Verify pinned Apple toolchain\n        if: matrix.group == 'macos'/)
   assert.match(workflow, /run --results "\$IOS_CI_RESULTS" --group "\$IOS_CI_GROUP"/)
   assert.match(workflow, /result --results "\$IOS_CI_RESULTS"/)
   assert.match(workflow, /needs.result.outputs.complete == 'true'/)

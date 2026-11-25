@@ -72,6 +72,8 @@ jobs:
 
   checks:
     needs: plan
+    env:
+      DEVELOPER_DIR: ${{ matrix.group == 'macos' && '/Applications/Xcode_27.app/Contents/Developer' || '' }}
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
@@ -90,6 +92,12 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
           cache-dependency-path: app/package-lock.json
+      - name: Verify pinned Apple toolchain
+        if: matrix.group == 'macos'
+        run: |
+          test -d "$DEVELOPER_DIR"
+          xcodebuild -version
+          xcrun --sdk iphoneos --show-sdk-version
       - run: npm --prefix app ci --ignore-scripts
       - uses: actions/download-artifact@v4
         with:
