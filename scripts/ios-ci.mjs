@@ -1,13 +1,18 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { createPlan, registry, executionMatrix } from './lib/ios-ci-plan.mjs'
+import { createPlan, registry, executionMatrix, assertPlan, remoteSuite } from './lib/ios-ci-plan.mjs'
 import { resultsDirectory, executeGroup, reconcile, archiveGroup,runCommand } from './lib/ios-ci-run.mjs'
 import { requestedScope, requireJobs } from './lib/ios-ci.mjs'
 import { errorMessage } from './lib/ios-errors.mjs'
 
 const root = fs.realpathSync(path.join(path.dirname(fileURLToPath(import.meta.url)), '..'))
 const args = process.argv.slice(2)
+const guardRemote = directory => {
+  if(process.env.GITHUB_ACTIONS!=='true')return
+  const plan=assertPlan(root,JSON.parse(fs.readFileSync(path.join(directory,'ci-plan.json'),'utf8')))
+  if(plan.execution!=='remote' || plan.suites.some(s=>!remoteSuite(s)))throw new Error('远端拒绝本地计划或模拟器专项。')
+}
 try {
   const mode = args.shift(),
     options = {},
@@ -16,7 +21,7 @@ try {
   if (explicit && mode !== 'plan') throw new Error('只有 plan 接受范围参数。')
   for (let i = 0; i < args.length; i += 2) {
     if (
-      !['--base', '--head', '--results', '--group', '--attempt','--app','--candidate','--output','--input','--session'].includes(args[i]) ||
+      !['--execution','--base', '--head', '--results', '--group', '--attempt','--app','--candidate','--output','--input','--session'].includes(args[i]) ||
       !args[i + 1] ||
       Object.hasOwn(options, args[i])
     )
@@ -25,7 +30,7 @@ try {
   }
   const allowed =
     mode === 'plan'
-      ? ['--base', '--head', '--results']
+      ? ['--base', '--head', '--results','--execution']
       : mode === 'run'
         ? ['--results', '--group','--session']
         : mode === 'archive'
@@ -73,7 +78,8 @@ try {
       )
     const plan = createPlan(root, selected.profile, {
       base: selected.base,
-      head: selected.head ?? options['--head']
+      head: selected.head ?? options['--head'],
+      execution:mode==='prepare'?'remote':(options['--execution']??(process.env.GITHUB_ACTIONS==='true'?'remote':undefined))
     })
     const directory =
       options['--results'] ??
@@ -95,6 +101,9 @@ try {
       JSON.stringify({
         directory: path.relative(root, absolute),
         profile: plan.profile,
+        execution:plan.execution,
+        localRequired:(plan.localRequired??[]).map(s=>s.name),
+        deferred:(plan.deferred??[]).map(s=>s.name),
         suites: plan.suites.map((s) => s.name),
         matrix
       })
@@ -106,11 +115,13 @@ try {
     if (mode === 'archive') {
       console.log(archiveGroup(root, directory, options['--group'], options['--attempt']))
     } else if (mode === 'run') {
+      guardRemote(directory)
       await executeGroup(root, directory, options['--group'],{session:options['--session']})
       console.log('所选执行组通过；完整结论须由 result 对账。')
     } else {
       let result
       try {
+        guardRemote(directory)
         const remote = process.env.GITHUB_ACTIONS === 'true'
         result = reconcile(root, directory,
           process.env.IOS_CI_CHECKS_STATUS ?? (remote ? 'missing' : undefined),

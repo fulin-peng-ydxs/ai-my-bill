@@ -8,12 +8,12 @@ export function requestedScope(eventName, event) {
   }
   if (eventName === 'workflow_dispatch') {
     const profile = event.inputs?.verification === undefined ? 'scripts' : event.inputs.verification
-    if (!['scripts', 'app', 'final', 'change', 'dependency-audit', 'recovery', 'scale-10000', 'scale-100000'].includes(profile))
-      throw new Error('未知 CI 范围。')
+    if (!['scripts','common','change','dependency-audit'].includes(profile))
+      throw new Error('远端仅接受 scripts/common/change/dependency-audit；原生专项使用本地入口。')
     return { profile, base: event.inputs?.base_revision || undefined }
   }
   if (eventName === 'push' && !event.deleted) {
-    const match = /^refs\/tags\/ios-ci\/(scripts|app|final|dependency-audit|recovery|scale-10000|scale-100000)\/(.+)$/.exec(
+    const match = /^refs\/tags\/ios-ci\/(scripts|common|dependency-audit)\/(.+)$/.exec(
       event.ref ?? ''
     )
     if (match) return { profile: match[1] }

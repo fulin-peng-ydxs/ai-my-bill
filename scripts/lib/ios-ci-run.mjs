@@ -538,6 +538,9 @@ export function reconcile(root, directory, jobsStatus, planStatus) {
     schema: 1,
     plan: plan.id,
     profile: plan.profile,
+    execution:plan.execution,
+    scope:plan.execution==='remote'?'common-checks':'selected-local-checks',
+    localRequired:(plan.localRequired??[]).map(s=>({suite:s.name,status:'not-verified-here'})),
     source: plan.source,
     status:
       rows.every((r) => r.status === 'passed') &&
@@ -557,9 +560,9 @@ export function reconcile(root, directory, jobsStatus, planStatus) {
   writeJson(path.join(directory, 'ci-result.json'), result)
   fs.writeFileSync(
     path.join(directory, 'ci-result.md'),
-    `CI ${plan.profile}: ${result.status}\n\n` +
+    `CI ${plan.profile}: ${result.status}\n执行位置：${plan.execution}；完整候选：${result.completeCandidate}\n\n` +
       rows.map((r) => `- ${r.suite}: ${r.status}${r.reason ? ' — ' + r.reason : ''}`).join('\n') +
-      '\n',
+      '\n' + (result.localRequired.length?'本地专项（本运行未验证）：'+result.localRequired.map(x=>x.suite).join(', ')+'\n':''),
     { mode: 0o600 }
   )
   return result

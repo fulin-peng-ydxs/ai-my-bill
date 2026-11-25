@@ -197,6 +197,7 @@
     }
   },
   "profiles": {
+    "common": ["secrets","app-common","native-build","dependency-audit"],
     "scripts": [
       "secrets",
       "scripts",

@@ -1,35 +1,27 @@
 name: offline-ios
 
-# PR 自动按变更检查；完整验收和容量仍按需。规划、执行、对账与本地同源。
+# PR 自动按变更运行常规检查；模拟器按变更在本地执行，完整候选集中本地验收。
 on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review, edited]
   push:
     tags:
       - 'ios-ci/scripts/**'
-      - 'ios-ci/app/**'
-      - 'ios-ci/final/**'
+      - 'ios-ci/common/**'
       - 'ios-ci/change/**'
       - 'ios-ci/dependency-audit/**'
-      - 'ios-ci/recovery/**'
-      - 'ios-ci/scale-10000/**'
-      - 'ios-ci/scale-100000/**'
   workflow_dispatch:
     inputs:
       verification:
-        description: 'scripts=工具；change=按变更专项；app=集成；final=完整候选；dependency-audit=依赖审计；recovery/scale=单项原生观测'
+        description: '远端常规检查：scripts=工具；common=工程/SDK编译/审计；change=按变更；dependency-audit=审计。模拟器与final使用本地入口。'
         required: true
         default: scripts
         type: choice
         options:
           - scripts
+          - common
           - change
-          - app
-          - final
           - dependency-audit
-          - recovery
-          - scale-10000
-          - scale-100000
       base_revision:
         description: 'change 必填：变更起点完整 SHA'
         type: string
@@ -107,11 +99,7 @@ jobs:
           IOS_CI_RESULTS: ${{ needs.plan.outputs.directory }}
           IOS_CI_GROUP: ${{ matrix.group }}
         run: |
-          if [ "$IOS_CI_GROUP" = macos ]; then
-            python3 scripts/lib/ios-host-diagnostics.py --host-summary -- npm run ci:ios-app -- run --results "$IOS_CI_RESULTS" --group "$IOS_CI_GROUP"
-          else
-            npm run ci:ios-app -- run --results "$IOS_CI_RESULTS" --group "$IOS_CI_GROUP"
-          fi
+          npm run ci:ios-app -- run --results "$IOS_CI_RESULTS" --group "$IOS_CI_GROUP"
       - name: Preserve this attempt independently
         if: always()
         env:
@@ -218,14 +206,3 @@ jobs:
           include-hidden-files: true
           retention-days: 7
           if-no-files-found: error
-
-  # 只有最终计划、实际报告及所有必需 job 均通过才标记完整候选；真机验收仍另行执行。
-  app-baseline-v1:
-    needs: [plan, checks, result]
-    if: >-
-      needs.plan.outputs.profile == 'final' && needs.checks.result == 'success' &&
-      needs.result.result == 'success' && needs.result.outputs.complete == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - run: echo 'Full App candidate reconciled; device acceptance remains separate'
