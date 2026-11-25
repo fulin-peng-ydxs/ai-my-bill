@@ -110,6 +110,13 @@ export function commandScope(root, env) {
       write()
     },
     blocked,
+    noteLauncher(value) {
+      if (released) return
+      record.launcher ??= []
+      if (record.launcher.length>=12) throw new Error('受管启动诊断帧过多。')
+      record.launcher.push({...value,at:Date.now()})
+      write()
+    },
     seal() {
       const marker = path.join(directory, '.closed-' + member)
       try {

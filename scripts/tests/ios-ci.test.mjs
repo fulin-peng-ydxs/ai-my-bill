@@ -1090,6 +1090,49 @@ const r=spawnSync('/bin/ps',process.argv.slice(2),{stdio:'inherit'});process.exi
   } finally {process.env.PATH=original}
 })
 
+test('CI 放行帧不等待父流 EOF，半帧和非法帧拒绝，启动轨迹不污染命令输出', {timeout:12000}, async t => {
+  for(const frame of ['GO\n','fragmented','G','','GO\nextra']) {
+    const child=spawn(process.execPath,[path.join(repository,'scripts/lib/ios-process-launch.mjs'),process.execPath,'-e',"console.log('CONTROLLED_GATE_TOOL')"],
+      {detached:true,stdio:['ignore','pipe','pipe','pipe','pipe']})
+    let stdout='',stderr='',trace=''
+    child.stdout.on('data',b=>stdout+=b);child.stderr.on('data',b=>stderr+=b);child.stdio[4].on('data',b=>trace+=b)
+    child.stdio[4].end()
+    child.stdio[3].allowHalfOpen=true
+    const ended=new Promise((resolve,reject)=>{child.once('error',reject);child.once('close',code=>resolve(code))})
+    try {
+      const valid=frame==='GO\n'||frame==='fragmented'
+      if(valid) {
+        if(frame==='fragmented') {
+          child.stdio[3].write('G');await waitForProcessState(()=>trace.includes('\"bytes\":1'))
+          child.stdio[3].write('O');await waitForProcessState(()=>trace.includes('\"bytes\":2'))
+          child.stdio[3].write('\n')
+        } else child.stdio[3].write(frame)
+        await waitForProcessState(()=>stdout.includes('CONTROLLED_GATE_TOOL'))
+        assert.equal(child.stdio[3].writableEnded,false,'实际父流尚未 EOF，工具已经启动')
+        child.stdio[3].end()
+      } else child.stdio[3].end(frame)
+      const code=await ended
+      assert.equal(code,valid?0:1,stderr)
+      assert.equal(stdout,valid?'CONTROLLED_GATE_TOOL\n':'')
+      const events=trace.trim().split('\n').map(JSON.parse)
+      assert.equal(events[0].stage,'waiting');assert.ok(events.every(v=>v.pid===child.pid&&v.uid===process.getuid()))
+      assert.equal(events.some(v=>v.stage==='started'),valid)
+    } finally {
+      child.stdio[3].destroy();killOwnedGroup(child.pid);await ended
+    }
+  }
+})
+
+test('CI 迟到启动轨迹不能复活已关闭登记', t => {
+  const p=fixture(t),scope=commandScope(p.root,{})
+  const directory=JSON.parse(scope.env.MYBILL_PROCESS_SCOPE).directory
+  scope.bind(200701);scope.noteLauncher({stage:'waiting',pid:200701})
+  scope.finish()
+  assert.equal(fs.existsSync(directory),false)
+  scope.noteLauncher({stage:'exited',pid:200701})
+  assert.equal(fs.existsSync(directory),false)
+})
+
 test('CI 启动取证只采样当前 PID，不延长预算，快速返回和取消不留下诊断任务', async t => {
   for (const mode of ['fast','sampled','unavailable','cancelled','cleanup-failed']) {
     const p=fixture(t),calls=[]

@@ -21,15 +21,36 @@ export function spawnManaged(program, args, options, { root, graceMs = 10_000 })
   try {
     child = spawn(gated ? process.execPath : program,
       gated ? [fileURLToPath(new URL('./ios-process-launch.mjs', import.meta.url)), program, ...args] : args,
-      { ...options, env: scope.env, stdio: gated ? [...options.stdio, 'pipe'] : options.stdio })
+      { ...options, env: scope.env, stdio: gated ? [...options.stdio, 'pipe', 'pipe'] : options.stdio })
     const channel = gated ? child.stdio[3] : undefined
     channel?.on('error', (error) => child.emit('error', error))
+    if (gated) {
+      let buffer=''
+      const trace=child.stdio[4]
+      trace.on('error',error=>child.emit('error',error))
+      trace.end() // 本通道只读；关闭父端写半边，避免它阻止 child.close。
+      trace.on('data',data=>{
+        try {
+          buffer+=data.toString()
+          if(buffer.length>1024)throw new Error('受管启动诊断帧过大。')
+          for(let end;(end=buffer.indexOf('\n'))>=0;) {
+            const value=JSON.parse(buffer.slice(0,end));buffer=buffer.slice(end+1)
+            if(!['waiting','frame','starting','started','exited'].includes(value.stage) || value.pid!==child.pid)
+              throw new Error('受管启动诊断来源无效。')
+            scope.noteLauncher(value)
+          }
+        } catch(error) {child.emit('error',error)}
+      })
+    }
     cleanup = processCleanup(child.pid, { graceMs, scope })
     scope.bind(child.pid)
     if (scope.blocked()) {
       channel?.end()
       cleanup.stop('SIGKILL')
-    } else channel?.end('GO\n')
+    } else if (channel) {
+      scope.noteLauncher({stage:'release-requested',pid:child.pid,bytes:3})
+      channel.end('GO\n')
+    }
     return { child, cleanup }
   } catch (error) {
     child?.on('error', () => {})
