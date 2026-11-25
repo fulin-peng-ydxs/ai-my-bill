@@ -2180,6 +2180,13 @@ test('自动本地门禁：真实提交/推送 hook 只检查实际提交，暂�
   assert.equal(invoke('pre-commit').status, 1, '工作树正确不能掩盖暂存区文档过期')
   p.write('agent-works/testing/guide.md', registryBlock(staged)); p.git('add', 'agent-works/testing/guide.md')
   assert.equal(invoke('pre-commit').status, 0, '只核验暂存版本，未暂存差异不误拦')
+  const gh = p.write('bin/gh', '#!/bin/sh\ncase "$2" in *"/pulls?"*) printf \'[{"number":3}]\\n\';; repos/example/bill) printf \'{"default_branch":"legacy"}\\n\';; *) exit 2;; esac\n')
+  fs.chmodSync(gh, 0o755)
+  const bootstrapPush = spawnSync(process.execPath, ['scripts/ios-local.mjs', 'push'], { cwd: p.root, encoding: 'utf8',
+    env: { ...process.env, GITHUB_ACTIONS: 'false', PATH: path.dirname(gh) + path.delimiter + process.env.PATH } })
+  assert.equal(bootstrapPush.status, 0, bootstrapPush.stderr)
+  assert.match(bootstrapPush.stdout, /等待目标主线设为默认分支/)
+  assert.equal(p.git('ls-remote', 'origin', 'refs/heads/feature').split(/\s/)[0], head)
   const previous = p.write('.local/previous-hooks/pre-commit', '#!/bin/sh\nexit 37\n'); fs.chmodSync(previous, 0o755)
   p.write('.git/codex/local-gate.json', { schema: 1, base: 'main', remote: 'origin', remoteUrl: remote,
     repository: 'example/bill', previousHooks: path.dirname(previous), signer: {} })
@@ -2223,4 +2230,22 @@ test('自动本地门禁：真实远端回执入口拦截漏验和错误签名�
         IOS_CI_IS_PR: 'true', IOS_CI_LOCAL_STATUS: status } })
     assert.equal(run.status, status === 'success' ? 0 : 1, String(status))
   }
+})
+
+test('自动本地门禁：干净检出首次生成 Python 字节码不使计划失效，源文件及可执行权限变化仍拒绝', t => {
+  const p = processFixture(t)
+  p.write('.gitignore', '.local/\nnode_modules/\n__pycache__/\n*.py[cod]\n')
+  const source = p.write('scripts/fixtures/cache_input.py', 'value = 1\n')
+  p.commit()
+  const plan = createPlan(p.root, 'scripts')
+  const env = { ...process.env }; delete env.PYTHONDONTWRITEBYTECODE; delete env.PYTHONPYCACHEPREFIX
+  const child = spawnSync('python3', ['-c', 'import importlib.util,sys;s=importlib.util.spec_from_file_location("fixture",sys.argv[1]);m=importlib.util.module_from_spec(s);s.loader.exec_module(m);assert m.value == 1', source], { env, encoding: 'utf8' })
+  assert.equal(child.status, 0, child.stderr)
+  assert.ok(fs.readdirSync(path.join(p.root, 'scripts/fixtures/__pycache__')).some(n => n.endsWith('.pyc')), '首次导入确实生成字节码')
+  assert.doesNotThrow(() => assertPlan(p.root, plan), '生成物不改变测量源码')
+  fs.chmodSync(source, 0o755)
+  assert.throws(() => assertPlan(p.root, plan), /失效/, '源文件执行位受保护')
+  fs.chmodSync(source, 0o644)
+  p.write('scripts/fixtures/cache_input.py', 'value = 2\n')
+  assert.throws(() => assertPlan(p.root, plan), /失效/, '不能排除真实 Python 源码')
 })

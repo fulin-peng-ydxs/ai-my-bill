@@ -56,6 +56,11 @@ function refreshPullRequest(config) {
   const pulls = JSON.parse(gh(['api', `repos/${config.repository}/pulls?state=open&base=${encodeURIComponent(config.base)}&head=${encodeURIComponent(config.repository.split('/')[0] + ':' + branch)}`]))
   if (!pulls.length) return
   if (pulls.length !== 1) throw new Error('存在多个同源 PR，拒绝猜测回执消费目标。')
+  const metadata = JSON.parse(gh(['api', `repos/${config.repository}`]))
+  if (metadata.default_branch !== config.base) {
+    console.log('可信门禁等待目标主线设为默认分支；当前 PR 仍由常规回执消费核验。')
+    return
+  }
   gh(['workflow', 'run', 'local-evidence.yml', '--repo', config.repository, '--ref', config.base, '-f', 'pr_number=' + pulls[0].number])
 }
 

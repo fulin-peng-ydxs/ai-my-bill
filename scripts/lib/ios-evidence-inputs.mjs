@@ -9,6 +9,8 @@ import { controlInputs } from './ios-verification.mjs'
 
 /** Execution inputs deliberately omit documentation and Git commit metadata. Missing inputs are hashed too. */
 export function measurementInputs(root) {
+  // Python fixture imports generate bytecode on a clean runner. These outputs are not source inputs.
+  const excluded = relative => generated(relative) || relative.split(path.sep).includes('__pycache__') || /\.py[co]$/.test(relative)
   const inputs = [...new Set([...controlInputs,
     'app/src', 'app/index.html', 'app/public', 'app/native-tests', 'app/test-support', 'app/ios/App',
     'app/package.json', 'app/package-lock.json', 'app/capacitor.config.ts', 'app/vite.config.ts',
@@ -20,14 +22,14 @@ export function measurementInputs(root) {
   ])].sort()
   const permissions = new Map()
   const visit = relative => {
-    if (generated(relative) || !fs.existsSync(path.join(root, relative))) return
+    if (excluded(relative) || !fs.existsSync(path.join(root, relative))) return
     const stat = fs.lstatSync(path.join(root, relative))
     if (stat.isSymbolicLink()) throw new Error('测量输入不能使用符号链接：' + relative)
     if (stat.isDirectory()) for (const name of fs.readdirSync(path.join(root, relative)).sort()) visit(path.join(relative, name))
     else if (stat.isFile()) permissions.set(relative, stat.mode & 0o111)
   }
   inputs.forEach(visit)
-  return createHash('sha256').update(contentHash(root, inputs, generated) + '\0' + JSON.stringify([...permissions].sort())).digest('hex')
+  return createHash('sha256').update(contentHash(root, inputs, excluded) + '\0' + JSON.stringify([...permissions].sort())).digest('hex')
 }
 
 /** A local measurement is reusable only on the same host/toolchain context, never a remote report. */
