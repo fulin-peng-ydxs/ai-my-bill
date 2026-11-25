@@ -351,11 +351,13 @@ test('PR prepare 真实入口绑定事件源码，远端 result 缺少作业状�
   assert.match(fs.readFileSync(output, 'utf8'), /artifact=ios-ci-plan-2/)
   const { directory } = prepare(p, 'secrets', 'remote-status')
   await executeGroup(p.root, directory, 'linux')
-  const missing = cli(['result', '--results', directory], {
-    GITHUB_ACTIONS: 'true', IOS_CI_PLAN_STATUS: '', IOS_CI_CHECKS_STATUS: 'success'
-  })
-  assert.equal(missing.status, 1, missing.stderr)
-  assert.equal(JSON.parse(missing.stdout).status, 'incomplete')
+  for (const status of ['', undefined]) {
+    const missing = cli(['result', '--results', directory], {
+      GITHUB_ACTIONS: 'true', IOS_CI_PLAN_STATUS: status, IOS_CI_CHECKS_STATUS: 'success'
+    })
+    assert.equal(missing.status, 1, missing.stderr)
+    assert.equal(JSON.parse(missing.stdout).status, 'incomplete')
+  }
   const passed = cli(['result', '--results', directory], {
     GITHUB_ACTIONS: 'true', IOS_CI_PLAN_STATUS: 'success', IOS_CI_CHECKS_STATUS: 'success'
   })
@@ -972,11 +974,15 @@ test('CI 正式 CLI 本地 plan→run→result 与非法参数回归，不访问
     fs.readFileSync(path.join(repository, 'scripts/ios-ci.mjs'), 'utf8')
   )
   p.commit()
+  // 本用例模拟本地入口，不能继承实际托管宿主的 Actions 汇总上下文。
+  const env = { ...process.env, GH_TOKEN: '', GITHUB_TOKEN: '', GITHUB_ACTIONS: 'false' }
+  delete env.IOS_CI_PLAN_STATUS
+  delete env.IOS_CI_CHECKS_STATUS
   const cli = (...args) =>
     spawnSync(process.execPath, ['scripts/ios-ci.mjs', ...args], {
       cwd: p.root,
       encoding: 'utf8',
-      env: { ...process.env, GH_TOKEN: '', GITHUB_TOKEN: '' }
+      env
     })
   const planned = cli('plan', 'secrets')
   assert.equal(planned.status, 0, planned.stderr)
