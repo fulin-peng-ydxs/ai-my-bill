@@ -101,7 +101,7 @@ test('T15 schema/seed/查询/恢复/锁与未知数据路径选择规模专项�
   }
   assert.ok(selectSuites(r,'change',['app/src/data/seed/new.ts']).some(x=>x.name==='recovery'))
   for(const file of ['app/src/data/new.spec.ts','app/src/composables/useReportData.spec.ts','app/src/components/ExpenseEntryForm.spec.ts','app/src/api/types.d.ts'])
-    assert.deepEqual(selectSuites(r,'change',[file]).map(x=>x.name),['secrets','app-common'])
+    assert.deepEqual(selectSuites(r,'change',[file]).map(x=>x.name),['secrets','app-common','workflow-quality'])
   assert.ok(!selectSuites(r,'change',['app/src/views/me/dictionaries/DictionaryDetailView.vue']).some(x=>x.name.startsWith('scale-')))
   const mixed=selectSuites(r,'change',['app/src/composables/useReportData.spec.ts','app/src/composables/useReportData.ts']).map(x=>x.name)
   assert.ok(mixed.includes('ui-report-dimensions')&&mixed.includes('scale-10000'))
@@ -116,11 +116,41 @@ test('T15 表单与抽屉共享组件选择跨页及容量专项，单测/声明
     const implementation='app/src/components/'+component+'.vue'
     const spec='app/src/components/'+component+'.spec.ts', declaration='app/src/components/'+component+'.d.ts'
     assert.deepEqual(selectSuites(r,'change',[implementation]).map(x=>x.name),shared)
-    assert.deepEqual(selectSuites(r,'change',[spec,declaration]).map(x=>x.name),['secrets','app-common'])
+    assert.deepEqual(selectSuites(r,'change',[spec,declaration]).map(x=>x.name),['secrets','app-common','workflow-quality'])
     assert.deepEqual(selectSuites(r,'change',[spec,declaration,implementation]).map(x=>x.name),shared)
   }
   assert.ok(!shared.includes('touch') && !shared.includes('install-gate'))
   assert.ok(!selectSuites(r,'change',['app/src/components/SettingsGroup.vue']).some(x=>x.name.startsWith('scale-')))
+})
+
+test('T15 安全基础门禁跨本地远端及固定模式保持，纯单测不误选原生专项', () => {
+  const r = registry(repository)
+  const names = suites => suites.map(s => s.name)
+  const options = [
+    ['change', { execution: 'local' }],
+    ['change', { execution: 'remote' }],
+    ['pull-request', { execution: 'remote' }]
+  ]
+  for (const [profile, context] of options) {
+    for (const file of ['app/src/data/new.spec.ts', 'app/src/components/FormField.spec.ts', 'app/src/components/AppDrawer.d.ts']) {
+      assert.deepEqual(names(selectSuites(r, profile, [file], context)),
+        ['secrets', 'app-common', 'workflow-quality'], profile + '/' + file)
+    }
+    const mixed = selectSuites(r, profile, ['app/src/components/FormField.spec.ts', 'app/src/components/FormField.vue'], context)
+    assert.ok(mixed.some(s => s.name === 'workflow-quality'))
+    assert.ok(mixed.every(s => !r.onDemandSuites.includes(s.name)), profile + '/不隐式执行完整或容量专项')
+    if (context.execution === 'local') {
+      assert.ok(mixed.some(s => s.name === 'ui-entry'))
+      assert.ok(mixed.some(s => s.name === 'ui-reports'))
+    } else {
+      assert.ok(mixed.every(s => ['secrets', 'quality', 'check', 'engineering', 'audit'].includes(s.kind)))
+    }
+  }
+  for (const profile of ['scripts', 'common', 'app', 'final']) {
+    const selected = names(selectSuites(r, profile))
+    assert.ok(selected.includes('secrets'), profile)
+    assert.ok(selected.includes('workflow-quality'), profile)
+  }
 })
 
 test('T15 规模原始报告拒绝缺阶段、少跑、混轮、过时源码及伪造页面/内存指标',async t=>{
