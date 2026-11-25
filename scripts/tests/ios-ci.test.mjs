@@ -220,6 +220,23 @@ function prepare(p, profile = 'secrets', suffix = 'result', range) {
   return { plan, directory }
 }
 
+function environmentSession(p) {
+    const id='11111111-1111-4111-8111-111111111111',runId='22222222-2222-4222-8222-222222222222'
+    const session=path.join(p.root,'.local/ios/tmp/ai-agent/ios-debug-fixture')
+    const context=p.write('.local/ios/tmp/ai-agent/ios-debug-fixture/test-context.json',{
+      kind:'ios-debug',schema:1,state:'open',appId:'com.mybill.offline',simulatorId:id,runId,name:'我的账单调试-'+runId})
+    fs.chmodSync(context,0o600)
+    const now=Date.now(),r={schema:3,startupMode:'bootstatus-b',tool:{program:'xcrun',prefix:['simctl'],mode:'sdk-wrapper'},scope:'environment',status:'passed',deviceState:'Booted',simulatorId:id,runId,
+      initialDevice:{udid:id,name:'我的账单调试-'+runId,state:'Shutdown',isAvailable:true,deviceTypeIdentifier:'com.apple.CoreSimulator.SimDeviceType.iPhone-14-Pro-Max'},
+      environment:JSON.stringify({sdk:'27.0',xcode:'Xcode 27.0',runtime:'TEST'}),budgetMs:120000,startedAt:now-5,completedAt:now,elapsedMs:5,commands:[
+        {stage:'verify-device',program:'xcrun',status:'passed',pid:200501,startedAt:now-5,completedAt:now-2},
+        {stage:'boot-ready',program:'xcrun',status:'passed',pid:200502,startedAt:now-2,completedAt:now}]}
+    p.write('.local/ios/tmp/ai-agent/ios-debug-fixture/boot-readiness.json',r)
+    const bootLog='Monitoring boot status for owned ('+id+').\nStatus=4294967295, isTerminal=YES, Elapsed=00:01.\n\tFinished\n'
+    p.write('.local/ios/tmp/ai-agent/ios-debug-fixture/boot-status.log',bootLog)
+    return {session,id,runId,bootLog}
+}
+
 test('CI 新会话先预检再编译，失败不执行套件，成功后只关闭同一会话', async t => {
   const original = Object.getOwnPropertyDescriptor(process, 'platform')
   Object.defineProperty(process, 'platform', { value:'darwin' })
@@ -235,6 +252,9 @@ test('CI 新会话先预检再编译，失败不执行套件，成功后只关�
           if (!booted) throw new Error('CONTROLLED_BOOT_FAILURE')
           return 'SESSION='+session+'\n'
         }
+        if (args[2]==='suspend') {
+          assert.deepEqual(args,['scripts/ios-app.sh','debug','suspend','--session',session]);return ''
+        }
         if (args[2]==='close') {
           assert.deepEqual(args,['scripts/ios-app.sh','debug','close','--session',session])
           return ''
@@ -242,8 +262,11 @@ test('CI 新会话先预检再编译，失败不执行套件，成功后只关�
         assert.ok(booted)
         throw new Error('CONTROLLED_AFTER_BOOT')
       }}), booted ? /CONTROLLED_AFTER_BOOT/ : /CONTROLLED_BOOT_FAILURE/)
-      assert.equal(calls.length,booted?3:1)
-      if (booted) assert.deepEqual(calls[1],['scripts/ios-app.sh','ios-build'])
+      assert.equal(calls.length,booted?4:1)
+      if (booted) {
+        assert.deepEqual(calls[1],['scripts/ios-app.sh','debug','suspend','--session',session])
+        assert.deepEqual(calls[2],['scripts/ios-app.sh','ios-build'])
+      }
       const result=JSON.parse(fs.readFileSync(path.join(directory,'group-macos.json')))
       assert.equal(result.status,'failed')
       assert.match(result.error,booted?/CONTROLLED_AFTER_BOOT/:/CONTROLLED_BOOT_FAILURE/)
@@ -257,19 +280,7 @@ test('CI 启动环境专项只运行新会话启动及关闭，拒绝旧回执�
   Object.defineProperty(process,'platform',{value:'darwin'})
   try {
     const p=fixture(t), {directory}=prepare(p,'simulator-boot','environment')
-    const id='11111111-1111-4111-8111-111111111111',runId='22222222-2222-4222-8222-222222222222'
-    const session=path.join(p.root,'.local/ios/tmp/ai-agent/ios-debug-fixture'),calls=[]
-    const context=p.write('.local/ios/tmp/ai-agent/ios-debug-fixture/test-context.json',{
-      kind:'ios-debug',schema:1,state:'open',appId:'com.mybill.offline',simulatorId:id,runId,name:'我的账单调试-'+runId})
-    fs.chmodSync(context,0o600)
-    const now=Date.now(),r={schema:3,startupMode:'bootstatus-b',tool:{program:'xcrun',prefix:['simctl'],mode:'sdk-wrapper'},scope:'environment',status:'passed',deviceState:'Booted',simulatorId:id,runId,
-      initialDevice:{udid:id,name:'我的账单调试-'+runId,state:'Shutdown',isAvailable:true,deviceTypeIdentifier:'com.apple.CoreSimulator.SimDeviceType.iPhone-14-Pro-Max'},
-      environment:JSON.stringify({sdk:'27.0',xcode:'Xcode 27.0',runtime:'TEST'}),budgetMs:120000,startedAt:now-5,completedAt:now,elapsedMs:5,commands:[
-        {stage:'verify-device',program:'xcrun',status:'passed',pid:200501,startedAt:now-5,completedAt:now-2},
-        {stage:'boot-ready',program:'xcrun',status:'passed',pid:200502,startedAt:now-2,completedAt:now}]}
-    p.write('.local/ios/tmp/ai-agent/ios-debug-fixture/boot-readiness.json',r)
-    const bootLog='Monitoring boot status for owned ('+id+').\nStatus=4294967295, isTerminal=YES, Elapsed=00:01.\n\tFinished\n'
-    p.write('.local/ios/tmp/ai-agent/ios-debug-fixture/boot-status.log',bootLog)
+    const {session,id,runId,bootLog}=environmentSession(p),calls=[]
     const command=async(_root,_program,args)=>{calls.push(args);return args[2]==='create'?'SESSION='+session+'\n':''}
     await executeGroup(p.root,directory,'macos',{command})
     assert.deepEqual(calls,[['scripts/ios-app.sh','debug','create','--boot'],['scripts/ios-app.sh','debug','close','--session',session]])
@@ -300,7 +311,7 @@ test('CI 启动环境专项只运行新会话启动及关闭，拒绝旧回执�
     const selected=selectSuites(registry(p.root),'pull-request',['scripts/lib/ios-processes.mjs']).map(x=>x.name)
     assert.deepEqual(selected,['secrets','scripts','simulator-boot','scripts-macos'])
     assert.equal(selected.filter(name=>registry(p.root).suites[name].runner==='macos')[0],'simulator-boot','冷启动预检必须先于工具压力回归')
-    for(const file of ['scripts/lib/ios-host-diagnostics.py','scripts/lib/ios-app-full.sh','scripts/lib/ios-simctl.mjs','scripts/lib/ios-boot-proof.mjs'])
+    for(const file of ['scripts/lib/ios-host-diagnostics.py','scripts/lib/ios-app-full.sh','scripts/lib/ios-simctl.mjs','scripts/lib/ios-boot-proof.mjs','scripts/lib/ios-ci-run.mjs'])
       assert.ok(selectSuites(registry(p.root),'pull-request',[file]).some(x=>x.name==='simulator-boot'),file)
     assert.ok(!selectSuites(registry(p.root),'pull-request',['scripts/tests/ios-ci.test.mjs']).some(x=>x.name==='simulator-boot'))
     const borrowed=prepare(p,'simulator-boot','borrowed')
@@ -1707,4 +1718,57 @@ test('原生启动终态必须匹配单个本轮 UUID，未完成、错误设备
   for(const text of ['',finished,header+'Status=0, isTerminal=NO\n',header+finished+header,header+finished+'Status=0, isTerminal=NO\n',
     (header+finished).replace(id,'22222222-2222-4222-8222-222222222222')])assert.throws(()=>assertBootStatus(text,id),/原生启动成功终态/)
   assert.throws(()=>assertBootStatus('x'.repeat(262145),id),/过大/)
+})
+
+
+test('CI 纯环境先关闭再查源码，关闭失败只尝试一次且源码漂移仍被拒绝', async t => {
+  const originalPlatform=Object.getOwnPropertyDescriptor(process,'platform'),originalPath=process.env.PATH
+  const realGit=execFileSync('which',['git'],{encoding:'utf8'}).trim()
+  Object.defineProperty(process,'platform',{value:'darwin'})
+  try {
+    for(const mode of ['passed','close-failed','source-changed']) {
+      const p=fixture(t), hot=path.join(p.root,'.local/hot'),violation=path.join(p.root,'.local/git-while-hot')
+      const git=p.write('bin/git',`#!${process.execPath}
+const fs=require('node:fs');if(fs.existsSync(${JSON.stringify(hot)})){
+ fs.writeFileSync(${JSON.stringify(violation)},'unexpected');process.exit(19);
+}
+const r=require('node:child_process').spawnSync(${JSON.stringify(realGit)},process.argv.slice(2),{stdio:'inherit'});process.exit(r.status??1);
+`)
+      fs.chmodSync(git,0o755)
+      const {directory}=prepare(p,'simulator-boot','close-'+mode),{session}=environmentSession(p)
+      process.env.PATH=path.join(p.root,'bin')+path.delimiter+originalPath
+      let closes=0
+      const command=async(_root,_program,args)=>{
+        if(args[2]==='create'){fs.writeFileSync(hot,'owned');return 'SESSION='+session+'\n'}
+        assert.equal(args[2],'close');assert.equal(args.at(-1),session);closes++
+        if(mode==='close-failed')throw new Error('CONTROLLED_CLOSE_FAILURE')
+        fs.unlinkSync(hot)
+        if(mode==='source-changed')p.write('app/src/changed.ts','changed after closing')
+        return ''
+      }
+      if(mode==='passed') {
+        await executeGroup(p.root,directory,'macos',{command})
+        assert.equal(reconcile(p.root,directory).status,'passed')
+      } else await assert.rejects(executeGroup(p.root,directory,'macos',{command}),mode==='close-failed'?/CONTROLLED_CLOSE_FAILURE/:/源码/)
+      assert.equal(closes,1);assert.equal(fs.existsSync(violation),false)
+      process.env.PATH=originalPath
+    }
+  } finally {Object.defineProperty(process,'platform',originalPlatform);process.env.PATH=originalPath}
+})
+
+test('CI 含原生业务先暂停再复用同一会话，环境专项不提前删除设备', async t => {
+  const original=Object.getOwnPropertyDescriptor(process,'platform');Object.defineProperty(process,'platform',{value:'darwin'})
+  try {
+    const p=fixture(t),config=JSON.parse(fs.readFileSync(path.join(p.root,'config/ios-ci.json')))
+    config.profiles.app.unshift('simulator-boot');p.write('config/ios-ci.json',config)
+    const {directory}=prepare(p,'app','quiesce'),{session}=environmentSession(p),calls=[]
+    await assert.rejects(executeGroup(p.root,directory,'macos',{command:async(_root,_program,args)=>{
+      calls.push(args)
+      if(args[2]==='create')return 'SESSION='+session+'\n'
+      if(args[2]==='suspend'||args[2]==='close'){assert.equal(args.at(-1),session);return ''}
+      assert.equal(args[1],'ios-build');assert.equal(calls.some(a=>a[2]==='close'),false)
+      throw new Error('CONTROLLED_AFTER_ENVIRONMENT')
+    }}),/CONTROLLED_AFTER_ENVIRONMENT/)
+    assert.deepEqual(calls.map(a=>a[2]??a[1]),['create','suspend','ios-build','close'])
+  } finally {Object.defineProperty(process,'platform',original)}
 })

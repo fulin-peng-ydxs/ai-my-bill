@@ -118,9 +118,19 @@ export async function executeGroup(root, directory, group, { command = runComman
     flag: 'wx',
     mode: 0o600
   })
-  let session = borrowedSession, error
+  let session = borrowedSession, error, closeAttempted = false
+  const needsSession = suites.some(s => ['full','ui','scenario'].includes(s.kind))
+  const closeSession = async () => {
+    if(!session || closeAttempted)return
+    closeAttempted=true
+    await command(root,'bash',
+      ['scripts/ios-app.sh','debug',borrowedSession?'suspend':'close','--session',session],
+      path.join(directory,'close-session.log'),
+      Math.max(1,Math.min(120_000,budgetMs-(performance.now()-groupStarted))))
+    session=undefined
+  }
   const ensureSession = async () => {
-    if (!session)
+    if (!session) {
       session = marker(
         await command(
           root,
@@ -131,11 +141,16 @@ export async function executeGroup(root, directory, group, { command = runComman
         ),
         'SESSION'
       )
+      // 首次系统迁移后释放运行资源，再编译/核验源码；保留同一 UUID 与磁盘缓存。
+      if(needsSession)await command(root,'bash',
+        ['scripts/ios-app.sh','debug','suspend','--session',session],
+        path.join(directory,'quiesce-session.log'),Math.min(120_000,remaining()))
+    }
     return session
   }
   try {
     // 新宿主先验证最小可启动环境；同一受管会话随后用于业务测试，不先消耗 SDK 编译。
-    if (!borrowedSession && suites.some(s => ['full','ui','scenario'].includes(s.kind))) await ensureSession()
+    if (!borrowedSession && needsSession) await ensureSession()
     for (const suite of suites) {
       assertPlan(root, plan)
       const dest = path.join(directory, suite.name)
@@ -177,6 +192,8 @@ export async function executeGroup(root, directory, group, { command = runComman
           writeJson(path.join(dest,'environment.json'),{source:plan.source,readiness})
           for (const name of ['boot-status.log'])
             fs.writeFileSync(path.join(dest,name),plainFile(path.join(directory,name)),{flag:'wx',mode:0o600})
+          // 纯环境组的生命周期在源码后检前结束，避免让初次系统迁移继续拖慢 git/工具回归。
+          if(!needsSession)await closeSession()
         } else if (suite.kind === 'installation') {
           await command(root,process.execPath,['scripts/ios-install-gate.mjs',path.join(directory,'install-input.json'),path.join(dest,'install-report.json')],path.join(dest,'install.log'),Math.min(120000,remaining()))
         } else if (suite.kind === 'audit') {
@@ -263,18 +280,8 @@ export async function executeGroup(root, directory, group, { command = runComman
   } catch (e) {
     error = e
   } finally {
-    if (session) {
-      try {
-        await command(
-          root,
-          'bash',
-          ['scripts/ios-app.sh', 'debug', borrowedSession ? 'suspend' : 'close', '--session', session],
-          path.join(directory, 'close-session.log'),
-          Math.max(1, Math.min(120_000, budgetMs - (performance.now() - groupStarted)))
-        )
-      } catch (e) {
-        error ??= e
-      }
+    if (session && !closeAttempted) {
+      try { await closeSession() } catch (e) { error ??= e }
     }
     if (performance.now() - groupStarted > budgetMs) error ??= new Error('CI 执行组整轮超时。')
     writeJson(groupFile, {

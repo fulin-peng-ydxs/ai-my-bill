@@ -249,7 +249,8 @@
         "scripts/lib/ios-app-full.sh",
         "scripts/lib/ios-host-diagnostics.py",
         "scripts/lib/ios-simctl.mjs",
-        "scripts/lib/ios-boot-proof.mjs"
+        "scripts/lib/ios-boot-proof.mjs",
+        "scripts/lib/ios-ci-run.mjs"
       ],
       "suites": [
         "simulator-boot"
