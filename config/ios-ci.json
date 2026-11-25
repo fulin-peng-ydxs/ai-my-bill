@@ -247,7 +247,8 @@
         "scripts/lib/ios-process-launch.mjs",
         "scripts/ios-app.mjs",
         "scripts/lib/ios-app-full.sh",
-        "scripts/lib/ios-host-diagnostics.py"
+        "scripts/lib/ios-host-diagnostics.py",
+        "scripts/lib/ios-simctl.mjs"
       ],
       "suites": [
         "simulator-boot"

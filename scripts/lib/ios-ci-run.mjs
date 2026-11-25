@@ -313,8 +313,9 @@ function validateReports(root, directory, suite, receipt) {
       r.completedAt<=r.startedAt || r.completedAt>(receipt.completedAt??Date.now()) ||
       !/^27\./.test(environment?.sdk??'') || !/^Xcode 27\./.test(environment?.xcode??'') || !environment?.runtime || r.elapsedMs!==r.completedAt-r.startedAt || r.elapsedMs>r.budgetMs ||
       !receipt.reports.some(x=>x.path==='boot-status.log') ||
+      typeof r.tool?.program!=='string' || !['sdk-wrapper','sdk-binary','installed-binary'].includes(r.tool?.mode) ||
       !Array.isArray(r.commands) || r.commands.length!==2 ||
-      r.commands.some((step,index)=>step.stage!==['boot-ready','verify-state'][index] || step.status!=='passed' ||
+      r.commands.some((step,index)=>step.program!==r.tool.program || step.stage!==['boot-ready','verify-state'][index] || step.status!=='passed' ||
         !Number.isSafeInteger(step.pid) || step.pid<=1 || !Number.isFinite(step.startedAt) ||
         !Number.isFinite(step.completedAt) || step.completedAt<step.startedAt || step.startedAt<r.startedAt ||
         step.completedAt>r.completedAt || (index>0 && step.startedAt<r.commands[index-1].completedAt)))

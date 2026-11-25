@@ -43,6 +43,7 @@ import {
 import { checkNames, checkDefinition } from './lib/ios-checks.mjs'
 import { spawnManaged, finishCleanup } from './lib/ios-processes.mjs'
 import { errorMessage } from './lib/ios-errors.mjs'
+import { resolveSimctl } from './lib/ios-simctl.mjs'
 import { cachedLayer, layerInputs, assetOutputs, installationMatches,
   inspectInstallation, recordInstallation, forgetInstallation } from './lib/ios-cache.mjs'
 
@@ -61,6 +62,8 @@ for (const signal of ['SIGINT', 'SIGTERM'])
     activeCleanup?.stop(signal)
   })
 
+let simctlExecution
+
 async function command(
   program,
   args,
@@ -77,6 +80,11 @@ async function command(
   } = {}
 ) {
   if (interrupted) throw new Error(`已取消：${interrupted}`)
+  const simctlArgs=program==='xcrun' && args[0]==='simctl' ? args.slice(1) : undefined
+  if(simctlArgs && simctlExecution) {
+    program=simctlExecution.program
+    args=[...simctlExecution.prefix,...simctlArgs]
+  }
   const remaining = deadline?.remaining() ?? Infinity
   const commandBudget = Math.min(timeout, remaining)
   const output = log ? fs.openSync(log, 'wx', 0o600) : undefined
@@ -143,7 +151,7 @@ async function command(
         }, 100)
       child.once('error', reject)
       child.once('close', (code, signal) => resolve(code ?? 128 + (constants.signals[signal] ?? 0)))
-      if (child.pid) onStarted?.(child.pid)
+      if (child.pid) onStarted?.(child.pid,program)
     })
     deadline?.remaining()
     if (observer && !observationError) {
@@ -161,7 +169,9 @@ async function command(
       )
     }
     // 设备服务/App 由对应 UUID 的 shutdown/terminate 管理，不能在成功请求返回后杀掉其组。
-    serviceHandoff = status === 0 && program === 'xcrun' && args[0] === 'simctl' && (['boot','launch'].includes(args[1]) || (args[1] === 'bootstatus' && args.length === 4 && args[3] === '-b'))
+    serviceHandoff = status === 0 && simctlArgs &&
+      (['boot','launch'].includes(simctlArgs[0]) ||
+        (simctlArgs[0] === 'bootstatus' && simctlArgs.length === 3 && simctlArgs[2] === '-b'))
     return { status, text }
   } catch (error) {
     primaryError = error
@@ -195,6 +205,7 @@ async function nativeToolchain() {
   await selectDeveloperTools()
   const sdk = (await command('xcrun', ['--sdk', 'iphoneos', '--show-sdk-version'])).text.trim()
   if (!/^27\./.test(sdk)) throw new Error('需要 Xcode / iOS 27 SDK。')
+  simctlExecution=await resolveSimctl(command)
   const runtimes = JSON.parse((await command('xcrun', ['simctl', 'list', 'runtimes', '--json'])).text)
   const runtime = runtimes.runtimes.find((r) => r.identifier === RUNTIME && r.isAvailable)
   if (!runtime) throw new Error('需要可用的 iOS 27.0 simulator runtime。')
@@ -781,13 +792,16 @@ async function main(args) {
   if (!['create', 'run', 'suspend', 'close'].includes(args[1])) throw new Error('未知 debug 操作。')
   if (process.platform !== 'darwin') throw new Error('原生调试需要 macOS。')
   const managing = ['suspend', 'close'].includes(args[1])
-  if (managing) await selectDeveloperTools()
+  if (managing) {
+    await selectDeveloperTools()
+    simctlExecution=await resolveSimctl(command)
+  }
   const toolchain = managing ? '' : await nativeToolchain()
   if (args[1] === 'create') {
     const boot = args.length === 3 && args[2] === '--boot'
     if (args.length !== 2 && !boot) throw new Error('create 仅接受可选 --boot，不接受已有设备或会话参数。')
     // 只读检查首次启动组件；不接受许可或安装组件，且不把它强加给纯脚本检查。
-    if (boot) await command('xcodebuild',['-checkFirstLaunchStatus'])
+    if (boot && simctlExecution?.mode!=='installed-binary') await command('xcodebuild',['-checkFirstLaunchStatus'])
     const directory = fs.mkdtempSync(path.join(temporary, 'ios-debug-'))
     const runId = randomUUID()
     const context = {
@@ -807,7 +821,7 @@ async function main(args) {
       writeContext({ file: path.join(directory, 'test-context.json'), context })
       if (boot) {
         const file = path.join(directory, 'boot-readiness.json')
-        const readiness = { schema: 2, startupMode: 'bootstatus-b', scope: 'environment', status: 'running', simulatorId: context.simulatorId,
+        const readiness = { schema: 2, startupMode: 'bootstatus-b', scope: 'environment', status: 'running', tool: simctlExecution, simulatorId: context.simulatorId,
           runId, environment: toolchain, startedAt: Date.now(), budgetMs: budgets.boot,
           host: { totalMemory: totalmem(), freeMemory: freemem() }, commands:[] }
         const bootDeadline = createDeadline(Math.min(budgets.boot, deadline.remaining()))
@@ -827,8 +841,9 @@ async function main(args) {
           readiness.commands.push(step)
           writeJson(file,readiness)
           try {
-            const result=await command('xcrun',args,{log,timeout:bootDeadline.remaining(),onStarted:(pid)=>{
+            const result=await command('xcrun',args,{log,timeout:bootDeadline.remaining(),onStarted:(pid,program)=>{
               step.pid=pid
+              step.program=program
               writeJson(file,readiness)
             }})
             step.status='passed'

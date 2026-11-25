@@ -130,7 +130,15 @@ def run(args):
                             if last.get(pid) != state:
                                 emit({"member": record["id"], "process": state})
                                 last[pid] = state
-                    if time.monotonic() >= next_summary:
+                    # 成功启动后不继续采样 App/容量或工具测试，避免取证常驻干扰验收。
+                    for boot in base.glob("ios-debug-*/boot-readiness.json"):
+                        if boot.stat().st_mtime >= started:
+                            ready = json.loads(boot.read_text())
+                            if ready.get("scope") == "environment" and ready.get("status") == "passed":
+                                emit({"observationComplete": "boot-ready"})
+                                read = None
+                                break
+                    if read and time.monotonic() >= next_summary:
                         emit({"load": os.getloadavg(), **(read.summary() if host_summary else {})})
                         next_summary = time.monotonic() + 10
                 except (OSError, ValueError, KeyError) as error:

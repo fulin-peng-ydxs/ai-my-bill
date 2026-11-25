@@ -21,6 +21,7 @@ import { checkDefinition } from '../lib/ios-checks.mjs'
 import { requireEvidence } from '../lib/ios-verification.mjs'
 import { processCleanup, finishCleanup } from '../lib/ios-processes.mjs'
 import { commandScope } from '../lib/ios-process-scope.mjs'
+import { resolveSimctl } from '../lib/ios-simctl.mjs'
 
 const repository = new URL('../../', import.meta.url).pathname
 
@@ -260,10 +261,10 @@ test('CI 启动环境专项只运行新会话启动及关闭，拒绝旧回执�
     const context=p.write('.local/ios/tmp/ai-agent/ios-debug-fixture/test-context.json',{
       kind:'ios-debug',schema:1,state:'open',appId:'com.mybill.offline',simulatorId:id,runId,name:'我的账单调试-'+runId})
     fs.chmodSync(context,0o600)
-    const now=Date.now(),r={schema:2,startupMode:'bootstatus-b',scope:'environment',status:'passed',deviceState:'Booted',simulatorId:id,runId,
+    const now=Date.now(),r={schema:2,startupMode:'bootstatus-b',tool:{program:'xcrun',prefix:['simctl'],mode:'sdk-wrapper'},scope:'environment',status:'passed',deviceState:'Booted',simulatorId:id,runId,
       environment:JSON.stringify({sdk:'27.0',xcode:'Xcode 27.0',runtime:'TEST'}),budgetMs:120000,startedAt:now-5,completedAt:now,elapsedMs:5,commands:[
-        {stage:'boot-ready',status:'passed',pid:200501,startedAt:now-5,completedAt:now-2},
-        {stage:'verify-state',status:'passed',pid:200502,startedAt:now-2,completedAt:now}]}
+        {stage:'boot-ready',program:'xcrun',status:'passed',pid:200501,startedAt:now-5,completedAt:now-2},
+        {stage:'verify-state',program:'xcrun',status:'passed',pid:200502,startedAt:now-2,completedAt:now}]}
     p.write('.local/ios/tmp/ai-agent/ios-debug-fixture/boot-readiness.json',r)
     for(const name of ['boot-status.log'])p.write('.local/ios/tmp/ai-agent/ios-debug-fixture/'+name,'')
     const command=async(_root,_program,args)=>{calls.push(args);return args[2]==='create'?'SESSION='+session+'\n':''}
@@ -274,7 +275,7 @@ test('CI 启动环境专项只运行新会话启动及关闭，拒绝旧回执�
     const receiptFile=path.join(directory,'simulator-boot/receipt.json'),reportFile=path.join(directory,'simulator-boot/environment.json')
     const originalReport=JSON.parse(fs.readFileSync(reportFile))
     for (const change of [v=>v.source.commit='0'.repeat(40),v=>v.readiness.status='failed',v=>v.readiness.deviceState='Shutdown',
-      v=>delete v.readiness.schema,v=>v.readiness.startupMode='split-boot',
+      v=>delete v.readiness.tool,v=>v.readiness.commands[1].program='other-tool',v=>delete v.readiness.schema,v=>v.readiness.startupMode='split-boot',
       v=>v.readiness.commands.pop(),v=>v.readiness.commands[0].status='running',v=>v.readiness.commands[1].pid=0,
       v=>v.readiness.commands[1].startedAt=v.readiness.startedAt-1,
       v=>v.readiness.elapsedMs=120001,v=>v.readiness.scope='partial',v=>v.readiness.environment='{}',v=>v.readiness.completedAt=Date.now()+60000]) {
@@ -286,7 +287,7 @@ test('CI 启动环境专项只运行新会话启动及关闭，拒绝旧回执�
     const selected=selectSuites(registry(p.root),'pull-request',['scripts/lib/ios-processes.mjs']).map(x=>x.name)
     assert.deepEqual(selected,['secrets','scripts','simulator-boot','scripts-macos'])
     assert.equal(selected.filter(name=>registry(p.root).suites[name].runner==='macos')[0],'simulator-boot','冷启动预检必须先于工具压力回归')
-    for(const file of ['scripts/lib/ios-host-diagnostics.py','scripts/lib/ios-app-full.sh'])
+    for(const file of ['scripts/lib/ios-host-diagnostics.py','scripts/lib/ios-app-full.sh','scripts/lib/ios-simctl.mjs'])
       assert.ok(selectSuites(registry(p.root),'pull-request',[file]).some(x=>x.name==='simulator-boot'),file)
     assert.ok(!selectSuites(registry(p.root),'pull-request',['scripts/tests/ios-ci.test.mjs']).some(x=>x.name==='simulator-boot'))
     const borrowed=prepare(p,'simulator-boot','borrowed')
@@ -1598,12 +1599,17 @@ test('CI 预热宿主观察器保留主退出码，仅记录本轮树的实际 P
       value.owner=process.ppid;fs.writeFileSync(header,JSON.stringify(value));
       const base=path.join(process.cwd(),'.local/ios/tmp/ai-agent');
       const until=Date.now()+8000;
+      let published=false;
       const timer=setInterval(()=>{
         const file=fs.readdirSync(base).find(n=>n.startsWith('ios-host-processes-'));
         const text=file?fs.readFileSync(path.join(base,file),'utf8'):'';
-        if(process.platform!=='darwin'||text.includes('"process": {"pid": '+process.pid)) {
-          clearInterval(timer);process.exit(7);
-        } else if(Date.now()>until){clearInterval(timer);process.exit(8)}
+        if(process.platform!=='darwin') {clearInterval(timer);process.exit(7)}
+        if(text.includes('"process": {"pid": '+process.pid)&&!published) {
+          const boot=path.join(base,'ios-debug-owned');fs.mkdirSync(boot);
+          fs.writeFileSync(path.join(boot,'boot-readiness.json'),JSON.stringify({scope:'environment',status:'passed'}));published=true;
+        }
+        if(text.includes('"observationComplete": "boot-ready"')) {clearInterval(timer);process.exit(7)}
+        else if(Date.now()>until){clearInterval(timer);process.exit(8)}
       },20);
     })();
   `
@@ -1623,6 +1629,9 @@ test('CI 预热宿主观察器保留主退出码，仅记录本轮树的实际 P
     assert.equal(rows[0].self.pgid,child.pid)
     assert.ok(rows.some(r=>r.process?.ppid===child.pid&&r.process.uid===process.getuid()&&r.process.pgid>1))
     assert.ok(rows.every(r=>r.process?.pid!==child.pid),'外部父进程不能被登记冒充为本轮命令树')
+    const stopped=rows.findIndex(r=>r.observationComplete==='boot-ready')
+    assert.ok(stopped>0)
+    assert.ok(rows.slice(stopped+1).every(r=>!r.process&&!r.load),'预检通过后不干扰后续测量')
   } else assert.match(rows[0].unavailable,/requires Darwin/)
 })
 
@@ -1636,5 +1645,39 @@ test('CI 宿主聚合必须显式请求且只在托管 macOS 开放，本机拒�
     assert.equal(result.status,1,result.stderr)
     assert.match(result.stderr,/host summary requires/)
     assert.equal(fs.existsSync(marker),false)
+  }
+})
+
+
+test('CI 冷启动前解析官方 simctl 原生工具，校验版本、许可准备和来源且不执行安装', async () => {
+  const framework='/Library/Developer/PrivateFrameworks/CoreSimulator.framework'
+  const target=framework+'/Versions/A/Resources/bin/simctl'
+  const entry='/Applications/Xcode.app/Contents/Developer/usr/bin/simctl'
+  const wrapper='#!/bin/bash\nEXPECTED_VERSION="1171.7"\nexec "'+target+'" "${@}"\n'
+  for(const mode of ['valid','equal','old','bad-version','bad-owner','writable','bad-target','outside','unknown','binary']) {
+    const calls=[],closed=[]
+    const bytes=file=>file===entry&&mode!=='binary'?Buffer.from(mode==='unknown'?'#!/bin/sh\nexec custom-tool "$@"':wrapper):
+      Buffer.from(mode==='bad-target'?'not executable':'cffaedfe','hex')
+    const files={existsSync:()=>true,statSync:file=>({isFile:()=>true,uid:file===target&&mode==='bad-owner'?501:0,
+      mode:file===target&&mode==='writable'?0o100777:0o100755}),
+      realpathSync:()=>mode==='outside'?'/tmp/other':target,
+      openSync:file=>file,closeSync:file=>closed.push(file),
+      readSync:(file,buffer)=>{const value=bytes(file);value.copy(buffer);return value.length}}
+    const command=async(program,args)=>{
+      calls.push([program,...args])
+      if(program==='xcrun')return {text:entry}
+      if(program==='/usr/libexec/PlistBuddy')return {text:mode==='old'?'1171.6':mode==='equal'?'1171.7.0':mode==='bad-version'?'invalid':'1174.21'}
+      assert.equal(program,'xcodebuild');assert.deepEqual(args,['-checkFirstLaunchStatus']);return {text:''}
+    }
+    if(['old','bad-version','bad-owner','writable','bad-target','outside'].includes(mode))
+      await assert.rejects(resolveSimctl(command,{files}),/CoreSimulator/)
+    else {
+      const result=await resolveSimctl(command,{files})
+      assert.equal(result.program,mode==='unknown'?'xcrun':mode==='binary'?entry:target)
+      assert.deepEqual(result.prefix,mode==='unknown'?['simctl']:[])
+      if(mode==='valid'||mode==='equal')assert.equal(calls.filter(c=>c[0]==='xcodebuild').length,1)
+    }
+    assert.ok(!calls.some(c=>c.includes('-runFirstLaunch')))
+    assert.equal(closed.filter(f=>f===entry).length,1)
   }
 })

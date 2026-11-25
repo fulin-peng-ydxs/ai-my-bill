@@ -1103,8 +1103,9 @@ ${originalXcrun.replace(/^#![^\n]*\n/, '')}`)
 )
 
 test('模拟器启动预检不构建 App，共享启动预算，失败和取消只清理本次设备', { timeout:20000 }, async t => {
-  for (const mode of ['passed','failed','journal-failed','expired','cancelled']) await t.test(mode, async t => {
-    const p = project(t), id = randomUUID(), sentinel = randomUUID()
+  for (const mode of ['passed','direct','failed','journal-failed','expired','cancelled']) await t.test(mode, async t => {
+    const p = project(t)
+    const succeeds=['passed','direct'].includes(mode), id = randomUUID(), sentinel = randomUUID()
     const state = p.write('.local/boot-state.json', JSON.stringify({ device:null }))
     const trace = p.write('.local/boot-trace.json','[]'), clockFile = p.write('.local/boot-clock','0')
     const ready = path.join(p.root,'.local/boot-waiting')
@@ -1141,7 +1142,7 @@ else if(!state.device||a[2]!==state.device.udid)throw new Error('wrong ownership
 else if(a[1]==='bootstatus'){
 if(a[3]!=='-b'||state.device.state!=='Shutdown')throw new Error('must boot and wait in one process');
 state.device.state='Booting';
-if(${JSON.stringify(mode)}==='passed'){
+if(${JSON.stringify(succeeds)}){
  const script='require("node:fs").writeFileSync('+JSON.stringify(${JSON.stringify(serviceReady)})+',"ready");setInterval(()=>{},1000)';
  const child=require('node:child_process').spawn(process.execPath,['-e',script],{stdio:'ignore'});state.helperPid=child.pid;child.unref();
 }
@@ -1149,7 +1150,7 @@ save();
 if(['failed','journal-failed'].includes(${JSON.stringify(mode)}))process.exit(9);
 if(${JSON.stringify(mode)}==='cancelled'){fs.writeFileSync(${JSON.stringify(ready)},'ready');setInterval(()=>{},1000)}
 else {
- if(${JSON.stringify(mode)}==='passed'){
+ if(${JSON.stringify(succeeds)}){
   const until=Date.now()+1000;while(!fs.existsSync(${JSON.stringify(serviceReady)})&&Date.now()<until)Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,20);
   if(!fs.existsSync(${JSON.stringify(serviceReady)}))throw new Error('successful boot killed device service');process.kill(state.helperPid,0);
  }
@@ -1160,6 +1161,17 @@ else if(a[1]==='delete'){state.device=null;save()}
 else throw new Error('unexpected simulator command');
 `)
     fs.chmodSync(executable,0o755)
+    let directProgram
+    if(mode==='direct') {
+      const original=fs.readFileSync(executable,'utf8')
+      directProgram=p.write('bin/direct-simctl',original.replace('a=process.argv.slice(2)',"a=['simctl',...process.argv.slice(2)]"))
+      fs.chmodSync(directProgram,0o755)
+      fs.writeFileSync(executable,original.replace('const save=()=>',"if(a[0]==='simctl')throw new Error('unexpected SDK wrapper after resolution');\nconst save=()=>"))
+      p.write('scripts/lib/ios-simctl.mjs',`export async function resolveSimctl(command) {
+        await command('xcodebuild',['-checkFirstLaunchStatus']);
+        return {program:${JSON.stringify(directProgram)},prefix:[],mode:'installed-binary'};
+      }`)
+    }
     const env = {NODE_OPTIONS:'--import='+platform,DEVELOPER_DIR:''}
     let child
     if (mode==='cancelled') {
@@ -1191,10 +1203,11 @@ else throw new Error('unexpected simulator command');
     const readiness=JSON.parse(fs.readFileSync(path.join(p.base,folders[0],'boot-readiness.json')))
     assert.equal(readiness.scope,'environment');assert.equal(readiness.budgetMs,120000)
     assert.equal(readiness.schema,2);assert.equal(readiness.startupMode,'bootstatus-b')
+    if(mode==='direct')assert.ok(readiness.commands.every(step=>step.program===directProgram),'启动及状态核对均绕过 SDK 包装器')
     assert.ok(readiness.commands.every(step=>step.pid>1 || step.status==='failed'))
-    if(mode==='passed')assert.deepEqual(readiness.commands.map(x=>[x.stage,x.status]),[['boot-ready','passed'],['verify-state','passed']])
+    if(succeeds)assert.deepEqual(readiness.commands.map(x=>[x.stage,x.status]),[['boot-ready','passed'],['verify-state','passed']])
     if(mode==='failed')assert.equal(readiness.stage,'boot-ready')
-    if(mode==='passed') {
+    if(succeeds) {
       assert.equal(child.status,0,child.stderr);assert.match(child.stdout,/SESSION=/)
       assert.equal(devices.device.state,'Booted');assert.equal(readiness.status,'passed')
     } else {
