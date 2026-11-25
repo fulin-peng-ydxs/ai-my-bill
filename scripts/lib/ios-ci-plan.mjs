@@ -6,6 +6,7 @@ import { uiScenarios, uiCases, selection,capacityScenarios,recoveryScenarios } f
 import { contentHash, generated } from './ios-cache.mjs'
 import { scriptSkipPolicy } from './ios-test-reports.mjs'
 import { assertNpmSources } from './ios-ci.mjs'
+import { measurementInputs } from './ios-evidence-inputs.mjs'
 
 export const digest = (value) =>
   createHash('sha256')
@@ -24,8 +25,8 @@ const git = (root, ...args) =>
   })
 
 /** 登记只描述现有执行器和场景，不接受任意 Shell，也不注册尚未实现的交付能力。 */
-export function registry(root) {
-  const r = JSON.parse(fs.readFileSync(path.join(root, registryPath), 'utf8'))
+export function registry(root, document) {
+  const r = document ?? JSON.parse(fs.readFileSync(path.join(root, registryPath), 'utf8'))
   if (r.schema !== 1 || !r.suites || !r.profiles || !Array.isArray(r.rules))
     throw new Error('CI 登记结构无效。')
   scriptSkipPolicy(r)
@@ -160,6 +161,7 @@ export function sourceIdentity(root) {
     'app',
     'scripts',
     '.github',
+    '.githooks',
     registryPath,
     'config/ios-security-exceptions.json',
     'package.json',
@@ -238,6 +240,23 @@ export function selectSuites(r, profile, files = [], {execution}={}) {
     .map((name) => ({ name, ...r.suites[name], reasons: reasons[name] }))
 }
 
+/** Keep both policy requirements during a PR; an unmerged registry cannot waive its base's local checks. */
+export function requiredLocalFromPolicies(baseRegistry, headRegistry, files) {
+  const selected = new Map()
+  for (const r of [baseRegistry, headRegistry]) {
+    for (const suite of selectSuites(r, 'change', files, { execution: 'local' }).filter(s => !remoteSuite(s))) {
+      const { reasons, ...definition } = suite
+      const prior = selected.get(suite.name)
+      if (prior) {
+        const { reasons: priorReasons, ...priorDefinition } = prior
+        if (digest(definition) !== digest(priorDefinition)) throw new Error('本地套件定义变化须先完成受控策略升级，不能混用旧定义。')
+      }
+      selected.set(suite.name, suite)
+    }
+  }
+  return [...selected.values()]
+}
+
 export function createPlan(root, profile, { base, head, execution=profile==='pull-request'?'remote':'local' } = {}) {
   if(!['local','remote'].includes(execution) || (profile==='pull-request' && execution!=='remote'))throw new Error('CI 执行位置无效。')
   assertNpmSources(JSON.parse(fs.readFileSync(path.join(root, 'app/package-lock.json'), 'utf8')))
@@ -259,7 +278,9 @@ export function createPlan(root, profile, { base, head, execution=profile==='pul
   const suites = selectSuites(r, profile, files,{execution})
   const changing=['change','pull-request'].includes(profile)
   const localRequired=changing && execution==='remote'
-    ? selectSuites(r,'change',files,{execution:'local'}).filter(s=>!remoteSuite(s)) : []
+    ? profile === 'pull-request'
+      ? requiredLocalFromPolicies(JSON.parse(git(root, 'show', base + ':' + registryPath)), r, files)
+      : selectSuites(r,'change',files,{execution:'local'}).filter(s=>!remoteSuite(s)) : []
   const deferred=changing ? selectSuites(r,'change',files).filter(s=>!suites.some(x=>x.name===s.name)) : []
   const plan = {
     schema: 1,
@@ -268,6 +289,7 @@ export function createPlan(root, profile, { base, head, execution=profile==='pul
     source,
     range,
     registryHash: digest(r),
+    measurementInput: measurementInputs(root),
     files,
     suites,
     ...(changing ? {deferred,localRequired} : {})
@@ -298,4 +320,16 @@ export function assertPlan(root, plan) {
   if (JSON.stringify(current) !== JSON.stringify(plan))
     throw new Error('CI 计划、源码、登记或变更范围已失效。')
   return current
+}
+
+/** Rebind delivery metadata without editing measured reports; legacy or changed execution inputs fail closed. */
+export function assertMeasuredPlan(root, plan) {
+  const { id, ...body } = plan
+  const r = registry(root)
+  if (plan.schema !== 1 || plan.execution !== 'local' || id !== digest(body) ||
+      plan.registryHash !== digest(r) || plan.measurementInput !== measurementInputs(root) ||
+      JSON.stringify(plan.suites) !== JSON.stringify(selectSuites(r, plan.profile, plan.files, { execution: 'local' })))
+    throw new Error('历史测量的输入、登记或范围已失效；不能重写旧报告。')
+  git(root, 'cat-file', '-e', plan.source.commit + '^{commit}')
+  return plan
 }

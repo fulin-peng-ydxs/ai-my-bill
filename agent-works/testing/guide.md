@@ -194,13 +194,102 @@ SPM 准备机制见[构建架构](../architecture/architecture-decisions.md#离�
 | `secrets-history` | 本地显式完整已获取历史扫描；`final` 必含，不在日常 PR 隐式重扫全部历史 |
 | `dependency-audit` 或其他登记套件名 | 本地可只规划单套件；远端除上述范围外仅提供独立依赖审计，避免引入多套入口 |
 
-合并前本地专项核验复用 [local-gate](../../scripts/lib/ios-local-gate.mjs)：先用实际 PR 的完整基线 SHA 生成 `plan change --base "$IOS_BASE"`，再将已完成的、同提交及源码输入的本地 CI 结果目录组成 JSON 数组（例如 `[".local/ios/tmp/ai-agent/ios-ci-entry-check"]`），保存在本轮 `.local/ios/` 文件中，执行：
+本地自动门禁由 [ios-local](../../scripts/ios-local.mjs)安装和组织，专项仍复用原有 plan/run/result 与 [local-gate](../../scripts/lib/ios-local-gate.mjs)，不另建测试执行器。首次在已核实的功能分支执行：
 
 ```bash
-npm run ci:ios-app -- local-gate --results "$IOS_CI_RESULTS" --input "$IOS_LOCAL_EVIDENCE"
+npm run setup:local -- --base codex/offline-ios-app
+npm run status:local
+npm run verify:local
+npm run push:local
 ```
 
-`IOS_CI_RESULTS` 是按变更计划目录，`IOS_LOCAL_EVIDENCE` 是上述 JSON 文件路径。该入口不执行测试、构建或启动模拟器，而是对每份证据重新规划、重读原始报告及摘要，用既有 result 对账器核实实际执行、环境、阶段和清理；必需本地专项必须全部匹配。可用单套件计划的结果，无需再运行整个 change。裸 debug 单用例报告不能冒充包含更多检查的登记套件；日常定位仍用 debug，需作为合并证据的专项从同一登记入口组织，不为取得新格式报告重复已充分且仍有效的验收。无相关本地专项时可用空清单；有关联时遗漏、失败、取消、旧源码、篡改、重复目录或远端报告冒充本地均拒绝。每次核验保存独立 `local-readiness-<随机ID>.json`，最新摘要写入 `local-readiness.json`；失败刷新旧绿色并保留历史，不覆盖原回执、不清除完整失败锁、不生成完整候选标记。输入、基线、执行器、工具链或夹具变化仍按既有规则失效，不能改写旧计划以接受旧成功。该核验是可信本机的合并前条件，远端不接收本地材料；`CI common result` 仍只证明常规检查，GitHub 不自动强制本机入口已经执行。
+`setup:local` 设置本仓库的 `.githooks`，保留并串联原 hook，不改全局 Git；目标分支和原 hook 路径保存在 Git 私有目录。它在 macOS 钥匙串创建 Ed25519 私钥，只把公钥追加到仓库变量 `IOS_LOCAL_EVIDENCE_SIGNERS`；读取或登记失败不得默认为成功。私钥、账本、原始日志及本机路径不上传。其他开发者须独立安装并登记自己的公钥，不能复制现有私钥。
+
+| 时点 | 动作与阻断条件 |
+| --- | --- |
+| 开发定位 | 使用既有单文件、单用例和场景入口；不因保存文件自动启动设备。正式本地 CI 执行前登记未完成尝试，完成后自动登记实际结果，强杀或失败不能沿用旧成功 |
+| 提交前 | pre-commit 核验暂存区的登记和生成文档，串联既有 hook；不运行原生专项。允许保存尚未交付的开发提交 |
+| 提交后 | post-commit 刷新当前提交的本地待验清单，撤销旧交付绑定；不读取原生工具链、不运行测试，不把待验记成通过 |
+| 显式本地验证 | verify:local 按目标分支共同祖先至当前源码计算必需本地专项，只补缺失或失效项；有效项重读报告后复用，不执行 final、完整触摸或容量 |
+| 推送前 | pre-push 重新读取目标分支、当前 HEAD 和证据，缺失或失败则阻断正常功能分支推送并给出补验命令；只核验，不自行启动长测试。notes-only 发布只豁免自身回执引用，混合引用、错误远端或其他提交不豁免 |
+| PR 与合并前 | 远端常规检查及本地证据检查均须对应最新 head/base；本地合并工具仍重新核验当前范围。网页操作跳过 hook 也不能跳过已启用的远端必需检查 |
+
+`verify:local` 是显式补验动作，可能启动命中的独立模拟器；没有命中本地专项时不读取 Xcode/runtime，也不启动设备。普通文档、无关脚本及纯单测由登记选择常规检查；混合实现变更仍须选择真实影响项。裸 debug 单例不会冒充覆盖更多检查的登记套件；需要合并证据时组织对应单套件即可，不重复完整验收。
+
+本地证据索引由独立文件完整写入后原子发布，保存同输入的尝试顺序及失败，不通过覆盖共享锁或回退旧绿色恢复。复用先核对测量输入、当前套件定义、原始报告、宿主/Node、Xcode/SDK/runtime、阶段和清理；文档及提交元数据变化允许重新绑定，执行源码、测试配置、依赖、执行器或夹具改变则对应证据失效。Python __pycache__ 及 .pyc/.pyo 是生成物，不计入测量源码；实际 .py 源码与执行位仍绑定。原计划和原报告不改写；缺少新指纹的旧格式证据只作历史。每次核验保留独立 local-readiness 记录，不解除完整失败锁，不生成完整候选。手动精确核验仍可使用 `ci:ios-app -- local-gate --results PATH --input JSON`；该兼容入口只接受同提交原始证据。
+
+推送将签名回执发布到 `refs/notes/ios-local-evidence`，不进入 App 源码树，也不产生“提交回执后再次失效”的循环；正常快进保留回执历史。回执绑定仓库、提交、目标基线、Git 树、精确专项、输入/报告/环境摘要和签发时间。七天签发窗口到期只要求重新核验并签发，输入有效时不重测。失败回执也会阻断；回执在本机尚未发布时，远端无法感知其变化。`push:local` 在没有新提交时也能发布或刷新回执，并请求现有 PR 的轻量核验；有效且内容相同的签名回执不重复发布。计费或排队受阻不阻止本地验证和提交，远端受阻保持待验，不伪造合并资格。
+
+[可信元数据工作流](../../.github/workflows/local-evidence.yml)只执行受保护基线中的验证器，PR 文件只作为 Git 对象读取；合并共同祖先的改名双向路径按同一选择器处理，同时保留基线和候选策略要求，PR 不能自行删除应跑专项。公钥来自仓库设置，不接受 PR 自带信任声明。必需项缺失、失败、取消、非法跳过、签名错误、旧提交/基线、过期或重复项均拒绝；没有本地必需项时明确判为不适用。核验完成前重读 PR 和 notes 引用，过时快照不得发布成功。`pull_request_target` 的写权限仅发布状态，不检出或执行 PR 代码，不安装依赖或启动设备。签名证明授权本机签发了结果，不独立证明测试实现无误；当前来源为 GitHub Actions，仓库管理员及有权修改工作流/规则的人员属于信任边界，未配置专用 GitHub App 的来源隔离。
+
+套件说明由登记生成到下面的唯一受管区；运行 `npm run ci:ios-app -- docs --write` 更新，`docs` 只检查。生成器不改正文、不自动暂存；pre-commit 检查暂存版本，远端规划前检查实际版本。影响路径完整性仍需维护回归，生成表不替代业务覆盖审查。
+
+<!-- ios-ci-registry:start -->
+变更固定基础：secrets, workflow-quality；F 仅用于尚未命中已知专项的运行期源码。
+
+| 套件 | 能力 | 执行环境 | 固定范围 | 影响规则 |
+| --- | --- | --- | --- | --- |
+| secrets | 仓库 secret 检查 | linux；本地/远端常规 | common, scripts, app, final | 显式选择 |
+| scripts | 验证工具回归 | linux；本地/远端常规 | scripts | R1 |
+| simulator-boot | 独立模拟器启动与关闭，不编译或验收 App | macos；仅本地按变更 | 单套件/按变更 | R2 |
+| scripts-macos | macOS 编排与隔离回归 | macos；本地/远端常规 | scripts | R1 |
+| app-common | App 单测、类型、随包构建与资源门禁 | linux；本地/远端常规 | common, app, final | R3 |
+| native-build | 未签名 iPhone Release 构建 | macos；本地/远端常规 | common, app, final | R4 |
+| native-sqlite | 原生 SQLite、升级、文件快照与桥接集成 | macos；仅本地按变更 | app, final | R4<br>R5<br>R6 |
+| touch | 完整原页面触摸与 SQLite 回读 | macos；本地按需/最终 | final | 显式选择 |
+| dependency-audit | App npm 与 Swift 锁定依赖 OSV 审计 | linux；本地/远端常规 | common, final | R16 |
+| ui-entry | 复用原生局部场景 entry-cycle | macos；仅本地按变更 | 单套件/按变更 | R7<br>R9<br>R15 |
+| ui-personal | 复用原生局部场景 personal-cycle | macos；仅本地按变更 | 单套件/按变更 | R7<br>R10<br>R15 |
+| ui-lifecycle | 复用原生局部场景 lifecycle-cycle | macos；仅本地按变更 | 单套件/按变更 | R11<br>R15 |
+| ui-query | 复用原生局部场景 query-cycle | macos；仅本地按变更 | 单套件/按变更 | R8<br>R12<br>R15 |
+| ui-query-input | 复用原生局部场景 query-input | macos；仅本地按变更 | 单套件/按变更 | R12<br>R15 |
+| ui-reports | 复用原生局部场景 report-cycle | macos；仅本地按变更 | 单套件/按变更 | R8<br>R13<br>R15 |
+| ui-merge | 复用原生局部场景 merge-cycle | macos；仅本地按变更 | 单套件/按变更 | R14<br>R15 |
+| ui-paging | 复用原生局部场景 paging-merge | macos；仅本地按变更 | 单套件/按变更 | R14<br>R15 |
+| ui-unit-paging | 复用原生局部场景 paging-disable | macos；仅本地按变更 | 单套件/按变更 | R14<br>R15 |
+| ui-dictionary-0 | 原字典单用例 test00EightOriginalEntries | macos；仅本地按变更 | 单套件/按变更 | R6<br>R14<br>R15 |
+| ui-dictionary-1 | 原字典单用例 test01CreateProduct | macos；仅本地按变更 | 单套件/按变更 | R14<br>R15 |
+| ui-dictionary-2 | 原字典单用例 test02RenameProduct | macos；仅本地按变更 | 单套件/按变更 | R14<br>R15 |
+| ui-dictionary-3 | 原字典单用例 test03CreateCategory | macos；仅本地按变更 | 单套件/按变更 | R14<br>R15 |
+| ui-dictionary-4 | 原字典单用例 test04CreateUnit | macos；仅本地按变更 | 单套件/按变更 | R14<br>R15 |
+| ui-dictionary-5 | 原字典单用例 test05CreateFunding | macos；仅本地按变更 | 单套件/按变更 | R14<br>R15 |
+| ui-dictionary-6 | 原字典单用例 test06DisableCandidates | macos；仅本地按变更 | 单套件/按变更 | R14<br>R15 |
+| ui-dictionary-7 | 原字典单用例 test07RestoreCandidates | macos；仅本地按变更 | 单套件/按变更 | R14<br>R15 |
+| ui-report-dimensions | 九类支出、五类收入及质量线索的原生排行下钻 | macos；仅本地按变更 | 单套件/按变更 | R8<br>R13<br>R15<br>R17 |
+| ui-data-management | CSV 文件、加密备份、恢复拒绝/确认与清空后的外部恢复 | macos；仅本地按变更 | 单套件/按变更 | R15<br>R18 |
+| ui-ios-interaction | 原生横竖屏中文/数字键盘、日期与候选、保存可达和返回草稿 | macos；仅本地按变更 | 单套件/按变更 | R15<br>R19 |
+| recovery | 原生迁移三阶段成对中断恢复 | macos；仅本地按变更 | 单套件/按变更 | R21 |
+| scale-10000 | 10000 条独立 Release 模拟器原生、页面、冷启动与组合内存观测 | macos；本地按需/最终 | final | R7<br>R8<br>R9<br>R12<br>R13<br>R15<br>R17<br>R20 |
+| scale-100000 | 100000 条独立 Release 模拟器原生、页面、冷启动与组合内存观测 | macos；本地按需/最终 | final | R7<br>R8<br>R9<br>R12<br>R13<br>R15<br>R17<br>R20 |
+| install-gate | 可信手动输入：完整工程候选、签名检查与两种规模真机报告汇总 | macos；本地按需/最终 | 单套件/按变更 | 显式选择 |
+| workflow-quality | 固定 actionlint 全部工作流语法与表达式检查 | linux；本地/远端常规 | common, scripts, app, final | 显式选择 |
+| secrets-history | 显式固定 Gitleaks 全部已获取 Git 历史扫描 | linux；本地/远端常规 | final | 显式选择 |
+
+| 规则 | 路径 | 排除 | 命中套件 |
+| --- | --- | --- | --- |
+| R1 | scripts/**, .github/**, .githooks/**, config/ios-ci.json, package.json, .nvmrc, AGENTS.md, README.md, agent-works/testing/**, agent-works/architecture/environment-configuration.md, config/ios-security-exceptions.json | 无 | scripts, scripts-macos |
+| R2 | scripts/lib/ios-processes.mjs, scripts/lib/ios-process-scope.mjs, scripts/lib/ios-process-launch.sh, scripts/lib/ios-process-launch.mjs, scripts/ios-app.mjs, scripts/lib/ios-app-full.sh, scripts/lib/ios-host-diagnostics.py, scripts/lib/ios-simctl.mjs, scripts/lib/ios-boot-proof.mjs, scripts/lib/ios-ci-run.mjs | 无 | simulator-boot |
+| R3 | app/**, DESIGN.md | 无 | app-common |
+| R4 | app/package*.json, app/**/Package.resolved, app/capacitor.config.ts, app/ios/**, scripts/normalize-capacitor-spm.mjs, scripts/ios-storage-policy.mjs, scripts/toolchain.sh | **/*.spec.ts | native-build, native-sqlite |
+| R5 | app/data/**, app/src/data/**, app/src/platform/**, app/native-tests/**, app/test-support/**, app/src/app/**, app/src/router/** | **/*.spec.ts | native-sqlite |
+| R6 | app/index.html, app/src/main.ts, app/src/App.vue, app/src/stores/bootstrap.ts | 无 | native-sqlite, ui-dictionary-0 |
+| R7 | app/src/components/ProductCombobox.vue, app/src/components/NameSuggestionCombobox.vue | **/*.spec.ts, **/*.d.ts | ui-entry, ui-personal, scale-10000, scale-100000 |
+| R8 | app/src/components/DictionaryFilterPicker.vue | **/*.spec.ts, **/*.d.ts | ui-query, ui-reports, ui-report-dimensions, scale-10000, scale-100000 |
+| R9 | app/src/views/EntryView*, app/src/views/Expense*, app/src/views/Income*, app/src/components/entry*, app/src/components/ExpenseEntryForm.vue, app/src/components/IncomeEntryForm.vue, app/src/components/Entry*.vue, app/src/components/AmountField.vue, app/src/api/expenses.ts, app/src/api/incomes.ts, app/src/api/localEntries.ts | **/*.spec.ts, **/*.d.ts | ui-entry, scale-10000, scale-100000 |
+| R10 | app/src/views/ProfileView*, app/src/stores/preferences*, app/src/components/*Template*, app/src/components/*Draft*, app/src/views/LedgerEntryPreferenceView.vue, app/src/components/DailyEntryPicker.vue, app/src/stores/theme.ts, app/src/components/ExpenseEntryForm.vue, app/src/components/IncomeEntryForm.vue, app/src/api/preferences.ts, app/src/api/dailyTemplates.ts | **/*.spec.ts | ui-personal |
+| R11 | app/src/views/Adjustment*, app/src/views/Recycle*, app/src/components/Adjustment*.vue, app/src/components/Recycle*.vue, app/src/components/ExpenseAdjustment*.vue, app/src/views/LedgerView.vue, app/src/components/LedgerContextActions.vue, app/src/api/expenseAdjustments.ts, app/src/api/ledgerLifecycle.ts | **/*.spec.ts | ui-lifecycle |
+| R12 | app/src/views/LedgerView*, app/src/components/Filter*, app/src/components/*Search*, app/src/components/Ledger*.vue, app/src/components/GlobalLedgerSearch.vue, app/src/api/ledgerEntries.ts | **/*.spec.ts, **/*.d.ts | ui-query, ui-query-input, scale-10000, scale-100000 |
+| R13 | app/src/views/Report*, app/test-support/report*, app/src/components/Report*.vue, app/src/api/reports.ts | **/*.spec.ts, **/*.d.ts | ui-reports, ui-report-dimensions, scale-10000, scale-100000 |
+| R14 | app/src/views/me/dictionaries/**, app/src/components/Dictionary*, app/src/api/dictionaries.ts | **/*.spec.ts, app/src/components/DictionaryFilterPicker.vue | ui-merge, ui-paging, ui-unit-paging, ui-dictionary-0, ui-dictionary-1, ui-dictionary-2, ui-dictionary-3, ui-dictionary-4, ui-dictionary-5, ui-dictionary-6, ui-dictionary-7 |
+| R15 | app/src/App.vue, app/src/components/AppShell.vue, app/src/components/AppDialog.vue, app/src/components/BottomNavigation.vue, app/src/components/ScrollRegion.vue, app/src/components/CompactSelect.vue, app/src/components/DateTimeControl.vue, app/src/components/DictionaryPicker.vue, app/src/components/FundingChannelPicker.vue, app/src/components/UnsavedChangesDialog.vue, app/src/styles/**, app/ios/App/UITests/**, app/src/components/AppStateBlock.vue, app/src/components/AppAsyncRegion.vue, app/src/components/AppRequestError.vue, app/src/components/CachedPageView.vue, app/src/components/AppToast.vue, app/src/components/ComboboxField.vue, app/src/components/DictionaryCombobox.vue, app/src/components/AnchoredDropdown.vue, app/src/components/PageWorkspace.vue, app/src/components/AppDrawer.vue, app/src/components/FormField.vue | **/*.spec.ts, **/*.d.ts | ui-entry, ui-personal, ui-lifecycle, ui-query, ui-query-input, ui-reports, ui-merge, ui-paging, ui-unit-paging, ui-dictionary-0, ui-dictionary-1, ui-dictionary-2, ui-dictionary-3, ui-dictionary-4, ui-dictionary-5, ui-dictionary-6, ui-dictionary-7, ui-report-dimensions, ui-data-management, ui-ios-interaction, scale-10000, scale-100000 |
+| R16 | app/package*.json, app/**/Package.resolved, scripts/lib/ios-audit.mjs | 无 | dependency-audit |
+| R17 | app/src/data/reports/**, app/test-support/dimensionReport*, app/src/composables/useReportData* | **/*.spec.ts, **/*.d.ts | ui-report-dimensions, scale-10000, scale-100000 |
+| R18 | app/src/data/management/**, app/src/components/DataManagementActions.vue, app/src/components/DataExportAction.vue, app/src/api/exports.ts, app/src/platform/ledgerTransfers.ts, app/src/platform/backupLifecycle.ts, app/src/views/ProfileView.vue, app/src/stores/bootstrap.ts, app/src/components/SettingsGroup.vue, app/ios/App/App/LedgerDataFiles.swift, app/ios/App/App/LedgerFilesPlugin.swift, app/ios/App/App/Info.plist, app/src/data/entries/querySql.ts, app/src/data/ledgerDatabase.ts | **/*.spec.ts | ui-data-management |
+| R19 | app/src/platform/textScale*, app/src/composables/useKeyboardViewport*, app/src/components/AppShell.vue, app/src/components/PageWorkspace.vue, app/src/main.ts, app/ios/App/UITests/**, app/src/App.vue, app/src/components/EntrySaveBar.vue, app/src/components/BottomNavigation.vue, app/ios/App/App/LedgerFilesPlugin.swift, app/src/platform/appearance*, app/ios/App/App/LedgerAppearancePlugin.swift, app/src/components/AnchoredDropdown.vue | **/*.spec.ts | ui-ios-interaction |
+| R20 | app/src/data/**, app/src/domain/**, app/src/platform/**, app/native-tests/**, app/test-support/**, app/ios/**, app/package*.json, app/vitest.config.ts, app/src/main.ts, app/src/App.vue, scripts/lib/ios-scale*, scripts/lib/ios-capacity*, scripts/toolchain.sh, app/src/views/ReportView.vue, app/src/views/LedgerView.vue, app/src/components/Report*, app/src/stores/bootstrap.ts, app/src/api/**, app/src/composables/useReport*, app/src/composables/reportChartRuntime.ts, app/src/composables/useIncrementalLedgerQuery.ts | **/*.spec.ts, **/*.d.ts, app/src/api/generated/** | scale-10000, scale-100000 |
+| R21 | app/src/data/migrations/**, app/src/data/seed/**, app/src/data/management/**, app/src/data/ledgerDatabase.ts, app/src/platform/ledgerFiles*, app/ios/App/App/LedgerFilesPlugin.swift | **/*.spec.ts | recovery |
+| F | app/src/** | **/*.spec.ts, **/*.d.ts, app/src/api/generated/** | native-sqlite, scale-10000, scale-100000 |
+<!-- ios-ci-registry:end -->
 
 安全工具由 [ios-security.py](../../scripts/lib/ios-security.py)统一固定 actionlint 1.7.12 / Gitleaks 8.30.1。只从官方版本发布下载并核验 SHA-256，仅提取普通可执行文件，完整工具与摘要原子发布至 `.local/ios/tools`；每次命中重新验证缓存内容摘要及版本，不执行 PATH 中的浮动版本。下载和执行有界，拒绝校验失败、损坏缓存、路径链接、空工作流集合、非零退出或不完整扫描报告；不关闭 TLS 校验、不修改系统证书、工具链或全局选择。工作流检查禁用可选 ShellCheck/Pyflakes，范围仍是全部工作流结构及表达式。普通 `secrets` 扫描当前受控/未忽略源码，以及 PR 共同祖先到 head（本地无范围时最近一次提交）的补丁；不复制依赖、私密配置和本地账本。`bash scripts/check-secrets.sh --history` / `plan secrets-history` 显式扫描已获取的全部历史，保留敏感文件名拒绝规则；完整候选包含该历史专项，日常不做重复全历史扫描。
 
@@ -247,9 +336,9 @@ npm run ci:ios-app -- result --results "$IOS_CI_RESULTS"
 
 本节执行规则的局部回归运行 `node --test scripts/tests/ios-ci.test.mjs`，覆盖逐项缺少必需阶段、启动及共享组件分流、TODO/非法与合法平台跳过、真实临时进程的超时/取消清理、嵌套独立进程组及外层先强杀、取消后补偿新建组、关闭标记落盘失败后的登记组清理、登记前后中断的工具拒绝、慢预检就绪与独立预算、父子/跨调用隔离、正常命令与其他任务保护、迟到回调和快照失败、attempt 隔离与审计受阻；正式 `script-tests` 自动发现同一测试文件。调试单项可用 `--test-name-pattern`；嵌套清理场景还可用 `--test-skip-pattern` 排除其他子场景，例如只定位外层超时：`node --test --test-name-pattern 'CI 真实内外层' --test-skip-pattern 'outer-SIGTERM|outer-SIGINT|outer-force|inner-' scripts/tests/ios-ci.test.mjs`。不将过滤执行当成整套成功证据。进程回归将执行预算与清理宽限分别设置，不以全局毫秒匹配混改两类计时器；仅通过 `runCommand` 内部参数 `cleanupGraceMs` 将清理宽限缩至 0–10000 毫秒，正式调用仍默认 10 秒，没有 CLI 或环境覆盖入口。取消从创建进程的就绪信号后触发，慢预检超过缩短后的宽限仍须进入目标场景；外层先强杀场景保留慢预检，外层清理宽限为 500 毫秒以容纳真实进程快照，仍早于内层原有 10 秒清理；就绪及取消后退出断言仍各限 3.5 秒，执行预算不改；等后代就绪后再取消，不以短执行超时赌进程启动；真实超时仍由独立的执行预算触发，清理耗时不能从预检开始计算。这里只改变调度和报告契约时，本地无需构建 App 或启动模拟器；PR 自动跑所选工具组，其余远端范围仍按需。
 
-依赖审计复用 [OSV querybatch](https://google.github.io/osv.dev/post-v1-querybatch/)，仅收集 `app/package-lock.json` 的 npm 直接/传递/开发/可选依赖及 Xcode 提交的 `Package.resolved` 中 Swift URL+版本（无版本时使用锁定 revision）。锁损坏、空集合、不支持项、网络/HTTP/格式错误、返回缺项、循环分页或超出预算均保留未通过，已知漏洞直接阻断该套件；不自动升级依赖、接受风险或添加豁免。审计报告列出全部受检锁项、时间和发现；不证明操作系统、未锁定外部制品或所有原生代码无漏洞。依赖输入变化自动加入 PR 与 `change`，`final`必跑，也可单独按需执行；不新增每日或定时远端任务。
+依赖审计复用 [OSV querybatch](https://google.github.io/osv.dev/post-v1-querybatch/)，仅收集 `app/package-lock.json` 的 npm 直接/传递/开发/可选依赖及 Xcode 提交的 `Package.resolved` 中 Swift URL+版本（无版本时使用锁定 revision）。锁损坏、空集合、不支持项、网络/HTTP/格式错误、返回缺项、循环分页或超出预算均保留未通过，已知漏洞直接阻断该套件；不自动升级依赖、接受风险或添加豁免。审计报告列出全部受检锁项、时间和发现；不证明操作系统、未锁定外部制品或所有原生代码无漏洞。依赖输入变化自动加入 PR 与 `change`，`final` 必跑，也可单独按需执行；默认分支每天 UTC 21:17（北京时间次日 05:17）只执行 dependency-audit，可能排队延后。日审计独立显示，不覆盖 PR 结果、不无条件冻结无关 PR；最终候选须有匹配当前锁文件的有效审计。已知漏洞失败，网络或服务故障保留受阻；不自动升级或无限重试。
 
-[远端工作流](../../.github/workflows/offline-ios.yml)在 PR opened/synchronize/reopened/ready_for_review/edited 时自动按变更触发，不设路径过滤，以保证仅文档 PR 仍有通用门禁；edited 包含更换目标分支后的重新规划。同一 PR 新运行取消旧运行，取消不能通过。普通分支 push 和普通标签不启动；手动或专用标签只接受 scripts/common/change/dependency-audit。旧 app/final/recovery/scale 请求不再触发远端，远端执行与对账入口也会拒绝本地或模拟器计划，不能通过手填计划绕过。计划生成 Linux/macOS 分组矩阵；各组读取同一计划并归档原报告，总结果 job 合并并对账，失败/取消 job 不能被报告绿色遮蔽。命令尚未生成套件报告就失败时，仍归档 ios-check-* 的 check.log/result.json 及 native-* 的阶段日志、app-tests.json，保留实际 TAP 失败原因供局部定位，不只保存外层错误路径。macOS Apple 工具链按[环境配置](../architecture/environment-configuration.md#离线-app-原生测试配置)显式固定并在依赖安装前只读核验，不使用镜像浮动默认 Xcode。通用/脚本组沿用 10 分钟，工程/SDK 构建组及本地原生组沿用 45 分钟外层预算；本地组执行也从前置检查累计同一预算，各阶段及单用例上限继续独立生效。普通请求标签为 `ios-ci/<scripts|common|dependency-audit>/<唯一名称>`；`change` 标签须写明起点：`ios-ci/change/<完整 base SHA>/<唯一名称>`。例如仅请求脚本回归：
+[远端工作流](../../.github/workflows/offline-ios.yml)在 PR opened/synchronize/reopened/ready_for_review/edited 时自动按变更触发，不设路径过滤，以保证仅文档 PR 仍有通用门禁；edited 包含更换目标分支后的重新规划。同一 PR 新运行取消旧运行，取消不能通过。普通分支 push 和普通标签不启动常规流水线；定时仅依赖审计，手动或专用标签只接受 scripts/common/change/dependency-audit。旧 app/final/recovery/scale 请求不再触发远端，远端执行与对账入口也会拒绝本地或模拟器计划，不能通过手填计划绕过。计划生成 Linux/macOS 分组矩阵；各组读取同一计划并归档原报告，总结果 job 合并并对账，失败/取消 job 不能被报告绿色遮蔽。命令尚未生成套件报告就失败时，仍归档 ios-check-* 的 check.log/result.json 及 native-* 的阶段日志、app-tests.json，保留实际 TAP 失败原因供局部定位，不只保存外层错误路径。macOS Apple 工具链按[环境配置](../architecture/environment-configuration.md#离线-app-原生测试配置)显式固定并在依赖安装前只读核验，不使用镜像浮动默认 Xcode。通用/脚本组沿用 10 分钟，工程/SDK 构建组及本地原生组沿用 45 分钟外层预算；本地组执行也从前置检查累计同一预算，各阶段及单用例上限继续独立生效。普通请求标签为 `ios-ci/<scripts|common|dependency-audit>/<唯一名称>`；`change` 标签须写明起点：`ios-ci/change/<完整 base SHA>/<唯一名称>`。例如仅请求脚本回归：
 
 ```bash
 IOS_CI_TAG="ios-ci/scripts/$(date +%Y%m%d-%H%M%S)-$(git rev-parse --short HEAD)"
@@ -257,7 +346,7 @@ git tag "$IOS_CI_TAG" HEAD
 git push origin "refs/tags/$IOS_CI_TAG"
 ```
 
-标签固定被测 SHA，不删除或重写既有请求标签。工作流位于默认分支后，也可在 Actions → offline-ios → Run workflow 选择分支及 `verification`（默认 `scripts`）；选择 `change` 时提供 `base_revision`。计划默认本地执行；prepare 强制远端，显式本地模拟器计划不能进入远端 run/result。相关本地专项须在开发阶段完成，数据库升级、备份恢复、数据隔离等不可全部延期；合并前核对匹配源码/依赖/工具链/夹具及范围的本地证据。源码、登记、执行位置或相关输入变化使旧计划/证据失效；旧失败和完整失败锁仍保留，不能由新常规成功解除。本地命令不会创建标签、发送 dispatch 或等待远端；远端计费、额度、排队或平台故障单独保留受阻/待验，不阻塞已有本地证据支持的开发、提交和推送，也不自动重跑或扩大范围。原有完整失败锁、缓存隔离和阶段/整轮超时继续生效，受阻不等于通过。
+标签固定被测 SHA，不删除或重写既有请求标签。工作流位于默认分支后，也可在 Actions → offline-ios → Run workflow 选择分支及 `verification`（默认 `scripts`）；选择 `change` 时提供 `base_revision`。计划默认本地执行；prepare 强制远端，显式本地模拟器计划不能进入远端 run/result。相关本地专项须在开发阶段完成，数据库升级、备份恢复、数据隔离等不可全部延期；合并前核对匹配源码/依赖/工具链/夹具及范围的本地证据。源码、登记、执行位置或相关输入变化使旧计划/证据失效；旧失败和完整失败锁仍保留，不能由新常规成功解除。普通测试命令不会创建标签或等待远端；受管推送入口只为已有 PR 发送轻量回执刷新，不触发模拟器；远端计费、额度、排队或平台故障单独保留受阻/待验，不阻塞已有本地证据支持的开发与提交；发布回执失败时保留待发布状态，不能凭旧绿色合并，也不自动重跑或扩大范围。原有完整失败锁、缓存隔离和阶段/整轮超时继续生效，受阻不等于通过。
 
 最终候选稳定后在本地集中执行一次 `plan final`，不因提交、推送再本地全跑；远端常规受阻保留失败或待验，本地必需验证可继续；最终原生和真机验收不得由远端常规绿色代替。完整失败先回到相关局部修复，没有新证据不重复完整验收。指定 iPhone 的 Release 签名安装、断网冷启动、升级及 D07 容量性能仍独立验收，模拟器或完整候选标记不替代真机条件；未完成前不宣布最终交付通过。
 
@@ -265,7 +354,7 @@ git push origin "refs/tags/$IOS_CI_TAG"
 
 本地原生组使用已核验的 Xcode 27 / iOS 27 工具链；远端 macOS 常规组固定选择镜像内的 Xcode 27.0，仅做脚本或 SDK 编译，不启动设备；真正创建启动环境前再只读检查 checkFirstLaunchStatus，不强加给纯脚本检查，不自动接受许可或安装组件，不修改宿主全局选择。需要新建模拟器时，由 `debug create --boot --after-boot suspend|close` 在同一命令内验证启动并完成生命周期，再交给所选套件；纯环境使用 close，原生业务使用 suspend 并复用同一 UUID/缓存。关闭/暂停共享既有 120 秒管理预算，不叠加查询与重启 CLI 的预算；销毁使用单次官方 `simctl delete UUID` 自带关闭与删除，仅暂停仍用 shutdown；debug 关闭与完整入口收尾沿用同一规则，借用会话不删除。生命周期独立回执核对归属、真实 PID、操作顺序、退出及时间。借用已有会话不重新创建。暂停/关闭仍校验工具版本、归属和权限，但不重复首次启动组件检查；调用回执保留当前实际程序、PID及退出状态，取证不记录命令参数。纯环境组在源码后检及工具回归前关闭本轮设备；包含原生业务的组先暂停新建会话，再用同一 UUID 与磁盘缓存继续编译和验收，不重建模拟器。关闭失败只尝试一次并保留失败及现场；源码核验不跳过、预算不加长。会话编排实现变更也选择启动环境专项；受控回归检查关闭后查源码、暂停后复用、关闭失败与源码漂移。预检由官方 `simctl bootstatus UUID -b` 在同一进程完成启动与等待，启动前先独立核对本轮设备 UUID、名称、型号、可用性和 Shutdown 冷态；启动后由同一次原生命令的零退出码及匹配 UUID 的最终 Finished/already-booted 终态共同证明 Booted，避免在高负载时为同一事实重建查询客户端；共用既有 120 秒及整轮剩余预算，失败/取消只补偿本次设备并停止组执行，不继续编译或重建重试。冷启动前通过 xcrun --find 解析入口；识别官方 CoreSimulator 包装器时，先校验最低组件版本、checkFirstLaunchStatus、原生文件归属/权限及格式，再直接调用包装器所指向的原生工具，避免就绪后状态核对再次启动 xcrun、Shell 与版本检查子进程；SDK 本身是原生二进制时直接使用解析路径，SDK 入口沿用 xcrun 已选择的安装归属，不把用户安装误当成非官方原生工具；实际系统目标仍严格检查 root 归属和不可写权限。支持版本字面量及参数转发的等价引号形式；未知包装器保持原调用语义并记录回退原因及摘要，不修改 SDK 或自动安装组件。schema 3 启动回执登记初态、实际工具及各阶段程序、startupMode=bootstatus-b、verify-device/boot-ready 两阶段的真实 PID、开始/结束和状态；对账用同一终态校验器读取实际 boot-status 日志，拒绝缺阶段、未完成、错序、错误 PID、错误设备、混合设备或终态后继续输出未完成状态，不能仅凭退出码、Booting 或一个 Booted 字符串通过。成功 bootstatus -b 的设备服务按 UUID 交接，取消/失败仍执行原有清理。零宽限补偿的受管放行在提供系统 zsh 的宿主使用内建读帧后 exec 同一 PID，避免补偿阶段额外冷启动 Node；无 zsh 的宿主保留 Node 放行器，二者共用登记、失败及取消清理器。有效换行帧不等待 EOF，半帧、空帧和夹带消息拒绝；exec 前先完成归属登记，不能以减轻启动负载绕过放行保护。冷启动期间不再先 boot 后重新执行 SDK 包装器，也不自动新开 Node/sample 诊断子进程；宿主只读取证与验收解耦。托管 macOS 由预先加载的只读 libproc 观察器记录本轮登记进程的实际 PID/PPID/PGID、状态及 UID；托管宿主的显式 host-summary 另记录有限的进程名称/状态聚合数量与工具实际路径/文件头，以定位宿主过载及工具包装；不输出其他任务 PID 或参数，不在本机默认启用。不启动 ps、不读取命令参数或发送清理信号，主命令退出码及原预算不变。未请求后续管理时，启动成功即停止；请求暂停/关闭时观察至该生命周期结束，均不进入后续 App/容量测量窗口。仅在同轮生命周期命令停滞 20 秒后，对归属已核实且同用户的目标取一次 1 秒短栈，采样进程最多运行 5 秒，由观察器直接启动和回收；取证不可用不改主命令退出码、不代替环境成功，也不向被采样目标发送终止信号。观察器拒绝接管本轮主命令树以外的登记，不把取证不可用改记验证成功。失败时另保留临时宿主的 CoreSimulator 及对应 simctl/node/sample 崩溃日志，禁止把系统日志当作环境通过。局部回归由 ios-verification.test.mjs 的“模拟器启动预检”和 ios-ci.test.mjs 的“CI 新会话”覆盖，不运行真实模拟器或 App 完整验收。
 
-PR 与手动请求使用不同汇总名称：PR 固定为 **CI common result**，只表示远端常规检查通过，不能表示本地模拟器、真机或完整候选已通过；本地待验清单在 JSON/Markdown 标记 not-verified-here。供分支规则选择；其他请求为 `CI suite <profile> result`，不以某个专项的成功覆盖 PR 门禁。`result` 无论 plan/checks 成败都启动，`require-jobs` 与报告对账同时要求 plan、checks 为 success；failure、cancelled、skipped、空值和缺失状态均不通过。远端 result 缺少作业状态不得退回本地模式；计划或制品缺失也使汇总失败。各作业统一检出 PR 实际 head，关闭凭据持久化，不用 `pull_request_target` 执行 PR 代码，也不接入证书/真实账本。分支规则只选 `CI common result`（来源 GitHub Actions），不要求可能不适用的单个矩阵组或手动专项；需在该检查实际运行后才能搜索到。PR 合并与分支规则配置仍由用户操作，不由本地检查自动执行。
+PR 与手动请求使用不同汇总名称：PR 固定为 **CI common result**，只表示远端常规检查通过，不能表示本地模拟器、真机或完整候选已通过；本地待验清单在 JSON/Markdown 标记 not-verified-here。供分支规则选择；其他请求为 `CI suite <profile> result`，不以某个专项的成功覆盖 PR 门禁。`result` 无论 plan/checks 成败都启动，`require-jobs` 与报告对账同时要求 plan、checks 为 success；failure、cancelled、skipped、空值和缺失状态均不通过。远端 result 缺少作业状态不得退回本地模式；计划或制品缺失也使汇总失败。各作业统一检出 PR 实际 head，关闭凭据持久化，不用 `pull_request_target` 执行 PR 代码，也不接入证书/真实账本。分支规则要求 `CI common result` 与 `Local evidence result`（当前来源均为 GitHub Actions），不要求可能不适用的矩阵组或手动专项。常规汇总也核验 PR 回执作业，不能用 failure、cancelled、skipped 或缺失状态通过。首次接入目标尚非默认分支时不 dispatch 未部署的可信工作流，须核验当次 PR 的只读回执作业；先验证普通 PR 中只读回执消费，再部署可信基线工作流并核验正反例，最后启用新增必需检查，避免门禁尚未产生结果就锁住所有 PR。默认开发分支使用 codex/offline-ios-app，main 保留旧 Web 历史，后续功能 PR 均指向 iOS 主线；默认分支切换与规则启用是一次性的已授权配置，日常本地测试不修改仓库设置。
 
 普通工具回归按 `scripts/tests/ios-*.test.mjs` 自动发现，局部和完整入口共用同一叶子执行器与文件集合；新增文件同时使输入证据失效，不接入旧端测试。新增 UI 用例须同时接入现有选择器与单例/场景登记；未接入的 Swift UI 测试会被 check 拒绝。原生交互专项的源码通配路径排除 `**/*.spec.ts`；仅改 textScale、appearance 或 useKeyboardViewport 单测时只选 secrets/app-common，实现或混合变更仍选原生交互，分流回归位于 ios-ci.test.mjs 的 `T14 单测变更`。新增/调整套件须同步登记与影响路径、原执行器和报告语义，并先执行 `npm run ci:ios-app -- check` 及 ios-ci.test.mjs 中受影响的定向用例（`--test-name-pattern`）；共享协议受影响时再扩大范围。涉及原生编排且低层无法覆盖的变化才补相关独立模拟器局部场景。本地/远端分流及拒绝通过 ios-ci.test.mjs 的“本地按变更与远端”“真实远端入口”覆盖；PR 分流、真实 prepare/result/require-jobs 入口与失败/取消/跳过拒绝可局部运行 `node --test --test-name-pattern 'PR 计划|PR prepare|CI common result|CI 工作流' scripts/tests/ios-ci.test.mjs`；验证共同祖先范围、head 绑定、延期专项、手动结果隔离与始终汇总，不运行 App 完整验收。完整规模 CLI 协议夹具同时提供受控 xcode-select/xcodebuild/xcrun，显式清空继承的 DEVELOPER_DIR 后仍须通过，不依赖 Linux/macOS 宿主是否安装 Xcode，也不扩大平台跳过清单。本地 CLI 夹具显式清除托管宿主的作业状态，并设置本地上下文；另用 GITHUB_ACTIONS=true 运行“CI 正式 CLI”与“PR prepare”局部回归，确认本地模拟与真正远端的缺状态拒绝不相互污染。该回归经既有 `script-tests`、App common 及远端 CI 同源消费，覆盖改名双向路径、范围隔离、计划篡改、失败/缺失/空报告、跨目录对账、失败锁保护与依赖审计故障，不用受控执行器测试冒充 App 页面或远端验收。
 

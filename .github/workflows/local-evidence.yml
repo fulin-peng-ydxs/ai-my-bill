@@ -1,0 +1,44 @@
+name: local-evidence
+
+# Only trusted base code runs here. PR blobs and signed notes are read as data, never executed.
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened, ready_for_review, edited]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: 'Refresh local evidence for an open PR; no tests or simulator'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  pull-requests: read
+  statuses: write
+
+concurrency:
+  group: local-evidence-${{ github.event.pull_request.number || inputs.pr_number }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    name: Verify local evidence metadata
+    if: (github.event_name == 'workflow_dispatch' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)) || (github.event_name == 'pull_request_target' && github.event.pull_request.base.ref == github.event.repository.default_branch)
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+      - name: Verify signed local evidence and publish required status
+        env:
+          GH_TOKEN: ${{ github.token }}
+          IOS_LOCAL_EVIDENCE_SIGNERS: ${{ vars.IOS_LOCAL_EVIDENCE_SIGNERS }}
+          IOS_EVIDENCE_PR: ${{ github.event.pull_request.number || inputs.pr_number }}
+          IOS_EVIDENCE_PUBLISH: 'true'
+        run: node scripts/ios-evidence.mjs

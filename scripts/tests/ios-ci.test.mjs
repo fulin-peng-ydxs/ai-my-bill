@@ -1,4 +1,7 @@
 import { localGate } from '../lib/ios-local-gate.mjs'
+import { automaticLocalGate, rememberLocalResult, sealEvidence, verifyEnvelope, requiredLocalSuites, publishEnvelope, readEnvelope, noteParent, notesRef } from '../lib/ios-local-delivery.mjs'
+import { registryBlock, registryDocumentation } from '../lib/ios-ci-docs.mjs'
+import { generateKeyPairSync, sign } from 'node:crypto'
 import { coverageReport } from '../lib/ios-coverage.mjs'
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
@@ -376,7 +379,6 @@ test('CI 登记复用现有执行器与专项；PR 自动、固定范围和非�
   for (const [name, event] of [
     ['push', { ref: 'refs/heads/codex/offline-ios-app' }],
     ['pull_request', {}],
-    ['schedule', {}],
     ['push', { ref: 'refs/tags/v1' }],
     ['push', { ref: 'refs/tags/ios-ci/change/unknown/candidate' }],
     ['push', { ref: 'refs/tags/ios-ci/final/candidate', deleted: true }]
@@ -689,16 +691,17 @@ test('CI 工作流 PR 自动、通用门禁始终对账，手动结果隔离且�
   const trigger = workflow.slice(workflow.indexOf('on:\n'), workflow.indexOf('\npermissions:'))
   assert.match(trigger, /push:\n    tags:/)
   assert.match(trigger, /pull_request:\n    types: \[opened, synchronize, reopened, ready_for_review, edited\]/)
-  assert.doesNotMatch(trigger, /pull_request_target:|branches:|schedule:|paths:/)
+  assert.doesNotMatch(trigger, /pull_request_target:|branches:|paths:/)
+  assert.match(trigger, /schedule:\n[^\n]*\n    - cron: '17 21 \* \* \*'/)
   const result = workflow.slice(workflow.indexOf('\n  result:'))
   assert.match(result, /github.event_name == 'pull_request' && 'CI common result' \|\| format\('CI suite/)
-  assert.match(result, /\n    if: always\(\)\n    needs: \[plan, checks\]/)
+  assert.match(result, /\n    if: always\(\)\n    needs: \[plan, checks, local_evidence\]/)
   assert.match(result, /IOS_CI_PLAN_STATUS: \$\{\{ needs.plan.result \}\}/)
   assert.match(result, /IOS_CI_CHECKS_STATUS: \$\{\{ needs.checks.result \}\}/)
   assert.match(result, /name: Require every selected job\n        if: always\(\)/)
   assert.match(result, /run: npm run ci:ios-app -- require-jobs/)
   assert.equal(workflow.match(/ref: \$\{\{ github.event.pull_request.head.sha \|\| github.sha \}\}/g).length, 3)
-  assert.equal(workflow.match(/persist-credentials: false/g).length, 3)
+  assert.equal(workflow.match(/persist-credentials: false/g).length, 4)
   assert.match(workflow, /matrix: \$\{\{ fromJSON\(needs.plan.outputs.matrix\) \}\}/)
   assert.match(workflow, /DEVELOPER_DIR: \$\{\{ matrix.group == 'macos' && '\/Applications\/Xcode_27\.app\/Contents\/Developer' \|\| '' \}\}/)
   assert.match(workflow, /name: Verify pinned Apple toolchain\n        if: matrix.group == 'macos'/)
@@ -1971,4 +1974,278 @@ test('本地核验真实 CLI 拒绝远端调用、缺参及无效清单，不启
   assert.equal(failed.status, 1, failed.stderr)
   assert.equal(JSON.parse(failed.stdout).status, 'incomplete')
   assert.ok(!fs.readdirSync(directory).some(name => name.startsWith('group-')))
+})
+
+test('自动本地门禁：无关文档、脚本及纯单测不读取原生环境，混合实现变更不漏选', t => {
+  for (const file of ['agent-works/note.md', 'README.md', 'scripts/docs-helper.mjs', 'app/src/components/AmountField.spec.ts']) {
+    const p = processFixture(t)
+    p.commit()
+    const base = p.git('rev-parse', 'HEAD')
+    p.write(file, '// unrelated change')
+    p.commit()
+    const gate = automaticLocalGate(p.root, base, { readEnvironment: () => { throw new Error('must not invoke native tools') } })
+    assert.equal(gate.result.status, 'passed', file)
+    assert.deepEqual(gate.plan.localRequired, [], file)
+  }
+  const p = processFixture(t), base = p.commit()
+  p.write('app/src/components/AmountField.spec.ts', '// unit')
+  p.write('app/src/components/AmountField.vue', '<template>implementation</template>')
+  p.commit()
+  const gate = automaticLocalGate(p.root, base, { readEnvironment: () => { throw new Error('no report means no toolchain lookup') } })
+  assert.equal(gate.result.status, 'incomplete')
+  assert.deepEqual(gate.missing, ['ui-entry'])
+  assert.deepEqual(requiredLocalSuites(p.root, base, p.git('rev-parse', 'HEAD')).map(s => s.name), ['ui-entry'])
+})
+
+test('自动本地门禁：有效证据跨提交与文档变化复用，原报告不改写，输入/环境变化及最近失败拒绝', async t => {
+  const descriptor = Object.getOwnPropertyDescriptor(process, 'platform')
+  Object.defineProperty(process, 'platform', { value: 'darwin' })
+  try {
+    const p = processFixture(t), base = p.commit()
+    p.write('scripts/lib/ios-processes.mjs', '// controlled lifecycle change')
+    p.commit()
+    const first = prepare(p, 'simulator-boot', 'reuse-first'), { session } = environmentSession(p)
+    const environment = JSON.parse(JSON.parse(fs.readFileSync(path.join(session, 'boot-readiness.json'))).environment)
+    const options = { readEnvironment: () => environment }
+    let calls = 0
+    const command = async (_root, _program, args) => { calls++; return args[2] === 'create' ? 'SESSION=' + session + '\n' : '' }
+    await executeGroup(p.root, first.directory, 'macos', { command })
+    assert.equal(reconcile(p.root, first.directory).status, 'passed')
+    rememberLocalResult(p.root, first.directory)
+    const raw = fs.readFileSync(path.join(first.directory, 'ci-result.json'))
+    assert.equal(automaticLocalGate(p.root, base, options).result.status, 'passed')
+    const pair = generateKeyPairSync('ed25519')
+    const envelope = sealEvidence(p.root, base, 'example/bill', 'test-mac', pair.privateKey, Date.now(), options)
+    const identity = { repository: 'example/bill', head: p.git('rev-parse', 'HEAD'), base,
+      tree: p.git('rev-parse', 'HEAD^{tree}'), required: requiredLocalSuites(p.root, base, p.git('rev-parse', 'HEAD')),
+      signers: { 'test-mac': pair.publicKey.export({ type: 'spki', format: 'pem' }) } }
+    assert.equal(verifyEnvelope(envelope, identity).status, 'passed')
+    const remote = path.join(p.root, '.local/signed-remote.git')
+    p.git('init', '--bare', '-q', remote); p.git('remote', 'add', 'origin', remote)
+    publishEnvelope(p.root, 'origin', envelope, identity.signers)
+    const noteHead = p.git('ls-remote', 'origin', notesRef)
+    const renewed = structuredClone(envelope); renewed.payload.issuedAt++
+    renewed.payload.previousNotesSha = noteHead.split(/\s/)[0]
+    renewed.signature = sign(null, Buffer.from(JSON.stringify(renewed.payload)), pair.privateKey).toString('base64')
+    assert.equal(publishEnvelope(p.root, 'origin', renewed, identity.signers).status, 'reused')
+    assert.equal(p.git('ls-remote', 'origin', notesRef), noteHead, '相同有效回执不生成重复 notes 提交')
+    p.write('README.md', 'documentation changed after measurement')
+    p.commit()
+    const next = automaticLocalGate(p.root, base, options)
+    assert.equal(next.result.status, 'passed')
+    assert.notEqual(next.plan.source.commit, first.plan.source.commit)
+    assert.deepEqual(fs.readFileSync(path.join(first.directory, 'ci-result.json')), raw, '不重写原报告的提交身份')
+    assert.equal(calls, 1, '自动核验未重新执行启动命令')
+    assert.equal(automaticLocalGate(p.root, base, { readEnvironment: () => ({ ...environment, runtime: 'changed' }) }).result.status, 'incomplete')
+    const lock = p.write('.local/ios/tmp/ai-agent/ios-verification-state.json', 'original full failure lock')
+    const interrupted = prepare(p, 'simulator-boot', 'reuse-interrupted')
+    rememberLocalResult(p.root, interrupted.directory)
+    assert.equal(automaticLocalGate(p.root, base, options).result.status, 'incomplete', '开始后强杀仍有未完成记录')
+    const second = prepare(p, 'simulator-boot', 'reuse-failed')
+    await assert.rejects(executeGroup(p.root, second.directory, 'macos', { command: async () => { throw new Error('controlled boot failure') } }))
+    rememberLocalResult(p.root, second.directory)
+    rememberLocalResult(p.root, first.directory)
+    assert.equal(automaticLocalGate(p.root, base, options).result.status, 'incomplete', '旧绿色不能遮蔽同输入的新失败')
+    const third = prepare(p, 'simulator-boot', 'reuse-repaired')
+    await executeGroup(p.root, third.directory, 'macos', { command })
+    rememberLocalResult(p.root, third.directory)
+    assert.equal(automaticLocalGate(p.root, base, options).result.status, 'passed')
+    assert.equal(fs.readFileSync(lock, 'utf8'), 'original full failure lock')
+    const log = path.join(third.directory, 'simulator-boot/boot-status.log')
+    fs.appendFileSync(log, 'tampered')
+    assert.equal(automaticLocalGate(p.root, base, options).result.status, 'incomplete', '重读原日志，不能只信索引绿色')
+    p.write('app/vitest.config.ts', '// changed execution configuration')
+    assert.equal(automaticLocalGate(p.root, base, options).result.status, 'incomplete')
+  } finally { Object.defineProperty(process, 'platform', descriptor) }
+})
+
+test('自动本地门禁：签名绑定提交/基线与精确专项，缺失、取消、跳过、旧回执及伪造签名拒绝', t => {
+  const p = processFixture(t), base = p.commit()
+  p.write('app/src/components/AmountField.vue', '<template>changed</template>')
+  const head = p.commit(), required = requiredLocalSuites(p.root, base, head)
+  const pair = generateKeyPairSync('ed25519'), now = Date.now()
+  const publicKey = pair.publicKey.export({ type: 'spki', format: 'pem' })
+  const identity = { repository: 'example/bill', head, base, tree: p.git('rev-parse', 'HEAD^{tree}'), required, signers: { mac: publicKey }, now }
+  const { name, reasons, ...suite } = required[0]
+  const payload = { schema: 1, repository: identity.repository, head, base, tree: identity.tree, keyId: 'mac', issuedAt: now,
+    status: 'passed', completeCandidate: false,
+    suites: [{ name, status: 'passed', definition: digest(suite), input: 'a'.repeat(64), reportHash: 'b'.repeat(64),
+      host: 'c'.repeat(64), environmentHash: 'd'.repeat(64), completedAt: now - 1 }] }
+  const seal = p => ({ payload: structuredClone(p), signature: sign(null, Buffer.from(JSON.stringify(p)), pair.privateKey).toString('base64') })
+  assert.equal(verifyEnvelope(seal(payload), identity).status, 'passed')
+  assert.throws(() => verifyEnvelope(undefined, identity), /缺失/)
+  for (const change of [p => p.head = base, p => p.base = head, p => p.tree = base,
+    p => p.repository = 'other/repo', p => p.keyId = 'unregistered', p => p.issuedAt -= 8 * 86400000,
+    p => p.status = 'cancelled', p => p.status = 'skipped', p => p.status = 'failed',
+    p => p.suites = [], p => p.suites.push(p.suites[0]), p => p.suites[0].definition = 'wrong',
+    p => p.suites[0].reportHash = '', p => p.suites[0].completedAt = now + 1]) {
+    const altered = structuredClone(payload); change(altered)
+    assert.throws(() => verifyEnvelope(seal(altered), identity))
+  }
+  const tampered = seal(payload); tampered.payload.status = 'passed-again'
+  assert.throws(() => verifyEnvelope(tampered, identity), /签名/)
+  assert.throws(() => verifyEnvelope(seal({ ...payload, previousNotesSha: base }), { ...identity, previousNotesSha: head }), /重放/)
+  assert.equal(verifyEnvelope(undefined, { ...identity, required: [] }).applicable, false)
+  for (const state of ['failure', 'cancelled', 'skipped', '', undefined]) assert.throws(() => requireJobs('success', 'success', state, true), /回执未通过/)
+  assert.doesNotThrow(() => requireJobs('success', 'success', 'success', true))
+})
+
+test('自动本地门禁：远端合并基线与改名双向选测，PR 不能靠修改登记删除本地必需项', t => {
+  const p = processFixture(t), base = p.commit()
+  p.git('mv', 'scripts/lib/ios-processes.mjs', 'agent-note.mjs')
+  let head = p.commit()
+  assert.deepEqual(requiredLocalSuites(p.root, base, head).map(s => s.name), ['simulator-boot'])
+  const r = registry(p.root)
+  r.rules = r.rules.filter(rule => !rule.suites.includes('simulator-boot'))
+  p.write('config/ios-ci.json', r)
+  head = p.commit()
+  assert.deepEqual(requiredLocalSuites(p.root, base, head).map(s => s.name), ['simulator-boot'], '保留受保护基线策略的要求')
+})
+
+test('自动本地门禁：Git notes 正常快进发布、回读、历史保留及其他引用保护', t => {
+  const p = processFixture(t)
+  const remote = path.join(p.root, '.local/remote.git')
+  p.git('init', '--bare', '-q', remote)
+  p.git('remote', 'add', 'origin', remote)
+  const head = p.git('rev-parse', 'HEAD'), first = { payload: { head, status: 'failed', previousNotesSha: null }, signature: 'fixture' }
+  publishEnvelope(p.root, 'origin', first)
+  const initial = p.git('ls-remote', 'origin', notesRef).split(/\s/)[0]
+  const second = { payload: { head, status: 'passed', previousNotesSha: initial }, signature: 'fixture-next' }
+  publishEnvelope(p.root, 'origin', second)
+  p.git('fetch', 'origin', notesRef + ':refs/notes/ios-local-test-read')
+  assert.deepEqual(readEnvelope(p.root, 'refs/notes/ios-local-test-read', head), second)
+  assert.equal(p.git('merge-base', '--is-ancestor', initial, 'refs/notes/ios-local-test-read'), '')
+  assert.equal(p.git('for-each-ref', '--format=%(refname)', 'refs/notes/ios-local-publish-'), '')
+  assert.equal(p.git('rev-parse', 'HEAD'), head)
+  p.write('README.md', 'another PR'); const other = p.commit()
+  const prior = p.git('ls-remote', 'origin', notesRef).split(/\s/)[0]
+  publishEnvelope(p.root, 'origin', { payload: { head: other, previousNotesSha: prior, status: 'failed' }, signature: 'other' })
+  p.git('fetch', 'origin', notesRef + ':refs/notes/ios-local-test-read')
+  assert.equal(noteParent(p.root, 'refs/notes/ios-local-test-read', head), initial, '其他 PR 发布不使当前回执的父版本失效')
+  assert.throws(() => publishEnvelope(p.root, 'origin', second), /历史已更新/, '并发更新不能覆盖')
+})
+
+test('自动本地门禁：登记文档生成幂等、仅维护生成区，陈旧/缺失/重复标记拒绝，定时仅审计', t => {
+  const p = fixture(t)
+  const file = p.write('agent-works/testing/guide.md', 'authored before\n<!-- ios-ci-registry:start -->\nold\n<!-- ios-ci-registry:end -->\nauthored after\n')
+  assert.throws(() => registryDocumentation(p.root), /过期/)
+  assert.equal(registryDocumentation(p.root, true).updated, true)
+  assert.equal(registryDocumentation(p.root, true).updated, false)
+  assert.match(fs.readFileSync(file, 'utf8'), /^authored before[\s\S]*authored after\n$/)
+  assert.ok(fs.readFileSync(file, 'utf8').includes(registryBlock(registry(p.root))))
+  fs.appendFileSync(file, '<!-- ios-ci-registry:start -->')
+  assert.throws(() => registryDocumentation(p.root), /唯一/)
+  assert.deepEqual(requestedScope('schedule', {}), { profile: 'dependency-audit' })
+  const trusted = fs.readFileSync(path.join(repository, '.github/workflows/local-evidence.yml'), 'utf8')
+  assert.match(trusted, /pull_request_target:/)
+  assert.match(trusted, /ref: \$\{\{ github.event.pull_request.base.sha \|\| github.sha \}\}/)
+  assert.doesNotMatch(trusted, /ref: .*head.sha|npm .* ci|ios-app.sh|simctl|pull_request:\n/)
+  assert.match(trusted, /statuses: write/)
+  assert.match(trusted, /cancel-in-progress: false/)
+})
+
+test('自动本地门禁：真实提交/推送 hook 只检查实际提交，暂存一致性与既有拒绝保留，不启动模拟器', t => {
+  const p = processFixture(t)
+  p.write('scripts/ios-local.mjs', fs.readFileSync(path.join(repository, 'scripts/ios-local.mjs'), 'utf8'))
+  p.write('agent-works/testing/guide.md', registryBlock(registry(p.root)))
+  p.git('branch', '-M', 'main')
+  p.commit()
+  const remote = path.join(p.root, '.local/hooks-remote.git')
+  p.git('init', '--bare', '-q', remote)
+  p.git('remote', 'add', 'origin', remote)
+  p.git('push', '-u', 'origin', 'main')
+  p.git('switch', '-c', 'feature')
+  p.write('README.md', 'documentation only')
+  const head = p.commit()
+  p.write('.git/codex/local-gate.json', { schema: 1, base: 'main', remote: 'origin', remoteUrl: remote,
+    repository: 'example/bill', previousHooks: null, signer: {} })
+  const invoke = (mode, args = [], input) => spawnSync(process.execPath, ['scripts/ios-local.mjs', mode, ...args], {
+    cwd: p.root, input, encoding: 'utf8', env: { ...process.env, GITHUB_ACTIONS: 'false' } })
+  // Uncommitted runtime work is not part of the documentation commit being pushed.
+  p.write('app/src/components/AmountField.vue', '<template>uncommitted work</template>')
+  const post = invoke('post-commit')
+  assert.equal(post.status, 0, post.stderr); assert.match(post.stdout, /不适用/)
+  const input = `refs/heads/feature ${head} refs/heads/feature ${'0'.repeat(40)}\n`
+  const push = invoke('pre-push', ['origin', remote], input)
+  assert.equal(push.status, 0, push.stderr)
+  assert.match(push.stdout, /没有重复测试/)
+  assert.equal(invoke('pre-push', ['other', remote], input).status, 1)
+  const mixed = input + `refs/notes/source ${head} ${notesRef} ${'0'.repeat(40)}\n`
+  assert.equal(invoke('pre-push', ['origin', remote], mixed).status, 1)
+  assert.equal(invoke('pre-push', ['origin', remote], input.replaceAll('refs/heads/feature', 'refs/heads/main')).status, 1)
+  const before = registry(p.root), staged = structuredClone(before)
+  staged.suites.secrets.description += ' staged'
+  p.write('config/ios-ci.json', staged); p.git('add', 'config/ios-ci.json')
+  p.write('config/ios-ci.json', before)
+  assert.equal(invoke('pre-commit').status, 1, '工作树正确不能掩盖暂存区文档过期')
+  p.write('agent-works/testing/guide.md', registryBlock(staged)); p.git('add', 'agent-works/testing/guide.md')
+  assert.equal(invoke('pre-commit').status, 0, '只核验暂存版本，未暂存差异不误拦')
+  const gh = p.write('bin/gh', '#!/bin/sh\ncase "$2" in *"/pulls?"*) printf \'[{"number":3}]\\n\';; repos/example/bill) printf \'{"default_branch":"legacy"}\\n\';; *) exit 2;; esac\n')
+  fs.chmodSync(gh, 0o755)
+  const bootstrapPush = spawnSync(process.execPath, ['scripts/ios-local.mjs', 'push'], { cwd: p.root, encoding: 'utf8',
+    env: { ...process.env, GITHUB_ACTIONS: 'false', PATH: path.dirname(gh) + path.delimiter + process.env.PATH } })
+  assert.equal(bootstrapPush.status, 0, bootstrapPush.stderr)
+  assert.match(bootstrapPush.stdout, /等待目标主线设为默认分支/)
+  assert.equal(p.git('ls-remote', 'origin', 'refs/heads/feature').split(/\s/)[0], head)
+  const previous = p.write('.local/previous-hooks/pre-commit', '#!/bin/sh\nexit 37\n'); fs.chmodSync(previous, 0o755)
+  p.write('.git/codex/local-gate.json', { schema: 1, base: 'main', remote: 'origin', remoteUrl: remote,
+    repository: 'example/bill', previousHooks: path.dirname(previous), signer: {} })
+  assert.match(invoke('pre-commit').stderr, /既有 Git hook 拒绝/)
+})
+
+test('自动本地门禁：真实远端回执入口拦截漏验和错误签名，无本地专项明确不适用，不调用设备', t => {
+  const p = processFixture(t)
+  p.write('scripts/ios-evidence.mjs', fs.readFileSync(path.join(repository, 'scripts/ios-evidence.mjs'), 'utf8'))
+  const base = p.commit()
+  const remote = path.join(p.root, '.local/remote-cli.git')
+  p.git('init', '--bare', '-q', remote); p.git('remote', 'add', 'origin', remote)
+  p.write('README.md', 'documentation only'); const docsHead = p.commit()
+  p.git('push', 'origin', 'HEAD:refs/heads/feature')
+  const invoke = (head, signers = {}) => spawnSync(process.execPath, ['scripts/ios-evidence.mjs'], {
+    cwd: p.root, encoding: 'utf8', env: { ...process.env, GITHUB_ACTIONS: 'true',
+      GITHUB_REPOSITORY: 'example/bill', IOS_EVIDENCE_HEAD: head, IOS_EVIDENCE_BASE: base,
+      IOS_EVIDENCE_PUBLISH: 'false', IOS_LOCAL_EVIDENCE_SIGNERS: JSON.stringify(signers) } })
+  const noLocal = invoke(docsHead)
+  assert.equal(noLocal.status, 0, noLocal.stderr); assert.equal(JSON.parse(noLocal.stdout).applicable, false)
+  p.write('app/src/components/AmountField.vue', '<template>changed runtime</template>'); const head = p.commit()
+  p.git('push', 'origin', 'HEAD:refs/heads/feature')
+  const missing = invoke(head)
+  assert.equal(missing.status, 1); assert.match(missing.stderr, /缺少本地必需专项/)
+  const pair = generateKeyPairSync('ed25519'), now = Date.now(), required = requiredLocalSuites(p.root, base, head)
+  const { name, reasons, ...suite } = required[0]
+  const payload = { schema: 1, repository: 'example/bill', head, base, tree: p.git('rev-parse', 'HEAD^{tree}'),
+    keyId: 'controlled', issuedAt: now, previousNotesSha: null, status: 'passed', completeCandidate: false,
+    suites: [{ name, status: 'passed', definition: digest(suite), input: 'a'.repeat(64), reportHash: 'b'.repeat(64),
+      host: 'c'.repeat(64), environmentHash: 'd'.repeat(64), completedAt: now - 1 }] }
+  const envelope = { payload, signature: sign(null, Buffer.from(JSON.stringify(payload)), pair.privateKey).toString('base64') }
+  publishEnvelope(p.root, 'origin', envelope)
+  assert.equal(invoke(head).status, 1, '未登记签名者拒绝')
+  const signers = { controlled: pair.publicKey.export({ type: 'spki', format: 'pem' }) }
+  const accepted = invoke(head, signers)
+  assert.equal(accepted.status, 0, accepted.stderr)
+  assert.deepEqual(JSON.parse(accepted.stdout).suites, ['ui-entry'])
+  for (const status of ['failure', 'cancelled', 'skipped', '', undefined, 'success']) {
+    const run = spawnSync(process.execPath, [path.join(repository, 'scripts/ios-ci.mjs'), 'require-jobs'], {
+      encoding: 'utf8', env: { ...process.env, IOS_CI_PLAN_STATUS: 'success', IOS_CI_CHECKS_STATUS: 'success',
+        IOS_CI_IS_PR: 'true', IOS_CI_LOCAL_STATUS: status } })
+    assert.equal(run.status, status === 'success' ? 0 : 1, String(status))
+  }
+})
+
+test('自动本地门禁：干净检出首次生成 Python 字节码不使计划失效，源文件及可执行权限变化仍拒绝', t => {
+  const p = processFixture(t)
+  p.write('.gitignore', '.local/\nnode_modules/\n__pycache__/\n*.py[cod]\n')
+  const source = p.write('scripts/fixtures/cache_input.py', 'value = 1\n')
+  p.commit()
+  const plan = createPlan(p.root, 'scripts')
+  const env = { ...process.env }; delete env.PYTHONDONTWRITEBYTECODE; delete env.PYTHONPYCACHEPREFIX
+  const child = spawnSync('python3', ['-c', 'import importlib.util,sys;s=importlib.util.spec_from_file_location("fixture",sys.argv[1]);m=importlib.util.module_from_spec(s);s.loader.exec_module(m);assert m.value == 1', source], { env, encoding: 'utf8' })
+  assert.equal(child.status, 0, child.stderr)
+  assert.ok(fs.readdirSync(path.join(p.root, 'scripts/fixtures/__pycache__')).some(n => n.endsWith('.pyc')), '首次导入确实生成字节码')
+  assert.doesNotThrow(() => assertPlan(p.root, plan), '生成物不改变测量源码')
+  fs.chmodSync(source, 0o755)
+  assert.throws(() => assertPlan(p.root, plan), /失效/, '源文件执行位受保护')
+  fs.chmodSync(source, 0o644)
+  p.write('scripts/fixtures/cache_input.py', 'value = 2\n')
+  assert.throws(() => assertPlan(p.root, plan), /失效/, '不能排除真实 Python 源码')
 })
