@@ -174,7 +174,7 @@ export async function executeGroup(root, directory, group, { command = runComman
           if (readiness.simulatorId !== owned.context.simulatorId || readiness.runId !== owned.context.runId)
             throw new Error('启动预检回执不属于本轮设备。')
           writeJson(path.join(dest,'environment.json'),{source:plan.source,readiness})
-          for (const name of ['boot-request.log','boot-status.log'])
+          for (const name of ['boot-status.log'])
             fs.writeFileSync(path.join(dest,name),plainFile(path.join(directory,name)),{flag:'wx',mode:0o600})
         } else if (suite.kind === 'installation') {
           await command(root,process.execPath,['scripts/ios-install-gate.mjs',path.join(directory,'install-input.json'),path.join(dest,'install-report.json')],path.join(dest,'install.log'),Math.min(120000,remaining()))
@@ -307,12 +307,17 @@ function validateReports(root, directory, suite, receipt) {
     const {source,readiness:r} = read(path.join(directory,'environment.json'))
     const environment = JSON.parse(r?.environment ?? 'null')
     const uuid=/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i
-    if (!isDeepStrictEqual(source,receipt.source) || r?.scope!=='environment' || r.status!=='passed' ||
+    if (!isDeepStrictEqual(source,receipt.source) || r?.schema!==2 || r.startupMode!=='bootstatus-b' || r?.scope!=='environment' || r.status!=='passed' ||
       r.deviceState!=='Booted' || !uuid.test(r.simulatorId??'') || !uuid.test(r.runId??'') ||
       r.budgetMs!==120000 || !Number.isFinite(r.startedAt) || !Number.isFinite(r.completedAt) ||
       r.completedAt<=r.startedAt || r.completedAt>(receipt.completedAt??Date.now()) ||
       !/^27\./.test(environment?.sdk??'') || !/^Xcode 27\./.test(environment?.xcode??'') || !environment?.runtime || r.elapsedMs!==r.completedAt-r.startedAt || r.elapsedMs>r.budgetMs ||
-      !receipt.reports.some(x=>x.path==='boot-request.log') || !receipt.reports.some(x=>x.path==='boot-status.log'))
+      !receipt.reports.some(x=>x.path==='boot-status.log') ||
+      !Array.isArray(r.commands) || r.commands.length!==2 ||
+      r.commands.some((step,index)=>step.stage!==['boot-ready','verify-state'][index] || step.status!=='passed' ||
+        !Number.isSafeInteger(step.pid) || step.pid<=1 || !Number.isFinite(step.startedAt) ||
+        !Number.isFinite(step.completedAt) || step.completedAt<step.startedAt || step.startedAt<r.startedAt ||
+        step.completedAt>r.completedAt || (index>0 && step.startedAt<r.commands[index-1].completedAt)))
       throw new Error('模拟器启动环境回执未通过、范围或来源不符。')
     return
   }

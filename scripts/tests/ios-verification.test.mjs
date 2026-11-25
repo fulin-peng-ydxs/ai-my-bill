@@ -1138,15 +1138,14 @@ else if(a[1]==='list')console.log(JSON.stringify({devices:{[${JSON.stringify(RUN
 {udid:${JSON.stringify(sentinel)},name:'OTHER_TASK',state:'Booted',deviceTypeIdentifier:${JSON.stringify(DEVICE_TYPE)}},...(state.device?[state.device]:[])]}}));
 else if(a[1]==='create'){state.device={udid:${JSON.stringify(id)},name:a[2],deviceTypeIdentifier:a[3],state:'Shutdown',isAvailable:true};save();console.log(state.device.udid)}
 else if(!state.device||a[2]!==state.device.udid)throw new Error('wrong ownership');
-else if(a[1]==='boot'){
+else if(a[1]==='bootstatus'){
+if(a[3]!=='-b'||state.device.state!=='Shutdown')throw new Error('must boot and wait in one process');
 state.device.state='Booting';
 if(${JSON.stringify(mode)}==='passed'){
  const script='require("node:fs").writeFileSync('+JSON.stringify(${JSON.stringify(serviceReady)})+',"ready");setInterval(()=>{},1000)';
  const child=require('node:child_process').spawn(process.execPath,['-e',script],{stdio:'ignore'});state.helperPid=child.pid;child.unref();
 }
-save();if(${JSON.stringify(mode)}==='expired')fs.writeFileSync(clock,'80000')}
-
-else if(a[1]==='bootstatus'){
+save();
 if(['failed','journal-failed'].includes(${JSON.stringify(mode)}))process.exit(9);
 if(${JSON.stringify(mode)}==='cancelled'){fs.writeFileSync(${JSON.stringify(ready)},'ready');setInterval(()=>{},1000)}
 else {
@@ -1183,14 +1182,17 @@ else throw new Error('unexpected simulator command');
     helperPid=devices.helperPid
     assert.ok(calls.findIndex(a=>a[0]==='xcodebuild'&&a[1]==='-checkFirstLaunchStatus') < calls.findIndex(a=>a[1]==='create'))
     assert.ok(calls.some(a=>a[0]==='xcodebuild'&&a[1]==='-checkFirstLaunchStatus'))
-    assert.ok(calls.some(a=>a[1]==='boot')&&calls.some(a=>a[1]==='bootstatus'))
+    assert.equal(calls.filter(a=>a[1]==='bootstatus').length,1)
+    assert.ok(!calls.some(a=>a[1]==='boot'),'不在冷启动期间第二次执行 SDK 包装器')
+    assert.ok(calls.some(a=>JSON.stringify(a)===JSON.stringify(['simctl','bootstatus',id,'-b'])))
     assert.ok(calls.filter(a=>['boot','bootstatus','shutdown','delete'].includes(a[1])).every(a=>a[2]===id))
     const folders=fs.readdirSync(p.base).filter(name=>name.startsWith('ios-debug-')&&path.join(p.base,name)!==p.session)
     assert.equal(folders.length,1)
     const readiness=JSON.parse(fs.readFileSync(path.join(p.base,folders[0],'boot-readiness.json')))
     assert.equal(readiness.scope,'environment');assert.equal(readiness.budgetMs,120000)
+    assert.equal(readiness.schema,2);assert.equal(readiness.startupMode,'bootstatus-b')
     assert.ok(readiness.commands.every(step=>step.pid>1 || step.status==='failed'))
-    if(mode==='passed')assert.deepEqual(readiness.commands.map(x=>[x.stage,x.status]),[['boot-request','passed'],['boot-ready','passed'],['verify-state','passed']])
+    if(mode==='passed')assert.deepEqual(readiness.commands.map(x=>[x.stage,x.status]),[['boot-ready','passed'],['verify-state','passed']])
     if(mode==='failed')assert.equal(readiness.stage,'boot-ready')
     if(mode==='passed') {
       assert.equal(child.status,0,child.stderr);assert.match(child.stdout,/SESSION=/)

@@ -21,7 +21,6 @@ import { checkDefinition } from '../lib/ios-checks.mjs'
 import { requireEvidence } from '../lib/ios-verification.mjs'
 import { processCleanup, finishCleanup } from '../lib/ios-processes.mjs'
 import { commandScope } from '../lib/ios-process-scope.mjs'
-import { observeBootProcess } from '../lib/ios-boot-diagnostics.mjs'
 
 const repository = new URL('../../', import.meta.url).pathname
 
@@ -261,10 +260,12 @@ test('CI 启动环境专项只运行新会话启动及关闭，拒绝旧回执�
     const context=p.write('.local/ios/tmp/ai-agent/ios-debug-fixture/test-context.json',{
       kind:'ios-debug',schema:1,state:'open',appId:'com.mybill.offline',simulatorId:id,runId,name:'我的账单调试-'+runId})
     fs.chmodSync(context,0o600)
-    const now=Date.now(),r={scope:'environment',status:'passed',deviceState:'Booted',simulatorId:id,runId,
-      environment:JSON.stringify({sdk:'27.0',xcode:'Xcode 27.0',runtime:'TEST'}),budgetMs:120000,startedAt:now-5,completedAt:now,elapsedMs:5}
+    const now=Date.now(),r={schema:2,startupMode:'bootstatus-b',scope:'environment',status:'passed',deviceState:'Booted',simulatorId:id,runId,
+      environment:JSON.stringify({sdk:'27.0',xcode:'Xcode 27.0',runtime:'TEST'}),budgetMs:120000,startedAt:now-5,completedAt:now,elapsedMs:5,commands:[
+        {stage:'boot-ready',status:'passed',pid:200501,startedAt:now-5,completedAt:now-2},
+        {stage:'verify-state',status:'passed',pid:200502,startedAt:now-2,completedAt:now}]}
     p.write('.local/ios/tmp/ai-agent/ios-debug-fixture/boot-readiness.json',r)
-    for(const name of ['boot-request.log','boot-status.log'])p.write('.local/ios/tmp/ai-agent/ios-debug-fixture/'+name,'')
+    for(const name of ['boot-status.log'])p.write('.local/ios/tmp/ai-agent/ios-debug-fixture/'+name,'')
     const command=async(_root,_program,args)=>{calls.push(args);return args[2]==='create'?'SESSION='+session+'\n':''}
     await executeGroup(p.root,directory,'macos',{command})
     assert.deepEqual(calls,[['scripts/ios-app.sh','debug','create','--boot'],['scripts/ios-app.sh','debug','close','--session',session]])
@@ -273,6 +274,9 @@ test('CI 启动环境专项只运行新会话启动及关闭，拒绝旧回执�
     const receiptFile=path.join(directory,'simulator-boot/receipt.json'),reportFile=path.join(directory,'simulator-boot/environment.json')
     const originalReport=JSON.parse(fs.readFileSync(reportFile))
     for (const change of [v=>v.source.commit='0'.repeat(40),v=>v.readiness.status='failed',v=>v.readiness.deviceState='Shutdown',
+      v=>delete v.readiness.schema,v=>v.readiness.startupMode='split-boot',
+      v=>v.readiness.commands.pop(),v=>v.readiness.commands[0].status='running',v=>v.readiness.commands[1].pid=0,
+      v=>v.readiness.commands[1].startedAt=v.readiness.startedAt-1,
       v=>v.readiness.elapsedMs=120001,v=>v.readiness.scope='partial',v=>v.readiness.environment='{}',v=>v.readiness.completedAt=Date.now()+60000]) {
       const value=structuredClone(originalReport);change(value);fs.writeFileSync(reportFile,JSON.stringify(value))
       const receipt=JSON.parse(fs.readFileSync(receiptFile));receipt.reports.find(x=>x.path==='environment.json').hash=digest(fs.readFileSync(reportFile))
@@ -282,7 +286,8 @@ test('CI 启动环境专项只运行新会话启动及关闭，拒绝旧回执�
     const selected=selectSuites(registry(p.root),'pull-request',['scripts/lib/ios-processes.mjs']).map(x=>x.name)
     assert.deepEqual(selected,['secrets','scripts','simulator-boot','scripts-macos'])
     assert.equal(selected.filter(name=>registry(p.root).suites[name].runner==='macos')[0],'simulator-boot','冷启动预检必须先于工具压力回归')
-    assert.ok(selectSuites(registry(p.root),'pull-request',['scripts/lib/ios-boot-diagnostics.mjs']).some(x=>x.name==='simulator-boot'))
+    for(const file of ['scripts/lib/ios-host-diagnostics.py','scripts/lib/ios-app-full.sh'])
+      assert.ok(selectSuites(registry(p.root),'pull-request',[file]).some(x=>x.name==='simulator-boot'),file)
     assert.ok(!selectSuites(registry(p.root),'pull-request',['scripts/tests/ios-ci.test.mjs']).some(x=>x.name==='simulator-boot'))
     const borrowed=prepare(p,'simulator-boot','borrowed')
     await assert.rejects(executeGroup(p.root,borrowed.directory,'macos',{command,session}),/不能复用旧启动回执/)
@@ -1131,60 +1136,6 @@ test('CI 迟到启动轨迹不能复活已关闭登记', t => {
   assert.equal(fs.existsSync(directory),false)
   scope.noteLauncher({stage:'exited',pid:200701})
   assert.equal(fs.existsSync(directory),false)
-})
-
-test('CI 启动取证只采样当前 PID，不延长预算，快速返回和取消不留下诊断任务', async t => {
-  for (const mode of ['fast','sampled','unavailable','cancelled','cleanup-failed']) {
-    const p=fixture(t),calls=[]
-    let fire
-    const failure=Object.assign(new Error('controlled diagnostic cleanup failure'),{code:'IOS_PROCESS_CLEANUP_FAILED'})
-    const close=observeBootProcess(p.root,p.root,'boot-ready',200401,120000,{
-      schedule(fn,ms){assert.equal(ms,5000);fire=fn;return 1},unschedule(id){assert.equal(id,1)},
-      run:async(root,program,args,log,budget,options)=>{
-        calls.push({root,program,args,log,budget,options})
-        assert.equal(program,'/usr/bin/sample');assert.deepEqual(args.slice(0,3),['200401','1','10'])
-        assert.equal(budget,3000);assert.equal(options.cleanupGraceMs,0)
-        if(mode==='cancelled')return new Promise((_,reject)=>options.signal.addEventListener('abort',()=>reject(new Error('controlled diagnostic cancellation')),{once:true}))
-        if(mode==='cleanup-failed')throw failure
-        options.acceptExit(mode==='unavailable'?1:0)
-        if(mode==='sampled')fs.writeFileSync(args[4],'controlled current process stack')
-        return ''
-      }
-    })
-    if(mode!=='fast')fire()
-    // 让已经完成的工具回执落盘；取消场景仍保持悬挂直到 close 主动撤销。
-    await new Promise(resolve=>setImmediate(resolve))
-    if(mode==='cleanup-failed')await assert.rejects(close(),error=>error===failure)
-    else await close()
-    const report=JSON.parse(fs.readFileSync(path.join(p.root,'boot-diagnostic-boot-ready.json')))
-    assert.equal(report.status,mode==='fast'?'not-needed':mode==='cleanup-failed'?'unavailable':mode)
-    assert.equal(report.scope,'diagnostic');assert.equal(report.pid,200401)
-    assert.equal(calls.length,mode==='fast'?0:1)
-    fire();assert.equal(calls.length,mode==='fast'?0:1,'迟到回调不能复活诊断任务')
-  }
-  const p=fixture(t)
-  let fire
-  const closeExited=observeBootProcess(p.root,p.root,'boot-request',200402,120000,{
-    isRunning:()=>false,schedule:fn=>{fire=fn;return 1},unschedule(){},run:()=>{throw new Error('must not sample exited process')}
-  })
-  fire();await closeExited()
-  assert.equal(JSON.parse(fs.readFileSync(path.join(p.root,'boot-diagnostic-boot-request.json'))).status,'exited')
-  await observeBootProcess(p.root,p.root,'verify-state',200403,9000,{
-    schedule(){throw new Error('short budget must not start diagnostics')},run(){throw new Error('must not run')}
-  })()
-  const originalWrite=fs.writeFileSync
-  try {
-    fs.writeFileSync=(file,...args)=>{
-      if(String(file).endsWith('boot-diagnostic-verify-state.json'))throw new Error('controlled journal IO failure')
-      return originalWrite(file,...args)
-    }
-    const close=observeBootProcess(p.root,p.root,'verify-state',200404,120000,{
-      schedule:fn=>{fire=fn;return 1},unschedule(){},run(){throw new Error('must not start without journal')}
-    })
-    fire()
-    await assert.rejects(close(),/诊断记录写入失败/)
-  } finally {fs.writeFileSync=originalWrite}
-  assert.throws(()=>observeBootProcess('/','/','boot-ready',1,120000),/PID/)
 })
 
 test('CI 诊断撤销信号通过真实命令入口清理子进程，预先撤销不启动命令', async t => {

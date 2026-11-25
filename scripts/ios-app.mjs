@@ -43,7 +43,6 @@ import {
 import { checkNames, checkDefinition } from './lib/ios-checks.mjs'
 import { spawnManaged, finishCleanup } from './lib/ios-processes.mjs'
 import { errorMessage } from './lib/ios-errors.mjs'
-import { observeBootProcess } from './lib/ios-boot-diagnostics.mjs'
 import { cachedLayer, layerInputs, assetOutputs, installationMatches,
   inspectInstallation, recordInstallation, forgetInstallation } from './lib/ios-cache.mjs'
 
@@ -74,7 +73,7 @@ async function command(
     cwd = root,
     env = process.env,
     observer = phaseObserver,
-    diagnostic
+    onStarted
   } = {}
 ) {
   if (interrupted) throw new Error(`已取消：${interrupted}`)
@@ -87,7 +86,7 @@ async function command(
   let timer
   let watching
   let observationError
-  let child, cleanup, primaryError, closeDiagnostic, serviceHandoff = false
+  let child, cleanup, primaryError, serviceHandoff = false
   const stop = (error) => {
     if (observationError) return
     observationError = error
@@ -144,7 +143,7 @@ async function command(
         }, 100)
       child.once('error', reject)
       child.once('close', (code, signal) => resolve(code ?? 128 + (constants.signals[signal] ?? 0)))
-      if (child.pid) closeDiagnostic = diagnostic?.(child.pid,commandBudget,()=>child.exitCode===null && child.signalCode===null)
+      if (child.pid) onStarted?.(child.pid)
     })
     deadline?.remaining()
     if (observer && !observationError) {
@@ -162,7 +161,7 @@ async function command(
       )
     }
     // 设备服务/App 由对应 UUID 的 shutdown/terminate 管理，不能在成功请求返回后杀掉其组。
-    serviceHandoff = status === 0 && program === 'xcrun' && args[0] === 'simctl' && ['boot','launch'].includes(args[1])
+    serviceHandoff = status === 0 && program === 'xcrun' && args[0] === 'simctl' && (['boot','launch'].includes(args[1]) || (args[1] === 'bootstatus' && args.length === 4 && args[3] === '-b'))
     return { status, text }
   } catch (error) {
     primaryError = error
@@ -172,11 +171,6 @@ async function command(
     clearTimeout(timer)
     clearInterval(watching)
     try {
-      try { await closeDiagnostic?.() } catch (error) {
-        const failure=primaryError ? new AggregateError([primaryError,error],'执行失败且诊断清理未完成。') : error
-        finishCleanup(cleanup,failure,{handoff:serviceHandoff})
-        throw failure
-      }
       finishCleanup(cleanup, primaryError, { handoff: serviceHandoff })
     } finally {
       if (activeCleanup === cleanup) activeCleanup = undefined
@@ -432,7 +426,6 @@ async function runPartial(session, selected, toolchain, requested) {
       device.state = 'Shutdown'
       result.recoveredDevice = true
     }
-    if (device.state !== 'Booted') await simctl('boot', device.udid)
     await command('xcrun', ['simctl', 'bootstatus', device.udid, '-b'], { log: path.join(run, 'boot.log') })
     if (selected.capacity) {
       const { runScaleSimulator,readScaleCold } = await import('./lib/ios-scale-run.mjs')
@@ -814,7 +807,7 @@ async function main(args) {
       writeContext({ file: path.join(directory, 'test-context.json'), context })
       if (boot) {
         const file = path.join(directory, 'boot-readiness.json')
-        const readiness = { scope: 'environment', status: 'running', simulatorId: context.simulatorId,
+        const readiness = { schema: 2, startupMode: 'bootstatus-b', scope: 'environment', status: 'running', simulatorId: context.simulatorId,
           runId, environment: toolchain, startedAt: Date.now(), budgetMs: budgets.boot,
           host: { totalMemory: totalmem(), freeMemory: freemem() }, commands:[] }
         const bootDeadline = createDeadline(Math.min(budgets.boot, deadline.remaining()))
@@ -834,10 +827,9 @@ async function main(args) {
           readiness.commands.push(step)
           writeJson(file,readiness)
           try {
-            const result=await command('xcrun',args,{log,timeout:bootDeadline.remaining(),diagnostic:(pid,budget,isRunning)=>{
+            const result=await command('xcrun',args,{log,timeout:bootDeadline.remaining(),onStarted:(pid)=>{
               step.pid=pid
               writeJson(file,readiness)
-              return observeBootProcess(root,directory,stage,pid,budget,{isRunning})
             }})
             step.status='passed'
             return result
@@ -845,7 +837,7 @@ async function main(args) {
           finally {step.completedAt=Date.now();persist(failure)}
         }
         try {
-          await bootCommand('boot-request',['simctl','boot',context.simulatorId],path.join(directory,'boot-request.log'))
+          // 官方 -b 在同一进程完成启动与等待，避免冷启动期间再次经过 SDK Shell/辅助进程。
           await bootCommand('boot-ready',['simctl','bootstatus',context.simulatorId,'-b'],path.join(directory,'boot-status.log'))
           const devices=JSON.parse((await bootCommand('verify-state',['simctl','list','devices','--json'])).text)
           if (assertDevice(context, devices).state !== 'Booted') throw new Error('模拟器尚未处于 Booted 状态。')

@@ -149,7 +149,6 @@ JS
     SIMULATOR_BORROWED=1
     CONTEXT_FILE="$(node -e 'console.log(JSON.parse(process.argv[1]).context)' "${SESSION_INFO}")"
     SIMULATOR_STATE="$(node -e 'console.log(JSON.parse(process.argv[1]).state)' "${SESSION_INFO}")"
-    if [[ "${SIMULATOR_STATE}" == Shutdown ]]; then xcrun simctl boot "${SIMULATOR_ID}"; fi
     xcrun simctl bootstatus "${SIMULATOR_ID}" -b > "${RUN_DIRECTORY}/boot.log" 2>&1
     INSTALLED="$(xcrun simctl listapps "${SIMULATOR_ID}" | plutil -convert json -o - - | node -e 'let s=""; process.stdin.on("data",c=>s+=c);process.stdin.on("end",()=>console.log(Boolean(JSON.parse(s)["com.mybill.offline"])))')"
     # 与局部入口共用归属校验；完整流程明确冷重置，卸载成功后失效旧登记，不能留下误拦后续调试的回执。
@@ -179,7 +178,6 @@ JS
     SIMULATOR_ID="$(xcrun simctl create '我的账单离线原生测试' com.apple.CoreSimulator.SimDeviceType.iPhone-14-Pro-Max com.apple.CoreSimulator.SimRuntime.iOS-27-0)"
     CONTEXT_FILE="${RUN_DIRECTORY}/test-context.json"
     node -e 'require("node:fs").writeFileSync(process.argv[1], JSON.stringify({simulatorId: process.argv[2], runId: crypto.randomUUID(), appId: "com.mybill.offline"}), {mode: 0o600})' "${CONTEXT_FILE}" "${SIMULATOR_ID}"
-    xcrun simctl boot "${SIMULATOR_ID}"
     xcrun simctl bootstatus "${SIMULATOR_ID}" -b > "${RUN_DIRECTORY}/boot.log" 2>&1
   fi
   printf '%s\n' "${SIMULATOR_ID}" > "${RUN_DIRECTORY}/simulator.udid"
@@ -240,7 +238,6 @@ JS
     # 预期拒绝同样会建立 UI runner；重启同一受管设备，避免遗留自动化会话干扰正例。
     # 账本、归属与 UUID 保留，正例仍通过原页面执行且不增加用例时间预算。
     xcrun simctl shutdown "${SIMULATOR_ID}"
-    xcrun simctl boot "${SIMULATOR_ID}"
     xcrun simctl bootstatus "${SIMULATOR_ID}" -b > "${RUN_DIRECTORY}/touch-guard-reboot.log" 2>&1
     APP_CONTAINER="$(xcrun simctl get_app_container "${SIMULATOR_ID}" com.mybill.offline data)"
     # 在字典/偏好等业务触摸前保存同一安装的清空参照，T12 不从已修改的账本猜默认值。

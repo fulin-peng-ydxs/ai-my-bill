@@ -246,7 +246,7 @@
         "scripts/lib/ios-process-scope.mjs",
         "scripts/lib/ios-process-launch.mjs",
         "scripts/ios-app.mjs",
-        "scripts/lib/ios-boot-diagnostics.mjs",
+        "scripts/lib/ios-app-full.sh",
         "scripts/lib/ios-host-diagnostics.py"
       ],
       "suites": [
