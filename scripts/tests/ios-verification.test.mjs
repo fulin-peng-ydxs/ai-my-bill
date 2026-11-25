@@ -1103,9 +1103,9 @@ ${originalXcrun.replace(/^#![^\n]*\n/, '')}`)
 )
 
 test('模拟器启动预检不构建 App，共享启动预算，失败和取消只清理本次设备', { timeout:20000 }, async t => {
-  for (const mode of ['passed','direct','failed','journal-failed','invalid-terminal','wrong-terminal','expired','cancelled']) await t.test(mode, async t => {
+  for (const mode of ['passed','direct','quiesced','closed','quiesce-failed','quiesce-journal-failed','failed','journal-failed','invalid-terminal','wrong-terminal','expired','cancelled']) await t.test(mode, async t => {
     const p = project(t)
-    const succeeds=['passed','direct'].includes(mode), id = randomUUID(), sentinel = randomUUID()
+    const succeeds=['passed','direct','quiesced','closed','quiesce-failed','quiesce-journal-failed'].includes(mode), id = randomUUID(), sentinel = randomUUID()
     const state = p.write('.local/boot-state.json', JSON.stringify({ device:null }))
     const trace = p.write('.local/boot-trace.json','[]'), clockFile = p.write('.local/boot-clock','0')
     const ready = path.join(p.root,'.local/boot-waiting')
@@ -1118,12 +1118,12 @@ const fs=require('node:fs'),file=${JSON.stringify(trace)},calls=JSON.parse(fs.re
     fs.chmodSync(xcode,0o755)
     const platform = p.write('.local/boot-platform.mjs', `import fs from 'node:fs';import {performance} from 'node:perf_hooks';
 Object.defineProperty(process,'platform',{value:'darwin'});
-if(${JSON.stringify(mode)}==='journal-failed'){
+if(['journal-failed','quiesce-journal-failed'].includes(${JSON.stringify(mode)})){
  const write=fs.writeFileSync;let injected=false;
  fs.writeFileSync=(file,data,...args)=>{
-  if(!injected&&String(file).includes('boot-readiness.json.')){
+  if(!injected&&String(file).includes(${JSON.stringify(mode)}==='journal-failed'?'boot-readiness.json.':'boot-lifecycle.json.')){
    const value=JSON.parse(String(data));
-   if(value.commands?.at(-1)?.status==='failed'){injected=true;throw new Error('controlled boot journal failure')}
+   if(value.commands?.at(-1)?.status==='failed'||value.status==='failed'){injected=true;throw new Error('controlled boot journal failure')}
   }
   return write(file,data,...args);
  };
@@ -1156,7 +1156,7 @@ else {
  }
  state.device.state='Booted';save();if(${JSON.stringify(mode)}==='expired')fs.writeFileSync(clock,'160000');console.log('Monitoring boot status for '+state.device.name+' ('+(${JSON.stringify(mode)}==='wrong-terminal'?${JSON.stringify(sentinel)}:state.device.udid)+').\\n'+(${JSON.stringify(mode)}==='invalid-terminal'?'Status=0, isTerminal=NO\\n':'Status=4294967295, isTerminal=YES, Elapsed=00:01.\\n\\tFinished\\n'))}
 
-}else if(a[1]==='shutdown'){state.device.state='Shutdown';save()}
+}else if(a[1]==='shutdown'){if(['quiesce-failed','quiesce-journal-failed'].includes(${JSON.stringify(mode)}))process.exit(19);state.device.state='Shutdown';save()}
 else if(a[1]==='delete'){state.device=null;save()}
 else throw new Error('unexpected simulator command');
 `)
@@ -1189,7 +1189,7 @@ else throw new Error('unexpected simulator command');
         }
         processHandle.kill('SIGTERM');child=await ended
       } finally {processHandle.kill('SIGKILL');await ended}
-    } else child=p.run(['debug','create','--boot'],env)
+    } else child=p.run(['debug','create','--boot',...(['quiesced','closed','quiesce-failed','quiesce-journal-failed'].includes(mode)?['--after-boot',mode==='closed'?'close':'suspend']:[])],env)
     const calls=JSON.parse(fs.readFileSync(trace)), devices=JSON.parse(fs.readFileSync(state))
     helperPid=devices.helperPid
     assert.ok(calls.findIndex(a=>a[0]==='xcodebuild'&&a[1]==='-checkFirstLaunchStatus') < calls.findIndex(a=>a[1]==='create'))
@@ -1207,7 +1207,14 @@ else throw new Error('unexpected simulator command');
     assert.ok(readiness.commands.every(step=>step.pid>1 || step.status==='failed'))
     if(succeeds)assert.deepEqual(readiness.commands.map(x=>[x.stage,x.status]),[['verify-device','passed'],['boot-ready','passed']])
     if(mode==='failed')assert.equal(readiness.stage,'boot-ready')
-    if(succeeds) {
+    if(['quiesced','closed','quiesce-failed','quiesce-journal-failed'].includes(mode)) {
+      const session=path.join(p.base,folders[0]),life=JSON.parse(fs.readFileSync(path.join(session,'boot-lifecycle.json')))
+      assert.equal(life.simulatorId,id);assert.equal(life.runId,readiness.runId);assert.equal(life.budgetMs,120000)
+      if(mode.startsWith('quiesce-')){assert.notEqual(child.status,0);assert.doesNotMatch(child.stdout,/^SESSION=/m);assert.match(child.stderr,/exit=19/);if(mode==='quiesce-journal-failed')assert.match(child.stderr,/controlled boot journal failure/);else assert.equal(life.status,'failed')}
+      else {assert.equal(child.status,0,child.stderr);assert.equal(life.status,'passed');assert.equal(devices.device?.state,mode==='closed'?undefined:'Shutdown');
+        assert.deepEqual(life.commands.map(x=>x.operation),mode==='closed'?['shutdown','delete']:['shutdown']);assert.ok(life.commands.every(x=>x.pid>1&&x.exit===0));
+        const afterBoot=calls.slice(calls.findIndex(a=>a[1]==='bootstatus')+1);assert.ok(!afterBoot.some(a=>a[1]==='list'||a[0]==='xcodebuild'),'启动后收尾复用工具和身份，不重走前置或查询')}
+    } else if(succeeds) {
       assert.equal(child.status,0,child.stderr);assert.match(child.stdout,/SESSION=/)
       assert.equal(devices.device.state,'Booted');assert.equal(readiness.status,'passed')
       assert.equal(readiness.initialDevice.state,'Shutdown')

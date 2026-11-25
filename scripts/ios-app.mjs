@@ -810,8 +810,9 @@ async function main(args) {
   }
   const toolchain = managing ? '' : await nativeToolchain()
   if (args[1] === 'create') {
-    const boot = args.length === 3 && args[2] === '--boot'
-    if (args.length !== 2 && !boot) throw new Error('create 仅接受可选 --boot，不接受已有设备或会话参数。')
+    const boot = args[2] === '--boot' && (args.length === 3 || (args.length === 5 && args[3] === '--after-boot' && ['suspend','close'].includes(args[4])))
+    if (args.length !== 2 && !boot) throw new Error('create 仅接受 --boot [--after-boot suspend|close]，不接受已有设备或会话参数。')
+    const afterBoot=boot && args[4]
     // 只读检查首次启动组件；不接受许可或安装组件，且不把它强加给纯脚本检查。
     if (boot && simctlExecution?.mode!=='installed-binary') await command('xcodebuild',['-checkFirstLaunchStatus'])
     const directory = fs.mkdtempSync(path.join(temporary, 'ios-debug-'))
@@ -888,6 +889,32 @@ async function main(args) {
           readiness.completedAt = Date.now()
           readiness.elapsedMs = readiness.completedAt - readiness.startedAt
           persist(bootFailure)
+        }
+      }
+      if(afterBoot) {
+        // 身份已由本次启动前检查，直接管理该随机 UUID；不在重载期另起 CLI/SDK/查询客户端。
+        const file=path.join(directory,'boot-lifecycle.json'),started=performance.now()
+        const life={schema:1,runId,simulatorId:context.simulatorId,action:afterBoot,budgetMs:120000,startedAt:Date.now(),status:'running',commands:[]}
+        const lifecycleDeadline=createDeadline(Math.min(120000,deadline.remaining()))
+        writeJson(file,life)
+        let lifecycleError
+        try {
+          for(const operation of afterBoot==='close'?['shutdown','delete']:['shutdown']) {
+            const step={operation,status:'running',startedAt:Date.now()};life.commands.push(step)
+            const result=await command('xcrun',['simctl',operation,context.simulatorId],{timeout:lifecycleDeadline.remaining(),onStarted:(pid,program)=>{
+              Object.assign(step,{pid,program});writeJson(file,life)
+            }})
+            lifecycleDeadline.remaining();Object.assign(step,{status:'passed',exit:result.status,completedAt:Date.now()});writeJson(file,life)
+          }
+          if(afterBoot==='close') {context.state='closed';writeContext({file:path.join(directory,'test-context.json'),context})}
+          life.status='passed'
+        } catch(error) {lifecycleError=error;life.error=errorMessage(error);life.status='failed';throw error}
+        finally {
+          life.completedAt=Date.now();life.durationMs=performance.now()-started
+          try {writeJson(file,life)} catch(error) {
+            if(lifecycleError)throw new AggregateError([lifecycleError,error],'生命周期失败且记录未完成。')
+            throw error
+          }
         }
       }
       deadline?.remaining()

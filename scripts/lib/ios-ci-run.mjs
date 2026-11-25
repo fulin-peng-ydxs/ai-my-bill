@@ -135,16 +135,18 @@ export async function executeGroup(root, directory, group, { command = runComman
         await command(
           root,
           'bash',
-          ['scripts/ios-app.sh', 'debug', 'create', '--boot'],
+          ['scripts/ios-app.sh', 'debug', 'create', '--boot','--after-boot',needsSession?'suspend':'close'],
           path.join(directory, 'create-session.log'),
           Math.min(300_000, remaining())
         ),
         'SESSION'
       )
-      // 首次系统迁移后释放运行资源，再编译/核验源码；保留同一 UUID 与磁盘缓存。
-      if(needsSession)await command(root,'bash',
-        ['scripts/ios-app.sh','debug','suspend','--session',session],
-        path.join(directory,'quiesce-session.log'),Math.min(120_000,remaining()))
+      if(!needsSession) {
+        const closed=session
+        session=undefined
+        closeAttempted=true
+        return closed
+      }
     }
     return session
   }
@@ -185,15 +187,15 @@ export async function executeGroup(root, directory, group, { command = runComman
       try {
         if (suite.kind === 'environment') {
           const directory = await ensureSession()
-          const owned = readSession(path.join(root,'.local/ios/tmp/ai-agent'),directory)
+          const owned = readSession(path.join(root,'.local/ios/tmp/ai-agent'),directory,!needsSession)
           const readiness = read(path.join(directory,'boot-readiness.json'))
           if (readiness.simulatorId !== owned.context.simulatorId || readiness.runId !== owned.context.runId)
             throw new Error('启动预检回执不属于本轮设备。')
-          writeJson(path.join(dest,'environment.json'),{source:plan.source,readiness})
+          const lifecycle=read(path.join(directory,'boot-lifecycle.json'))
+          if(lifecycle.action!==(needsSession?'suspend':'close') || (!needsSession && owned.context.state!=='closed'))throw new Error('启动后设备未完成本轮生命周期。')
+          writeJson(path.join(dest,'environment.json'),{source:plan.source,readiness,lifecycle})
           for (const name of ['boot-status.log'])
             fs.writeFileSync(path.join(dest,name),plainFile(path.join(directory,name)),{flag:'wx',mode:0o600})
-          // 纯环境组的生命周期在源码后检前结束，避免让初次系统迁移继续拖慢 git/工具回归。
-          if(!needsSession)await closeSession()
         } else if (suite.kind === 'installation') {
           await command(root,process.execPath,['scripts/ios-install-gate.mjs',path.join(directory,'install-input.json'),path.join(dest,'install-report.json')],path.join(dest,'install.log'),Math.min(120000,remaining()))
         } else if (suite.kind === 'audit') {
@@ -262,7 +264,7 @@ export async function executeGroup(root, directory, group, { command = runComman
         if (performance.now() - started > 2_700_000) throw new Error('套件整轮超时。')
         assertPlan(root, plan)
         // 执行组内即拒绝不完整报告，避免在已知缺口后继续启动其他专项；汇总仍独立复核。
-        validateReports(root, dest, suite, receipt)
+        validateReports(root, dest, suite, receipt,plan)
         remaining()
         receipt.status = 'passed'
         receipt.exit = 0
@@ -297,7 +299,7 @@ export async function executeGroup(root, directory, group, { command = runComman
 }
 
 /** 逐份核实原报告；只收集到成功 exit 或手填 passed 不能补足实际执行证据。 */
-function validateReports(root, directory, suite, receipt) {
+function validateReports(root, directory, suite, receipt,plan) {
   if (!receipt.reports?.length) throw new Error('缺少实际报告。')
   const primary = []
   for (const report of receipt.reports) {
@@ -312,7 +314,7 @@ function validateReports(root, directory, suite, receipt) {
     if (report.primary && report.role === 'primary') primary.push(JSON.parse(bytes))
   }
   if (suite.kind === 'environment') {
-    const {source,readiness:r} = read(path.join(directory,'environment.json'))
+    const {source,readiness:r,lifecycle:life} = read(path.join(directory,'environment.json'))
     const environment = JSON.parse(r?.environment ?? 'null')
     const uuid=/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i
     if (!isDeepStrictEqual(source,receipt.source) || r?.schema!==3 || r.startupMode!=='bootstatus-b' || r?.scope!=='environment' || r.status!=='passed' ||
@@ -330,6 +332,14 @@ function validateReports(root, directory, suite, receipt) {
         !Number.isFinite(step.completedAt) || step.completedAt<step.startedAt || step.startedAt<r.startedAt ||
         step.completedAt>r.completedAt || (index>0 && step.startedAt<r.commands[index-1].completedAt)))
       throw new Error('模拟器启动环境回执未通过、范围或来源不符。')
+    const operations=life?.action==='close'?['shutdown','delete']:life?.action==='suspend'?['shutdown']:[]
+    if(life?.schema!==1 || life.action!==(plan.suites.some(s=>s.runner===suite.runner && ['full','ui','scenario'].includes(s.kind))?'suspend':'close') || life.status!=='passed' || life.simulatorId!==r.simulatorId || life.runId!==r.runId ||
+      life.budgetMs!==120000 || !Number.isFinite(life.durationMs) || life.durationMs<0 || life.durationMs>120000 ||
+      !Number.isFinite(life.startedAt) || !Number.isFinite(life.completedAt) || life.startedAt<r.completedAt || life.completedAt<life.startedAt || life.completedAt>(receipt.completedAt??Date.now()) ||
+      !operations.length || life.commands?.length!==operations.length || life.commands.some((step,index)=>step.operation!==operations[index] ||
+        step.status!=='passed' || step.exit!==0 || step.program!==r.tool.program || !Number.isSafeInteger(step.pid) || step.pid<=1 ||
+        !Number.isFinite(step.startedAt) || !Number.isFinite(step.completedAt) || step.completedAt<step.startedAt || step.startedAt<life.startedAt || step.completedAt>life.completedAt ||
+        (index>0 && step.startedAt<life.commands[index-1].completedAt)))throw new Error('启动后生命周期回执未通过或归属不符。')
     assertBootStatus(plainFile(path.join(directory,'boot-status.log')).toString('utf8'),r.simulatorId)
     return
   }
@@ -516,7 +526,7 @@ export function reconcile(root, directory, jobsStatus, planStatus) {
       const group = read(path.join(directory, `group-${suite.runner}.json`))
       if (group.plan !== plan.id || group.status !== 'passed')
         throw new Error('执行组未完成或清理失败。')
-      validateReports(root, dest, suite, receipt)
+      validateReports(root, dest, suite, receipt,plan)
       row.status = 'passed'
     } catch (e) {
       row.status = e.code === 'ENOENT' ? 'not-executed' : 'failed'

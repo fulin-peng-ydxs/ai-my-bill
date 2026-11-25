@@ -220,11 +220,11 @@ function prepare(p, profile = 'secrets', suffix = 'result', range) {
   return { plan, directory }
 }
 
-function environmentSession(p) {
+function environmentSession(p,action='close') {
     const id='11111111-1111-4111-8111-111111111111',runId='22222222-2222-4222-8222-222222222222'
     const session=path.join(p.root,'.local/ios/tmp/ai-agent/ios-debug-fixture')
     const context=p.write('.local/ios/tmp/ai-agent/ios-debug-fixture/test-context.json',{
-      kind:'ios-debug',schema:1,state:'open',appId:'com.mybill.offline',simulatorId:id,runId,name:'我的账单调试-'+runId})
+      kind:'ios-debug',schema:1,state:action==='close'?'closed':'open',appId:'com.mybill.offline',simulatorId:id,runId,name:'我的账单调试-'+runId})
     fs.chmodSync(context,0o600)
     const now=Date.now(),r={schema:3,startupMode:'bootstatus-b',tool:{program:'xcrun',prefix:['simctl'],mode:'sdk-wrapper'},scope:'environment',status:'passed',deviceState:'Booted',simulatorId:id,runId,
       initialDevice:{udid:id,name:'我的账单调试-'+runId,state:'Shutdown',isAvailable:true,deviceTypeIdentifier:'com.apple.CoreSimulator.SimDeviceType.iPhone-14-Pro-Max'},
@@ -234,6 +234,9 @@ function environmentSession(p) {
     p.write('.local/ios/tmp/ai-agent/ios-debug-fixture/boot-readiness.json',r)
     const bootLog='Monitoring boot status for owned ('+id+').\nStatus=4294967295, isTerminal=YES, Elapsed=00:01.\n\tFinished\n'
     p.write('.local/ios/tmp/ai-agent/ios-debug-fixture/boot-status.log',bootLog)
+    p.write('.local/ios/tmp/ai-agent/ios-debug-fixture/boot-lifecycle.json',{
+      schema:1,action,status:'passed',runId,simulatorId:id,budgetMs:120000,startedAt:now,completedAt:now,durationMs:0,
+      commands:(action==='close'?['shutdown','delete']:['shutdown']).map(operation=>({operation,status:'passed',exit:0,pid:200503,program:'xcrun',startedAt:now,completedAt:now}))})
     return {session,id,runId,bootLog}
 }
 
@@ -248,7 +251,7 @@ test('CI 新会话先预检再编译，失败不执行套件，成功后只关�
       await assert.rejects(executeGroup(p.root,directory,'macos',{command:async (_root,_program,args) => {
         calls.push(args)
         if (args[2]==='create') {
-          assert.deepEqual(args,['scripts/ios-app.sh','debug','create','--boot'])
+          assert.deepEqual(args,['scripts/ios-app.sh','debug','create','--boot','--after-boot','suspend'])
           if (!booted) throw new Error('CONTROLLED_BOOT_FAILURE')
           return 'SESSION='+session+'\n'
         }
@@ -262,10 +265,9 @@ test('CI 新会话先预检再编译，失败不执行套件，成功后只关�
         assert.ok(booted)
         throw new Error('CONTROLLED_AFTER_BOOT')
       }}), booted ? /CONTROLLED_AFTER_BOOT/ : /CONTROLLED_BOOT_FAILURE/)
-      assert.equal(calls.length,booted?4:1)
+      assert.equal(calls.length,booted?3:1)
       if (booted) {
-        assert.deepEqual(calls[1],['scripts/ios-app.sh','debug','suspend','--session',session])
-        assert.deepEqual(calls[2],['scripts/ios-app.sh','ios-build'])
+        assert.deepEqual(calls[1],['scripts/ios-app.sh','ios-build'])
       }
       const result=JSON.parse(fs.readFileSync(path.join(directory,'group-macos.json')))
       assert.equal(result.status,'failed')
@@ -283,12 +285,12 @@ test('CI 启动环境专项只运行新会话启动及关闭，拒绝旧回执�
     const {session,id,runId,bootLog}=environmentSession(p),calls=[]
     const command=async(_root,_program,args)=>{calls.push(args);return args[2]==='create'?'SESSION='+session+'\n':''}
     await executeGroup(p.root,directory,'macos',{command})
-    assert.deepEqual(calls,[['scripts/ios-app.sh','debug','create','--boot'],['scripts/ios-app.sh','debug','close','--session',session]])
+    assert.deepEqual(calls,[['scripts/ios-app.sh','debug','create','--boot','--after-boot','close']])
     assert.equal(reconcile(p.root,directory).status,'passed')
     assert.equal(reconcile(p.root,directory).completeCandidate,false)
     const receiptFile=path.join(directory,'simulator-boot/receipt.json'),reportFile=path.join(directory,'simulator-boot/environment.json')
     const originalReport=JSON.parse(fs.readFileSync(reportFile))
-    for (const change of [v=>v.source.commit='0'.repeat(40),v=>v.readiness.status='failed',v=>v.readiness.deviceState='Shutdown',
+    for (const change of [v=>delete v.lifecycle,v=>v.lifecycle.status='running',v=>v.lifecycle.action='unknown',v=>{v.lifecycle.action='suspend';v.lifecycle.commands.pop()},v=>v.lifecycle.commands.pop(),v=>v.lifecycle.simulatorId=runId,v=>v.lifecycle.commands[0].pid=0,v=>v.lifecycle.commands[0].program='wrong',v=>v.lifecycle.durationMs=120001,v=>v.lifecycle.startedAt=v.readiness.startedAt-1,v=>v.source.commit='0'.repeat(40),v=>v.readiness.status='failed',v=>v.readiness.deviceState='Shutdown',
       v=>delete v.readiness.initialDevice,v=>v.readiness.initialDevice.state='Booted',
       v=>v.readiness.initialDevice.udid=runId,v=>v.readiness.initialDevice.name='other',v=>delete v.readiness.tool,v=>v.readiness.commands[1].program='other-tool',v=>delete v.readiness.schema,v=>v.readiness.startupMode='split-boot',
       v=>v.readiness.commands.pop(),v=>v.readiness.commands[0].status='running',v=>v.readiness.commands[1].pid=0,
@@ -316,7 +318,7 @@ test('CI 启动环境专项只运行新会话启动及关闭，拒绝旧回执�
     assert.ok(!selectSuites(registry(p.root),'pull-request',['scripts/tests/ios-ci.test.mjs']).some(x=>x.name==='simulator-boot'))
     const borrowed=prepare(p,'simulator-boot','borrowed')
     await assert.rejects(executeGroup(p.root,borrowed.directory,'macos',{command,session}),/不能复用旧启动回执/)
-    assert.equal(calls.length,2,'拒绝旧会话前不启动、关闭或暂停该设备')
+    assert.equal(calls.length,1,'拒绝旧会话前不启动、关闭或暂停该设备')
   } finally {Object.defineProperty(process,'platform',original)}
 })
 
@@ -1744,12 +1746,11 @@ const r=require('node:child_process').spawnSync(${JSON.stringify(realGit)},proce
       process.env.PATH=path.join(p.root,'bin')+path.delimiter+originalPath
       let closes=0
       const command=async(_root,_program,args)=>{
-        if(args[2]==='create'){fs.writeFileSync(hot,'owned');return 'SESSION='+session+'\n'}
-        assert.equal(args[2],'close');assert.equal(args.at(-1),session);closes++
+        assert.equal(args[2],'create');assert.equal(args.at(-1),'close');fs.writeFileSync(hot,'owned');closes++
         if(mode==='close-failed')throw new Error('CONTROLLED_CLOSE_FAILURE')
         fs.unlinkSync(hot)
         if(mode==='source-changed')p.write('app/src/changed.ts','changed after closing')
-        return ''
+        return 'SESSION='+session+'\n'
       }
       if(mode==='passed') {
         await executeGroup(p.root,directory,'macos',{command})
@@ -1766,14 +1767,14 @@ test('CI 含原生业务先暂停再复用同一会话，环境专项不提前�
   try {
     const p=fixture(t),config=JSON.parse(fs.readFileSync(path.join(p.root,'config/ios-ci.json')))
     config.profiles.app.unshift('simulator-boot');p.write('config/ios-ci.json',config)
-    const {directory}=prepare(p,'app','quiesce'),{session}=environmentSession(p),calls=[]
+    const {directory}=prepare(p,'app','quiesce'),{session}=environmentSession(p,'suspend'),calls=[]
     await assert.rejects(executeGroup(p.root,directory,'macos',{command:async(_root,_program,args)=>{
       calls.push(args)
-      if(args[2]==='create')return 'SESSION='+session+'\n'
+      if(args[2]==='create'){assert.equal(args.at(-1),'suspend');return 'SESSION='+session+'\n'}
       if(args[2]==='suspend'||args[2]==='close'){assert.equal(args.at(-1),session);return ''}
       assert.equal(args[1],'ios-build');assert.equal(calls.some(a=>a[2]==='close'),false)
       throw new Error('CONTROLLED_AFTER_ENVIRONMENT')
     }}),/CONTROLLED_AFTER_ENVIRONMENT/)
-    assert.deepEqual(calls.map(a=>a[2]??a[1]),['create','suspend','ios-build','close'])
+    assert.deepEqual(calls.map(a=>a[2]??a[1]),['create','ios-build','close'])
   } finally {Object.defineProperty(process,'platform',original)}
 })
