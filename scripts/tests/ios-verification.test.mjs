@@ -1167,8 +1167,8 @@ else throw new Error('unexpected simulator command');
       directProgram=p.write('bin/direct-simctl',original.replace('a=process.argv.slice(2)',"a=['simctl',...process.argv.slice(2)]"))
       fs.chmodSync(directProgram,0o755)
       fs.writeFileSync(executable,original.replace('const save=()=>',"if(a[0]==='simctl')throw new Error('unexpected SDK wrapper after resolution');\nconst save=()=>"))
-      p.write('scripts/lib/ios-simctl.mjs',`export async function resolveSimctl(command) {
-        await command('xcodebuild',['-checkFirstLaunchStatus']);
+      p.write('scripts/lib/ios-simctl.mjs',`export async function resolveSimctl(command,{firstLaunch=true}={}) {
+        if(firstLaunch)await command('xcodebuild',['-checkFirstLaunchStatus']);
         return {program:${JSON.stringify(directProgram)},prefix:[],mode:'installed-binary'};
       }`)
     }
@@ -1215,6 +1215,17 @@ else throw new Error('unexpected simulator command');
       assert.ok(!calls.slice(bootIndex+1).some(a=>a[1]==='list'),'就绪后不重新启动查询客户端')
       const alive=spawnSync('ps',['-p',String(helperPid),'-o','stat='],{encoding:'utf8'})
       assert.equal(alive.status,0);assert.ok(!alive.stdout.trim().startsWith('Z'),'成功交接后的设备服务仍存活')
+      if(mode==='direct') {
+        const session=path.join(p.base,folders[0]),before=JSON.parse(fs.readFileSync(trace)).filter(a=>a[0]==='xcodebuild').length
+        const closed=p.run(['debug','close','--session',session],env)
+        assert.equal(closed.status,0,closed.stderr)
+        assert.equal(JSON.parse(fs.readFileSync(trace)).filter(a=>a[0]==='xcodebuild').length,before)
+        assert.equal(JSON.parse(fs.readFileSync(state)).device,null)
+        const invocations=fs.readdirSync(p.base).filter(n=>n.startsWith('ios-invocation-')).map(n=>JSON.parse(fs.readFileSync(path.join(p.base,n,'result.json'))))
+        const report=invocations.find(v=>v.mode==='debug close')
+        assert.equal(report.status,'passed');assert.equal(report.command.program,directProgram)
+        assert.ok(report.command.pid>1);assert.equal(report.command.status,'exited');assert.equal(report.command.exit,0)
+      }
     } else {
       assert.notEqual(child.status,0);assert.doesNotMatch(child.stdout,/^SESSION=|^EVIDENCE=/m)
       assert.equal(readiness.status,'failed');assert.equal(devices.device,null)

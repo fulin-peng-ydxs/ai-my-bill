@@ -24,7 +24,7 @@ function atLeast(current, expected) {
 }
 
 /** 冷启动前解析一次官方入口；不修改 SDK，不运行会安装组件/接受许可的包装路径。 */
-export async function resolveSimctl(command, { files=fs }={}) {
+export async function resolveSimctl(command, { files=fs, firstLaunch=true }={}) {
   const entry=(await command('xcrun',['--find','simctl'])).text.trim()
   if(!path.isAbsolute(entry) || !files.existsSync(entry))return fallback(entry,'entry-unavailable')
   const trusted = file => {
@@ -52,7 +52,7 @@ export async function resolveSimctl(command, { files=fs }={}) {
   // 只绕过已识别的官方版本检查 Shell：先复现其最低组件要求，未知包装器保持原语义。
   const current=(await command('/usr/libexec/PlistBuddy',['-c','Print :CFBundleVersion',plist])).text.trim()
   if(!atLeast(current,expected))throw new Error('CoreSimulator 组件低于所选 SDK 要求；请先在 Xcode 完成组件准备。')
-  await command('xcodebuild',['-checkFirstLaunchStatus'])
+  if(firstLaunch)await command('xcodebuild',['-checkFirstLaunchStatus'])
   if(!files.existsSync(installed) || !trusted(installed) ||
     !files.realpathSync(installed).startsWith(framework+'/Versions/') ||
     !magic.has(readPrefix(installed).subarray(0,4).toString('hex')))

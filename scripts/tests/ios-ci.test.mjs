@@ -1705,6 +1705,11 @@ test('CI 冷启动前解析官方 simctl 原生工具，校验版本、许可准
     }
     assert.ok(!calls.some(c=>c.includes('-runFirstLaunch')))
     assert.equal(closed.filter(f=>f===entry).length,1)
+    calls.length=0
+    if(['old','bad-version','bad-owner','writable','bad-target','outside'].includes(mode))
+      await assert.rejects(resolveSimctl(command,{files,firstLaunch:false}),/CoreSimulator/)
+    else await resolveSimctl(command,{files,firstLaunch:false})
+    assert.ok(!calls.some(c=>c[0]==='xcodebuild'),'关闭/暂停仍校验工具来源和版本，但不重复首次启动检查')
   }
 })
 

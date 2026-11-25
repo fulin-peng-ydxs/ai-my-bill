@@ -152,8 +152,19 @@ async function command(
         }, 100)
       child.once('error', reject)
       child.once('close', (code, signal) => resolve(code ?? 128 + (constants.signals[signal] ?? 0)))
-      if (child.pid) onStarted?.(child.pid,program)
+      if (child.pid) {
+        if(invocation) {
+          invocation.command={program,pid:child.pid,startedAt:Date.now(),status:'running'}
+          writeJson(path.join(invocation.run,'result.json'),{...invocation,deadline:deadline.snapshot()})
+        }
+        onStarted?.(child.pid,program)
+      }
     })
+    if(invocation?.command?.pid===child.pid) {
+      invocation.command.status='exited'
+      invocation.command.exit=status
+      invocation.command.completedAt=Date.now()
+    }
     deadline?.remaining()
     if (observer && !observationError) {
       try {
@@ -795,7 +806,7 @@ async function main(args) {
   const managing = ['suspend', 'close'].includes(args[1])
   if (managing) {
     await selectDeveloperTools()
-    simctlExecution=await resolveSimctl(command)
+    simctlExecution=await resolveSimctl(command,{firstLaunch:false})
   }
   const toolchain = managing ? '' : await nativeToolchain()
   if (args[1] === 'create') {
