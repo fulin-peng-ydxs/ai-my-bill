@@ -28,3 +28,15 @@ export function requireJobs(planStatus, checksStatus) {
   if (planStatus !== 'success' || checksStatus !== 'success')
     throw new Error(`CI 必需作业未成功：plan=${planStatus ?? 'missing'}, checks=${checksStatus ?? 'missing'}。`)
 }
+
+/** 公共 runner 的锁定包必须来自官方 HTTPS 源；不在依赖安装阶段才等待私有镜像超时。 */
+export function assertNpmSources(lock) {
+  for (const [name, entry] of Object.entries(lock.packages ?? {})) {
+    if (entry.resolved === undefined) continue
+    let url
+    try { url = new URL(entry.resolved) } catch { /* 统一拒绝，不输出可能含凭据的 URL。 */ }
+    if (!url || url.protocol !== 'https:' || url.hostname !== 'registry.npmjs.org' ||
+      url.port || url.username || url.password || url.search || url.hash)
+      throw new Error('CI 依赖下载源须为 npm 官方 HTTPS：' + name)
+  }
+}

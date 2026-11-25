@@ -13,7 +13,7 @@ import {
   changedPaths
 } from '../lib/ios-ci-plan.mjs'
 import { resultsDirectory, executeGroup, reconcile, runCommand } from '../lib/ios-ci-run.mjs'
-import { requestedScope, requireJobs } from '../lib/ios-ci.mjs'
+import { requestedScope, requireJobs, assertNpmSources } from '../lib/ios-ci.mjs'
 import { audit, auditDependencies, swiftLock } from '../lib/ios-audit.mjs'
 import { assertScriptReport, assertModePhases, requiredModePhases } from '../lib/ios-test-reports.mjs'
 import { checkDefinition } from '../lib/ios-checks.mjs'
@@ -224,6 +224,21 @@ function processFixture(t) {
   p.write('app/native-tests/scenarios.json', fs.readFileSync(path.join(repository, 'app/native-tests/scenarios.json'), 'utf8'))
   return p
 }
+
+test('CI 规划在安装前拒绝私有镜像、HTTP 与带凭据下载源，官方锁项和别名不误拦', t => {
+  const good = 'https://registry.npmjs.org/example/-/example-1.0.0.tgz'
+  for (const resolved of [good.replace('https:', 'http:'), good.replace('registry.npmjs.org', 'private.invalid'),
+    good.replace('https://', 'https://user:password@'), good + '?token=secret', good + '#fragment', 'not-a-url']) {
+    assert.throws(() => assertNpmSources({ packages: { 'node_modules/example': { resolved } } }), /官方 HTTPS/)
+  }
+  assert.doesNotThrow(() => assertNpmSources({ packages: {
+    '': { name: 'fixture' }, 'node_modules/alias': { name: 'example', resolved: good },
+    'node_modules/@scope/example': { resolved: 'https://registry.npmjs.org/@scope/example/-/example-1.0.0.tgz' }
+  } }))
+  const p = fixture(t)
+  p.write('app/package-lock.json', { packages: { 'node_modules/example': { resolved: 'http://private.invalid/example.tgz' } } })
+  assert.throws(() => createPlan(p.root, 'scripts'), /官方 HTTPS/, 'prepare 的共用规划器在安装前拒绝')
+})
 
 test('CI 登记复用现有执行器与专项；PR 自动、固定范围和非法请求拒绝', (t) => {
   const p = fixture(t),

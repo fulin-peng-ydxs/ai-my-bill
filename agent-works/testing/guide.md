@@ -169,6 +169,8 @@ SPM 准备机制见[构建架构](../architecture/architecture-decisions.md#离�
 
 #### 统一套件、按需 CI 与最终验收
 
+公共 runner 在规划阶段检查 App 锁文件的下载地址，只接受 npm 官方 HTTPS 源，拒绝私有镜像、HTTP、带凭据或查询参数的地址，避免到安装阶段才等待超时；变更下载地址时核实原版本及 integrity 不变，不据此升级依赖。
+
 [套件登记](../../config/ios-ci.json)统一维护本项目已有检查的执行类型、Linux/macOS 归属、固定范围、专项影响路径、测试文件排除及确有覆盖关系的去重。登记只接入离线 App 的现有执行器，不注册旧 Web、Java、PostgreSQL、服务器部署或尚未实现的真机性能能力。[CI 规划器](../../scripts/lib/ios-ci-plan.mjs)、[执行与对账](../../scripts/lib/ios-ci-run.mjs)由本地和远端同一入口调用；不查询历史绿色或计费，不继承旧提交的验收结论。
 
 验证范围分为日常局部、固定集合和变更专项。日常局部用 `debug check --file/--name` 或原生 `--case/--scenario` 选择目标；固定集合定义该集合一旦执行就必须完成的内容，不表示每次保存、提交或推送都执行。`change` 则按本轮变更选择固定工程集合及必要专项。本地 `plan` 只规划不执行，须显式调用 `run` 才开始检查；远端 PR 的 `prepare`、`run`、`result` 由工作流自动串联。
