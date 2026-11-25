@@ -1,0 +1,12 @@
+{
+  "schema": 1,
+  "exceptions": [
+    {
+      "path": "app/src/app/uiBaseline.json",
+      "rule": "generic-api-key",
+      "lineSha256": "71241cf0e2f15d4c72fa41f62f8ed1c094bd9f60982b966bea3ec9da4bb515ae",
+      "reason": "原页面设计基线 tokens.css 的 SHA-256 摘要，非凭据；仅允许此行原始字节。",
+      "expires": "2027-11-25"
+    }
+  ]
+}

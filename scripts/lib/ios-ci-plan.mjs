@@ -12,6 +12,9 @@ export const digest = (value) =>
     .update(typeof value === 'string' || Buffer.isBuffer(value) ? value : JSON.stringify(value))
     .digest('hex')
 export const registryPath = 'config/ios-ci.json'
+
+/** 远端常规检查不启动模拟器，也不接管真机签名/安装。 */
+export const remoteSuite = suite => ['secrets','quality','check','engineering','audit'].includes(suite.kind)
 const git = (root, ...args) =>
   execFileSync('git', args, {
     cwd: root,
@@ -41,7 +44,7 @@ export function registry(root) {
       !/^[a-z][a-z0-9-]*$/.test(name) ||
       !['linux', 'macos'].includes(s.runner) ||
       !s.description ||
-      !['secrets', 'check', 'engineering', 'full', 'ui', 'audit','scenario','installation'].includes(s.kind) ||
+      !['secrets', 'quality', 'check', 'engineering', 'full', 'ui', 'audit','scenario','installation','environment'].includes(s.kind) ||
       (s.kind === 'check' && s.check !== 'script-tests') ||
       (s.kind === 'engineering' && !['common', 'ios-build'].includes(s.mode)) ||
       (s.kind === 'full' && !['ios-smoke', 'ios-touch'].includes(s.mode)) ||
@@ -51,14 +54,14 @@ export function registry(root) {
             Boolean(s.scenario)
           : !Object.hasOwn(uiScenarios, s.scenario))) ||
       (s.kind === 'scenario' && ![...recoveryScenarios,...capacityScenarios.filter(x=>/^scale-\d+$/.test(x))].includes(s.scenario)) ||
-      ((['full', 'ui','scenario','installation'].includes(s.kind) || s.mode === 'ios-build') && s.runner !== 'macos')
+      ((['full', 'ui','scenario','installation','environment'].includes(s.kind) || s.mode === 'ios-build') && s.runner !== 'macos')
     )
       throw new Error('CI 套件定义无效：' + name)
   }
-  for (const p of ['scripts', 'app', 'final']) validateNames(r.profiles[p])
+  for (const p of ['scripts','common', 'app', 'final']) validateNames(r.profiles[p])
   validateNames(r.changeBase)
-  if (!r.changeBase.some(name => r.suites[name].kind === 'secrets'))
-    throw new Error('CI 变更范围缺少必需 secret 门禁。')
+  if (!r.changeBase.some(name => r.suites[name].kind === 'secrets') || !r.changeBase.some(name => r.suites[name].kind === 'quality'))
+    throw new Error('CI 变更范围缺少必需 secret/quality 门禁。')
   validateNames(r.onDemandSuites)
   const onDemand = names.filter(name => (r.suites[name].kind === 'full' && r.suites[name].mode === 'ios-touch') ||
     r.suites[name].kind === 'installation' ||
@@ -110,9 +113,10 @@ export function registry(root) {
     throw new Error('Swift UI 新用例未接入局部选择器及套件登记。')
   // 固定候选的最小能力不由可编辑登记任意降级；变更专项和单套件不会生成完整候选。
   for (const [profile, required] of Object.entries({
-    scripts: ['secrets', 'script-linux', 'script-macos'],
-    app: ['secrets', 'common', 'ios-build', 'ios-smoke'],
-    final: ['secrets', 'common', 'ios-build', 'ios-smoke', 'ios-touch', 'audit','scale-10000','scale-100000']
+    scripts: ['secrets', 'quality', 'script-linux', 'script-macos'],
+    common: ['secrets','quality','common','ios-build','audit'],
+    app: ['secrets', 'quality', 'common', 'ios-build', 'ios-smoke'],
+    final: ['secrets', 'quality', 'common', 'ios-build', 'ios-smoke', 'ios-touch', 'audit','scale-10000','scale-100000']
   })) {
     const selected = selectSuites(r, profile)
     for (const key of required)
@@ -157,6 +161,7 @@ export function sourceIdentity(root) {
     'scripts',
     '.github',
     registryPath,
+    'config/ios-security-exceptions.json',
     'package.json',
     '.nvmrc',
     'DESIGN.md',
@@ -195,7 +200,7 @@ export function sourceIdentity(root) {
 }
 
 /** 选中的专项可有多条理由；完整 touch 覆盖局部 UI，但局部不会反向替代完整。 */
-export function selectSuites(r, profile, files = []) {
+export function selectSuites(r, profile, files = [], {execution}={}) {
   if (!['change', 'pull-request', ...Object.keys(r.profiles), ...Object.keys(r.suites)].includes(profile))
     throw new Error('未知 CI 范围。')
   const change = ['change', 'pull-request'].includes(profile)
@@ -223,17 +228,23 @@ export function selectSuites(r, profile, files = []) {
         for (const name of fallback.suites) {chosen.add(name);reasons[name]=[...(reasons[name] ?? []),'unknown:'+file]}
     }
   }
-  if (profile === 'pull-request') for (const name of r.onDemandSuites) chosen.delete(name)
+  if (profile === 'pull-request' || (profile==='change' && execution==='local'))
+    for (const name of r.onDemandSuites) chosen.delete(name)
+  if (profile==='pull-request' || execution==='remote')
+    for (const name of chosen) if(!remoteSuite(r.suites[name]))chosen.delete(name)
   for (const name of chosen) for (const covered of r.supersedes[name] ?? []) chosen.delete(covered)
   return Object.keys(r.suites)
     .filter((name) => chosen.has(name))
     .map((name) => ({ name, ...r.suites[name], reasons: reasons[name] }))
 }
 
-export function createPlan(root, profile, { base, head } = {}) {
+export function createPlan(root, profile, { base, head, execution=profile==='pull-request'?'remote':'local' } = {}) {
+  if(!['local','remote'].includes(execution) || (profile==='pull-request' && execution!=='remote'))throw new Error('CI 执行位置无效。')
   assertNpmSources(JSON.parse(fs.readFileSync(path.join(root, 'app/package-lock.json'), 'utf8')))
   const r = registry(root),
     source = sourceIdentity(root)
+  if(execution==='remote' && !['pull-request','change','scripts','common','dependency-audit'].includes(profile) && !(r.suites[profile] && remoteSuite(r.suites[profile])))
+    throw new Error('远端仅运行常规检查；模拟器、完整候选及安装在本地执行。')
   head ??= source.commit
   if (head !== source.commit) throw new Error('被测 head 必须等于当前检出提交。')
   let files = [], range = null
@@ -245,19 +256,21 @@ export function createPlan(root, profile, { base, head } = {}) {
       files = changedPaths(root, range.mergeBase, head)
     }
   }
-  const suites = selectSuites(r, profile, files)
-  const deferred = profile === 'pull-request'
-    ? selectSuites(r, 'change', files).filter(s => r.onDemandSuites.includes(s.name))
-    : []
+  const suites = selectSuites(r, profile, files,{execution})
+  const changing=['change','pull-request'].includes(profile)
+  const localRequired=changing && execution==='remote'
+    ? selectSuites(r,'change',files,{execution:'local'}).filter(s=>!remoteSuite(s)) : []
+  const deferred=changing ? selectSuites(r,'change',files).filter(s=>!suites.some(x=>x.name===s.name)) : []
   const plan = {
     schema: 1,
     profile,
+    execution,
     source,
     range,
     registryHash: digest(r),
     files,
     suites,
-    ...(profile === 'pull-request' ? { deferred } : {})
+    ...(changing ? {deferred,localRequired} : {})
   }
   return { ...plan, id: digest(plan) }
 }
@@ -281,7 +294,7 @@ export function executionMatrix(plan) {
 
 /** 在执行和总对账时重新规划，不接受手填轻量范围、旧源码或删掉必跑项的计划。 */
 export function assertPlan(root, plan) {
-  const current = createPlan(root, plan.profile, plan.range ?? {})
+  const current = createPlan(root, plan.profile, {...(plan.range ?? {}),execution:plan.execution})
   if (JSON.stringify(current) !== JSON.stringify(plan))
     throw new Error('CI 计划、源码、登记或变更范围已失效。')
   return current

@@ -1,3 +1,4 @@
+import { localGate } from '../lib/ios-local-gate.mjs'
 import { coverageReport } from '../lib/ios-coverage.mjs'
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
@@ -7,6 +8,7 @@ import path from 'node:path'
 import { execFileSync, spawnSync, spawn } from 'node:child_process'
 import {
   createPlan,
+  digest,
   assertPlan,
   registry,
   selectSuites,
@@ -18,8 +20,10 @@ import { audit, auditDependencies, swiftLock } from '../lib/ios-audit.mjs'
 import { assertScriptReport, assertModePhases, requiredModePhases } from '../lib/ios-test-reports.mjs'
 import { checkDefinition } from '../lib/ios-checks.mjs'
 import { requireEvidence } from '../lib/ios-verification.mjs'
-import { processCleanup } from '../lib/ios-processes.mjs'
+import { processCleanup, finishCleanup } from '../lib/ios-processes.mjs'
 import { commandScope } from '../lib/ios-process-scope.mjs'
+import { resolveSimctl } from '../lib/ios-simctl.mjs'
+import { assertBootStatus } from '../lib/ios-boot-proof.mjs'
 
 const repository = new URL('../../', import.meta.url).pathname
 
@@ -87,17 +91,17 @@ test('CI 启动入口与共享消费者选择必要专项，测试文件和局�
     assert.ok(!names.includes('touch'))
   }
   for (const name of ['ProductCombobox', 'NameSuggestionCombobox'])
-    assert.deepEqual(selected(`app/src/components/${name}.vue`), ['secrets', 'app-common', 'ui-entry', 'ui-personal', 'scale-10000', 'scale-100000'])
-  assert.deepEqual(selected('app/src/components/DictionaryFilterPicker.vue'), ['secrets', 'app-common', 'ui-query', 'ui-reports', 'ui-report-dimensions', 'scale-10000', 'scale-100000'])
-  assert.deepEqual(selected('app/src/components/ComboboxField.spec.ts'), ['secrets', 'app-common'])
-  assert.deepEqual(selected('app/src/stores/bootstrap.spec.ts'), ['secrets', 'app-common'])
+    assert.deepEqual(selected(`app/src/components/${name}.vue`), ['secrets', 'app-common', 'ui-entry', 'ui-personal', 'scale-10000', 'scale-100000', 'workflow-quality'])
+  assert.deepEqual(selected('app/src/components/DictionaryFilterPicker.vue'), ['secrets', 'app-common', 'ui-query', 'ui-reports', 'ui-report-dimensions', 'scale-10000', 'scale-100000', 'workflow-quality'])
+  assert.deepEqual(selected('app/src/components/ComboboxField.spec.ts'), ['secrets', 'app-common', 'workflow-quality'])
+  assert.deepEqual(selected('app/src/stores/bootstrap.spec.ts'), ['secrets', 'app-common', 'workflow-quality'])
 })
 
 test('T14 单测变更不触发原生交互专项，实现和混合变更仍选中',t => {
   const r = registry(fixture(t).root)
   const selected = files => selectSuites(r,'change',files).map(s => s.name)
   for (const file of ['app/src/platform/textScale','app/src/platform/appearance','app/src/composables/useKeyboardViewport']) {
-    assert.deepEqual(selected([file+'.spec.ts']),['secrets','app-common'],file)
+    assert.deepEqual(selected([file+'.spec.ts']),['secrets','app-common', 'workflow-quality'],file)
     assert.ok(selected([file+'.ts']).includes('ui-ios-interaction'),file)
     assert.ok(selected([file+'.spec.ts',file+'.ts']).includes('ui-ios-interaction'),file)
   }
@@ -217,6 +221,26 @@ function prepare(p, profile = 'secrets', suffix = 'result', range) {
   return { plan, directory }
 }
 
+function environmentSession(p,action='close') {
+    const id='11111111-1111-4111-8111-111111111111',runId='22222222-2222-4222-8222-222222222222'
+    const session=path.join(p.root,'.local/ios/tmp/ai-agent/ios-debug-fixture')
+    const context=p.write('.local/ios/tmp/ai-agent/ios-debug-fixture/test-context.json',{
+      kind:'ios-debug',schema:1,state:action==='close'?'closed':'open',appId:'com.mybill.offline',simulatorId:id,runId,name:'我的账单调试-'+runId})
+    fs.chmodSync(context,0o600)
+    const now=Date.now(),r={schema:3,startupMode:'bootstatus-b',tool:{program:'xcrun',prefix:['simctl'],mode:'sdk-wrapper'},scope:'environment',status:'passed',deviceState:'Booted',simulatorId:id,runId,
+      initialDevice:{udid:id,name:'我的账单调试-'+runId,state:'Shutdown',isAvailable:true,deviceTypeIdentifier:'com.apple.CoreSimulator.SimDeviceType.iPhone-14-Pro-Max'},
+      environment:JSON.stringify({sdk:'27.0',xcode:'Xcode 27.0',runtime:'TEST'}),budgetMs:120000,startedAt:now-5,completedAt:now,elapsedMs:5,commands:[
+        {stage:'verify-device',program:'xcrun',status:'passed',pid:200501,startedAt:now-5,completedAt:now-2},
+        {stage:'boot-ready',program:'xcrun',status:'passed',pid:200502,startedAt:now-2,completedAt:now}]}
+    p.write('.local/ios/tmp/ai-agent/ios-debug-fixture/boot-readiness.json',r)
+    const bootLog='Monitoring boot status for owned ('+id+').\nStatus=4294967295, isTerminal=YES, Elapsed=00:01.\n\tFinished\n'
+    p.write('.local/ios/tmp/ai-agent/ios-debug-fixture/boot-status.log',bootLog)
+    p.write('.local/ios/tmp/ai-agent/ios-debug-fixture/boot-lifecycle.json',{
+      schema:1,action,status:'passed',runId,simulatorId:id,budgetMs:120000,startedAt:now,completedAt:now,durationMs:0,
+      commands:(action==='close'?['delete']:['shutdown']).map(operation=>({operation,status:'passed',exit:0,pid:200503,program:'xcrun',startedAt:now,completedAt:now}))})
+    return {session,id,runId,bootLog}
+}
+
 test('CI 新会话先预检再编译，失败不执行套件，成功后只关闭同一会话', async t => {
   const original = Object.getOwnPropertyDescriptor(process, 'platform')
   Object.defineProperty(process, 'platform', { value:'darwin' })
@@ -228,9 +252,12 @@ test('CI 新会话先预检再编译，失败不执行套件，成功后只关�
       await assert.rejects(executeGroup(p.root,directory,'macos',{command:async (_root,_program,args) => {
         calls.push(args)
         if (args[2]==='create') {
-          assert.deepEqual(args,['scripts/ios-app.sh','debug','create','--boot'])
+          assert.deepEqual(args,['scripts/ios-app.sh','debug','create','--boot','--after-boot','suspend'])
           if (!booted) throw new Error('CONTROLLED_BOOT_FAILURE')
           return 'SESSION='+session+'\n'
+        }
+        if (args[2]==='suspend') {
+          assert.deepEqual(args,['scripts/ios-app.sh','debug','suspend','--session',session]);return ''
         }
         if (args[2]==='close') {
           assert.deepEqual(args,['scripts/ios-app.sh','debug','close','--session',session])
@@ -240,12 +267,59 @@ test('CI 新会话先预检再编译，失败不执行套件，成功后只关�
         throw new Error('CONTROLLED_AFTER_BOOT')
       }}), booted ? /CONTROLLED_AFTER_BOOT/ : /CONTROLLED_BOOT_FAILURE/)
       assert.equal(calls.length,booted?3:1)
-      if (booted) assert.deepEqual(calls[1],['scripts/ios-app.sh','ios-build'])
+      if (booted) {
+        assert.deepEqual(calls[1],['scripts/ios-app.sh','ios-build'])
+      }
       const result=JSON.parse(fs.readFileSync(path.join(directory,'group-macos.json')))
       assert.equal(result.status,'failed')
       assert.match(result.error,booted?/CONTROLLED_AFTER_BOOT/:/CONTROLLED_BOOT_FAILURE/)
       if (!booted) assert.equal(fs.existsSync(path.join(directory,'native-build')),false)
     }
+  } finally {Object.defineProperty(process,'platform',original)}
+})
+
+test('CI 启动环境专项只运行新会话启动及关闭，拒绝旧回执和错误来源且不冒充 App 验收', async t => {
+  const original=Object.getOwnPropertyDescriptor(process,'platform')
+  Object.defineProperty(process,'platform',{value:'darwin'})
+  try {
+    const p=fixture(t), {directory}=prepare(p,'simulator-boot','environment')
+    const {session,id,runId,bootLog}=environmentSession(p),calls=[]
+    const command=async(_root,_program,args)=>{calls.push(args);return args[2]==='create'?'SESSION='+session+'\n':''}
+    await executeGroup(p.root,directory,'macos',{command})
+    assert.deepEqual(calls,[['scripts/ios-app.sh','debug','create','--boot','--after-boot','close']])
+    assert.equal(reconcile(p.root,directory).status,'passed')
+    assert.equal(reconcile(p.root,directory).completeCandidate,false)
+    const receiptFile=path.join(directory,'simulator-boot/receipt.json'),reportFile=path.join(directory,'simulator-boot/environment.json')
+    const originalReport=JSON.parse(fs.readFileSync(reportFile))
+    for (const change of [v=>delete v.lifecycle,v=>v.lifecycle.status='running',v=>v.lifecycle.action='unknown',v=>{v.lifecycle.action='suspend';v.lifecycle.commands[0].operation='shutdown'},v=>v.lifecycle.commands.pop(),v=>v.lifecycle.simulatorId=runId,v=>v.lifecycle.commands[0].pid=0,v=>v.lifecycle.commands[0].program='wrong',v=>v.lifecycle.durationMs=120001,v=>v.lifecycle.startedAt=v.readiness.startedAt-1,v=>v.source.commit='0'.repeat(40),v=>v.readiness.status='failed',v=>v.readiness.deviceState='Shutdown',
+      v=>delete v.readiness.initialDevice,v=>v.readiness.initialDevice.state='Booted',
+      v=>v.readiness.initialDevice.udid=runId,v=>v.readiness.initialDevice.name='other',v=>delete v.readiness.tool,v=>v.readiness.commands[1].program='other-tool',v=>delete v.readiness.schema,v=>v.readiness.startupMode='split-boot',
+      v=>v.readiness.commands.pop(),v=>v.readiness.commands[0].status='running',v=>v.readiness.commands[1].pid=0,
+      v=>v.readiness.commands[1].startedAt=v.readiness.startedAt-1,
+      v=>v.readiness.elapsedMs=120001,v=>v.readiness.scope='partial',v=>v.readiness.environment='{}',v=>v.readiness.completedAt=Date.now()+60000]) {
+      const value=structuredClone(originalReport);change(value);fs.writeFileSync(reportFile,JSON.stringify(value))
+      const receipt=JSON.parse(fs.readFileSync(receiptFile));receipt.reports.find(x=>x.path==='environment.json').hash=digest(fs.readFileSync(reportFile))
+      fs.writeFileSync(receiptFile,JSON.stringify(receipt))
+      assert.equal(reconcile(p.root,directory).status,'incomplete')
+    }
+    fs.writeFileSync(reportFile,JSON.stringify(originalReport))
+    const rawLog=path.join(directory,'simulator-boot/boot-status.log')
+    for(const text of ['Monitoring boot status for owned ('+id+').\nStatus=0, isTerminal=NO\n',bootLog.replace(id,runId),bootLog]) {
+      fs.writeFileSync(rawLog,text)
+      const receipt=JSON.parse(fs.readFileSync(receiptFile))
+      for(const name of ['environment.json','boot-status.log'])receipt.reports.find(x=>x.path===name).hash=digest(fs.readFileSync(path.join(directory,'simulator-boot',name)))
+      fs.writeFileSync(receiptFile,JSON.stringify(receipt))
+      assert.equal(reconcile(p.root,directory).status,text===bootLog?'passed':'incomplete')
+    }
+    const selected=selectSuites(registry(p.root),'change',['scripts/lib/ios-processes.mjs'],{execution:'local'}).map(x=>x.name)
+    assert.deepEqual(selected,['secrets','scripts','simulator-boot','scripts-macos', 'workflow-quality'])
+    assert.equal(selected.filter(name=>registry(p.root).suites[name].runner==='macos')[0],'simulator-boot','冷启动预检必须先于工具压力回归')
+    for(const file of ['scripts/lib/ios-process-launch.sh','scripts/lib/ios-host-diagnostics.py','scripts/lib/ios-app-full.sh','scripts/lib/ios-simctl.mjs','scripts/lib/ios-boot-proof.mjs','scripts/lib/ios-ci-run.mjs'])
+      assert.ok(selectSuites(registry(p.root),'change',[file],{execution:'local'}).some(x=>x.name==='simulator-boot'),file)
+    assert.ok(!selectSuites(registry(p.root),'pull-request',['scripts/tests/ios-ci.test.mjs']).some(x=>x.name==='simulator-boot'))
+    const borrowed=prepare(p,'simulator-boot','borrowed')
+    await assert.rejects(executeGroup(p.root,borrowed.directory,'macos',{command,session}),/不能复用旧启动回执/)
+    assert.equal(calls.length,1,'拒绝旧会话前不启动、关闭或暂停该设备')
   } finally {Object.defineProperty(process,'platform',original)}
 })
 
@@ -285,7 +359,7 @@ test('CI 登记复用现有执行器与专项；PR 自动、固定范围和非�
   )
   const full = selectSuites(r, 'final').map((s) => s.name)
   assert.ok(full.includes('touch') && full.includes('dependency-audit'))
-  for (const profile of ['scripts', 'app', 'final', 'dependency-audit', 'recovery', 'scale-10000', 'scale-100000']) {
+  for (const profile of ['scripts','common','dependency-audit']) {
     assert.equal(
       requestedScope('workflow_dispatch', { inputs: { verification: profile } }).profile,
       profile
@@ -333,7 +407,8 @@ test('PR 计划使用实际 head 和共同祖先，按变更专项且完整触�
   const plan = createPlan(p.root, selected.profile, selected)
   assert.deepEqual(plan.range, { base, head, mergeBase: p.base })
   assert.deepEqual(plan.files, ['app/src/views/LedgerView.vue'])
-  assert.ok(plan.suites.some(s => s.name === 'ui-query-input'))
+  assert.ok(plan.localRequired.some(s => s.name === 'ui-query-input'))
+  assert.ok(!plan.suites.some(s=>s.kind==='ui'))
   assert.ok(plan.suites.some(s => s.name === 'app-common'))
   assert.ok(plan.deferred.some(s => s.name === 'scale-10000'))
   assert.ok(plan.deferred.some(s => s.name === 'scale-100000'))
@@ -346,11 +421,12 @@ test('PR 计划使用实际 head 和共同祖先，按变更专项且完整触�
   for (const sha of [undefined, '', '0'.repeat(40), 'not-a-sha'])
     assert.throws(() => requestedScope('pull_request', { pull_request: { base: { sha }, head: { sha: head } } }), /完整/)
   const r = registry(p.root)
-  assert.deepEqual(selectSuites(r, 'pull-request', ['agent-works/note.md']).map(s => s.name), ['secrets'])
+  assert.deepEqual(selectSuites(r, 'pull-request', ['agent-works/note.md']).map(s => s.name), ['secrets', 'workflow-quality'])
   const scripts = selectSuites(r, 'pull-request', ['scripts/lib/ios-ci.mjs']).map(s => s.name)
-  assert.deepEqual(scripts, ['secrets', 'scripts', 'scripts-macos'])
+  assert.deepEqual(scripts, ['secrets', 'scripts', 'scripts-macos', 'workflow-quality'])
   const change = createPlan(p.root, 'change', { base: p.base, head })
-  assert.ok(change.suites.some(s => s.name === 'scale-10000'), '显式 change 保留容量')
+  assert.ok(change.deferred.some(s => s.name === 'scale-10000'), '日常本地 change 将容量留给明确请求/最终验收')
+  assert.ok(change.suites.some(s=>s.name==='ui-query-input'),'本地按变更仍选择必要 UI 专项')
   assert.ok(selectSuites(r, 'final').some(s => s.name === 'touch'))
   r.onDemandSuites.push('app-common')
   p.write('config/ios-ci.json', r)
@@ -400,7 +476,7 @@ test('PR prepare 真实入口绑定事件源码，远端 result 缺少作业状�
   assert.equal(plan.source.commit, head)
   assert.deepEqual(plan.files, ['scripts/pr-example.mjs'])
   assert.match(fs.readFileSync(output, 'utf8'), /artifact=ios-ci-plan-2/)
-  const { directory } = prepare(p, 'secrets', 'remote-status')
+  const { directory } = prepare(p, 'secrets', 'remote-status',{execution:'remote'})
   await executeGroup(p.root, directory, 'linux')
   for (const status of ['', undefined]) {
     const missing = cli(['result', '--results', directory], {
@@ -439,10 +515,10 @@ test('CI 真实 Git 改名双向选择专项，普通文档和旧端不误触发
   for (const file of ['agent-works/notes/example.md', 'server/src/Old.java', 'web/src/Old.vue'])
     assert.deepEqual(
       selectSuites(r, 'change', [file]).map((s) => s.name),
-      ['secrets']
+      ['secrets', 'workflow-quality']
     )
   const scripts = selectSuites(r, 'change', ['scripts/lib/ios-ci-plan.mjs']).map((s) => s.name)
-  assert.deepEqual(scripts, ['secrets', 'scripts', 'scripts-macos'])
+  assert.deepEqual(scripts, ['secrets', 'scripts', 'scripts-macos', 'workflow-quality'])
   assert.throws(() => createPlan(p.root, 'change'), /完整 base/)
   assert.throws(() => createPlan(p.root, 'change', { base: '0'.repeat(40) }))
 })
@@ -614,7 +690,7 @@ test('CI 工作流 PR 自动、通用门禁始终对账，手动结果隔离且�
   assert.match(trigger, /push:\n    tags:/)
   assert.match(trigger, /pull_request:\n    types: \[opened, synchronize, reopened, ready_for_review, edited\]/)
   assert.doesNotMatch(trigger, /pull_request_target:|branches:|schedule:|paths:/)
-  const result = workflow.slice(workflow.indexOf('\n  result:'), workflow.indexOf('\n  # 只有最终'))
+  const result = workflow.slice(workflow.indexOf('\n  result:'))
   assert.match(result, /github.event_name == 'pull_request' && 'CI common result' \|\| format\('CI suite/)
   assert.match(result, /\n    if: always\(\)\n    needs: \[plan, checks\]/)
   assert.match(result, /IOS_CI_PLAN_STATUS: \$\{\{ needs.plan.result \}\}/)
@@ -628,13 +704,14 @@ test('CI 工作流 PR 自动、通用门禁始终对账，手动结果隔离且�
   assert.match(workflow, /name: Verify pinned Apple toolchain\n        if: matrix.group == 'macos'/)
   assert.match(workflow, /run --results "\$IOS_CI_RESULTS" --group "\$IOS_CI_GROUP"/)
   assert.match(workflow, /result --results "\$IOS_CI_RESULTS"/)
-  assert.match(workflow, /needs.result.outputs.complete == 'true'/)
-  assert.match(workflow, /needs.checks.result == 'success'/)
+  assert.doesNotMatch(workflow, /app-baseline-v1:|ios-ci\/final|ios-ci\/scale-|ios-ci\/recovery/)
+  assert.match(trigger, /- common/)
+  assert.doesNotMatch(trigger, /- final|- recovery|- scale-/)
   assert.match(workflow, /include-hidden-files: true/)
   assert.match(workflow, /\.local\/ios\/tmp\/ai-agent\/ios-check-\*\/check\.log/)
   assert.match(workflow, /\.local\/ios\/tmp\/ai-agent\/native-\*\/\*\.log/)
   assert.match(workflow, /\.local\/ios\/tmp\/ai-agent\/native-\*\/app-tests\.json/)
-  assert.match(workflow, /\.local\/ios\/tmp\/ai-agent\/ios-debug-\*\/boot-readiness\.json/)
+  assert.match(workflow, /\.local\/ios\/tmp\/ai-agent\/ios-debug-\*\/boot-\*\.json/)
   assert.doesNotMatch(workflow, /GH_TOKEN:|actions: read|postgres|setup-java|--prefix (web|server)/)
   assert.ok(
     fs
@@ -718,7 +795,7 @@ test('CI 真实内外层命令统一清理嵌套独立进程组，超时/取消�
           const p = processFixture(t), ready = path.join(p.root, 'child.pid'), leaderFile = path.join(p.root, 'leader.json')
           const descendant = `process.on('SIGTERM',()=>{});process.on('SIGINT',()=>{});require('node:fs').writeFileSync(${JSON.stringify(ready)},String(process.pid));setInterval(()=>{},1000)`
           p.write('leader.cjs', `require('node:fs').writeFileSync(${JSON.stringify(leaderFile)},JSON.stringify({pid:process.pid,parent:process.ppid}));${mode === 'outer-force' ? "process.on('SIGTERM',()=>{});" : ''}require('node:child_process').spawn(process.execPath,['-e',${JSON.stringify(descendant)}],{detached:true,stdio:'ignore'});setInterval(()=>{},1000)`)
-          // 使用真实 ios-app.mjs 的 command/信号处理，只替换本轮工程检查体；不构建、不接触模拟器。
+          // 使用真实 command/信号处理。外层 500ms 留出快照时间，仍先于内层 10s 强杀；预检 1100ms 不属于清理宽限。
           p.write('scripts/lib/ios-app-full.sh',
             (mode === 'outer-force' ? "node -e 'setTimeout(()=>{},1100)'\n" : '') + 'exec node leader.cjs\n')
           const env = { ...process.env, PATH: path.dirname(process.execPath) + path.delimiter + process.env.PATH }
@@ -729,7 +806,7 @@ test('CI 真实内外层命令统一清理嵌套独立进程组，超时/取消�
             const clock = p.write('.local/short-check-clock.mjs', `const original=globalThis.setTimeout;globalThis.setTimeout=(fn,ms,...args)=>original(fn,ms>60000?900:ms,...args);\n`)
             args = [...(mode === 'inner-timeout' ? ['--import', clock] : []), 'scripts/ios-app.mjs', 'common']
           } else {
-            const worker = p.write('worker.mjs', `import {runCommand} from ${JSON.stringify(new URL('../lib/ios-ci-run.mjs', import.meta.url).href)};try{await runCommand(${JSON.stringify(p.root)},process.execPath,['scripts/ios-app.mjs','common'],${JSON.stringify(path.join(p.root, 'outer.log'))},${mode.endsWith('timeout') ? 900 : 10000},${mode === 'outer-force' ? '{cleanupGraceMs:60}' : '{}'});process.exitCode=2}catch{process.exitCode=1}`)
+            const worker = p.write('worker.mjs', `import {runCommand} from ${JSON.stringify(new URL('../lib/ios-ci-run.mjs', import.meta.url).href)};try{await runCommand(${JSON.stringify(p.root)},process.execPath,['scripts/ios-app.mjs','common'],${JSON.stringify(path.join(p.root, 'outer.log'))},${mode.endsWith('timeout') ? 900 : 10000},${mode === 'outer-force' ? '{cleanupGraceMs:500}' : '{}'});process.exitCode=2}catch{process.exitCode=1}`)
             args = [worker]
           }
           const worker = spawn(process.execPath, args, { cwd: p.root, env, detached: true, stdio: 'ignore' })
@@ -737,7 +814,7 @@ test('CI 真实内外层命令统一清理嵌套独立进程组，超时/取消�
           try {
             await waitForProcessState(() => fs.existsSync(ready))
             const child = Number(fs.readFileSync(ready)), leader = JSON.parse(fs.readFileSync(leaderFile))
-            assert.ok(isRunningProcess(child))
+            assert.ok(isRunningProcess(child),'取消前子进程已退出；worker exit='+worker.exitCode+'；outer='+ (fs.existsSync(path.join(p.root,'outer.log'))?fs.readFileSync(path.join(p.root,'outer.log'),'utf8').slice(-4000):'no log'))
             assert.equal(Number(spawnSync('ps', ['-p', String(child), '-o', 'pgid='], { encoding: 'utf8' }).stdout.trim()), child,
               '后代实际另起进程组')
             if (mode.endsWith('SIGTERM') || mode === 'outer-force') worker.kill('SIGTERM')
@@ -812,7 +889,8 @@ test('CI 取消后新补偿组仍归外层清理，登记前后中断不放行�
           const executionBudget = mode === 'timeout' ? 5000 : 10000
           const xcrun = p.write('bin/xcrun', `#!${process.execPath}
 const fs=require('node:fs'),a=process.argv.slice(2);
-if(a[0]==='--sdk'){${mode === 'slow-preflight' ? 'Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,650);' : ''}console.log('27.0')}
+if(a[0]==='--find')console.log('/controlled/sdk/usr/bin/simctl');
+else if(a[0]==='--sdk'){${mode === 'slow-preflight' ? 'Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,650);' : ''}console.log('27.0')}
 else if(a[2]==='runtimes')console.log(JSON.stringify({runtimes:[{identifier:'com.apple.CoreSimulator.SimRuntime.iOS-27-0',isAvailable:true,buildversion:'TEST'}]}));
 else if(a[1]==='create'){fs.writeFileSync(${JSON.stringify(initial)},JSON.stringify({pid:process.pid,parent:process.ppid}));setInterval(()=>{},1000)}
 else if(a[2]==='devices'){process.on('SIGTERM',()=>{});fs.writeFileSync(${JSON.stringify(late)},String(process.pid));setInterval(()=>{},1000)}
@@ -846,6 +924,7 @@ fs.renameSync=(from,to)=>{
           const workerFile = p.write('worker.mjs', `
 import fs from 'node:fs';
 import {runCommand} from ${JSON.stringify(new URL('../lib/ios-ci-run.mjs', import.meta.url).href)};
+import {errorMessage} from ${JSON.stringify(new URL('../lib/ios-errors.mjs', import.meta.url).href)};
 ${mode === 'seal-failure' ? `const original=fs.writeFileSync;
 fs.writeFileSync=(file,...args)=>{
   if(String(file).includes('/ios-process-') && String(file).includes('/.closed-') && fs.existsSync(${JSON.stringify(late)})){
@@ -856,7 +935,7 @@ fs.writeFileSync=(file,...args)=>{
 };` : ''}
 const started=Date.now();
 try{await runCommand(${JSON.stringify(p.root)},'/usr/bin/env',${JSON.stringify(args)},${JSON.stringify(path.join(p.root, 'outer.log'))},${executionBudget},{cleanupGraceMs:500});process.exitCode=2}
-catch(error){fs.writeFileSync(${JSON.stringify(workerResult)},JSON.stringify({error:error.message,elapsed:Date.now()-started}));process.exitCode=1}
+catch(error){fs.writeFileSync(${JSON.stringify(workerResult)},JSON.stringify({error:errorMessage(error),elapsed:Date.now()-started}));process.exitCode=1}
 `)
           const worker = spawn(process.execPath, [workerFile], { cwd: p.root, detached: true, stdio: 'ignore' })
           const ended = new Promise((resolve, reject) => { worker.once('error', reject); worker.once('close', resolve) })
@@ -980,6 +1059,129 @@ test('CI 共享清理器不延长重复停止的宽限，完成后旧回调失�
     if (originalPath === undefined) delete process.env.PATH
     else process.env.PATH = originalPath
   }
+})
+
+test('CI 清理直接发送实际信号，拒绝真实 EPERM，保留执行主因和清理原因', () => {
+  const original=process.kill, calls=[]
+  try {
+    process.kill=(pid,signal)=>{
+      calls.push([pid,signal])
+      if (signal===0) throw Object.assign(new Error('probe permission denied'),{code:'EPERM'})
+      return true
+    }
+    const cleanup=processCleanup(200201,{graceMs:0,scope:{seal(){},groups(){return new Set([200201])},finish(){}}})
+    cleanup.finish()
+    assert.deepEqual(calls,[[-200201,'SIGKILL']], '权限探测不能误拦实际清理')
+    process.kill=()=>{throw Object.assign(new Error('real permission denied'),{code:'EPERM'})}
+    const denied=processCleanup(200202,{graceMs:0,scope:{seal(){},groups(){return new Set([200202])},finish(){}}})
+    const primary=new Error('BOOT_EXECUTION_TIMEOUT')
+    assert.throws(()=>finishCleanup(denied,primary),error=>{
+      assert.ok(error instanceof AggregateError)
+      assert.equal(error.errors[0],primary)
+      assert.match(error.errors[1].message,/200202.*SIGKILL.*EPERM/)
+      return true
+    })
+  } finally {process.kill=original}
+})
+
+test('CI 设备服务成功交接仅释放本组，取消时仍强杀且不误清理其他任务', () => {
+  const original=process.kill,calls=[]
+  try {
+    process.kill=(pid,signal)=>{calls.push([pid,signal]);return true}
+    const scope={seal(){},groups(){return new Set([200301,200302])},finish(){}}
+    processCleanup(200301,{graceMs:0,scope}).finish({handoff:true})
+    assert.deepEqual(calls,[[-200302,'SIGKILL']])
+    calls.length=0
+    const cancelled=processCleanup(200301,{graceMs:0,scope})
+    cancelled.stop('SIGKILL');cancelled.finish({handoff:true})
+    assert.ok(calls.some(([pid,signal])=>pid===-200301&&signal==='SIGKILL'),'取消不能以交接跳过清理')
+    assert.ok(calls.every(([pid])=>[-200301,-200302].includes(pid)))
+  } finally {process.kill=original}
+})
+
+test('CI 慢快照计入既有宽限，内外层失败不被快照故障覆盖', {timeout:10000}, async t => {
+  const p=processFixture(t), original=process.env.PATH
+  const ps=p.write('bin/ps', `#!${process.execPath}
+const {spawnSync}=require('node:child_process');
+Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,650);
+const r=spawnSync('/bin/ps',process.argv.slice(2),{stdio:'inherit'});process.exit(r.status??1);
+`)
+  fs.chmodSync(ps,0o755)
+  process.env.PATH=path.join(p.root,'bin')+path.delimiter+original
+  try {
+    const started=Date.now()
+    await assert.rejects(runCommand(p.root,process.execPath,['-e','setInterval(()=>{},1000)'],path.join(p.root,'slow.log'),100),/命令失败或取消/)
+    assert.ok(Date.now()-started<3000,'慢快照不增加第二轮清理宽限')
+    // 清理前置失败仍不能把命令主错误（exit=7）抹掉；分别覆盖外层和实际内层 CLI。
+    p.write('bin/ps','#!/bin/sh\nexit 1\n');fs.chmodSync(ps,0o755)
+    await assert.rejects(runCommand(p.root,process.execPath,['-e','process.exit(7)'],path.join(p.root,'failed.log'),1000),error=>{
+      assert.ok(error instanceof AggregateError)
+      assert.match(error.errors[0].message,/exit=7/)
+      assert.match(error.errors[1].message,/无法读取受管进程树/)
+      return true
+    })
+    p.write('scripts/lib/ios-app-full.sh','exit 7\n')
+    const run=spawnSync(process.execPath,['scripts/ios-app.mjs','common'],{cwd:p.root,env:process.env,encoding:'utf8',timeout:3000})
+    assert.equal(run.status,1,run.stderr)
+    assert.match(run.stderr,/exit=7/);assert.match(run.stderr,/无法读取受管进程树/)
+  } finally {process.env.PATH=original}
+})
+
+test('CI 放行帧不等待父流 EOF，半帧和非法帧拒绝，启动轨迹不污染命令输出', {timeout:12000}, async t => {
+  for(const shellGate of fs.existsSync('/bin/zsh')?[false,true]:[false])
+  for(const frame of ['GO\n','fragmented','G','','GO\nextra']) {
+    const child=spawn(shellGate?'/bin/zsh':process.execPath,[...(shellGate?['-f']:[]),path.join(repository,'scripts/lib/ios-process-launch.'+(shellGate?'sh':'mjs')),process.execPath,'-e',"console.log('CONTROLLED_GATE_TOOL '+process.pid)"],
+      {detached:true,stdio:['ignore','pipe','pipe','pipe','pipe']})
+    let stdout='',stderr='',trace=''
+    child.stdout.on('data',b=>stdout+=b);child.stderr.on('data',b=>stderr+=b);child.stdio[4].on('data',b=>trace+=b)
+    child.stdio[4].end()
+    child.stdio[3].allowHalfOpen=true
+    const ended=new Promise((resolve,reject)=>{child.once('error',reject);child.once('close',code=>resolve(code))})
+    try {
+      const valid=frame==='GO\n'||frame==='fragmented'
+      if(valid) {
+        if(frame==='fragmented') {
+          child.stdio[3].write('G');await waitForProcessState(()=>trace.includes('\"bytes\":1'))
+          child.stdio[3].write('O');await waitForProcessState(()=>trace.includes('\"bytes\":2'))
+          child.stdio[3].write('\n')
+        } else child.stdio[3].write(frame)
+        await waitForProcessState(()=>stdout.includes('CONTROLLED_GATE_TOOL'))
+        assert.equal(child.stdio[3].writableEnded,false,'实际父流尚未 EOF，工具已经启动')
+        child.stdio[3].end()
+      } else child.stdio[3].end(frame)
+      const code=await ended
+      assert.equal(code,valid?0:1,stderr)
+      if(valid) {assert.match(stdout,/^CONTROLLED_GATE_TOOL \d+\n$/);if(shellGate)assert.equal(stdout,'CONTROLLED_GATE_TOOL '+child.pid+'\n','macOS 放行后 exec 原位替换，不额外创建 Node 或改变进程组长')} else assert.equal(stdout,'')
+      const events=trace.trim().split('\n').map(JSON.parse)
+      assert.equal(events[0].stage,'waiting');assert.ok(events.every(v=>v.pid===child.pid&&v.uid===process.getuid()))
+      assert.equal(events.some(v=>v.stage==='started'),valid)
+    } finally {
+      child.stdio[3].destroy();killOwnedGroup(child.pid);await ended
+    }
+  }
+})
+
+test('CI 迟到启动轨迹不能复活已关闭登记', t => {
+  const p=fixture(t),scope=commandScope(p.root,{})
+  const directory=JSON.parse(scope.env.MYBILL_PROCESS_SCOPE).directory
+  scope.bind(200701);scope.noteLauncher({stage:'waiting',pid:200701})
+  scope.finish()
+  assert.equal(fs.existsSync(directory),false)
+  scope.noteLauncher({stage:'exited',pid:200701})
+  assert.equal(fs.existsSync(directory),false)
+})
+
+test('CI 诊断撤销信号通过真实命令入口清理子进程，预先撤销不启动命令', async t => {
+  const p=fixture(t),controller=new AbortController(),ready=path.join(p.root,'ready.pid')
+  const pending=runCommand(p.root,process.execPath,['-e',`require('node:fs').writeFileSync(${JSON.stringify(ready)},String(process.pid));setInterval(()=>{},1000)`],
+    path.join(p.root,'abort.log'),10000,{cleanupGraceMs:100,signal:controller.signal})
+  const rejected=assert.rejects(pending,/取消/)
+  await waitForProcessState(()=>fs.existsSync(ready))
+  const pid=Number(fs.readFileSync(ready));controller.abort();await rejected
+  await waitForProcessState(()=>!isRunningProcess(pid))
+  const log=path.join(p.root,'not-started.log')
+  await assert.rejects(runCommand(p.root,process.execPath,['-e','process.exit(0)'],log,1000,{signal:controller.signal}),/启动前已取消/)
+  assert.equal(fs.existsSync(log),false)
 })
 
 test('CI 活动进程登记按父子范围隔离，关闭后拒绝续建，错误令牌和链接不能越界', (t) => {
@@ -1148,7 +1350,7 @@ test('CI 纯单测和局部草稿组件不误选全部 UI，固定候选不能�
     r = registry(p.root)
   assert.deepEqual(
     selectSuites(r, 'change', ['app/src/composables/useLedgerDraft.spec.ts']).map((s) => s.name),
-    ['secrets', 'app-common']
+    ['secrets', 'app-common', 'workflow-quality']
   )
   const draft = selectSuites(r, 'change', ['app/src/components/DraftBackupNotice.vue']).map(
     (s) => s.name
@@ -1413,4 +1615,360 @@ test('T12 CSV 索引迁移和受管续作分别进入原生与脚本套件，不
     assert.ok(names.includes('scripts')&&names.includes('scripts-macos'),file)
     assert.ok(!names.includes('touch'),file)
   }
+})
+
+
+test('CI 预热宿主观察器保留主退出码，仅记录本轮树的实际 PGID 和 UID', {timeout:15000}, async t => {
+  for(const managed of [false,true])await t.test(managed?'观察至管理完成':'启动即停止',async t=>{
+  const p=fixture(t)
+  const code=`
+    const fs=require('node:fs'),path=require('node:path');
+    (async()=>{
+      const {commandScope}=await import(${JSON.stringify(new URL('../lib/ios-process-scope.mjs',import.meta.url).href)});
+      const own=commandScope(process.cwd(),{});own.bind(process.pid);
+      const foreign=commandScope(process.cwd(),{});foreign.bind(process.ppid);
+      const directory=JSON.parse(foreign.env.MYBILL_PROCESS_SCOPE).directory;
+      const header=path.join(directory,'scope.json'),value=JSON.parse(fs.readFileSync(header));
+      value.owner=process.ppid;fs.writeFileSync(header,JSON.stringify(value));
+      const base=path.join(process.cwd(),'.local/ios/tmp/ai-agent');
+      const until=Date.now()+8000;
+      let published=false, managedAt=0;
+      const timer=setInterval(()=>{
+        const file=fs.readdirSync(base).find(n=>n.startsWith('ios-host-processes-'));
+        const text=file?fs.readFileSync(path.join(base,file),'utf8'):'';
+        if(process.platform!=='darwin') {clearInterval(timer);process.exit(7)}
+        if(text.includes('"process": {"pid": '+process.pid)&&!published) {
+          const boot=path.join(base,'ios-debug-owned');fs.mkdirSync(boot);
+          fs.writeFileSync(path.join(boot,'boot-readiness.json'),JSON.stringify({scope:'environment',status:'passed',afterBoot:${managed}?'close':undefined}));published=true;
+          if(${managed}){managedAt=Date.now();fs.writeFileSync(path.join(boot,'boot-lifecycle.json'),JSON.stringify({status:'running',commands:[{pid:process.pid,startedAt:Date.now()}]}))}
+        }
+        if(${managed}&&managedAt>0){
+          if(text.includes('"observationComplete": "boot-ready"')){clearInterval(timer);process.exit(9)}
+          if(Date.now()-managedAt>750){fs.writeFileSync(path.join(base,'ios-debug-owned/boot-lifecycle.json'),JSON.stringify({status:'passed'}));managedAt=-1}
+        }
+        if(text.includes('"observationComplete": "boot-ready"')) {clearInterval(timer);process.exit(7)}
+        else if(Date.now()>until){clearInterval(timer);process.exit(8)}
+      },20);
+    })();
+  `
+  const child=spawn('python3',[path.join(repository,'scripts/lib/ios-host-diagnostics.py'),'--',process.execPath,'-e',code],
+    {cwd:p.root,detached:true,stdio:['ignore','pipe','pipe']})
+  let stderr='';child.stderr.on('data',b=>stderr+=b);child.stdout.resume()
+  const status=await new Promise((resolve,reject)=>{child.once('error',reject);child.once('close',resolve)})
+  assert.equal(status,7,stderr)
+  const base=path.join(p.root,'.local/ios/tmp/ai-agent')
+  const file=fs.readdirSync(base).find(n=>n.startsWith('ios-host-processes-'))
+  const rows=fs.readFileSync(path.join(base,file),'utf8').trim().split('\n').map(JSON.parse)
+  assert.equal(rows.at(-1).commandExit,7)
+  if(process.platform==='darwin') {
+    assert.equal(rows[0].self.pid,child.pid)
+    assert.equal(rows[0].self.uid,process.getuid())
+    assert.equal(rows[0].self.ppid,process.pid)
+    assert.equal(rows[0].self.pgid,child.pid)
+    assert.ok(rows.some(r=>r.process?.ppid===child.pid&&r.process.uid===process.getuid()&&r.process.pgid>1))
+    assert.ok(rows.every(r=>r.process?.pid!==child.pid),'外部父进程不能被登记冒充为本轮命令树')
+    const stopped=rows.findIndex(r=>r.observationComplete==='boot-ready')
+    assert.ok(stopped>0)
+    assert.ok(rows.slice(stopped+1).every(r=>!r.process&&!r.load),'预检通过后不干扰后续测量')
+  } else assert.match(rows[0].unavailable,/requires Darwin/)
+  })
+})
+
+
+test('CI 宿主聚合必须显式请求且只在托管 macOS 开放，本机拒绝前不启动命令', t => {
+  const p=fixture(t),marker=path.join(p.root,'should-not-run')
+  for(const env of [{GITHUB_ACTIONS:'false',RUNNER_OS:'macOS'},{GITHUB_ACTIONS:'true',RUNNER_OS:'Linux'}]) {
+    const result=spawnSync('python3',[path.join(repository,'scripts/lib/ios-host-diagnostics.py'),'--host-summary','--',
+      process.execPath,'-e',`require('node:fs').writeFileSync(${JSON.stringify(marker)},'unexpected')`],
+      {cwd:p.root,env:{...process.env,...env},encoding:'utf8',timeout:3000})
+    assert.equal(result.status,1,result.stderr)
+    assert.match(result.stderr,/host summary requires/)
+    assert.equal(fs.existsSync(marker),false)
+  }
+})
+
+
+test('CI 冷启动前解析官方 simctl 原生工具，校验版本、许可准备和来源且不执行安装', async () => {
+  const framework='/Library/Developer/PrivateFrameworks/CoreSimulator.framework'
+  const target=framework+'/Versions/A/Resources/bin/simctl'
+  const entry='/Applications/Xcode.app/Contents/Developer/usr/bin/simctl'
+  const wrapper='#!/bin/bash\nEXPECTED_VERSION="1171.7"\nexec "'+target+'" "${@}"\n'
+  for(const mode of ['valid','equal','sdk-user-owned','quote-variant','old','bad-version','bad-owner','writable','bad-target','outside','unknown','binary']) {
+    const calls=[],closed=[]
+    const bytes=file=>file===entry&&mode!=='binary'?Buffer.from(mode==='unknown'?'#!/bin/sh\nexec custom-tool "$@"':mode==='quote-variant'?wrapper.replace('EXPECTED_VERSION="1171.7"',"EXPECTED_VERSION='1171.7'").replace('"${@}"','"$@"'):wrapper):
+      Buffer.from(mode==='bad-target'?'not executable':'cffaedfe','hex')
+    const files={existsSync:()=>true,statSync:file=>({isFile:()=>true,uid:file===target&&mode==='bad-owner'?process.getuid()+1:file===entry&&mode==='sdk-user-owned'?process.getuid():0,
+      mode:file===target&&mode==='writable'?0o100777:file===entry&&mode==='sdk-user-owned'?0o100775:0o100755}),
+      realpathSync:()=>mode==='outside'?'/tmp/other':target,
+      openSync:file=>file,closeSync:file=>closed.push(file),
+      readSync:(file,buffer)=>{const value=bytes(file);value.copy(buffer);return value.length}}
+    const command=async(program,args)=>{
+      calls.push([program,...args])
+      if(program==='xcrun')return {text:entry}
+      if(program==='/usr/libexec/PlistBuddy')return {text:mode==='old'?'1171.6':mode==='equal'?'1171.7.0':mode==='bad-version'?'invalid':'1174.21'}
+      assert.equal(program,'xcodebuild');assert.deepEqual(args,['-checkFirstLaunchStatus']);return {text:''}
+    }
+    if(['old','bad-version','bad-owner','writable','bad-target','outside'].includes(mode))
+      await assert.rejects(resolveSimctl(command,{files}),/CoreSimulator/)
+    else {
+      const result=await resolveSimctl(command,{files})
+      assert.equal(result.program,mode==='unknown'?'xcrun':mode==='binary'?entry:target)
+      assert.deepEqual(result.prefix,mode==='unknown'?['simctl']:[])
+      if(['valid','equal','sdk-user-owned','quote-variant'].includes(mode))assert.equal(calls.filter(c=>c[0]==='xcodebuild').length,1)
+      if(mode==='unknown')assert.equal(result.reason,'unrecognized-wrapper')
+    }
+    assert.ok(!calls.some(c=>c.includes('-runFirstLaunch')))
+    assert.equal(closed.filter(f=>f===entry).length,1)
+    calls.length=0
+    if(['old','bad-version','bad-owner','writable','bad-target','outside'].includes(mode))
+      await assert.rejects(resolveSimctl(command,{files,firstLaunch:false}),/CoreSimulator/)
+    else await resolveSimctl(command,{files,firstLaunch:false})
+    assert.ok(!calls.some(c=>c[0]==='xcodebuild'),'关闭/暂停仍校验工具来源和版本，但不重复首次启动检查')
+  }
+})
+
+
+test('原生启动终态必须匹配单个本轮 UUID，未完成、错误设备及空日志不能通过', () => {
+  const id='11111111-1111-4111-8111-111111111111'
+  const header='Monitoring boot status for owned ('+id+').\n'
+  const finished='Status=4294967295, isTerminal=YES, Elapsed=00:01.\n\tFinished\n'
+  assert.equal(assertBootStatus(header+finished,id),'Booted')
+  assert.equal(assertBootStatus(header+'Device already booted, nothing to do.\n',id),'Booted')
+  for(const text of ['',finished,header+'Status=0, isTerminal=NO\n',header+finished+header,header+finished+'Status=0, isTerminal=NO\n',
+    (header+finished).replace(id,'22222222-2222-4222-8222-222222222222')])assert.throws(()=>assertBootStatus(text,id),/原生启动成功终态/)
+  assert.throws(()=>assertBootStatus('x'.repeat(262145),id),/过大/)
+})
+
+
+test('CI 纯环境先关闭再查源码，关闭失败只尝试一次且源码漂移仍被拒绝', async t => {
+  const originalPlatform=Object.getOwnPropertyDescriptor(process,'platform'),originalPath=process.env.PATH
+  const realGit=execFileSync('which',['git'],{encoding:'utf8'}).trim()
+  Object.defineProperty(process,'platform',{value:'darwin'})
+  try {
+    for(const mode of ['passed','close-failed','source-changed']) {
+      const p=fixture(t), hot=path.join(p.root,'.local/hot'),violation=path.join(p.root,'.local/git-while-hot')
+      const git=p.write('bin/git',`#!${process.execPath}
+const fs=require('node:fs');if(fs.existsSync(${JSON.stringify(hot)})){
+ fs.writeFileSync(${JSON.stringify(violation)},'unexpected');process.exit(19);
+}
+const r=require('node:child_process').spawnSync(${JSON.stringify(realGit)},process.argv.slice(2),{stdio:'inherit'});process.exit(r.status??1);
+`)
+      fs.chmodSync(git,0o755)
+      const {directory}=prepare(p,'simulator-boot','close-'+mode),{session}=environmentSession(p)
+      process.env.PATH=path.join(p.root,'bin')+path.delimiter+originalPath
+      let closes=0
+      const command=async(_root,_program,args)=>{
+        assert.equal(args[2],'create');assert.equal(args.at(-1),'close');fs.writeFileSync(hot,'owned');closes++
+        if(mode==='close-failed')throw new Error('CONTROLLED_CLOSE_FAILURE')
+        fs.unlinkSync(hot)
+        if(mode==='source-changed')p.write('app/src/changed.ts','changed after closing')
+        return 'SESSION='+session+'\n'
+      }
+      if(mode==='passed') {
+        await executeGroup(p.root,directory,'macos',{command})
+        assert.equal(reconcile(p.root,directory).status,'passed')
+      } else await assert.rejects(executeGroup(p.root,directory,'macos',{command}),mode==='close-failed'?/CONTROLLED_CLOSE_FAILURE/:/源码/)
+      assert.equal(closes,1);assert.equal(fs.existsSync(violation),false)
+      process.env.PATH=originalPath
+    }
+  } finally {Object.defineProperty(process,'platform',originalPlatform);process.env.PATH=originalPath}
+})
+
+test('CI 含原生业务先暂停再复用同一会话，环境专项不提前删除设备', async t => {
+  const original=Object.getOwnPropertyDescriptor(process,'platform');Object.defineProperty(process,'platform',{value:'darwin'})
+  try {
+    const p=fixture(t),config=JSON.parse(fs.readFileSync(path.join(p.root,'config/ios-ci.json')))
+    config.profiles.app.unshift('simulator-boot');p.write('config/ios-ci.json',config)
+    const {directory}=prepare(p,'app','quiesce'),{session}=environmentSession(p,'suspend'),calls=[]
+    await assert.rejects(executeGroup(p.root,directory,'macos',{command:async(_root,_program,args)=>{
+      calls.push(args)
+      if(args[2]==='create'){assert.equal(args.at(-1),'suspend');return 'SESSION='+session+'\n'}
+      if(args[2]==='suspend'||args[2]==='close'){assert.equal(args.at(-1),session);return ''}
+      assert.equal(args[1],'ios-build');assert.equal(calls.some(a=>a[2]==='close'),false)
+      throw new Error('CONTROLLED_AFTER_ENVIRONMENT')
+    }}),/CONTROLLED_AFTER_ENVIRONMENT/)
+    assert.deepEqual(calls.map(a=>a[2]??a[1]),['create','ios-build','close'])
+  } finally {Object.defineProperty(process,'platform',original)}
+})
+
+
+test('CI 停滞短栈只读取本轮同用户原生命令，采样失败不覆盖主结果且仅清理自建采样器', t => {
+  const p=fixture(t)
+  const source=`
+import importlib.util, os
+from pathlib import Path
+spec=importlib.util.spec_from_file_location('diagnostics',${JSON.stringify(path.join(repository,'scripts/lib/ios-host-diagnostics.py'))})
+m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
+class Child:
+ def __init__(self): self.code=None; self.kills=0
+ def poll(self): return self.code
+ def kill(self): self.kills+=1; self.code=-9
+ def wait(self,timeout): return self.code
+rows=[]; calls=[]; clock=[100]; children=[]
+def factory(args,**kwargs):
+ calls.append(args); c=Child(); children.append(c); return c
+s=m.StallSample(Path(${JSON.stringify(p.root)}),rows.append,factory,lambda:clock[0])
+info={'pid':2001,'uid':os.getuid(),'comm':'simctl'}
+for owned,state,at in [(False,info,0),(True,{**info,'uid':os.getuid()+1},0),(True,{**info,'comm':'other-task'},0),(True,info,99000),(True,info,float('nan')),(True,{**info,'pid':9999},0)]:
+ s.poll(2001,state,owned,at,lambda:100)
+assert not calls
+s.poll(2001,info,True,0,lambda:100)
+assert len(calls)==1 and calls[0][:4]==['/usr/bin/sample','2001','1','10']
+s.poll(2001,info,True,0,lambda:100); assert len(calls)==1
+clock[0]=106;s.reap();assert children[0].kills==1 and s.active is None
+s.poll(2001,info,True,0,lambda:100);assert len(calls)==1
+s.poll(2002,{**info,'pid':2002},True,0,lambda:100);s.reap(final=True);assert children[-1].kills==1
+s=m.StallSample(Path(${JSON.stringify(p.root)}),rows.append,lambda *a,**k:(_ for _ in ()).throw(OSError('controlled sample unavailable')))
+s.poll(2003,{**info,'pid':2003},True,0,lambda:100);assert rows[-1]['stallSample']=='unavailable'
+print('SCOPED_STALL_SAMPLE_VERIFIED')
+`
+  const out=spawnSync('python3',['-B','-c',source],{encoding:'utf8',timeout:3000})
+  assert.equal(out.status,0,out.stderr);assert.match(out.stdout,/SCOPED_STALL_SAMPLE_VERIFIED/)
+})
+
+test('完整入口销毁只调用 delete，借用只暂停，删除失败及原主失败均保留', t => {
+  const p=fixture(t)
+  const source=fs.readFileSync(path.join(repository,'scripts/lib/ios-app-full.sh'),'utf8')
+  const cleanup=source.match(/^cleanup\(\) \{[\s\S]*?^\}/m)?.[0]
+  assert.ok(cleanup)
+  for(const [name,borrowed,state,deleteExit,prior,expected,operations] of [
+    ['owned',0,'Booted',0,0,0,['delete']],
+    ['borrowed',1,'Booted',0,0,0,['list','shutdown']],
+    ['suspended',1,'Shutdown',0,0,0,['list']],
+    ['delete-failed',0,'Booted',7,0,1,['delete']],
+    ['primary-failed',0,'Booted',0,7,7,['delete']]
+  ]) {
+    const log=path.join(p.root,name+'.log'),id='11111111-1111-4111-8111-111111111111'
+    const script=`SIMULATOR_ID=${id}\nSIMULATOR_BORROWED=${borrowed}\nCRASH_TEST_PID=''\nRUN_DIRECTORY=${JSON.stringify(p.root)}
+xcrun() {
+ printf '%s\\n' "$2" >> ${JSON.stringify(log)}
+ if [[ "$2" = list ]]; then printf '%s\\n' '${JSON.stringify({devices:{runtime:[{udid:id,state}]}})}'; fi
+ if [[ "$2" = delete ]]; then return ${deleteExit}; fi
+ return 0
+}
+${cleanup}
+(exit ${prior})
+cleanup
+`
+    const out=spawnSync('/bin/bash',['--noprofile','--norc','-c',script],{encoding:'utf8',timeout:3000})
+    assert.equal(out.status,expected,out.stderr)
+    assert.deepEqual(fs.readFileSync(log,'utf8').trim().split('\n'),operations,name)
+  }
+})
+
+test('本地按变更与远端常规分流不丢专项，最终仍包含完整原生与容量且拒绝篡改位置', t => {
+  const p=fixture(t),r=registry(p.root)
+  for(const file of ['app/src/App.vue','app/src/data/ledgerDatabase.ts','scripts/lib/ios-processes.mjs']) {
+    const remote=selectSuites(r,'pull-request',[file])
+    assert.ok(remote.every(s=>['secrets','quality','check','engineering','audit'].includes(s.kind)),file)
+    const local=selectSuites(r,'change',[file],{execution:'local'})
+    assert.ok(local.some(s=>['full','ui','environment'].includes(s.kind)),file)
+    assert.ok(local.every(s=>!r.onDemandSuites.includes(s.name)),file)
+  }
+  for(const name of ['simulator-boot','native-sqlite','touch','recovery','scale-10000','final','install-gate']) {
+    assert.throws(()=>createPlan(p.root,name,{execution:'remote'}),/远端仅运行常规/)
+    assert.throws(()=>requestedScope('workflow_dispatch',{inputs:{verification:name}}),/远端仅接受/)
+    assert.throws(()=>requestedScope('push',{ref:'refs/tags/ios-ci/'+name+'/candidate'}))
+  }
+  const final=createPlan(p.root,'final')
+  assert.equal(final.execution,'local')
+  for(const n of ['native-sqlite','touch','scale-10000','scale-100000'])assert.ok(final.suites.some(s=>s.name===n),n)
+  const altered=structuredClone(final);altered.execution='remote'
+  assert.throws(()=>assertPlan(p.root,altered),/远端仅运行常规|失效/)
+  p.write('app/src/views/LedgerView.vue','changed')
+  const plan=createPlan(p.root,'pull-request',{base:p.base})
+  assert.ok(plan.localRequired.some(s=>s.name==='ui-query-input'))
+  const directory=resultsDirectory(p.root,'.local/ios/tmp/ai-agent/ios-ci-remote-report',true)
+  fs.writeFileSync(path.join(directory,'ci-plan.json'),JSON.stringify(plan))
+  const report=reconcile(p.root,directory,'success','success')
+  assert.equal(report.status,'incomplete','未执行的常规检查不能通过')
+  assert.equal(report.execution,'remote')
+  assert.equal(report.completeCandidate,false)
+  assert.ok(report.localRequired.some(s=>s.suite==='ui-query-input' && s.status==='not-verified-here'))
+  assert.match(fs.readFileSync(path.join(directory,'ci-result.md'),'utf8'),/本地专项（本运行未验证）/)
+  const alteredLocal=structuredClone(plan);alteredLocal.localRequired=[]
+  assert.throws(()=>assertPlan(p.root,alteredLocal),/失效/)
+  p.write('app/src/views/LedgerView.vue','changed again')
+  assert.throws(()=>assertPlan(p.root,plan),/失效/)
+})
+
+test('真实远端入口在任何启动前拒绝本地模拟器计划，result 不沿用旧绿色',t=>{
+  const p=processFixture(t)
+  p.write('scripts/ios-ci.mjs',fs.readFileSync(path.join(repository,'scripts/ios-ci.mjs'),'utf8'))
+  p.commit()
+  const {directory}=prepare(p,'simulator-boot','remote-native-reject')
+  const invoke=mode=>spawnSync(process.execPath,['scripts/ios-ci.mjs',mode,'--results',directory,...(mode==='run'?['--group','macos']:[])],{
+    cwd:p.root,env:{...process.env,GITHUB_ACTIONS:'true',IOS_CI_PLAN_STATUS:'success',IOS_CI_CHECKS_STATUS:'success'},encoding:'utf8'})
+  const run=invoke('run');assert.equal(run.status,1);assert.match(run.stderr,/远端拒绝本地计划/)
+  assert.deepEqual(fs.readdirSync(directory),['ci-plan.json'],'拒绝前不创建执行组、套件或设备')
+  p.write(path.relative(p.root,path.join(directory,'ci-result.json')),{status:'passed',completeCandidate:true})
+  const result=invoke('result');assert.equal(result.status,1,result.stderr)
+  const value=JSON.parse(result.stdout);assert.equal(value.status,'incomplete');assert.equal(value.completeCandidate,false)
+})
+
+
+test('本地必需证据核验重读原报告，拒绝遗漏、失败、篡改、远端冒充及输入失效并保留历史', async t => {
+  const descriptor = Object.getOwnPropertyDescriptor(process, 'platform')
+  Object.defineProperty(process, 'platform', { value: 'darwin' })
+  try {
+    const p = processFixture(t)
+    const base = p.commit()
+    p.write('scripts/lib/ios-processes.mjs', '// controlled changed implementation')
+    const expected = prepare(p, 'change', 'required', { base })
+    const evidence = prepare(p, 'simulator-boot', 'proof')
+    const { session } = environmentSession(p)
+    const command = async (_root, _program, args) => args[2] === 'create' ? 'SESSION=' + session + '\n' : ''
+    await executeGroup(p.root, evidence.directory, 'macos', { command })
+    const manifest = p.write('.local/ios/local-evidence.json', [])
+    const gate = () => localGate(p.root, expected.directory, manifest)
+    const lock = p.write('.local/ios/tmp/ai-agent/ios-verification-state.json', 'preserve full failure')
+    assert.equal(gate().status, 'incomplete')
+    p.write('.local/ios/local-evidence.json', [evidence.directory])
+    assert.equal(gate().status, 'passed')
+    assert.equal(gate().completeCandidate, false)
+    const receiptFile = path.join(evidence.directory, 'simulator-boot/receipt.json')
+    const receipt = JSON.parse(fs.readFileSync(receiptFile))
+    for (const status of ['failed', 'cancelled', 'running']) {
+      fs.writeFileSync(receiptFile, JSON.stringify({ ...receipt, status }))
+      assert.equal(gate().status, 'incomplete', status)
+    }
+    fs.writeFileSync(receiptFile, JSON.stringify(receipt))
+    const raw = path.join(evidence.directory, 'simulator-boot/boot-status.log')
+    const bytes = fs.readFileSync(raw)
+    fs.appendFileSync(raw, 'tamper')
+    assert.equal(gate().status, 'incomplete')
+    fs.writeFileSync(raw, bytes)
+    assert.equal(gate().status, 'passed')
+    p.write('.local/ios/local-evidence.json', [evidence.directory, evidence.directory])
+    assert.equal(gate().status, 'incomplete', '重复目录不能混用')
+    const remote = prepare(p, 'secrets', 'remote-proof', { execution: 'remote' })
+    p.write('.local/ios/local-evidence.json', [remote.directory])
+    assert.match(gate().error, /本地执行/)
+    p.write('.local/ios/local-evidence.json', [evidence.directory])
+    p.write('scripts/lib/source-drift.mjs', '// source changed')
+    assert.equal(gate().status, 'incomplete')
+    assert.equal(JSON.parse(fs.readFileSync(path.join(expected.directory, 'local-readiness.json'))).status, 'incomplete')
+    assert.ok(fs.readdirSync(expected.directory).filter(n => /^local-readiness-/.test(n)).length >= 9)
+    assert.equal(fs.readFileSync(lock, 'utf8'), 'preserve full failure')
+  } finally {
+    Object.defineProperty(process, 'platform', descriptor)
+  }
+})
+
+test('本地核验真实 CLI 拒绝远端调用、缺参及无效清单，不启动检查或模拟器', t => {
+  const p = processFixture(t)
+  p.write('scripts/ios-ci.mjs', fs.readFileSync(path.join(repository, 'scripts/ios-ci.mjs'), 'utf8'))
+  p.commit()
+  const { directory } = prepare(p, 'change', 'cli-local', { base: p.base })
+  const input = p.write('.local/ios/manifest.json', 'not json')
+  const invoke = (args, remote = false) => spawnSync(process.execPath, ['scripts/ios-ci.mjs', 'local-gate', ...args], {
+    cwd: p.root, env: { ...process.env, GITHUB_ACTIONS: remote ? 'true' : 'false' }, encoding: 'utf8'
+  })
+  assert.equal(invoke([]).status, 1)
+  const args = ['--results', directory, '--input', input]
+  assert.match(invoke(args, true).stderr, /可信本机/)
+  const failed = invoke(args)
+  assert.equal(failed.status, 1, failed.stderr)
+  assert.equal(JSON.parse(failed.stdout).status, 'incomplete')
+  assert.ok(!fs.readdirSync(directory).some(name => name.startsWith('group-')))
 })

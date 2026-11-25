@@ -1103,13 +1103,31 @@ ${originalXcrun.replace(/^#![^\n]*\n/, '')}`)
 )
 
 test('模拟器启动预检不构建 App，共享启动预算，失败和取消只清理本次设备', { timeout:20000 }, async t => {
-  for (const mode of ['passed','failed','expired','cancelled']) await t.test(mode, async t => {
-    const p = project(t), id = randomUUID(), sentinel = randomUUID()
+  for (const mode of ['passed','direct','quiesced','closed','close-failed','quiesce-failed','quiesce-journal-failed','failed','journal-failed','invalid-terminal','wrong-terminal','expired','cancelled']) await t.test(mode, async t => {
+    const p = project(t)
+    const succeeds=['passed','direct','quiesced','closed','close-failed','quiesce-failed','quiesce-journal-failed'].includes(mode), id = randomUUID(), sentinel = randomUUID()
     const state = p.write('.local/boot-state.json', JSON.stringify({ device:null }))
     const trace = p.write('.local/boot-trace.json','[]'), clockFile = p.write('.local/boot-clock','0')
     const ready = path.join(p.root,'.local/boot-waiting')
+    const serviceReady=path.join(p.root,'.local/boot-service-ready')
+    let helperPid
+    t.after(()=>{if(helperPid)try{process.kill(helperPid,'SIGKILL')}catch(e){if(e.code!=='ESRCH')throw e}})
+    const xcode=p.write('bin/xcodebuild', `#!${process.execPath}
+const fs=require('node:fs'),file=${JSON.stringify(trace)},calls=JSON.parse(fs.readFileSync(file));calls.push(['xcodebuild',...process.argv.slice(2)]);fs.writeFileSync(file,JSON.stringify(calls));console.log('Xcode 27.0');
+`)
+    fs.chmodSync(xcode,0o755)
     const platform = p.write('.local/boot-platform.mjs', `import fs from 'node:fs';import {performance} from 'node:perf_hooks';
 Object.defineProperty(process,'platform',{value:'darwin'});
+if(['journal-failed','quiesce-journal-failed'].includes(${JSON.stringify(mode)})){
+ const write=fs.writeFileSync;let injected=false;
+ fs.writeFileSync=(file,data,...args)=>{
+  if(!injected&&String(file).includes(${JSON.stringify(mode)}==='journal-failed'?'boot-readiness.json.':'boot-lifecycle.json.')){
+   const value=JSON.parse(String(data));
+   if(value.commands?.at(-1)?.status==='failed'||value.status==='failed'){injected=true;throw new Error('controlled boot journal failure')}
+  }
+  return write(file,data,...args);
+ };
+}
 const original=performance.now.bind(performance);Object.defineProperty(performance,'now',{value:()=>original()+Number(fs.readFileSync(${JSON.stringify(clockFile)},'utf8'))});`)
     const executable = p.write('bin/xcrun', `#!${process.execPath}
 const fs=require('node:fs'),a=process.argv.slice(2),file=${JSON.stringify(state)},trace=${JSON.stringify(trace)},clock=${JSON.stringify(clockFile)};
@@ -1121,16 +1139,39 @@ else if(a[1]==='list')console.log(JSON.stringify({devices:{[${JSON.stringify(RUN
 {udid:${JSON.stringify(sentinel)},name:'OTHER_TASK',state:'Booted',deviceTypeIdentifier:${JSON.stringify(DEVICE_TYPE)}},...(state.device?[state.device]:[])]}}));
 else if(a[1]==='create'){state.device={udid:${JSON.stringify(id)},name:a[2],deviceTypeIdentifier:a[3],state:'Shutdown',isAvailable:true};save();console.log(state.device.udid)}
 else if(!state.device||a[2]!==state.device.udid)throw new Error('wrong ownership');
-else if(a[1]==='boot'){state.device.state='Booting';save();if(${JSON.stringify(mode)}==='expired')fs.writeFileSync(clock,'80000')}
 else if(a[1]==='bootstatus'){
-if(${JSON.stringify(mode)}==='failed')process.exit(9);
+if(a[3]!=='-b'||state.device.state!=='Shutdown')throw new Error('must boot and wait in one process');
+state.device.state='Booting';
+if(${JSON.stringify(succeeds)}){
+ const script='require("node:fs").writeFileSync('+JSON.stringify(${JSON.stringify(serviceReady)})+',"ready");setInterval(()=>{},1000)';
+ const child=require('node:child_process').spawn(process.execPath,['-e',script],{stdio:'ignore'});state.helperPid=child.pid;child.unref();
+}
+save();
+if(['failed','journal-failed'].includes(${JSON.stringify(mode)}))process.exit(9);
 if(${JSON.stringify(mode)}==='cancelled'){fs.writeFileSync(${JSON.stringify(ready)},'ready');setInterval(()=>{},1000)}
-else {state.device.state='Booted';save();if(${JSON.stringify(mode)}==='expired')fs.writeFileSync(clock,'160000');console.log('Booted')}
-}else if(a[1]==='shutdown'){state.device.state='Shutdown';save()}
-else if(a[1]==='delete'){state.device=null;save()}
+else {
+ if(${JSON.stringify(succeeds)}){
+  const until=Date.now()+1000;while(!fs.existsSync(${JSON.stringify(serviceReady)})&&Date.now()<until)Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,20);
+  if(!fs.existsSync(${JSON.stringify(serviceReady)}))throw new Error('successful boot killed device service');process.kill(state.helperPid,0);
+ }
+ state.device.state='Booted';save();if(${JSON.stringify(mode)}==='expired')fs.writeFileSync(clock,'160000');console.log('Monitoring boot status for '+state.device.name+' ('+(${JSON.stringify(mode)}==='wrong-terminal'?${JSON.stringify(sentinel)}:state.device.udid)+').\\n'+(${JSON.stringify(mode)}==='invalid-terminal'?'Status=0, isTerminal=NO\\n':'Status=4294967295, isTerminal=YES, Elapsed=00:01.\\n\\tFinished\\n'))}
+
+}else if(a[1]==='shutdown'){if(['quiesce-failed','quiesce-journal-failed'].includes(${JSON.stringify(mode)}))process.exit(19);state.device.state='Shutdown';save()}
+else if(a[1]==='delete'){if(${JSON.stringify(mode)}==='close-failed')process.exit(19);state.device=null;save()}
 else throw new Error('unexpected simulator command');
 `)
     fs.chmodSync(executable,0o755)
+    let directProgram
+    if(mode==='direct') {
+      const original=fs.readFileSync(executable,'utf8')
+      directProgram=p.write('bin/direct-simctl',original.replace('a=process.argv.slice(2)',"a=['simctl',...process.argv.slice(2)]"))
+      fs.chmodSync(directProgram,0o755)
+      fs.writeFileSync(executable,original.replace('const save=()=>',"if(a[0]==='simctl')throw new Error('unexpected SDK wrapper after resolution');\nconst save=()=>"))
+      p.write('scripts/lib/ios-simctl.mjs',`export async function resolveSimctl(command,{firstLaunch=true}={}) {
+        if(firstLaunch)await command('xcodebuild',['-checkFirstLaunchStatus']);
+        return {program:${JSON.stringify(directProgram)},prefix:[],mode:'installed-binary'};
+      }`)
+    }
     const env = {NODE_OPTIONS:'--import='+platform,DEVELOPER_DIR:''}
     let child
     if (mode==='cancelled') {
@@ -1148,22 +1189,57 @@ else throw new Error('unexpected simulator command');
         }
         processHandle.kill('SIGTERM');child=await ended
       } finally {processHandle.kill('SIGKILL');await ended}
-    } else child=p.run(['debug','create','--boot'],env)
+    } else child=p.run(['debug','create','--boot',...(['quiesced','closed','close-failed','quiesce-failed','quiesce-journal-failed'].includes(mode)?['--after-boot',['closed','close-failed'].includes(mode)?'close':'suspend']:[])],env)
     const calls=JSON.parse(fs.readFileSync(trace)), devices=JSON.parse(fs.readFileSync(state))
-    assert.ok(calls.some(a=>a[1]==='boot')&&calls.some(a=>a[1]==='bootstatus'))
+    helperPid=devices.helperPid
+    assert.ok(calls.findIndex(a=>a[0]==='xcodebuild'&&a[1]==='-checkFirstLaunchStatus') < calls.findIndex(a=>a[1]==='create'))
+    assert.ok(calls.some(a=>a[0]==='xcodebuild'&&a[1]==='-checkFirstLaunchStatus'))
+    assert.equal(calls.filter(a=>a[1]==='bootstatus').length,1)
+    assert.ok(!calls.some(a=>a[1]==='boot'),'不在冷启动期间第二次执行 SDK 包装器')
+    assert.ok(calls.some(a=>JSON.stringify(a)===JSON.stringify(['simctl','bootstatus',id,'-b'])))
     assert.ok(calls.filter(a=>['boot','bootstatus','shutdown','delete'].includes(a[1])).every(a=>a[2]===id))
     const folders=fs.readdirSync(p.base).filter(name=>name.startsWith('ios-debug-')&&path.join(p.base,name)!==p.session)
     assert.equal(folders.length,1)
     const readiness=JSON.parse(fs.readFileSync(path.join(p.base,folders[0],'boot-readiness.json')))
     assert.equal(readiness.scope,'environment');assert.equal(readiness.budgetMs,120000)
-    if(mode==='passed') {
+    assert.equal(readiness.schema,3);assert.equal(readiness.startupMode,'bootstatus-b')
+    if(mode==='direct')assert.ok(readiness.commands.every(step=>step.program===directProgram),'启动及状态核对均绕过 SDK 包装器')
+    assert.ok(readiness.commands.every(step=>step.pid>1 || step.status==='failed'))
+    if(succeeds)assert.deepEqual(readiness.commands.map(x=>[x.stage,x.status]),[['verify-device','passed'],['boot-ready','passed']])
+    if(mode==='failed')assert.equal(readiness.stage,'boot-ready')
+    if(['quiesced','closed','close-failed','quiesce-failed','quiesce-journal-failed'].includes(mode)) {
+      const session=path.join(p.base,folders[0]),life=JSON.parse(fs.readFileSync(path.join(session,'boot-lifecycle.json')))
+      assert.equal(life.simulatorId,id);assert.equal(life.runId,readiness.runId);assert.equal(life.budgetMs,120000)
+      if(mode.startsWith('quiesce-')||mode==='close-failed'){assert.notEqual(child.status,0);assert.doesNotMatch(child.stdout,/^SESSION=/m);assert.match(child.stderr,/exit=19/);if(mode==='quiesce-journal-failed')assert.match(child.stderr,/controlled boot journal failure/);else assert.equal(life.status,'failed')}
+      else {assert.equal(child.status,0,child.stderr);assert.equal(life.status,'passed');assert.equal(devices.device?.state,mode==='closed'?undefined:'Shutdown');
+        assert.deepEqual(life.commands.map(x=>x.operation),mode==='closed'?['delete']:['shutdown']);assert.ok(life.commands.every(x=>x.pid>1&&x.exit===0));
+        const afterBoot=calls.slice(calls.findIndex(a=>a[1]==='bootstatus')+1);assert.ok(!afterBoot.some(a=>a[1]==='list'||a[0]==='xcodebuild'),'启动后收尾复用工具和身份，不重走前置或查询')}
+    } else if(succeeds) {
       assert.equal(child.status,0,child.stderr);assert.match(child.stdout,/SESSION=/)
       assert.equal(devices.device.state,'Booted');assert.equal(readiness.status,'passed')
+      assert.equal(readiness.initialDevice.state,'Shutdown')
+      const bootIndex=calls.findIndex(a=>a[1]==='bootstatus')
+      assert.ok(!calls.slice(bootIndex+1).some(a=>a[1]==='list'),'就绪后不重新启动查询客户端')
+      const alive=spawnSync('ps',['-p',String(helperPid),'-o','stat='],{encoding:'utf8'})
+      assert.equal(alive.status,0);assert.ok(!alive.stdout.trim().startsWith('Z'),'成功交接后的设备服务仍存活')
+      if(mode==='direct') {
+        const session=path.join(p.base,folders[0]),before=JSON.parse(fs.readFileSync(trace)).filter(a=>a[0]==='xcodebuild').length
+        const closed=p.run(['debug','close','--session',session],env)
+        assert.equal(closed.status,0,closed.stderr)
+        assert.equal(JSON.parse(fs.readFileSync(trace)).filter(a=>a[0]==='xcodebuild').length,before)
+        assert.equal(JSON.parse(fs.readFileSync(state)).device,null)
+        assert.ok(!JSON.parse(fs.readFileSync(trace)).slice(calls.length).some(a=>a[1]==='shutdown'),'Booted 会话销毁复用 delete 自带关闭，不叠加 shutdown 客户端')
+        const invocations=fs.readdirSync(p.base).filter(n=>n.startsWith('ios-invocation-')).map(n=>JSON.parse(fs.readFileSync(path.join(p.base,n,'result.json'))))
+        const report=invocations.find(v=>v.mode==='debug close')
+        assert.equal(report.status,'passed');assert.equal(report.command.program,directProgram)
+        assert.ok(report.command.pid>1);assert.equal(report.command.status,'exited');assert.equal(report.command.exit,0)
+      }
     } else {
       assert.notEqual(child.status,0);assert.doesNotMatch(child.stdout,/^SESSION=|^EVIDENCE=/m)
       assert.equal(readiness.status,'failed');assert.equal(devices.device,null)
+      if(mode==='journal-failed')assert.match(readiness.error,/controlled boot journal failure/)
       assert.ok(calls.some(a=>a[1]==='shutdown')&&calls.some(a=>a[1]==='delete'))
-      assert.match(readiness.error, mode==='expired' ? /超时/ : mode==='failed' ? /exit=9/ : /取消|SIGTERM|143/)
+      assert.match(readiness.error, mode==='expired' ? /超时/ : ['failed','journal-failed'].includes(mode) ? /exit=9/ : ['invalid-terminal','wrong-terminal'].includes(mode) ? /原生启动成功终态/ : /取消|SIGTERM|143/)
     }
     assert.equal(fs.existsSync(path.join(p.root,'app/dist')),false,'环境预检不编译 App')
   })
@@ -1629,10 +1705,11 @@ for (const kind of ['preflight', 'execution', 'within-budget']) {
     p.write('scripts/lib/ios-app-full.sh', '#!/bin/bash\nexit 0\n')
     const proof = p.evidence('NativeTests/NativeSqliteTests/testLedgerLifecycleAndProtection')
     const durations =
+      // 新增入口解析后有四次查询；execution 的预检累计仍为原来的 720000ms。
       kind === 'preflight'
         ? { syntax: 240000, toolchain: 240000, body: 0 }
         : kind === 'execution'
-          ? { syntax: 0, toolchain: 240000, body: 300000 }
+          ? { syntax: 0, toolchain: 180000, body: 300000 }
           : { syntax: 0, toolchain: 100000, body: 100000 }
     const preload = virtualClock(p, durations)
     const result = p.run(['ios-smoke', '--from', proof.run], {
@@ -1702,7 +1779,8 @@ echo SHOULD_NOT_CONTINUE > continued
 `
   )
   const proof = p.evidence('NativeTests/NativeSqliteTests/testLedgerLifecycleAndProtection')
-  const preload = virtualClock(p, { syntax: 0, toolchain: 299000, body: 0 })
+  // 四次受控工具链查询共 897000ms，仍给执行体留下原来的约三秒；不调整生产预算。
+  const preload = virtualClock(p, { syntax: 0, toolchain: 224250, body: 0 })
   const result = p.run(['ios-smoke', '--from', proof.run], {
     DEVELOPER_DIR: '/controlled/sdk',
     NODE_OPTIONS: '--import=' + preload

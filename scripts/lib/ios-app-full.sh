@@ -37,17 +37,19 @@ cleanup() {
   fi
   # 只操作本命令新建或再次校验的本轮会话设备；借用设备只关闭运行，不销毁。
   if [[ -n "${SIMULATOR_ID}" ]]; then
-    local simulator_state
-    simulator_state="$(xcrun simctl list devices --json | node -e 'let data=""; process.stdin.on("data", c => data += c); process.stdin.on("end", () => console.log(Object.values(JSON.parse(data).devices).flat().find(d => d.udid === process.argv[1])?.state ?? "Missing"))' "${SIMULATOR_ID}")"
-    if [[ "${simulator_state}" != Shutdown && "${simulator_state}" != Missing ]]; then
-      if ! xcrun simctl shutdown "${SIMULATOR_ID}"; then
-        echo '本轮模拟器关闭失败，继续尝试删除。' >&2
+    if [[ "${SIMULATOR_BORROWED}" == 0 ]]; then
+      # delete 自行关闭并删除本轮新建设备，避免再次初始化 shutdown 客户端。
+      if ! xcrun simctl delete "${SIMULATOR_ID}"; then
+        echo "模拟器清理失败；本轮设备标识保留于 ${RUN_DIRECTORY}/simulator.udid" >&2
         status=1
       fi
-    fi
-    if [[ "${SIMULATOR_BORROWED}" == 0 ]] && ! xcrun simctl delete "${SIMULATOR_ID}"; then
-      echo "模拟器清理失败；本轮设备标识保留于 ${RUN_DIRECTORY}/simulator.udid" >&2
-      status=1
+    else
+      local simulator_state
+      simulator_state="$(xcrun simctl list devices --json | node -e 'let data=""; process.stdin.on("data", c => data += c); process.stdin.on("end", () => console.log(Object.values(JSON.parse(data).devices).flat().find(d => d.udid === process.argv[1])?.state ?? "Missing"))' "${SIMULATOR_ID}")"
+      if [[ "${simulator_state}" != Shutdown && "${simulator_state}" != Missing ]] && ! xcrun simctl shutdown "${SIMULATOR_ID}"; then
+        echo '本轮借用模拟器暂停失败，保留会话。' >&2
+        status=1
+      fi
     fi
   fi
   echo "本轮原生构建/测试证据：${RUN_DIRECTORY}"
@@ -149,7 +151,6 @@ JS
     SIMULATOR_BORROWED=1
     CONTEXT_FILE="$(node -e 'console.log(JSON.parse(process.argv[1]).context)' "${SESSION_INFO}")"
     SIMULATOR_STATE="$(node -e 'console.log(JSON.parse(process.argv[1]).state)' "${SESSION_INFO}")"
-    if [[ "${SIMULATOR_STATE}" == Shutdown ]]; then xcrun simctl boot "${SIMULATOR_ID}"; fi
     xcrun simctl bootstatus "${SIMULATOR_ID}" -b > "${RUN_DIRECTORY}/boot.log" 2>&1
     INSTALLED="$(xcrun simctl listapps "${SIMULATOR_ID}" | plutil -convert json -o - - | node -e 'let s=""; process.stdin.on("data",c=>s+=c);process.stdin.on("end",()=>console.log(Boolean(JSON.parse(s)["com.mybill.offline"])))')"
     # 与局部入口共用归属校验；完整流程明确冷重置，卸载成功后失效旧登记，不能留下误拦后续调试的回执。
@@ -179,7 +180,6 @@ JS
     SIMULATOR_ID="$(xcrun simctl create '我的账单离线原生测试' com.apple.CoreSimulator.SimDeviceType.iPhone-14-Pro-Max com.apple.CoreSimulator.SimRuntime.iOS-27-0)"
     CONTEXT_FILE="${RUN_DIRECTORY}/test-context.json"
     node -e 'require("node:fs").writeFileSync(process.argv[1], JSON.stringify({simulatorId: process.argv[2], runId: crypto.randomUUID(), appId: "com.mybill.offline"}), {mode: 0o600})' "${CONTEXT_FILE}" "${SIMULATOR_ID}"
-    xcrun simctl boot "${SIMULATOR_ID}"
     xcrun simctl bootstatus "${SIMULATOR_ID}" -b > "${RUN_DIRECTORY}/boot.log" 2>&1
   fi
   printf '%s\n' "${SIMULATOR_ID}" > "${RUN_DIRECTORY}/simulator.udid"
@@ -240,7 +240,6 @@ JS
     # 预期拒绝同样会建立 UI runner；重启同一受管设备，避免遗留自动化会话干扰正例。
     # 账本、归属与 UUID 保留，正例仍通过原页面执行且不增加用例时间预算。
     xcrun simctl shutdown "${SIMULATOR_ID}"
-    xcrun simctl boot "${SIMULATOR_ID}"
     xcrun simctl bootstatus "${SIMULATOR_ID}" -b > "${RUN_DIRECTORY}/touch-guard-reboot.log" 2>&1
     APP_CONTAINER="$(xcrun simctl get_app_container "${SIMULATOR_ID}" com.mybill.offline data)"
     # 在字典/偏好等业务触摸前保存同一安装的清空参照，T12 不从已修改的账本猜默认值。

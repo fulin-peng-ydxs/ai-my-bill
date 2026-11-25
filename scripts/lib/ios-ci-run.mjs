@@ -6,14 +6,15 @@ import { assertPlan, digest, executionMatrix } from './ios-ci-plan.mjs'
 import { audit, auditDependencies } from './ios-audit.mjs'
 import { inputHash, requireEvidence, writeJson } from './ios-verification.mjs'
 import { contentHash } from './ios-cache.mjs'
-import { selection, nativeCases, uiCases,readSession } from './ios-debug.mjs'
+import { selection, nativeCases, uiCases,readSession,DEVICE_TYPE } from './ios-debug.mjs'
 import { assertScriptReport, assertModePhases } from './ios-test-reports.mjs'
 import { installationGate } from './ios-install-gate.mjs'
 import { validateScenario } from './ios-scenario-evidence.mjs'
 import { readScaleCold } from './ios-scale-run.mjs'
 import { coverageReport } from './ios-coverage.mjs'
-import { spawnManaged } from './ios-processes.mjs'
+import { runCommand } from './ios-processes.mjs'
 import { errorMessage } from './ios-errors.mjs'
+import { assertBootStatus } from './ios-boot-proof.mjs'
 
 const read = (file) => JSON.parse(plainFile(file))
 
@@ -37,66 +38,8 @@ export function resultsDirectory(root, input, create = false) {
   return absolute
 }
 
-/** 不捕获到内存的大日志；超时/取消先通知原执行器清理，再限时终止进程组。 */
-export async function runCommand(root, program, args, log, timeoutMs = 2_700_000,
-  { cleanupGraceMs = 10_000, acceptExit } = {}) {
-  // 受控进程回归只缩短清理宽限；正式调用保留默认值，不提供 CLI/环境覆盖或延长预算。
-  if (!Number.isSafeInteger(cleanupGraceMs) || cleanupGraceMs < 0 || cleanupGraceMs > 10_000)
-    throw new Error('CI 清理宽限必须为 0 至 10000 毫秒。')
-  const fd = fs.openSync(log, 'wx', 0o600)
-  let child,
-    timer,
-    cleanup,
-    cancelled = false
-  const stop = () => {
-    cancelled = true
-    cleanup?.stop()
-  }
-  try {
-    const code = await new Promise((resolve, reject) => {
-      const managed = spawnManaged(program, args, {
-        cwd: root,
-        env: process.env,
-        detached: true,
-        stdio: ['ignore', fd, fd]
-      }, { root, graceMs: cleanupGraceMs })
-      child = managed.child
-      cleanup = managed.cleanup
-      child.once('error', reject)
-      child.once('close', (code) => resolve(code))
-      timer = setTimeout(stop, timeoutMs)
-      process.once('SIGINT', stop)
-      process.once('SIGTERM', stop)
-    })
-    // 默认调用保留原有先判失败的路径；只有精确登记的预期非零终态需要读取输出再判。
-    if (cancelled || (!acceptExit && code !== 0)) throw new Error(`CI 命令失败或取消（exit=${code}），见 ${log}`)
-    const size = fs.fstatSync(fd).size
-    // 输出标识在命令收尾，最多读取尾部 64KiB；日志本体留存供失败诊断。
-    const data = Buffer.alloc(Math.min(size, 65_536))
-    const source = fs.openSync(log, 'r')
-    try {
-      fs.readSync(source, data, 0, data.length, size - data.length)
-    } finally {
-      fs.closeSync(source)
-    }
-    const output = data.toString('utf8')
-    // 预期的非零终态由调用者精确核验；取消始终失败，避免已退出命令误走取消快照/强杀。
-    if (acceptExit && !acceptExit(code, output)) throw new Error(`CI 命令失败或取消（exit=${code}），见 ${log}`)
-    return output
-  } catch (error) {
-    cleanup?.stop('SIGKILL')
-    throw error
-  } finally {
-    clearTimeout(timer)
-    try {
-      cleanup?.finish()
-    } finally {
-      process.removeListener('SIGINT', stop)
-      process.removeListener('SIGTERM', stop)
-      fs.closeSync(fd)
-    }
-  }
-}
+// 兼容原 CI 调用方；App 启动取证直接复用底层执行器，避免加载整套 CI/规划模块。
+export { runCommand } from './ios-processes.mjs'
 
 function plainFile(file) {
   if (!fs.lstatSync(file).isFile() || fs.realpathSync(file) !== file)
@@ -167,30 +110,49 @@ export async function executeGroup(root, directory, group, { command = runComman
   if (group === 'macos' && process.platform !== 'darwin')
     throw new Error('macOS 专项必须在 macOS 执行。')
   if (borrowedSession && group!=='macos') throw new Error('仅 macOS 原生组可复用模拟器。')
+  if (borrowedSession && suites.some(s=>s.kind==='environment'))
+    throw new Error('启动环境专项要求本轮新会话，不能复用旧启动回执。')
   if (borrowedSession) readSession(path.join(root,'.local/ios/tmp/ai-agent'),borrowedSession)
   const groupFile = path.join(directory, `group-${group}.json`)
   fs.writeFileSync(groupFile, JSON.stringify({ status: 'running', plan: plan.id }), {
     flag: 'wx',
     mode: 0o600
   })
-  let session = borrowedSession, error
+  let session = borrowedSession, error, closeAttempted = false
+  const needsSession = suites.some(s => ['full','ui','scenario'].includes(s.kind))
+  const closeSession = async () => {
+    if(!session || closeAttempted)return
+    closeAttempted=true
+    await command(root,'bash',
+      ['scripts/ios-app.sh','debug',borrowedSession?'suspend':'close','--session',session],
+      path.join(directory,'close-session.log'),
+      Math.max(1,Math.min(120_000,budgetMs-(performance.now()-groupStarted))))
+    session=undefined
+  }
   const ensureSession = async () => {
-    if (!session)
+    if (!session) {
       session = marker(
         await command(
           root,
           'bash',
-          ['scripts/ios-app.sh', 'debug', 'create', '--boot'],
+          ['scripts/ios-app.sh', 'debug', 'create', '--boot','--after-boot',needsSession?'suspend':'close'],
           path.join(directory, 'create-session.log'),
           Math.min(300_000, remaining())
         ),
         'SESSION'
       )
+      if(!needsSession) {
+        const closed=session
+        session=undefined
+        closeAttempted=true
+        return closed
+      }
+    }
     return session
   }
   try {
     // 新宿主先验证最小可启动环境；同一受管会话随后用于业务测试，不先消耗 SDK 编译。
-    if (!borrowedSession && suites.some(s => ['full','ui','scenario'].includes(s.kind))) await ensureSession()
+    if (!borrowedSession && needsSession) await ensureSession()
     for (const suite of suites) {
       assertPlan(root, plan)
       const dest = path.join(directory, suite.name)
@@ -223,7 +185,18 @@ export async function executeGroup(root, directory, group, { command = runComman
         )
       }
       try {
-        if (suite.kind === 'installation') {
+        if (suite.kind === 'environment') {
+          const directory = await ensureSession()
+          const owned = readSession(path.join(root,'.local/ios/tmp/ai-agent'),directory,!needsSession)
+          const readiness = read(path.join(directory,'boot-readiness.json'))
+          if (readiness.simulatorId !== owned.context.simulatorId || readiness.runId !== owned.context.runId)
+            throw new Error('启动预检回执不属于本轮设备。')
+          const lifecycle=read(path.join(directory,'boot-lifecycle.json'))
+          if(lifecycle.action!==(needsSession?'suspend':'close') || (!needsSession && owned.context.state!=='closed'))throw new Error('启动后设备未完成本轮生命周期。')
+          writeJson(path.join(dest,'environment.json'),{source:plan.source,readiness,lifecycle})
+          for (const name of ['boot-status.log'])
+            fs.writeFileSync(path.join(dest,name),plainFile(path.join(directory,name)),{flag:'wx',mode:0o600})
+        } else if (suite.kind === 'installation') {
           await command(root,process.execPath,['scripts/ios-install-gate.mjs',path.join(directory,'install-input.json'),path.join(dest,'install-report.json')],path.join(dest,'install.log'),Math.min(120000,remaining()))
         } else if (suite.kind === 'audit') {
           const report = await audit(root, { budgetMs: Math.min(120_000, remaining()) })
@@ -233,11 +206,13 @@ export async function executeGroup(root, directory, group, { command = runComman
           })
           if (report.status !== 'passed')
             throw new Error(`依赖审计发现 ${report.findings.length} 项已知漏洞。`)
+        } else if (suite.kind === 'quality') {
+          await command(root, 'python3', ['scripts/lib/ios-security.py', 'quality'], path.join(dest, 'quality.log'), Math.min(180000, remaining()))
         } else if (suite.kind === 'secrets') {
           await command(
             root,
             'bash',
-            ['scripts/check-secrets.sh'],
+            ['scripts/check-secrets.sh', ...(suite.name === 'secrets-history' ? ['--history'] : plan.range ? ['--base', plan.range.mergeBase ?? plan.range.base] : [])],
             path.join(dest, 'secrets.log'),
             Math.min(300_000, remaining())
           )
@@ -291,7 +266,7 @@ export async function executeGroup(root, directory, group, { command = runComman
         if (performance.now() - started > 2_700_000) throw new Error('套件整轮超时。')
         assertPlan(root, plan)
         // 执行组内即拒绝不完整报告，避免在已知缺口后继续启动其他专项；汇总仍独立复核。
-        validateReports(root, dest, suite, receipt)
+        validateReports(root, dest, suite, receipt,plan)
         remaining()
         receipt.status = 'passed'
         receipt.exit = 0
@@ -309,18 +284,8 @@ export async function executeGroup(root, directory, group, { command = runComman
   } catch (e) {
     error = e
   } finally {
-    if (session) {
-      try {
-        await command(
-          root,
-          'bash',
-          ['scripts/ios-app.sh', 'debug', borrowedSession ? 'suspend' : 'close', '--session', session],
-          path.join(directory, 'close-session.log'),
-          Math.max(1, Math.min(120_000, budgetMs - (performance.now() - groupStarted)))
-        )
-      } catch (e) {
-        error ??= e
-      }
+    if (session && !closeAttempted) {
+      try { await closeSession() } catch (e) { error ??= e }
     }
     if (performance.now() - groupStarted > budgetMs) error ??= new Error('CI 执行组整轮超时。')
     writeJson(groupFile, {
@@ -336,7 +301,7 @@ export async function executeGroup(root, directory, group, { command = runComman
 }
 
 /** 逐份核实原报告；只收集到成功 exit 或手填 passed 不能补足实际执行证据。 */
-function validateReports(root, directory, suite, receipt) {
+function validateReports(root, directory, suite, receipt,plan) {
   if (!receipt.reports?.length) throw new Error('缺少实际报告。')
   const primary = []
   for (const report of receipt.reports) {
@@ -349,6 +314,36 @@ function validateReports(root, directory, suite, receipt) {
     const bytes = plainFile(path.join(directory, report.path))
     if (digest(bytes) !== report.hash) throw new Error('原报告摘要不符。')
     if (report.primary && report.role === 'primary') primary.push(JSON.parse(bytes))
+  }
+  if (suite.kind === 'environment') {
+    const {source,readiness:r,lifecycle:life} = read(path.join(directory,'environment.json'))
+    const environment = JSON.parse(r?.environment ?? 'null')
+    const uuid=/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i
+    if (!isDeepStrictEqual(source,receipt.source) || r?.schema!==3 || r.startupMode!=='bootstatus-b' || r?.scope!=='environment' || r.status!=='passed' ||
+      r.deviceState!=='Booted' || r.initialDevice?.udid!==r.simulatorId ||
+      r.initialDevice?.state!=='Shutdown' || r.initialDevice?.name!=='我的账单调试-'+r.runId ||
+      r.initialDevice?.deviceTypeIdentifier!==DEVICE_TYPE || r.initialDevice?.isAvailable!==true || !uuid.test(r.simulatorId??'') || !uuid.test(r.runId??'') ||
+      r.budgetMs!==120000 || !Number.isFinite(r.startedAt) || !Number.isFinite(r.completedAt) ||
+      r.completedAt<=r.startedAt || r.completedAt>(receipt.completedAt??Date.now()) ||
+      !/^27\./.test(environment?.sdk??'') || !/^Xcode 27\./.test(environment?.xcode??'') || !environment?.runtime || r.elapsedMs!==r.completedAt-r.startedAt || r.elapsedMs>r.budgetMs ||
+      !receipt.reports.some(x=>x.path==='boot-status.log') ||
+      typeof r.tool?.program!=='string' || !['sdk-wrapper','sdk-binary','installed-binary'].includes(r.tool?.mode) ||
+      !Array.isArray(r.commands) || r.commands.length!==2 ||
+      r.commands.some((step,index)=>step.program!==r.tool.program || step.stage!==['verify-device','boot-ready'][index] || step.status!=='passed' ||
+        !Number.isSafeInteger(step.pid) || step.pid<=1 || !Number.isFinite(step.startedAt) ||
+        !Number.isFinite(step.completedAt) || step.completedAt<step.startedAt || step.startedAt<r.startedAt ||
+        step.completedAt>r.completedAt || (index>0 && step.startedAt<r.commands[index-1].completedAt)))
+      throw new Error('模拟器启动环境回执未通过、范围或来源不符。')
+    const operations=life?.action==='close'?['delete']:life?.action==='suspend'?['shutdown']:[]
+    if(life?.schema!==1 || life.action!==(plan.suites.some(s=>s.runner===suite.runner && ['full','ui','scenario'].includes(s.kind))?'suspend':'close') || life.status!=='passed' || life.simulatorId!==r.simulatorId || life.runId!==r.runId ||
+      life.budgetMs!==120000 || !Number.isFinite(life.durationMs) || life.durationMs<0 || life.durationMs>120000 ||
+      !Number.isFinite(life.startedAt) || !Number.isFinite(life.completedAt) || life.startedAt<r.completedAt || life.completedAt<life.startedAt || life.completedAt>(receipt.completedAt??Date.now()) ||
+      !operations.length || life.commands?.length!==operations.length || life.commands.some((step,index)=>step.operation!==operations[index] ||
+        step.status!=='passed' || step.exit!==0 || step.program!==r.tool.program || !Number.isSafeInteger(step.pid) || step.pid<=1 ||
+        !Number.isFinite(step.startedAt) || !Number.isFinite(step.completedAt) || step.completedAt<step.startedAt || step.startedAt<life.startedAt || step.completedAt>life.completedAt ||
+        (index>0 && step.startedAt<life.commands[index-1].completedAt)))throw new Error('启动后生命周期回执未通过或归属不符。')
+    assertBootStatus(plainFile(path.join(directory,'boot-status.log')).toString('utf8'),r.simulatorId)
+    return
   }
   if (suite.kind === 'installation') {
     const value = read(path.join(directory,'install-report.json'))
@@ -373,6 +368,10 @@ function validateReports(root, directory, suite, receipt) {
       !Number.isFinite(Date.parse(result.checkedAt))
     )
       throw new Error('依赖审计覆盖不足或未通过。')
+    return
+  }
+  if (suite.kind === 'quality') {
+    if (!receipt.reports.some(r => r.path === 'quality.log')) throw new Error('工作流质量检查未执行。')
     return
   }
   if (suite.kind === 'secrets') {
@@ -533,7 +532,7 @@ export function reconcile(root, directory, jobsStatus, planStatus) {
       const group = read(path.join(directory, `group-${suite.runner}.json`))
       if (group.plan !== plan.id || group.status !== 'passed')
         throw new Error('执行组未完成或清理失败。')
-      validateReports(root, dest, suite, receipt)
+      validateReports(root, dest, suite, receipt,plan)
       row.status = 'passed'
     } catch (e) {
       row.status = e.code === 'ENOENT' ? 'not-executed' : 'failed'
@@ -545,6 +544,9 @@ export function reconcile(root, directory, jobsStatus, planStatus) {
     schema: 1,
     plan: plan.id,
     profile: plan.profile,
+    execution:plan.execution,
+    scope:plan.execution==='remote'?'common-checks':'selected-local-checks',
+    localRequired:(plan.localRequired??[]).map(s=>({suite:s.name,status:'not-verified-here'})),
     source: plan.source,
     status:
       rows.every((r) => r.status === 'passed') &&
@@ -564,9 +566,9 @@ export function reconcile(root, directory, jobsStatus, planStatus) {
   writeJson(path.join(directory, 'ci-result.json'), result)
   fs.writeFileSync(
     path.join(directory, 'ci-result.md'),
-    `CI ${plan.profile}: ${result.status}\n\n` +
+    `CI ${plan.profile}: ${result.status}\n执行位置：${plan.execution}；完整候选：${result.completeCandidate}\n\n` +
       rows.map((r) => `- ${r.suite}: ${r.status}${r.reason ? ' — ' + r.reason : ''}`).join('\n') +
-      '\n',
+      '\n' + (result.localRequired.length?'本地专项（本运行未验证）：'+result.localRequired.map(x=>x.suite).join(', ')+'\n':''),
     { mode: 0o600 }
   )
   return result

@@ -1,35 +1,27 @@
 name: offline-ios
 
-# PR 自动按变更检查；完整验收和容量仍按需。规划、执行、对账与本地同源。
+# PR 常规始终含固定 actionlint/Gitleaks；模拟器及 local-gate 只在本地，最终集中验收。
 on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review, edited]
   push:
     tags:
       - 'ios-ci/scripts/**'
-      - 'ios-ci/app/**'
-      - 'ios-ci/final/**'
+      - 'ios-ci/common/**'
       - 'ios-ci/change/**'
       - 'ios-ci/dependency-audit/**'
-      - 'ios-ci/recovery/**'
-      - 'ios-ci/scale-10000/**'
-      - 'ios-ci/scale-100000/**'
   workflow_dispatch:
     inputs:
       verification:
-        description: 'scripts=工具；change=按变更专项；app=集成；final=完整候选；dependency-audit=依赖审计；recovery/scale=单项原生观测'
+        description: '远端常规检查：scripts=工具；common=工程/SDK编译/审计；change=按变更；dependency-audit=审计。模拟器与final使用本地入口。'
         required: true
         default: scripts
         type: choice
         options:
           - scripts
+          - common
           - change
-          - app
-          - final
           - dependency-audit
-          - recovery
-          - scale-10000
-          - scale-100000
       base_revision:
         description: 'change 必填：变更起点完整 SHA'
         type: string
@@ -78,7 +70,7 @@ jobs:
       fail-fast: false
       matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
     runs-on: ${{ matrix.runner }}
-    # 同组顺序执行、独立模拟器复用；关闭标记失败仍清理已登记组并保留失败。
+    # 同组顺序执行常规检查；统一进程清理保留主失败及补偿失败，不启动模拟器。
     # 正式执行/清理预算不变；受控回归仅独立缩短清理宽限，等待就绪后取消。
     timeout-minutes: ${{ matrix.timeout }}
     steps:
@@ -106,7 +98,8 @@ jobs:
       - env:
           IOS_CI_RESULTS: ${{ needs.plan.outputs.directory }}
           IOS_CI_GROUP: ${{ matrix.group }}
-        run: npm run ci:ios-app -- run --results "$IOS_CI_RESULTS" --group "$IOS_CI_GROUP"
+        run: |
+          npm run ci:ios-app -- run --results "$IOS_CI_RESULTS" --group "$IOS_CI_GROUP"
       - name: Preserve this attempt independently
         if: always()
         env:
@@ -130,15 +123,32 @@ jobs:
             .local/ios/tmp/ai-agent/ios-invocation-*/*.json
             .local/ios/tmp/ai-agent/ios-verification-state.json
             .local/ios/tmp/ai-agent/ios-process-*/*.json
+            .local/ios/tmp/ai-agent/ios-host-processes-*.jsonl
+            .local/ios/tmp/ai-agent/ios-stall-sample-*.txt
             .local/ios/tmp/ai-agent/ios-check-*/check.log
             .local/ios/tmp/ai-agent/ios-check-*/result.json
             .local/ios/tmp/ai-agent/ios-debug-*/run-*/*.xcresult
             .local/ios/tmp/ai-agent/ios-debug-*/boot-*.log
-            .local/ios/tmp/ai-agent/ios-debug-*/boot-readiness.json
+            .local/ios/tmp/ai-agent/ios-debug-*/boot-*.json
             .local/ios/tmp/ai-agent/native-*/*.xcresult
             .local/ios/tmp/ai-agent/native-*/*.log
             .local/ios/tmp/ai-agent/native-*/app-tests.json
           include-hidden-files: true
+          retention-days: 7
+          if-no-files-found: warn
+
+      # runner 临时宿主上的系统日志只作故障取证，不充当启动/测试成功证据。
+      - name: Preserve simulator host diagnostics
+        if: failure() && matrix.group == 'macos'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-host-diagnostics-${{ github.run_attempt }}
+          path: |
+            ~/Library/Logs/CoreSimulator/CoreSimulator.log
+            ~/Library/Logs/DiagnosticReports/simctl*.ips
+            ~/Library/Logs/DiagnosticReports/node*.ips
+            ~/Library/Logs/DiagnosticReports/sample*.ips
+            ~/Library/Logs/DiagnosticReports/CoreSimulatorService*.ips
           retention-days: 7
           if-no-files-found: warn
 
@@ -196,14 +206,3 @@ jobs:
           include-hidden-files: true
           retention-days: 7
           if-no-files-found: error
-
-  # 只有最终计划、实际报告及所有必需 job 均通过才标记完整候选；真机验收仍另行执行。
-  app-baseline-v1:
-    needs: [plan, checks, result]
-    if: >-
-      needs.plan.outputs.profile == 'final' && needs.checks.result == 'success' &&
-      needs.result.result == 'success' && needs.result.outputs.complete == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - run: echo 'Full App candidate reconciled; device acceptance remains separate'
