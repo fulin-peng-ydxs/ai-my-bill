@@ -12,7 +12,7 @@ import { installationGate } from './ios-install-gate.mjs'
 import { validateScenario } from './ios-scenario-evidence.mjs'
 import { readScaleCold } from './ios-scale-run.mjs'
 import { coverageReport } from './ios-coverage.mjs'
-import { spawnManaged, finishCleanup } from './ios-processes.mjs'
+import { runCommand } from './ios-processes.mjs'
 import { errorMessage } from './ios-errors.mjs'
 
 const read = (file) => JSON.parse(plainFile(file))
@@ -37,68 +37,8 @@ export function resultsDirectory(root, input, create = false) {
   return absolute
 }
 
-/** 不捕获到内存的大日志；超时/取消先通知原执行器清理，再限时终止进程组。 */
-export async function runCommand(root, program, args, log, timeoutMs = 2_700_000,
-  { cleanupGraceMs = 10_000, acceptExit } = {}) {
-  // 受控进程回归只缩短清理宽限；正式调用保留默认值，不提供 CLI/环境覆盖或延长预算。
-  if (!Number.isSafeInteger(cleanupGraceMs) || cleanupGraceMs < 0 || cleanupGraceMs > 10_000)
-    throw new Error('CI 清理宽限必须为 0 至 10000 毫秒。')
-  const fd = fs.openSync(log, 'wx', 0o600)
-  let child,
-    timer,
-    cleanup,
-    primaryError,
-    cancelled = false
-  const stop = () => {
-    cancelled = true
-    cleanup?.stop()
-  }
-  try {
-    const code = await new Promise((resolve, reject) => {
-      const managed = spawnManaged(program, args, {
-        cwd: root,
-        env: process.env,
-        detached: true,
-        stdio: ['ignore', fd, fd]
-      }, { root, graceMs: cleanupGraceMs })
-      child = managed.child
-      cleanup = managed.cleanup
-      child.once('error', reject)
-      child.once('close', (code) => resolve(code))
-      timer = setTimeout(stop, timeoutMs)
-      process.once('SIGINT', stop)
-      process.once('SIGTERM', stop)
-    })
-    // 默认调用保留原有先判失败的路径；只有精确登记的预期非零终态需要读取输出再判。
-    if (cancelled || (!acceptExit && code !== 0)) throw new Error(`CI 命令失败或取消（exit=${code}），见 ${log}`)
-    const size = fs.fstatSync(fd).size
-    // 输出标识在命令收尾，最多读取尾部 64KiB；日志本体留存供失败诊断。
-    const data = Buffer.alloc(Math.min(size, 65_536))
-    const source = fs.openSync(log, 'r')
-    try {
-      fs.readSync(source, data, 0, data.length, size - data.length)
-    } finally {
-      fs.closeSync(source)
-    }
-    const output = data.toString('utf8')
-    // 预期的非零终态由调用者精确核验；取消始终失败，避免已退出命令误走取消快照/强杀。
-    if (acceptExit && !acceptExit(code, output)) throw new Error(`CI 命令失败或取消（exit=${code}），见 ${log}`)
-    return output
-  } catch (error) {
-    primaryError = error
-    cleanup?.stop('SIGKILL')
-    throw error
-  } finally {
-    clearTimeout(timer)
-    try {
-      finishCleanup(cleanup, primaryError)
-    } finally {
-      process.removeListener('SIGINT', stop)
-      process.removeListener('SIGTERM', stop)
-      fs.closeSync(fd)
-    }
-  }
-}
+// 兼容原 CI 调用方；App 启动取证直接复用底层执行器，避免加载整套 CI/规划模块。
+export { runCommand } from './ios-processes.mjs'
 
 function plainFile(file) {
   if (!fs.lstatSync(file).isFile() || fs.realpathSync(file) !== file)

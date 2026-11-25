@@ -43,6 +43,7 @@ import {
 import { checkNames, checkDefinition } from './lib/ios-checks.mjs'
 import { spawnManaged, finishCleanup } from './lib/ios-processes.mjs'
 import { errorMessage } from './lib/ios-errors.mjs'
+import { observeBootProcess } from './lib/ios-boot-diagnostics.mjs'
 import { cachedLayer, layerInputs, assetOutputs, installationMatches,
   inspectInstallation, recordInstallation, forgetInstallation } from './lib/ios-cache.mjs'
 
@@ -72,7 +73,8 @@ async function command(
     inherit = false,
     cwd = root,
     env = process.env,
-    observer = phaseObserver
+    observer = phaseObserver,
+    diagnostic
   } = {}
 ) {
   if (interrupted) throw new Error(`已取消：${interrupted}`)
@@ -85,7 +87,7 @@ async function command(
   let timer
   let watching
   let observationError
-  let child, cleanup, primaryError, serviceHandoff = false
+  let child, cleanup, primaryError, closeDiagnostic, serviceHandoff = false
   const stop = (error) => {
     if (observationError) return
     observationError = error
@@ -142,6 +144,7 @@ async function command(
         }, 100)
       child.once('error', reject)
       child.once('close', (code, signal) => resolve(code ?? 128 + (constants.signals[signal] ?? 0)))
+      if (child.pid) closeDiagnostic = diagnostic?.(child.pid,commandBudget,()=>child.exitCode===null && child.signalCode===null)
     })
     deadline?.remaining()
     if (observer && !observationError) {
@@ -169,6 +172,11 @@ async function command(
     clearTimeout(timer)
     clearInterval(watching)
     try {
+      try { await closeDiagnostic?.() } catch (error) {
+        const failure=primaryError ? new AggregateError([primaryError,error],'执行失败且诊断清理未完成。') : error
+        finishCleanup(cleanup,failure,{handoff:serviceHandoff})
+        throw failure
+      }
       finishCleanup(cleanup, primaryError, { handoff: serviceHandoff })
     } finally {
       if (activeCleanup === cleanup) activeCleanup = undefined
@@ -785,6 +793,8 @@ async function main(args) {
   if (args[1] === 'create') {
     const boot = args.length === 3 && args[2] === '--boot'
     if (args.length !== 2 && !boot) throw new Error('create 仅接受可选 --boot，不接受已有设备或会话参数。')
+    // 只读检查首次启动组件；不接受许可或安装组件，且不把它强加给纯脚本检查。
+    if (boot) await command('xcodebuild',['-checkFirstLaunchStatus'])
     const directory = fs.mkdtempSync(path.join(temporary, 'ios-debug-'))
     const runId = randomUUID()
     const context = {
@@ -806,20 +816,38 @@ async function main(args) {
         const file = path.join(directory, 'boot-readiness.json')
         const readiness = { scope: 'environment', status: 'running', simulatorId: context.simulatorId,
           runId, environment: toolchain, startedAt: Date.now(), budgetMs: budgets.boot,
-          host: { totalMemory: totalmem(), freeMemory: freemem() } }
+          host: { totalMemory: totalmem(), freeMemory: freemem() }, commands:[] }
         const bootDeadline = createDeadline(Math.min(budgets.boot, deadline.remaining()))
         writeJson(file, readiness)
         console.log(`模拟器启动预检：${file}；只验证环境，不编译或运行 App。`)
+        let bootFailure
+        const persist = (primary) => {
+          try {writeJson(file,readiness)} catch(error) {
+            if(primary)throw new AggregateError([primary,error],'启动失败且诊断记录未完成。')
+            throw error
+          }
+        }
+        const bootCommand = async (stage,args,log) => {
+          const step={stage,status:'running',startedAt:Date.now()}
+          let failure
+          readiness.stage=stage
+          readiness.commands.push(step)
+          writeJson(file,readiness)
+          try {
+            const result=await command('xcrun',args,{log,timeout:bootDeadline.remaining(),diagnostic:(pid,budget,isRunning)=>{
+              step.pid=pid
+              writeJson(file,readiness)
+              return observeBootProcess(root,directory,stage,pid,budget,{isRunning})
+            }})
+            step.status='passed'
+            return result
+          } catch(error) {failure=error;step.status='failed';step.error=errorMessage(error);throw error}
+          finally {step.completedAt=Date.now();persist(failure)}
+        }
         try {
-          await command('xcrun', ['simctl','boot',context.simulatorId], {
-            log: path.join(directory,'boot-request.log'), timeout: bootDeadline.remaining()
-          })
-          await command('xcrun', ['simctl','bootstatus',context.simulatorId,'-b'], {
-            log: path.join(directory,'boot-status.log'), timeout: bootDeadline.remaining()
-          })
-          const devices = JSON.parse((await command('xcrun', ['simctl','list','devices','--json'], {
-            timeout: bootDeadline.remaining()
-          })).text)
+          await bootCommand('boot-request',['simctl','boot',context.simulatorId],path.join(directory,'boot-request.log'))
+          await bootCommand('boot-ready',['simctl','bootstatus',context.simulatorId,'-b'],path.join(directory,'boot-status.log'))
+          const devices=JSON.parse((await bootCommand('verify-state',['simctl','list','devices','--json'])).text)
           if (assertDevice(context, devices).state !== 'Booted') throw new Error('模拟器尚未处于 Booted 状态。')
           bootDeadline.remaining()
           readiness.deviceState = 'Booted'
@@ -827,11 +855,12 @@ async function main(args) {
         } catch (error) {
           readiness.status = 'failed'
           readiness.error = errorMessage(error)
-          throw new Error('模拟器启动预检未通过；原生业务尚未执行。', { cause: error })
+          bootFailure=new Error('模拟器启动预检未通过；原生业务尚未执行。', { cause: error })
+          throw bootFailure
         } finally {
           readiness.completedAt = Date.now()
           readiness.elapsedMs = readiness.completedAt - readiness.startedAt
-          writeJson(file, readiness)
+          persist(bootFailure)
         }
       }
       deadline?.remaining()

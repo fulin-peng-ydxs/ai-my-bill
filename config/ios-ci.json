@@ -245,7 +245,8 @@
         "scripts/lib/ios-processes.mjs",
         "scripts/lib/ios-process-scope.mjs",
         "scripts/lib/ios-process-launch.mjs",
-        "scripts/ios-app.mjs"
+        "scripts/ios-app.mjs",
+        "scripts/lib/ios-boot-diagnostics.mjs"
       ],
       "suites": [
         "simulator-boot"

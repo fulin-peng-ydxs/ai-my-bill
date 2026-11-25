@@ -1103,7 +1103,7 @@ ${originalXcrun.replace(/^#![^\n]*\n/, '')}`)
 )
 
 test('模拟器启动预检不构建 App，共享启动预算，失败和取消只清理本次设备', { timeout:20000 }, async t => {
-  for (const mode of ['passed','failed','expired','cancelled']) await t.test(mode, async t => {
+  for (const mode of ['passed','failed','journal-failed','expired','cancelled']) await t.test(mode, async t => {
     const p = project(t), id = randomUUID(), sentinel = randomUUID()
     const state = p.write('.local/boot-state.json', JSON.stringify({ device:null }))
     const trace = p.write('.local/boot-trace.json','[]'), clockFile = p.write('.local/boot-clock','0')
@@ -1111,8 +1111,22 @@ test('模拟器启动预检不构建 App，共享启动预算，失败和取消�
     const serviceReady=path.join(p.root,'.local/boot-service-ready')
     let helperPid
     t.after(()=>{if(helperPid)try{process.kill(helperPid,'SIGKILL')}catch(e){if(e.code!=='ESRCH')throw e}})
+    const xcode=p.write('bin/xcodebuild', `#!${process.execPath}
+const fs=require('node:fs'),file=${JSON.stringify(trace)},calls=JSON.parse(fs.readFileSync(file));calls.push(['xcodebuild',...process.argv.slice(2)]);fs.writeFileSync(file,JSON.stringify(calls));console.log('Xcode 27.0');
+`)
+    fs.chmodSync(xcode,0o755)
     const platform = p.write('.local/boot-platform.mjs', `import fs from 'node:fs';import {performance} from 'node:perf_hooks';
 Object.defineProperty(process,'platform',{value:'darwin'});
+if(${JSON.stringify(mode)}==='journal-failed'){
+ const write=fs.writeFileSync;let injected=false;
+ fs.writeFileSync=(file,data,...args)=>{
+  if(!injected&&String(file).includes('boot-readiness.json.')){
+   const value=JSON.parse(String(data));
+   if(value.commands?.at(-1)?.status==='failed'){injected=true;throw new Error('controlled boot journal failure')}
+  }
+  return write(file,data,...args);
+ };
+}
 const original=performance.now.bind(performance);Object.defineProperty(performance,'now',{value:()=>original()+Number(fs.readFileSync(${JSON.stringify(clockFile)},'utf8'))});`)
     const executable = p.write('bin/xcrun', `#!${process.execPath}
 const fs=require('node:fs'),a=process.argv.slice(2),file=${JSON.stringify(state)},trace=${JSON.stringify(trace)},clock=${JSON.stringify(clockFile)};
@@ -1133,7 +1147,7 @@ if(${JSON.stringify(mode)}==='passed'){
 save();if(${JSON.stringify(mode)}==='expired')fs.writeFileSync(clock,'80000')}
 
 else if(a[1]==='bootstatus'){
-if(${JSON.stringify(mode)}==='failed')process.exit(9);
+if(['failed','journal-failed'].includes(${JSON.stringify(mode)}))process.exit(9);
 if(${JSON.stringify(mode)}==='cancelled'){fs.writeFileSync(${JSON.stringify(ready)},'ready');setInterval(()=>{},1000)}
 else {
  if(${JSON.stringify(mode)}==='passed'){
@@ -1167,20 +1181,26 @@ else throw new Error('unexpected simulator command');
     } else child=p.run(['debug','create','--boot'],env)
     const calls=JSON.parse(fs.readFileSync(trace)), devices=JSON.parse(fs.readFileSync(state))
     helperPid=devices.helperPid
+    assert.ok(calls.findIndex(a=>a[0]==='xcodebuild'&&a[1]==='-checkFirstLaunchStatus') < calls.findIndex(a=>a[1]==='create'))
+    assert.ok(calls.some(a=>a[0]==='xcodebuild'&&a[1]==='-checkFirstLaunchStatus'))
     assert.ok(calls.some(a=>a[1]==='boot')&&calls.some(a=>a[1]==='bootstatus'))
     assert.ok(calls.filter(a=>['boot','bootstatus','shutdown','delete'].includes(a[1])).every(a=>a[2]===id))
     const folders=fs.readdirSync(p.base).filter(name=>name.startsWith('ios-debug-')&&path.join(p.base,name)!==p.session)
     assert.equal(folders.length,1)
     const readiness=JSON.parse(fs.readFileSync(path.join(p.base,folders[0],'boot-readiness.json')))
     assert.equal(readiness.scope,'environment');assert.equal(readiness.budgetMs,120000)
+    assert.ok(readiness.commands.every(step=>step.pid>1 || step.status==='failed'))
+    if(mode==='passed')assert.deepEqual(readiness.commands.map(x=>[x.stage,x.status]),[['boot-request','passed'],['boot-ready','passed'],['verify-state','passed']])
+    if(mode==='failed')assert.equal(readiness.stage,'boot-ready')
     if(mode==='passed') {
       assert.equal(child.status,0,child.stderr);assert.match(child.stdout,/SESSION=/)
       assert.equal(devices.device.state,'Booted');assert.equal(readiness.status,'passed')
     } else {
       assert.notEqual(child.status,0);assert.doesNotMatch(child.stdout,/^SESSION=|^EVIDENCE=/m)
       assert.equal(readiness.status,'failed');assert.equal(devices.device,null)
+      if(mode==='journal-failed')assert.match(readiness.error,/controlled boot journal failure/)
       assert.ok(calls.some(a=>a[1]==='shutdown')&&calls.some(a=>a[1]==='delete'))
-      assert.match(readiness.error, mode==='expired' ? /超时/ : mode==='failed' ? /exit=9/ : /取消|SIGTERM|143/)
+      assert.match(readiness.error, mode==='expired' ? /超时/ : ['failed','journal-failed'].includes(mode) ? /exit=9/ : /取消|SIGTERM|143/)
     }
     assert.equal(fs.existsSync(path.join(p.root,'app/dist')),false,'环境预检不编译 App')
   })

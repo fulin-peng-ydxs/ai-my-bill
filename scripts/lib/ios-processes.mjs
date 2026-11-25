@@ -1,3 +1,4 @@
+import fs from 'node:fs'
 import { spawn, spawnSync } from 'node:child_process'
 import { performance } from 'node:perf_hooks'
 import { fileURLToPath } from 'node:url'
@@ -6,8 +7,9 @@ import { commandScope } from './ios-process-scope.mjs'
 /** 清理失败追加到原执行原因之后，不能以 finally 的异常覆盖超时、取消或命令失败。 */
 export function finishCleanup(cleanup, primary, options) {
   try { cleanup?.finish(options) } catch (error) {
-    if (primary) throw new AggregateError([primary, error], '执行失败且清理未完成。')
-    throw error
+    const failure = new AggregateError(primary ? [primary,error] : [error], primary ? '执行失败且清理未完成。' : '进程清理未完成。')
+    failure.code = 'IOS_PROCESS_CLEANUP_FAILED'
+    throw failure
   }
 }
 
@@ -50,7 +52,7 @@ function descendantGroups(pid, timeout) {
     killSignal: 'SIGKILL'
   })
   if (result.error || result.status !== 0)
-    throw new Error('无法读取受管进程树，清理不能判为完成。', { cause: result.error })
+    throw new Error('无法读取受管进程树，清理不能判为完成。', { cause: result.error ?? new Error(`ps exit=${result.status}, signal=${result.signal}`) })
   const children = new Map(),
     rows = []
   for (const line of result.stdout.trim().split('\n')) {
@@ -85,7 +87,12 @@ export function processCleanup(pid, { graceMs = 10_000, scope } = {}) {
       // 直接发送目标信号；signal 0 的权限探测并不证明实际信号无法发送，退出竞争由 ESRCH 接纳。
       process.kill(-group, signal)
     } catch (e) {
-      if (e.code !== 'ESRCH') error ??= new Error(`清理进程组 ${group} 的 ${signal} 失败（${e.code ?? 'unknown'}）。`, { cause:e })
+      if (e.code !== 'ESRCH') {
+        // 权限错误不能视为退出。只探测本次组长的存活，保留组信号与组长状态的区别。
+        let leader = 'alive'
+        try { process.kill(group,0) } catch (probe) { leader=probe.code ?? 'unknown' }
+        error ??= new Error(`清理进程组 ${group} 的 ${signal} 失败（${e.code ?? 'unknown'}，组长=${leader}）。`, { cause:e })
+      }
     }
   }
   const force = (handoff = false) => {
@@ -138,6 +145,73 @@ export function processCleanup(pid, { graceMs = 10_000, scope } = {}) {
         clearTimeout(timer)
         scope?.finish(error)
       }
+    }
+  }
+}
+
+/** 不捕获到内存的大日志；超时/取消先通知原执行器清理，再限时终止进程组。 */
+export async function runCommand(root, program, args, log, timeoutMs = 2_700_000,
+  { cleanupGraceMs = 10_000, acceptExit, signal } = {}) {
+  // 受控进程回归只缩短清理宽限；正式调用保留默认值，不提供 CLI/环境覆盖或延长预算。
+  if (!Number.isSafeInteger(cleanupGraceMs) || cleanupGraceMs < 0 || cleanupGraceMs > 10_000)
+    throw new Error('CI 清理宽限必须为 0 至 10000 毫秒。')
+  if (signal?.aborted) throw new Error('CI 命令在启动前已取消。')
+  const fd = fs.openSync(log, 'wx', 0o600)
+  let child,
+    timer,
+    cleanup,
+    primaryError,
+    cancelled = false
+  const stop = () => {
+    cancelled = true
+    cleanup?.stop()
+  }
+  try {
+    const code = await new Promise((resolve, reject) => {
+      const managed = spawnManaged(program, args, {
+        cwd: root,
+        env: process.env,
+        detached: true,
+        stdio: ['ignore', fd, fd]
+      }, { root, graceMs: cleanupGraceMs })
+      child = managed.child
+      cleanup = managed.cleanup
+      child.once('error', reject)
+      child.once('close', (code) => resolve(code))
+      timer = setTimeout(stop, timeoutMs)
+      process.once('SIGINT', stop)
+      process.once('SIGTERM', stop)
+      signal?.addEventListener('abort', stop, {once:true})
+      if (signal?.aborted) stop()
+    })
+    // 默认调用保留原有先判失败的路径；只有精确登记的预期非零终态需要读取输出再判。
+    if (cancelled || (!acceptExit && code !== 0)) throw new Error(`CI 命令失败或取消（exit=${code}），见 ${log}`)
+    const size = fs.fstatSync(fd).size
+    // 输出标识在命令收尾，最多读取尾部 64KiB；日志本体留存供失败诊断。
+    const data = Buffer.alloc(Math.min(size, 65_536))
+    const source = fs.openSync(log, 'r')
+    try {
+      fs.readSync(source, data, 0, data.length, size - data.length)
+    } finally {
+      fs.closeSync(source)
+    }
+    const output = data.toString('utf8')
+    // 预期的非零终态由调用者精确核验；取消始终失败，避免已退出命令误走取消快照/强杀。
+    if (acceptExit && !acceptExit(code, output)) throw new Error(`CI 命令失败或取消（exit=${code}），见 ${log}`)
+    return output
+  } catch (error) {
+    primaryError = error
+    cleanup?.stop('SIGKILL')
+    throw error
+  } finally {
+    clearTimeout(timer)
+    try {
+      finishCleanup(cleanup, primaryError)
+    } finally {
+      process.removeListener('SIGINT', stop)
+      process.removeListener('SIGTERM', stop)
+      signal?.removeEventListener('abort', stop)
+      fs.closeSync(fd)
     }
   }
 }
