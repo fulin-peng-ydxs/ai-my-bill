@@ -7,6 +7,7 @@ import path from 'node:path'
 import { execFileSync, spawnSync, spawn } from 'node:child_process'
 import {
   createPlan,
+  digest,
   assertPlan,
   registry,
   selectSuites,
@@ -18,7 +19,7 @@ import { audit, auditDependencies, swiftLock } from '../lib/ios-audit.mjs'
 import { assertScriptReport, assertModePhases, requiredModePhases } from '../lib/ios-test-reports.mjs'
 import { checkDefinition } from '../lib/ios-checks.mjs'
 import { requireEvidence } from '../lib/ios-verification.mjs'
-import { processCleanup } from '../lib/ios-processes.mjs'
+import { processCleanup, finishCleanup } from '../lib/ios-processes.mjs'
 import { commandScope } from '../lib/ios-process-scope.mjs'
 
 const repository = new URL('../../', import.meta.url).pathname
@@ -246,6 +247,42 @@ test('CI 新会话先预检再编译，失败不执行套件，成功后只关�
       assert.match(result.error,booted?/CONTROLLED_AFTER_BOOT/:/CONTROLLED_BOOT_FAILURE/)
       if (!booted) assert.equal(fs.existsSync(path.join(directory,'native-build')),false)
     }
+  } finally {Object.defineProperty(process,'platform',original)}
+})
+
+test('CI 启动环境专项只运行新会话启动及关闭，拒绝旧回执和错误来源且不冒充 App 验收', async t => {
+  const original=Object.getOwnPropertyDescriptor(process,'platform')
+  Object.defineProperty(process,'platform',{value:'darwin'})
+  try {
+    const p=fixture(t), {directory}=prepare(p,'simulator-boot','environment')
+    const id='11111111-1111-4111-8111-111111111111',runId='22222222-2222-4222-8222-222222222222'
+    const session=path.join(p.root,'.local/ios/tmp/ai-agent/ios-debug-fixture'),calls=[]
+    const context=p.write('.local/ios/tmp/ai-agent/ios-debug-fixture/test-context.json',{
+      kind:'ios-debug',schema:1,state:'open',appId:'com.mybill.offline',simulatorId:id,runId,name:'我的账单调试-'+runId})
+    fs.chmodSync(context,0o600)
+    const now=Date.now(),r={scope:'environment',status:'passed',deviceState:'Booted',simulatorId:id,runId,
+      environment:JSON.stringify({sdk:'27.0',xcode:'Xcode 27.0',runtime:'TEST'}),budgetMs:120000,startedAt:now-5,completedAt:now,elapsedMs:5}
+    p.write('.local/ios/tmp/ai-agent/ios-debug-fixture/boot-readiness.json',r)
+    for(const name of ['boot-request.log','boot-status.log'])p.write('.local/ios/tmp/ai-agent/ios-debug-fixture/'+name,'')
+    const command=async(_root,_program,args)=>{calls.push(args);return args[2]==='create'?'SESSION='+session+'\n':''}
+    await executeGroup(p.root,directory,'macos',{command})
+    assert.deepEqual(calls,[['scripts/ios-app.sh','debug','create','--boot'],['scripts/ios-app.sh','debug','close','--session',session]])
+    assert.equal(reconcile(p.root,directory).status,'passed')
+    assert.equal(reconcile(p.root,directory).completeCandidate,false)
+    const receiptFile=path.join(directory,'simulator-boot/receipt.json'),reportFile=path.join(directory,'simulator-boot/environment.json')
+    const originalReport=JSON.parse(fs.readFileSync(reportFile))
+    for (const change of [v=>v.source.commit='0'.repeat(40),v=>v.readiness.status='failed',v=>v.readiness.deviceState='Shutdown',
+      v=>v.readiness.elapsedMs=120001,v=>v.readiness.scope='partial',v=>v.readiness.environment='{}',v=>v.readiness.completedAt=Date.now()+60000]) {
+      const value=structuredClone(originalReport);change(value);fs.writeFileSync(reportFile,JSON.stringify(value))
+      const receipt=JSON.parse(fs.readFileSync(receiptFile));receipt.reports.find(x=>x.path==='environment.json').hash=digest(fs.readFileSync(reportFile))
+      fs.writeFileSync(receiptFile,JSON.stringify(receipt))
+      assert.equal(reconcile(p.root,directory).status,'incomplete')
+    }
+    const selected=selectSuites(registry(p.root),'pull-request',['scripts/lib/ios-processes.mjs']).map(x=>x.name)
+    assert.deepEqual(selected,['secrets','scripts','scripts-macos','simulator-boot'])
+    assert.ok(!selectSuites(registry(p.root),'pull-request',['scripts/tests/ios-ci.test.mjs']).some(x=>x.name==='simulator-boot'))
+    const borrowed=prepare(p,'simulator-boot','borrowed')
+    await assert.rejects(executeGroup(p.root,borrowed.directory,'macos',{command,session}),/不能复用旧启动回执/)
   } finally {Object.defineProperty(process,'platform',original)}
 })
 
@@ -846,6 +883,7 @@ fs.renameSync=(from,to)=>{
           const workerFile = p.write('worker.mjs', `
 import fs from 'node:fs';
 import {runCommand} from ${JSON.stringify(new URL('../lib/ios-ci-run.mjs', import.meta.url).href)};
+import {errorMessage} from ${JSON.stringify(new URL('../lib/ios-errors.mjs', import.meta.url).href)};
 ${mode === 'seal-failure' ? `const original=fs.writeFileSync;
 fs.writeFileSync=(file,...args)=>{
   if(String(file).includes('/ios-process-') && String(file).includes('/.closed-') && fs.existsSync(${JSON.stringify(late)})){
@@ -856,7 +894,7 @@ fs.writeFileSync=(file,...args)=>{
 };` : ''}
 const started=Date.now();
 try{await runCommand(${JSON.stringify(p.root)},'/usr/bin/env',${JSON.stringify(args)},${JSON.stringify(path.join(p.root, 'outer.log'))},${executionBudget},{cleanupGraceMs:500});process.exitCode=2}
-catch(error){fs.writeFileSync(${JSON.stringify(workerResult)},JSON.stringify({error:error.message,elapsed:Date.now()-started}));process.exitCode=1}
+catch(error){fs.writeFileSync(${JSON.stringify(workerResult)},JSON.stringify({error:errorMessage(error),elapsed:Date.now()-started}));process.exitCode=1}
 `)
           const worker = spawn(process.execPath, [workerFile], { cwd: p.root, detached: true, stdio: 'ignore' })
           const ended = new Promise((resolve, reject) => { worker.once('error', reject); worker.once('close', resolve) })
@@ -980,6 +1018,57 @@ test('CI 共享清理器不延长重复停止的宽限，完成后旧回调失�
     if (originalPath === undefined) delete process.env.PATH
     else process.env.PATH = originalPath
   }
+})
+
+test('CI 清理直接发送实际信号，拒绝真实 EPERM，保留执行主因和清理原因', () => {
+  const original=process.kill, calls=[]
+  try {
+    process.kill=(pid,signal)=>{
+      calls.push([pid,signal])
+      if (signal===0) throw Object.assign(new Error('probe permission denied'),{code:'EPERM'})
+      return true
+    }
+    const cleanup=processCleanup(200201,{graceMs:0,scope:{seal(){},groups(){return new Set([200201])},finish(){}}})
+    cleanup.finish()
+    assert.deepEqual(calls,[[-200201,'SIGKILL']], '权限探测不能误拦实际清理')
+    process.kill=()=>{throw Object.assign(new Error('real permission denied'),{code:'EPERM'})}
+    const denied=processCleanup(200202,{graceMs:0,scope:{seal(){},groups(){return new Set([200202])},finish(){}}})
+    const primary=new Error('BOOT_EXECUTION_TIMEOUT')
+    assert.throws(()=>finishCleanup(denied,primary),error=>{
+      assert.ok(error instanceof AggregateError)
+      assert.equal(error.errors[0],primary)
+      assert.match(error.errors[1].message,/200202.*SIGKILL.*EPERM/)
+      return true
+    })
+  } finally {process.kill=original}
+})
+
+test('CI 慢快照计入既有宽限，内外层失败不被快照故障覆盖', {timeout:10000}, async t => {
+  const p=processFixture(t), original=process.env.PATH
+  const ps=p.write('bin/ps', `#!${process.execPath}
+const {spawnSync}=require('node:child_process');
+Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,650);
+const r=spawnSync('/bin/ps',process.argv.slice(2),{stdio:'inherit'});process.exit(r.status??1);
+`)
+  fs.chmodSync(ps,0o755)
+  process.env.PATH=path.join(p.root,'bin')+path.delimiter+original
+  try {
+    const started=Date.now()
+    await assert.rejects(runCommand(p.root,process.execPath,['-e','setInterval(()=>{},1000)'],path.join(p.root,'slow.log'),100),/命令失败或取消/)
+    assert.ok(Date.now()-started<3000,'慢快照不增加第二轮清理宽限')
+    // 清理前置失败仍不能把命令主错误（exit=7）抹掉；分别覆盖外层和实际内层 CLI。
+    p.write('bin/ps','#!/bin/sh\nexit 1\n');fs.chmodSync(ps,0o755)
+    await assert.rejects(runCommand(p.root,process.execPath,['-e','process.exit(7)'],path.join(p.root,'failed.log'),1000),error=>{
+      assert.ok(error instanceof AggregateError)
+      assert.match(error.errors[0].message,/exit=7/)
+      assert.match(error.errors[1].message,/无法读取受管进程树/)
+      return true
+    })
+    p.write('scripts/lib/ios-app-full.sh','exit 7\n')
+    const run=spawnSync(process.execPath,['scripts/ios-app.mjs','common'],{cwd:p.root,env:process.env,encoding:'utf8',timeout:3000})
+    assert.equal(run.status,1,run.stderr)
+    assert.match(run.stderr,/exit=7/);assert.match(run.stderr,/无法读取受管进程树/)
+  } finally {process.env.PATH=original}
 })
 
 test('CI 活动进程登记按父子范围隔离，关闭后拒绝续建，错误令牌和链接不能越界', (t) => {

@@ -41,7 +41,7 @@ import {
 } from './lib/ios-verification.mjs'
 
 import { checkNames, checkDefinition } from './lib/ios-checks.mjs'
-import { spawnManaged } from './lib/ios-processes.mjs'
+import { spawnManaged, finishCleanup } from './lib/ios-processes.mjs'
 import { errorMessage } from './lib/ios-errors.mjs'
 import { cachedLayer, layerInputs, assetOutputs, installationMatches,
   inspectInstallation, recordInstallation, forgetInstallation } from './lib/ios-cache.mjs'
@@ -85,7 +85,7 @@ async function command(
   let timer
   let watching
   let observationError
-  let child, cleanup
+  let child, cleanup, primaryError
   const stop = (error) => {
     if (observationError) return
     observationError = error
@@ -160,13 +160,14 @@ async function command(
     }
     return { status, text }
   } catch (error) {
+    primaryError = error
     cleanup?.stop('SIGKILL')
     throw error
   } finally {
     clearTimeout(timer)
     clearInterval(watching)
     try {
-      cleanup?.finish()
+      finishCleanup(cleanup, primaryError)
     } finally {
       if (activeCleanup === cleanup) activeCleanup = undefined
       if (output !== undefined) fs.closeSync(output)
@@ -819,6 +820,7 @@ async function main(args) {
           })).text)
           if (assertDevice(context, devices).state !== 'Booted') throw new Error('模拟器尚未处于 Booted 状态。')
           bootDeadline.remaining()
+          readiness.deviceState = 'Booted'
           readiness.status = 'passed'
         } catch (error) {
           readiness.status = 'failed'

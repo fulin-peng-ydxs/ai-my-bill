@@ -41,7 +41,7 @@ export function registry(root) {
       !/^[a-z][a-z0-9-]*$/.test(name) ||
       !['linux', 'macos'].includes(s.runner) ||
       !s.description ||
-      !['secrets', 'check', 'engineering', 'full', 'ui', 'audit','scenario','installation'].includes(s.kind) ||
+      !['secrets', 'check', 'engineering', 'full', 'ui', 'audit','scenario','installation','environment'].includes(s.kind) ||
       (s.kind === 'check' && s.check !== 'script-tests') ||
       (s.kind === 'engineering' && !['common', 'ios-build'].includes(s.mode)) ||
       (s.kind === 'full' && !['ios-smoke', 'ios-touch'].includes(s.mode)) ||
@@ -51,7 +51,7 @@ export function registry(root) {
             Boolean(s.scenario)
           : !Object.hasOwn(uiScenarios, s.scenario))) ||
       (s.kind === 'scenario' && ![...recoveryScenarios,...capacityScenarios.filter(x=>/^scale-\d+$/.test(x))].includes(s.scenario)) ||
-      ((['full', 'ui','scenario','installation'].includes(s.kind) || s.mode === 'ios-build') && s.runner !== 'macos')
+      ((['full', 'ui','scenario','installation','environment'].includes(s.kind) || s.mode === 'ios-build') && s.runner !== 'macos')
     )
       throw new Error('CI 套件定义无效：' + name)
   }

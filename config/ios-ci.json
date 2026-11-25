@@ -189,6 +189,11 @@
       "kind": "installation",
       "runner": "macos",
       "description": "可信手动输入：完整工程候选、签名检查与两种规模真机报告汇总"
+    },
+    "simulator-boot": {
+      "kind": "environment",
+      "runner": "macos",
+      "description": "独立模拟器启动与关闭，不编译或验收 App"
     }
   },
   "profiles": {
@@ -233,6 +238,17 @@
       "suites": [
         "scripts",
         "scripts-macos"
+      ]
+    },
+    {
+      "paths": [
+        "scripts/lib/ios-processes.mjs",
+        "scripts/lib/ios-process-scope.mjs",
+        "scripts/lib/ios-process-launch.mjs",
+        "scripts/ios-app.mjs"
+      ],
+      "suites": [
+        "simulator-boot"
       ]
     },
     {

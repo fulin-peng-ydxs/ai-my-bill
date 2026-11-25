@@ -3,6 +3,14 @@ import { performance } from 'node:perf_hooks'
 import { fileURLToPath } from 'node:url'
 import { commandScope } from './ios-process-scope.mjs'
 
+/** 清理失败追加到原执行原因之后，不能以 finally 的异常覆盖超时、取消或命令失败。 */
+export function finishCleanup(cleanup, primary) {
+  try { cleanup?.finish() } catch (error) {
+    if (primary) throw new AggregateError([primary, error], '执行失败且清理未完成。')
+    throw error
+  }
+}
+
 /** 登记在放行补偿工具之前完成；每次外层调用建立独立范围，内层只继承自己的父登记。 */
 export function spawnManaged(program, args, options, { root, graceMs = 10_000 }) {
   const scope = commandScope(root, options.env ?? process.env)
@@ -25,7 +33,7 @@ export function spawnManaged(program, args, options, { root, graceMs = 10_000 })
     child?.on('error', () => {})
     if (cleanup) {
       cleanup.stop('SIGKILL')
-      cleanup.finish()
+      finishCleanup(cleanup, error)
     } else {
       scope.finish(error)
     }
@@ -74,10 +82,10 @@ export function processCleanup(pid, { graceMs = 10_000, scope } = {}) {
     error
   const kill = (group, signal) => {
     try {
-      if (signal === 'SIGKILL') process.kill(-group, 0)
+      // 直接发送目标信号；signal 0 的权限探测并不证明实际信号无法发送，退出竞争由 ESRCH 接纳。
       process.kill(-group, signal)
     } catch (e) {
-      if (e.code !== 'ESRCH') error ??= e
+      if (e.code !== 'ESRCH') error ??= new Error(`清理进程组 ${group} 的 ${signal} 失败（${e.code ?? 'unknown'}）。`, { cause:e })
     }
   }
   const force = () => {
@@ -107,7 +115,7 @@ export function processCleanup(pid, { graceMs = 10_000, scope } = {}) {
       const started = performance.now()
       if (groups.size && graceMs > 0) {
         try {
-          for (const group of descendantGroups(pid, Math.min(500, graceMs))) groups.add(group)
+          for (const group of descendantGroups(pid, Math.min(2_000, graceMs))) groups.add(group)
         } catch (e) {
           error = e
         }
