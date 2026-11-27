@@ -1170,36 +1170,41 @@ test('Capacity 独立登记适配保持 App/UI 原签发器及其输出，重复
 })
 
 test('Capacity 正式签发与归档和 --from 共用登记/报告/外层终态校验，重算归档摘要不能绕过',async t=>{
-  const p=fixture(t,true);makeHashable(p);p.session.context.state='open';p.write(p.base+'/test-context.json',p.session.context);p.commit()
-  const item=capacityProof(p),plan=createPlan(p.root,'scale-10000')
-  const execute=async name=>{
-    const directory=resultsDirectory(p.root,'.local/ios/tmp/ai-agent/ios-ci-'+name,true)
-    p.write(path.relative(p.root,path.join(directory,'ci-plan.json')),plan)
-    await executeGroup(p.root,directory,'macos',{session:p.session.directory,command:async(_root,_program,args)=>{
-      if(args[1]==='debug'&&args[2]==='run')return'EVIDENCE='+item.run+'\n'
-      if(args[1]==='debug'&&args[2]==='suspend')return''
-      throw Error('unexpected native command')
-    }})
-    return directory
-  }
-  const directory=await execute('goodcapacity'),suite=plan.suites[0]
-  assert.doesNotThrow(()=>validateSuiteEvidence(p.root,directory,plan,suite))
-  for(const [index,mutation]of ['context','owner','terminal','report','registration'].entries()) {
-    const file=mutation==='context'?path.join(item.run,'capacity-context.json'):mutation==='owner'?path.join(p.session.directory,'capacity-owner.json'):
-      mutation==='terminal'?path.join(item.invocation.run,'result.json'):mutation==='report'?path.join(item.run,'capacity-report.json'):path.join(item.run,'local-measurement.json')
-    const bytes=fs.readFileSync(file)
-    if(mutation==='terminal')fs.writeFileSync(file,JSON.stringify({...JSON.parse(bytes),status:'failed',cancelled:true}))
-    else fs.unlinkSync(file)
-    assert.throws(()=>validateSuiteEvidence(p.root,directory,plan,suite),undefined,mutation)
-    await assert.rejects(execute('badcapacity'+index),undefined,mutation)
-    fs.writeFileSync(file,bytes)
-  }
-  const receiptFile=path.join(directory,suite.name,'receipt.json'),receipt=JSON.parse(fs.readFileSync(receiptFile))
-  const archived=receipt.reports.find(r=>r.role==='primary'&&r.origin.endsWith('/local-measurement.json'))
-  const file=path.join(directory,suite.name,archived.path)
-  fs.writeFileSync(file,JSON.stringify({...item.measured,ownerPid:999996}));archived.hash=digest(fs.readFileSync(file))
-  fs.writeFileSync(receiptFile,JSON.stringify(receipt))
-  assert.throws(()=>validateSuiteEvidence(p.root,directory,plan,suite),/归档/,'普通摘要不能替代原登记逐字节对账')
+  // This test substitutes every native command; exercise the same boundary on Linux too.
+  const descriptor=Object.getOwnPropertyDescriptor(process,'platform')
+  Object.defineProperty(process,'platform',{value:'darwin'})
+  try {
+    const p=fixture(t,true);makeHashable(p);p.session.context.state='open';p.write(p.base+'/test-context.json',p.session.context);p.commit()
+    const item=capacityProof(p),plan=createPlan(p.root,'scale-10000')
+    const execute=async name=>{
+      const directory=resultsDirectory(p.root,'.local/ios/tmp/ai-agent/ios-ci-'+name,true)
+      p.write(path.relative(p.root,path.join(directory,'ci-plan.json')),plan)
+      await executeGroup(p.root,directory,'macos',{session:p.session.directory,command:async(_root,_program,args)=>{
+        if(args[1]==='debug'&&args[2]==='run')return'EVIDENCE='+item.run+'\n'
+        if(args[1]==='debug'&&args[2]==='suspend')return''
+        throw Error('unexpected native command')
+      }})
+      return directory
+    }
+    const directory=await execute('goodcapacity'),suite=plan.suites[0]
+    assert.doesNotThrow(()=>validateSuiteEvidence(p.root,directory,plan,suite))
+    for(const [index,mutation]of ['context','owner','terminal','report','registration'].entries()) {
+      const file=mutation==='context'?path.join(item.run,'capacity-context.json'):mutation==='owner'?path.join(p.session.directory,'capacity-owner.json'):
+        mutation==='terminal'?path.join(item.invocation.run,'result.json'):mutation==='report'?path.join(item.run,'capacity-report.json'):path.join(item.run,'local-measurement.json')
+      const bytes=fs.readFileSync(file)
+      if(mutation==='terminal')fs.writeFileSync(file,JSON.stringify({...JSON.parse(bytes),status:'failed',cancelled:true}))
+      else fs.unlinkSync(file)
+      assert.throws(()=>validateSuiteEvidence(p.root,directory,plan,suite),undefined,mutation)
+      await assert.rejects(execute('badcapacity'+index),undefined,mutation)
+      fs.writeFileSync(file,bytes)
+    }
+    const receiptFile=path.join(directory,suite.name,'receipt.json'),receipt=JSON.parse(fs.readFileSync(receiptFile))
+    const archived=receipt.reports.find(r=>r.role==='primary'&&r.origin.endsWith('/local-measurement.json'))
+    const file=path.join(directory,suite.name,archived.path)
+    fs.writeFileSync(file,JSON.stringify({...item.measured,ownerPid:999996}));archived.hash=digest(fs.readFileSync(file))
+    fs.writeFileSync(receiptFile,JSON.stringify(receipt))
+    assert.throws(()=>validateSuiteEvidence(p.root,directory,plan,suite),/归档/,'普通摘要不能替代原登记逐字节对账')
+  } finally {Object.defineProperty(process,'platform',descriptor)}
 })
 
 test('容量适配共享边界：当前源码须纯透传 App/UI，未知转接/顶层副作用拒绝旧证明，容量内部变化不误失效',async t=>{
