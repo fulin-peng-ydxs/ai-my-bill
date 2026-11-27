@@ -23,13 +23,21 @@ import { requestedScope, requireJobs, assertNpmSources } from '../lib/ios-ci.mjs
 import { audit, auditDependencies, swiftLock } from '../lib/ios-audit.mjs'
 import { assertScriptReport, assertModePhases, requiredModePhases } from '../lib/ios-test-reports.mjs'
 import { checkDefinition } from '../lib/ios-checks.mjs'
-import { requireEvidence } from '../lib/ios-verification.mjs'
-import { processCleanup, finishCleanup } from '../lib/ios-processes.mjs'
+import { requireEvidence, inputHash, controlInputs } from '../lib/ios-verification.mjs'
+import { processCleanup, finishCleanup, descendantGroups } from '../lib/ios-processes.mjs'
 import { commandScope } from '../lib/ios-process-scope.mjs'
 import { resolveSimctl } from '../lib/ios-simctl.mjs'
 import { assertBootStatus } from '../lib/ios-boot-proof.mjs'
 
 const repository = new URL('../../', import.meta.url).pathname
+
+test('键盘前置调试不能冒充业务 CI 套件', () => {
+  for (const scenario of ['keyboard-ready','income-note','income-note-after-save']) {
+    const r = JSON.parse(fs.readFileSync(path.join(repository, 'config/ios-ci.json'), 'utf8'))
+    r.suites['ui-entry'].scenario = scenario
+    assert.throws(() => registry(repository, r), /CI 套件定义无效/, scenario)
+  }
+})
 
 async function waitForProcessState(condition) {
   const until = Date.now() + 3500
@@ -138,7 +146,7 @@ test('CI 同源局部脚本回执也核验实际报告，TODO 和非法跳过不
   p.write('scripts/tests/ios-only.test.mjs', "import {test} from 'node:test';test('actual',()=>{});\n")
   const run = path.join(p.root, '.local/ios/tmp/ai-agent/ios-check-proof')
   const definition = checkDefinition(p.root, run, 'script-tests')
-  const hash = 'caller-verified-input'
+  const hash = 'a'.repeat(64)
   p.write(path.relative(p.root, path.join(run, 'result.json')), {
     scope: 'partial', status: 'passed', check: 'script-tests', inputHash: hash,
     coverage: definition.coverage, options: {}, completedAt: Date.now(),
@@ -147,6 +155,13 @@ test('CI 同源局部脚本回执也核验实际报告，TODO 和非法跳过不
   const passed = '# tests 1\n# pass 1\n# fail 0\n# cancelled 0\n# skipped 0\n# todo 0\n'
   const log = p.write(path.relative(p.root, path.join(run, 'check.log')), passed)
   assert.doesNotThrow(() => requireEvidence(p.root, run, hash))
+  const resultFile=path.relative(p.root,path.join(run,'result.json'))
+  const valid=JSON.parse(fs.readFileSync(path.join(run,'result.json')))
+  for(const invalid of ['caller-verified-input','a'.repeat(63)]) {
+    p.write(resultFile,{...valid,inputHash:invalid})
+    assert.throws(()=>requireEvidence(p.root,run,invalid),/版本不符/)
+  }
+  p.write(resultFile,valid)
   fs.writeFileSync(log, passed.replace('# tests 1', '# tests 2').replace('# todo 0', '# todo 1'))
   assert.throws(() => requireEvidence(p.root, run, hash), /TODO/)
   fs.writeFileSync(log, 'ok 2 - unregistered # SKIP\n' + passed.replace('# tests 1', '# tests 2').replace('# skipped 0', '# skipped 1'))
@@ -186,6 +201,8 @@ function fixture(t) {
   git('config', 'user.name', 'fixture')
   git('config', 'user.email', 'fixture@example.invalid')
   write('.gitignore', '.local/\nnode_modules/\n')
+  write('scripts/lib/ios-local-partials.mjs', "export { partialMeasurement, registerPartial } from './ios-local-measurement.mjs'\n")
+  write('scripts/lib/ios-local-measurement.mjs','export function partialMeasurement() {}\nexport function registerPartial() {}\n')
   write('config/ios-ci.json', fs.readFileSync(path.join(repository, 'config/ios-ci.json'), 'utf8'))
   write(
     'app/ios/App/UITests/DictionaryTouchTests.swift',
@@ -318,7 +335,7 @@ test('CI 启动环境专项只运行新会话启动及关闭，拒绝旧回执�
     const selected=selectSuites(registry(p.root),'change',['scripts/lib/ios-processes.mjs'],{execution:'local'}).map(x=>x.name)
     assert.deepEqual(selected,['secrets','scripts','simulator-boot','scripts-macos', 'workflow-quality'])
     assert.equal(selected.filter(name=>registry(p.root).suites[name].runner==='macos')[0],'simulator-boot','冷启动预检必须先于工具压力回归')
-    for(const file of ['scripts/lib/ios-process-launch.sh','scripts/lib/ios-host-diagnostics.py','scripts/lib/ios-app-full.sh','scripts/lib/ios-simctl.mjs','scripts/lib/ios-boot-proof.mjs','scripts/lib/ios-ci-run.mjs'])
+    for(const file of ['scripts/lib/ios-process-launch.sh','scripts/lib/ios-host-diagnostics.py','scripts/lib/ios-app-full.sh','scripts/lib/ios-simctl.mjs','scripts/lib/ios-simctl-sync.mjs','scripts/lib/ios-boot-proof.mjs','scripts/lib/ios-ci-run.mjs'])
       assert.ok(selectSuites(registry(p.root),'change',[file],{execution:'local'}).some(x=>x.name==='simulator-boot'),file)
     assert.ok(!selectSuites(registry(p.root),'pull-request',['scripts/tests/ios-ci.test.mjs']).some(x=>x.name==='simulator-boot'))
     const borrowed=prepare(p,'simulator-boot','borrowed')
@@ -332,6 +349,10 @@ function processFixture(t) {
   fs.cpSync(path.join(repository, 'scripts/lib'), path.join(p.root, 'scripts/lib'), { recursive: true })
   p.write('scripts/ios-app.mjs', fs.readFileSync(path.join(repository, 'scripts/ios-app.mjs'), 'utf8'))
   p.write('app/native-tests/scenarios.json', fs.readFileSync(path.join(repository, 'app/native-tests/scenarios.json'), 'utf8'))
+  // Parent and fixture CLI must use the same locked parser for execution-input projections.
+  fs.mkdirSync(path.join(p.root,'app/node_modules'),{recursive:true})
+  fs.symlinkSync(fs.realpathSync(path.join(repository,'app/node_modules/typescript')),
+    path.join(p.root,'app/node_modules/typescript'),'dir')
   return p
 }
 
@@ -729,6 +750,66 @@ test('CI 工作流 PR 自动、通用门禁始终对账，手动结果隔离且�
   )
 })
 
+test('远端规划、执行与对账先准备同一锁定解析器，审计各触发入口仍不安装依赖', t => {
+  const p = fixture(t)
+  const workflow = fs.readFileSync(path.join(repository, '.github/workflows/offline-ios.yml'), 'utf8')
+  const planning = workflow.slice(workflow.indexOf('\n  plan:'), workflow.indexOf('\n  checks:'))
+  const execution = workflow.slice(workflow.indexOf('\n  checks:'), workflow.indexOf('\n  local_evidence:'))
+  const result = workflow.slice(workflow.indexOf('\n  result:'))
+  assert.match(planning, /if: steps\.request\.outputs\.profile != 'dependency-audit'\n        run: npm --prefix app ci --ignore-scripts/)
+  assert.match(execution, /if: needs\.plan\.outputs\.profile != 'dependency-audit'\n        run: npm --prefix app ci --ignore-scripts/)
+  assert.match(result, /if: needs\.plan\.result == 'success' && needs\.plan\.outputs\.profile != 'dependency-audit'\n        run: npm --prefix app ci --ignore-scripts/)
+  assert.ok(planning.indexOf('npm --prefix app ci --ignore-scripts') < planning.indexOf('npm run ci:ios-app -- prepare'))
+  assert.ok(result.indexOf('npm --prefix app ci --ignore-scripts') < result.indexOf('npm run ci:ios-app -- result'))
+  const request = planning.match(/node --input-type=module <<'NODE'\n([\s\S]*?)\n          NODE/)?.[1]
+  assert.ok(request)
+  p.write('scripts/lib/ios-ci.mjs', fs.readFileSync(path.join(repository, 'scripts/lib/ios-ci.mjs'), 'utf8'))
+  const sha = 'a'.repeat(40)
+  for (const [name, event, profile] of [
+    ['pull_request', { pull_request: { base: { sha }, head: { sha } } }, 'pull-request'],
+    ['schedule', {}, 'dependency-audit'],
+    ...['scripts', 'common', 'change', 'dependency-audit'].flatMap(profile => [
+      ['workflow_dispatch', { inputs: { verification: profile } }, profile],
+      ['push', { ref: `refs/tags/ios-ci/${profile}/${profile === 'change' ? sha + '/' : ''}controlled` }, profile]
+    ])
+  ]) {
+    const input = p.write('event.json', event), output = p.write('output.txt', '')
+    const actual = spawnSync(process.execPath, ['--input-type=module', '-e', request], {
+      cwd: p.root, encoding: 'utf8', timeout: 10000,
+      env: { ...process.env, GITHUB_EVENT_NAME: name, GITHUB_EVENT_PATH: input, GITHUB_OUTPUT: output }
+    })
+    assert.equal(actual.status, 0, actual.stderr)
+    assert.equal(fs.readFileSync(output, 'utf8'), `profile=${profile}\n`, name)
+  }
+})
+
+test('干净检出的 AST 计划在安装解析器后必须重新生成，准备后跨进程对账一致', t => {
+  const p = processFixture(t)
+  p.commit()
+  p.write('app/src/App.vue', '<template>controlled</template>')
+  const parserLink = path.join(p.root, 'app/node_modules/typescript')
+  fs.unlinkSync(parserLink) // Only this fixture's owned link; never alter the real App dependencies.
+  const invoke = code => {
+    const actual = spawnSync(process.execPath, ['--input-type=module', '-e',
+      `import fs from 'node:fs';import {createPlan,assertPlan} from './scripts/lib/ios-ci-plan.mjs';${code}`], {
+      cwd: p.root, encoding: 'utf8', timeout: 30000
+    })
+    assert.equal(actual.status, 0, actual.stderr)
+    return JSON.parse(actual.stdout)
+  }
+  const generate = `const plan=createPlan(process.cwd(),'pull-request',{base:${JSON.stringify(p.base)}});console.log(JSON.stringify(plan))`
+  const missing = invoke(generate)
+  assert.ok(Object.keys(missing.measurementScopes).length > 0)
+  fs.symlinkSync(fs.realpathSync(path.join(repository, 'app/node_modules/typescript')), parserLink, 'dir')
+  const prepared = invoke(generate)
+  assert.notDeepEqual(missing.measurementScopes, prepared.measurementScopes, '复现规划未准备解析器、执行时才安装导致的实际摘要差异')
+  p.write('.local/plan.json', prepared)
+  assert.equal(invoke("console.log(JSON.stringify(assertPlan(process.cwd(),JSON.parse(fs.readFileSync('.local/plan.json'))).id))"), prepared.id)
+  assert.equal(invoke("console.log(JSON.stringify(assertPlan(process.cwd(),JSON.parse(fs.readFileSync('.local/plan.json'))).id))"), prepared.id, '独立执行与汇总进程均保持同一计划')
+  p.write('.local/plan.json', missing)
+  assert.match(invoke("try{assertPlan(process.cwd(),JSON.parse(fs.readFileSync('.local/plan.json')));throw Error('unexpected pass')}catch(error){console.log(JSON.stringify(error.message))}"), /失效/, '保持旧计划拒绝规则')
+})
+
 test('CI 命令超时终止子进程并保留失败，不能被空输出记为通过', async (t) => {
   const p = fixture(t),
     log = path.join(p.root, 'timed.log'),
@@ -852,7 +933,7 @@ test('CI 真实内外层命令统一清理嵌套独立进程组，超时/取消�
 
 test('CI 正常内外层命令不扫描进程树、不误拦成功或影响其他任务', async (t) => {
   const p = processFixture(t), marker = path.join(p.root, 'unexpected-ps')
-  const ps = p.write('bin/ps', `#!/bin/sh\ntouch '${marker}'\nexit 1\n`)
+  const ps = p.write('bin/'+(process.platform==='darwin'?'python3':'ps'), `#!/bin/sh\ntouch '${marker}'\nexit 1\n`)
   fs.chmodSync(ps, 0o755)
   p.write('scripts/lib/ios-app-full.sh', "printf 'NESTED_NORMAL_COMPLETED\\n'\n")
   const envPath = path.join(p.root, 'bin') + path.delimiter + process.env.PATH
@@ -1036,7 +1117,7 @@ test('CI 关闭标记失败仍读取登记组并先清理内层，保留失败�
 })
 
 test('CI 共享清理器不延长重复停止的宽限，完成后旧回调失效，进程树读取失败不伪报成功', (t) => {
-  const p = fixture(t), ps = p.write('bin/ps', '#!/bin/sh\nexit 1\n')
+  const p = fixture(t), ps = p.write('bin/'+(process.platform==='darwin'?'python3':'ps'), '#!/bin/sh\nexit 1\n')
   fs.chmodSync(ps, 0o755)
   const originalKill = process.kill, originalTimer = globalThis.setTimeout, originalPath = process.env.PATH
   try {
@@ -1105,10 +1186,12 @@ test('CI 设备服务成功交接仅释放本组，取消时仍强杀且不误�
 
 test('CI 慢快照计入既有宽限，内外层失败不被快照故障覆盖', {timeout:10000}, async t => {
   const p=processFixture(t), original=process.env.PATH
-  const ps=p.write('bin/ps', `#!${process.execPath}
+  const tool=process.platform==='darwin'?'python3':'ps'
+  const executable=execFileSync('which',[tool],{encoding:'utf8'}).trim()
+  const ps=p.write('bin/'+tool, `#!${process.execPath}
 const {spawnSync}=require('node:child_process');
 Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,650);
-const r=spawnSync('/bin/ps',process.argv.slice(2),{stdio:'inherit'});process.exit(r.status??1);
+const r=spawnSync(${JSON.stringify(executable)},process.argv.slice(2),{stdio:'inherit'});process.exit(r.status??1);
 `)
   fs.chmodSync(ps,0o755)
   process.env.PATH=path.join(p.root,'bin')+path.delimiter+original
@@ -1117,7 +1200,7 @@ const r=spawnSync('/bin/ps',process.argv.slice(2),{stdio:'inherit'});process.exi
     await assert.rejects(runCommand(p.root,process.execPath,['-e','setInterval(()=>{},1000)'],path.join(p.root,'slow.log'),100),/命令失败或取消/)
     assert.ok(Date.now()-started<3000,'慢快照不增加第二轮清理宽限')
     // 清理前置失败仍不能把命令主错误（exit=7）抹掉；分别覆盖外层和实际内层 CLI。
-    p.write('bin/ps','#!/bin/sh\nexit 1\n');fs.chmodSync(ps,0o755)
+    p.write('bin/'+tool,'#!/bin/sh\nexit 1\n');fs.chmodSync(ps,0o755)
     await assert.rejects(runCommand(p.root,process.execPath,['-e','process.exit(7)'],path.join(p.root,'failed.log'),1000),error=>{
       assert.ok(error instanceof AggregateError)
       assert.match(error.errors[0].message,/exit=7/)
@@ -1129,6 +1212,62 @@ const r=spawnSync('/bin/ps',process.argv.slice(2),{stdio:'inherit'});process.exi
     assert.equal(run.status,1,run.stderr)
     assert.match(run.stderr,/exit=7/);assert.match(run.stderr,/无法读取受管进程树/)
   } finally {process.env.PATH=original}
+})
+
+test('CI 数字进程树按平台选择提供器，超时或残缺拒绝，其他任务组不进入清理', () => {
+  for(const platform of ['darwin','linux']) {
+    let call
+    const execute=(program,args,options)=>{call={program,args,options};return {status:0,stdout:'100 1 100\n101 100 101\n102 101 101\n200 1 200\n201 200 201\n'}}
+    assert.deepEqual([...descendantGroups(100,700,{platform,execute})],[100,101])
+    assert.equal(call.program,platform==='darwin'?'python3':'ps')
+    assert.equal(call.options.timeout,700)
+    assert.equal(call.options.killSignal,'SIGKILL')
+    if(platform==='darwin')assert.deepEqual([call.args[0],path.basename(call.args[1]),call.args[2]],['-I','ios-host-diagnostics.py','--process-tree'])
+    else assert.deepEqual(call.args,['-axo','pid=,ppid=,pgid='])
+    for(const response of [{status:null,error:Object.assign(new Error('snapshot timeout'),{code:'ETIMEDOUT'})},
+      {status:1,stderr:'failed'},{status:0,stdout:'100 invalid 100\n'}])
+      assert.throws(()=>descendantGroups(100,700,{platform,execute:()=>response}),/无法读取|格式无效/)
+  }
+})
+
+test('CI Darwin 原生进程树覆盖退出竞争、权限错误与截断上限，不读取命令参数', () => {
+  const source=`
+import ctypes, errno, importlib.util
+from unittest.mock import patch
+spec=importlib.util.spec_from_file_location('diagnostics',${JSON.stringify(path.join(repository,'scripts/lib/ios-host-diagnostics.py'))})
+d=importlib.util.module_from_spec(spec);spec.loader.exec_module(d)
+class Fn:
+ def __init__(self,fn):self.fn=fn
+ def __call__(self,*args):return self.fn(*args)
+class Lib:
+ def __init__(self,mode):
+  self.mode=mode;self.calls=[];self.proc_listallpids=Fn(self.pids);self.proc_pidinfo=Fn(self.info)
+ def pids(self,buffer,size):
+  if buffer is None:return 40000 if self.mode=='oversize' else 3
+  if self.mode=='truncated':return size//ctypes.sizeof(ctypes.c_int)
+  if self.mode=='invalid':return -1
+  for i,pid in enumerate([100,101,102]):buffer[i]=pid
+  return 3
+ def info(self,pid,flavor,arg,buffer,size):
+  assert flavor==13 and arg==0
+  self.calls.append(pid)
+  if pid==102:
+   ctypes.set_errno(errno.EACCES if self.mode=='denied' else errno.ESRCH);return 0
+  row=ctypes.cast(buffer,ctypes.POINTER(d.BsdInfo)).contents
+  row.pid=pid;row.ppid=1 if pid==100 else 100;row.pgid=pid;return size
+for mode in ['good','denied','truncated','oversize','invalid']:
+ lib=Lib(mode)
+ with patch.object(d.sys,'platform','darwin'),patch.object(d.ctypes,'CDLL',return_value=lib):
+  if mode=='good':assert d.observer().process_tree()==[(100,1,100),(101,100,101)]
+  else:
+   try:d.observer().process_tree()
+   except RuntimeError:pass
+   else:raise AssertionError(mode+' must fail')
+print('NATIVE_PROCESS_TREE_BOUNDARIES_VERIFIED')
+`
+  const result=spawnSync('python3',['-I','-c',source],{encoding:'utf8',timeout:5000})
+  assert.equal(result.status,0,result.stderr)
+  assert.match(result.stdout,/NATIVE_PROCESS_TREE_BOUNDARIES_VERIFIED/)
 })
 
 test('CI 放行帧不等待父流 EOF，半帧和非法帧拒绝，启动轨迹不污染命令输出', {timeout:12000}, async t => {
@@ -1900,7 +2039,15 @@ test('真实远端入口在任何启动前拒绝本地模拟器计划，result �
   const p=processFixture(t)
   p.write('scripts/ios-ci.mjs',fs.readFileSync(path.join(repository,'scripts/ios-ci.mjs'),'utf8'))
   p.commit()
-  const {directory}=prepare(p,'simulator-boot','remote-native-reject')
+  const directory=path.join(p.root,'.local/ios/tmp/ai-agent/ios-ci-remote-native-reject')
+  // Generate the fixture through its own CLI/module graph before exercising the remote refusal.
+  const prepared=spawnSync(process.execPath,['scripts/ios-ci.mjs','plan','simulator-boot','--execution','local','--results',directory],{
+    cwd:p.root,env:{...process.env,GITHUB_ACTIONS:'false'},encoding:'utf8'})
+  assert.equal(prepared.status,0,prepared.stderr)
+  const plan=JSON.parse(fs.readFileSync(path.join(directory,'ci-plan.json')))
+  assert.equal(plan.execution,'local')
+  assert.deepEqual(plan.suites.map(s=>s.name),['simulator-boot'])
+  assert.doesNotThrow(()=>assertPlan(p.root,plan),'父进程与真实 CLI 的计划须一致，不能先被失效计划遮蔽')
   const invoke=mode=>spawnSync(process.execPath,['scripts/ios-ci.mjs',mode,'--results',directory,...(mode==='run'?['--group','macos']:[])],{
     cwd:p.root,env:{...process.env,GITHUB_ACTIONS:'true',IOS_CI_PLAN_STATUS:'success',IOS_CI_CHECKS_STATUS:'success'},encoding:'utf8'})
   const run=invoke('run');assert.equal(run.status,1);assert.match(run.stderr,/远端拒绝本地计划/)
@@ -2038,7 +2185,8 @@ test('自动本地门禁：有效证据跨提交与文档变化复用，原报�
     assert.deepEqual(fs.readFileSync(path.join(first.directory, 'ci-result.json')), raw, '不重写原报告的提交身份')
     assert.equal(calls, 1, '自动核验未重新执行启动命令')
     assert.equal(automaticLocalGate(p.root, base, { readEnvironment: () => ({ ...environment, runtime: 'changed' }) }).result.status, 'incomplete')
-    const lock = p.write('.local/ios/tmp/ai-agent/ios-verification-state.json', 'original full failure lock')
+    const originalLock = JSON.stringify({schema:2,attempts:{},history:[{mode:'ios-touch',status:'failed'}],localFailures:{},cacheRepairs:{}})
+    const lock = p.write('.local/ios/tmp/ai-agent/ios-verification-state.json', originalLock)
     const interrupted = prepare(p, 'simulator-boot', 'reuse-interrupted')
     rememberLocalResult(p.root, interrupted.directory)
     assert.equal(automaticLocalGate(p.root, base, options).result.status, 'incomplete', '开始后强杀仍有未完成记录')
@@ -2051,12 +2199,12 @@ test('自动本地门禁：有效证据跨提交与文档变化复用，原报�
     await executeGroup(p.root, third.directory, 'macos', { command })
     rememberLocalResult(p.root, third.directory)
     assert.equal(automaticLocalGate(p.root, base, options).result.status, 'passed')
-    assert.equal(fs.readFileSync(lock, 'utf8'), 'original full failure lock')
+    assert.equal(fs.readFileSync(lock, 'utf8'), originalLock)
     const log = path.join(third.directory, 'simulator-boot/boot-status.log')
     fs.appendFileSync(log, 'tampered')
     assert.equal(automaticLocalGate(p.root, base, options).result.status, 'incomplete', '重读原日志，不能只信索引绿色')
     p.write('app/vitest.config.ts', '// changed execution configuration')
-    assert.equal(automaticLocalGate(p.root, base, options).result.status, 'incomplete')
+    assert.equal(automaticLocalGate(p.root, base, options).result.status, 'incomplete', '无关配置变化不能掩盖前序原日志篡改')
   } finally { Object.defineProperty(process, 'platform', descriptor) }
 })
 
@@ -2337,4 +2485,58 @@ test('受管 hook：半写失败不切换或覆盖原配置，孤立残缺目录
   assert.throws(() => p.install(), /外部改动/)
   assert.deepEqual(fs.readFileSync(file), modified)
   assert.equal(p.git('config', '--local', '--get', 'core.hooksPath'), installed.directory)
+})
+
+test('CI 完整原生入口保留多份局部修复证据、独立归档且拒绝重复和无效回执', async t => {
+  const original=Object.getOwnPropertyDescriptor(process,'platform')
+  Object.defineProperty(process,'platform',{value:'darwin'})
+  try {
+    const p=processFixture(t)
+    p.write('app/src/fixture.ts','export const fixture=true')
+    p.write('app/test-support/fixture.ts','export const fixture=true')
+    for(const relative of controlInputs) if(!fs.existsSync(path.join(p.root,relative))) {
+      fs.mkdirSync(path.dirname(path.join(p.root,relative)),{recursive:true})
+      fs.cpSync(path.join(repository,relative),path.join(p.root,relative),{recursive:true})
+    }
+    for(const relative of ['app/package.json','app/capacitor.config.ts','app/vite.config.ts','app/tsconfig.json','app/tsconfig.tools.json','scripts/normalize-capacitor-spm.mjs'])
+      if(!fs.existsSync(path.join(p.root,relative)))p.write(relative,'fixture')
+    const {session}=environmentSession(p,'suspend')
+    p.commit()
+    const makeProof=name=>{
+      const relative='.local/ios/tmp/ai-agent/ios-check-'+name
+      const result={scope:'partial',status:'passed',check:'resources',options:{target:'source'},inputHash:inputHash(p.root),
+        completedAt:Date.now(),coverage:['check/resources/source'],command:{exit:0,program:path.basename(process.execPath),args:['scripts/verify-ios-resources.mjs']}}
+      p.write(relative+'/result.json',result);p.write(relative+'/check.log','controlled source resource proof')
+      return path.join(p.root,relative)
+    }
+    const precondition=makeProof('precondition'),repairs=[makeProof('one'),makeProof('two')]
+    const {directory}=prepare(p,'native-sqlite','multiple-repairs')
+    const calls=[]
+    const command=async(_root,_program,args)=>{
+      calls.push(args)
+      if(args[1]==='debug'&&args[2]==='check')return 'EVIDENCE='+precondition+'\n'
+      if(args[1]==='ios-smoke'){
+        assert.deepEqual(args,['scripts/ios-app.sh','ios-smoke','--session',session,'--from',precondition,...repairs.flatMap(r=>['--from',r])])
+        throw new Error('CONTROLLED_NATIVE_HANDOFF')
+      }
+      return ''
+    }
+    await assert.rejects(executeGroup(p.root,directory,'macos',{session,evidence:repairs,command}),/CONTROLLED_NATIVE_HANDOFF/)
+    const receipt=JSON.parse(fs.readFileSync(path.join(directory,'native-sqlite/receipt.json')))
+    assert.equal(receipt.status,'failed')
+    assert.deepEqual(receipt.reports.filter(r=>r.primary).map(r=>r.role),['precondition','repair-0','repair-1'])
+    for(const row of receipt.reports)assert.ok(fs.existsSync(path.join(directory,'native-sqlite',row.path)))
+    for(const evidence of [[repairs[0],repairs[0]],Array(32).fill(repairs[0])]) {
+      const run=prepare(p,'native-sqlite','invalid-'+evidence.length)
+      await assert.rejects(executeGroup(p.root,run.directory,'macos',{session,evidence,command:()=>{throw new Error('must not execute')}}),/额外局部修复证据/)
+    }
+    p.write(path.relative(p.root,path.join(repairs[0],'result.json')),{status:'failed'})
+    const invalid=prepare(p,'native-sqlite','failed-repair')
+    let reached=false
+    await assert.rejects(executeGroup(p.root,invalid.directory,'macos',{session,evidence:[repairs[0]],command:async(...args)=>{
+      if(args[2][1]==='ios-smoke')reached=true
+      return command(...args)
+    }}),/执行器回执未通过/)
+    assert.equal(reached,false,'失败证据必须在进入完整原生流程前拒绝')
+  } finally {Object.defineProperty(process,'platform',original)}
 })

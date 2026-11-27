@@ -35,6 +35,10 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      # The trusted verifier publishes pending before installing the trusted base App lockfile dependencies for its parser;
+      # preparation failure is published as failure for the same head/base, never an old success.
       - name: Verify signed local evidence and publish required status
         env:
           GH_TOKEN: ${{ github.token }}

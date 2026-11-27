@@ -1,5 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="我的账单安装图标">
-  <rect width="512" height="512" fill="#0066CC"/>
-  <path d="M150 112h212v288l-35-22-35 22-36-22-36 22-35-22-35 22V112Z" fill="#FFFFFF"/>
-  <path d="M205 190h102M205 250h102M205 310h66" fill="none" stroke="#0066CC" stroke-width="24" stroke-linecap="round"/>
-</svg>

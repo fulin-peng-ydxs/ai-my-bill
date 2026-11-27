@@ -6,11 +6,16 @@ import path from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { DatabaseSync } from 'node:sqlite'
 import { spawn, spawnSync } from 'node:child_process'
+import { swiftCaseInput } from '../lib/ios-execution-inputs.mjs'
 import {
   APP_ID,
   RUNTIME,
   DEVICE_TYPE,
+  uiCases,
   selection,
+  keyboardReadyScenario,
+  incomeNoteScenario,
+  incomeNoteAfterSaveScenario,
   readSession,
   needsSimulatorRecovery,
   assertDevice,
@@ -127,9 +132,7 @@ test('单用例/场景选择只带显式必要前置，拒绝任意过滤器与�
     'test02RenameProduct',
     'test03CreateCategory',
     'test04CreateUnit',
-    'test05CreateFunding',
-    'test15ExpenseWriteReopen',
-    'test16IncomeContinueEdit'
+    'test05CreateFunding'
   ]) {
     assert.deepEqual(selection('--case', 'DictionaryUITests/DictionaryTouchTests/' + method, []).cases, [
       'DictionaryUITests/DictionaryTouchTests/test00DebugKeyboardReady',
@@ -142,10 +145,32 @@ test('单用例/场景选择只带显式必要前置，拒绝任意过滤器与�
   )
   assert.deepEqual(selection('--scenario', 'entry-cycle', []).cases, [
     'DictionaryUITests/DictionaryTouchTests/test00DebugKeyboardReady',
+    'DictionaryUITests/DictionaryTouchTests/test15ExpensePrepareSave',
+    'DictionaryUITests/DictionaryTouchTests/test15ExpenseRestart',
     'DictionaryUITests/DictionaryTouchTests/test15ExpenseWriteReopen',
+    'DictionaryUITests/DictionaryTouchTests/test16IncomeAConfigure',
+    'DictionaryUITests/DictionaryTouchTests/test16IncomeBSaveContinue',
+    'DictionaryUITests/DictionaryTouchTests/test16IncomeCFocusHandoff',
     'DictionaryUITests/DictionaryTouchTests/test16IncomeContinueEdit'
   ])
+  const entry = selection('--scenario', 'entry-cycle', [])
+  const reopen = selection('--case', 'DictionaryUITests/DictionaryTouchTests/test15ExpenseWriteReopen', [])
+  assert.deepEqual(reopen.cases, entry.cases.slice(0,4), '公开回读入口保留保存与重启前置')
+  assert.deepEqual([...entry.cases].sort(),entry.cases,'顺序与 XCTest 方法排序一致')
+  assert.deepEqual(selection('--case','DictionaryUITests/DictionaryTouchTests/test16IncomeContinueEdit',[]).cases, [entry.cases[0], ...entry.cases.slice(4)])
+  for(const method of ['test15ExpensePrepareSave','test15ExpenseRestart','test16IncomeAConfigure','test16IncomeBSaveContinue','test16IncomeCFocusHandoff']) {
+    assert.throws(()=>selection('--case','DictionaryUITests/DictionaryTouchTests/'+method,[]),'中间步骤不能绕过完整依赖单独运行')
+    const full=fs.readFileSync(new URL('../../scripts/lib/ios-app-full.sh', import.meta.url),'utf8')
+    assert.ok(full.includes('-skip-testing:DictionaryUITests/DictionaryTouchTests/'+method),'字典组不能误执行记账前置')
+    assert.ok(full.includes('-only-testing:DictionaryUITests/DictionaryTouchTests/'+method),'完整记账组保留同一前置')
+  }
   assert.equal(selection('--scenario', 'entry-cycle', []).fixture, 'entry-cycle')
+  const keyboard = selection('--scenario', keyboardReadyScenario, [])
+  assert.deepEqual(keyboard, {
+    scheme: 'DictionaryTouch', configuration: 'Release', fixture: '0',
+    cases: ['DictionaryUITests/DictionaryTouchTests/test00DebugKeyboardReady']
+  }, '前置调试复用只读字典夹具与回读，不连带记账或业务用例')
+  assert.throws(() => selection('--case', keyboard.cases[0], []), '私有前置不能变成任意单用例过滤器')
   assert.throws(() => selection('--scenario', 'unknown', []))
 })
 test('会话拒绝越界路径、符号链接、篡改清单、宽权限及已关闭设备', (t) => {
@@ -280,7 +305,7 @@ function touchFixture(root) {
   }
   const receipt = path.join(container, 'fixture.json')
   // 在测试进程边界冻结 Python 时钟；不为正式夹具增加可绕过日期的运行参数。
-  const execute = (mode, clock) =>
+  const execute = (mode, clock, environment = {}) =>
     spawnSync('python3', clock ? ['-c', `
 import datetime, runpy, sys
 clock = sys.argv.pop(1)
@@ -293,10 +318,161 @@ sys.argv = sys.argv[1:]
 runpy.run_path(sys.argv[0], run_name='__main__')
 `, clock, 'scripts/fixtures/dictionary-touch.py', mode, container, device, receipt]
       : ['scripts/fixtures/dictionary-touch.py', mode, container, device, receipt], {
-      encoding: 'utf8'
+      encoding: 'utf8', env: { ...process.env, ...environment }
     })
   return { file, receipt, execute }
 }
+
+test('iOS 交互三例及组合使用显式夹具，单例不串入其他触摸或原生专项', () => {
+  const names=['test51IosKeyboardNavigation','test52IosCandidatesAndDate','test53IosLandscapeCandidates']
+  for(const [index,name] of names.entries()) {
+    const target='DictionaryUITests/DictionaryTouchTests/'+name
+    const selected=selection('--case',target,[])
+    assert.deepEqual(selected,{scheme:'DictionaryTouch',configuration:'Release',fixture:'interaction-'+(61+index),cases:[target]})
+  }
+  assert.equal(selection('--scenario','ios-interaction',[]).fixture,'interaction-61,62,63')
+  assert.equal(selection('--scenario','ios-candidates',[]).fixture,'interaction-62,63')
+  assert.equal(selection('--scenario','query-input',[]).fixture,'query-34,35')
+})
+
+/** 仅检查夹具协议，模拟的落盘结果不作为三例真实 XCUITest 通过。 */
+function interactionFixture(t) {
+  const f=touchFixture(temporary(t)), db=new DatabaseSync(f.file)
+  db.exec("INSERT INTO ledger_meta VALUES(1,8,'interaction-dataset',1,1,'2026-11-27','2026-11-27')")
+  db.prepare("UPDATE dictionary_item SET name='其他收入',normalized_name='其他收入' WHERE id=?")
+    .run('61000000-0000-0000-0000-000000000008')
+  t.after(()=>db.close())
+  const outcome=cases=>{
+    if(cases.includes(61))db.prepare('INSERT INTO ledger_draft VALUES(?,?,1,?,?,?)')
+      .run('interaction-dataset','EXPENSE',JSON.stringify({unitPrice:'12.3456'}),'now','now')
+    if(cases.includes(62)||cases.includes(63))db.prepare('INSERT INTO ledger_draft VALUES(?,?,1,?,?,?)')
+      .run('interaction-dataset','INCOME',JSON.stringify({incomeCategoryId:'61000000-0000-0000-0000-00000000000'+(cases.includes(63)?1:8)}),'now','now')
+    db.prepare("UPDATE preference SET value=? WHERE key='recentEntryType'")
+      .run(JSON.stringify(cases.includes(63)?'INCOME':'EXPENSE'))
+    if(cases.includes(62)||cases.includes(63))db.prepare("INSERT OR REPLACE INTO preference VALUES('updatedAt',?)")
+      .run(JSON.stringify(new Date().toISOString()))
+  }
+  return {...f,db,outcome}
+}
+
+test('iOS 交互只读夹具：三单例/两组合先捕获后回读，不预写草稿或覆盖既有回执', t => {
+  for(const cases of [[61],[62],[63],[62,63],[61,62,63]]) {
+    const f=interactionFixture(t),fixture=cases.join(','),before=fs.readFileSync(f.file)
+    const prepared=f.execute('debug-interaction-'+fixture)
+    assert.equal(prepared.status,0,prepared.stderr)
+    assert.match(prepared.stdout,new RegExp('IOS_INTERACTION_FIXTURE_PREPARED cases='+fixture))
+    assert.deepEqual(fs.readFileSync(f.file),before,'准备不预写待验结果')
+    const receipt=fs.readFileSync(f.receipt)
+    assert.notEqual(f.execute('debug-check-interaction-'+fixture).status,0,'未执行交互不能通过')
+    assert.notEqual(f.execute('debug-interaction-'+fixture).status,0,'拒绝覆盖回执')
+    assert.deepEqual(fs.readFileSync(f.receipt),receipt)
+    f.outcome(cases)
+    const after=fs.readFileSync(f.file),checked=f.execute('debug-check-interaction-'+fixture)
+    assert.equal(checked.status,0,checked.stderr)
+    assert.equal(checked.stdout.trim(),'IOS_INTERACTION_SQLITE_VERIFIED cases='+fixture)
+    assert.deepEqual(fs.readFileSync(f.receipt),receipt)
+    assert.deepEqual(fs.readFileSync(f.file),after,'回读不修改数据')
+  }
+})
+
+test('iOS 搜索触摸等待完整键盘并处理首次引导，不作废其他用例',()=>{
+  const swift=fs.readFileSync(new URL('../../app/ios/App/UITests/DictionaryTouchTests.swift',import.meta.url),'utf8')
+  const body=swift.slice(swift.indexOf('func test51IosKeyboardNavigation()'),swift.indexOf('func test52IosCandidatesAndDate()'))
+  assert.match(body,/search.tap\(\)[\s\S]*waitForExistence\(timeout: 3\)[\s\S]*completeKeyboardIntroductionIfPresent\(\)[\s\S]*XCTAssertGreaterThan\(app.keyboards.firstMatch.keys.count, 0\)[\s\S]*search.typeText\("中文输入"\)[\s\S]*expectValue\(search,"中文输入"\)/)
+  assert.match(body,/if orientation == \.portrait \{\s*completeKeyboardIntroductionIfPresent\(\)[\s\S]*dismissSearchKeyboard\(\)[\s\S]*search.tap\(\)[\s\S]*waitForExistence\(timeout: 3\)/)
+  assert.match(body,/if orientation == \.landscapeLeft \{ expectValue\(search,"中文输入"\) \}[\s\S]*if orientation == \.portrait \{\s*search.typeText\("中文输入"\)[\s\S]*else \{[\s\S]*search.typeText\(String\(repeating: XCUIKeyboardKey.delete.rawValue,count:4\)\)/)
+  assert.match(body,/dismissSearchKeyboard\(\)[\s\S]*expectValue\(search,"中文输入"\)[\s\S]*guard let value = search.value as\? String else \{ return false \}[\s\S]*value.isEmpty \|\| value == search.placeholderValue[\s\S]*XCTWaiter.wait\(for:\[empty\],timeout:3\)/)
+  assert.equal(body.match(/search.typeText\("中文输入"\)/g).length,1)
+  assert.match(body,/search.exists \|\| search.waitForExistence\(timeout: 3\)/)
+  assert.match(body,/app.keyboards.firstMatch.exists \|\| app.keyboards.firstMatch.waitForExistence\(timeout: 3\)/)
+  assert.match(body,/let price = app.textFields.matching\(NSPredicate\(format:"identifier == %@ OR label == %@","expense-unit-price","单价"\)\).firstMatch/)
+  assert.equal(body.match(/expectValue\(price,"12.3456"\)/g).length,2,'横屏保留值和每个方向导航返回后的精确回读都保留')
+  assert.doesNotMatch(body,/expectValue\(entryField\("expense-unit-price"/)
+  assert.match(body,/search.coordinate\(withNormalizedOffset:CGVector\(dx:0.99,dy:0.5\)\).tap\(\)\s*search.typeText\(String\(repeating: XCUIKeyboardKey.delete.rawValue,count:4\)\)/)
+  const previous=swift.replace(body,'func test51IosKeyboardNavigation() { }\n\n    ')
+  for(const name of uiCases.filter(name=>name!=='test51IosKeyboardNavigation'))
+    assert.equal(swiftCaseInput(swift,name),swiftCaseInput(previous,name),name)
+  assert.notEqual(swiftCaseInput(swift,'test51IosKeyboardNavigation'),swiftCaseInput(previous,'test51IosKeyboardNavigation'))
+})
+
+test('iOS 横屏候选完整组合保留键盘前置、边界及精确回读',()=>{
+  const swift=fs.readFileSync(new URL('../../app/ios/App/UITests/DictionaryTouchTests.swift',import.meta.url),'utf8')
+  const start=swift.indexOf('func test53IosLandscapeCandidates()'),end=swift.indexOf('\n    private func ',start)
+  assert.ok(start>=0 && end>start)
+  const body=swift.slice(start,end)
+  assert.deepEqual(selection('--scenario','ios-interaction',[]).cases.map(id=>id.split('/').at(-1)),
+    ['test51IosKeyboardNavigation','test52IosCandidatesAndDate','test53IosLandscapeCandidates'])
+  assert.match(body,/choice.frame.midY > top && choice.frame.midY < bottom/)
+  assert.match(body,/XCTAssertTrue\(choice.isHittable,app.debugDescription\)[\s\S]*choice.tap\(\)[\s\S]*dismissSearchKeyboard\(\)[\s\S]*expectValue\(input,"工资"\)/)
+  assert.match(body,/XCTAssertTrue\(save.exists && save.isHittable\)/)
+})
+
+test('iOS 交互偏好元数据只允许本轮真实保存时间，缺失/非法/跨轮及无关改写仍拒绝',t=>{
+  for(const mutation of ['valid','missing','malformed','old','future','unrelated','no-save']) {
+    const f=interactionFixture(t),cases=mutation==='no-save'?[61]:[62,63],scene=cases.join(',')
+    assert.equal(f.execute('debug-interaction-'+scene).status,0)
+    f.outcome(cases)
+    const reference=JSON.parse(fs.readFileSync(f.receipt))
+    if(mutation==='missing')f.db.exec("DELETE FROM preference WHERE key='updatedAt'")
+    if(['malformed','old','future','no-save'].includes(mutation))f.db.prepare("INSERT OR REPLACE INTO preference VALUES('updatedAt',?)")
+      .run(JSON.stringify(mutation==='malformed'?'not-a-time':new Date(mutation==='old'?reference.capturedAt-1000:Date.now()+86400000).toISOString()))
+    if(mutation==='unrelated')f.db.exec("UPDATE preference SET value='\"DARK\"' WHERE key='theme'")
+    const before=fs.readFileSync(f.file),receipt=fs.readFileSync(f.receipt),result=f.execute('debug-check-interaction-'+scene)
+    assert.equal(result.status===0,mutation==='valid',mutation+': '+result.stderr)
+    assert.deepEqual(fs.readFileSync(f.file),before,'回读不能修正原数据')
+    assert.deepEqual(fs.readFileSync(f.receipt),receipt,'回读不能补写捕获回执')
+  }
+})
+
+test('iOS 交互回读拒绝错场景/数据集/草稿值、字典/业务/偏好改写及损坏回执，拒绝时无副作用',t=>{
+  for(const mutation of ['case','dataset','draftDataset','value','dictionary','business','preference','truncated','symlink']) {
+    const f=interactionFixture(t)
+    assert.equal(f.execute('debug-interaction-61').status,0)
+    f.outcome([61])
+    if(mutation==='case') {const r=JSON.parse(fs.readFileSync(f.receipt));r.cases=[62];fs.writeFileSync(f.receipt,JSON.stringify(r))}
+    if(mutation==='dataset')f.db.exec("UPDATE ledger_meta SET dataset_id='other'")
+    if(mutation==='draftDataset')f.db.exec("UPDATE ledger_draft SET dataset_id='other'")
+    if(mutation==='value')f.db.exec(`UPDATE ledger_draft SET data_json='{"unitPrice":"12.3457"}'`)
+    if(mutation==='dictionary')f.db.exec("UPDATE dictionary_item SET name='改名',normalized_name='改名' WHERE name='工资'")
+    if(mutation==='business')f.db.exec("INSERT INTO idempotency_result VALUES('unexpected','operation','digest','{}','now')")
+    if(mutation==='preference')f.db.exec("INSERT INTO preference VALUES('unexpected','true')")
+    if(mutation==='truncated')fs.writeFileSync(f.receipt,'{"schema":')
+    if(mutation==='symlink'){fs.renameSync(f.receipt,f.receipt+'.source');fs.symlinkSync(f.receipt+'.source',f.receipt)}
+    const before=fs.readFileSync(f.file),receipt=fs.readFileSync(f.receipt)
+    const result=f.execute('debug-check-interaction-61')
+    assert.notEqual(result.status,0,mutation)
+    assert.doesNotMatch(result.stdout,/IOS_INTERACTION_SQLITE_VERIFIED/,mutation)
+    assert.deepEqual(fs.readFileSync(f.file),before,mutation)
+    assert.deepEqual(fs.readFileSync(f.receipt),receipt,mutation)
+  }
+})
+
+test('iOS 交互夹具拒绝跨安装回执、重复/乱序/未知场景和残留草稿，不清理原数据',t=>{
+  const a=interactionFixture(t),b=interactionFixture(t)
+  assert.equal(a.execute('debug-interaction-61').status,0)
+  fs.copyFileSync(a.receipt,b.receipt)
+  b.outcome([61])
+  assert.notEqual(b.execute('debug-check-interaction-61').status,0,'数据集相同也不能跨安装')
+  for(const invalid of ['61,61','63,62','64']) {
+    const f=interactionFixture(t),before=fs.readFileSync(f.file)
+    assert.notEqual(f.execute('debug-interaction-'+invalid).status,0,invalid)
+    assert.deepEqual(fs.readFileSync(f.file),before)
+    assert.equal(fs.existsSync(f.receipt),false)
+  }
+  const f=interactionFixture(t);f.outcome([61]);const before=fs.readFileSync(f.file)
+  assert.notEqual(f.execute('debug-interaction-61').status,0,'残留草稿不得被当作新夹具')
+  assert.deepEqual(fs.readFileSync(f.file),before)
+  assert.equal(fs.existsSync(f.receipt),false)
+})
+
+test('iOS 交互优化模式拒绝执行，不能删除归属与数据保护断言',t=>{
+  const f=interactionFixture(t),before=fs.readFileSync(f.file)
+  const result=f.execute('debug-interaction-61',undefined,{PYTHONOPTIMIZE:'1'})
+  assert.notEqual(result.status,0)
+  assert.match(result.stderr,/安全校验不允许 Python 优化模式/)
+  assert.deepEqual(fs.readFileSync(f.file),before)
+  assert.equal(fs.existsSync(f.receipt),false)
+})
 
 /** 仅供夹具检查器正反例，不作为 App 业务写入/页面验收。 */
 function writeEntryOutcome(database, selected) {
@@ -377,6 +553,89 @@ test('收支组合夹具必须同时保留两笔结果，单场景拒绝误提�
     database.close()
   }
 })
+test('收入备注局部只选输入窗口交接与编辑，预置来源不能冒充保存或组合验收', t => {
+  const chosen = selection('--scenario', incomeNoteScenario, [])
+  assert.deepEqual(chosen, { scheme: 'DictionaryTouch', configuration: 'Release', fixture: 'income-note',
+    cases: ['test16IncomeCFocusHandoff','test16IncomeContinueEdit'].map(name => 'DictionaryUITests/DictionaryTouchTests/' + name) })
+  assert.throws(() => selection('--case', chosen.cases[0], []))
+  const { file, receipt, execute } = touchFixture(temporary(t))
+  const database = new DatabaseSync(file)
+  try {
+    database.prepare("INSERT INTO ledger_meta VALUES(1,8,'note-dataset',1,1,'2026-11-26','2026-11-26')").run()
+    const prepared = execute('debug-income-note')
+    assert.equal(prepared.status, 0, prepared.stderr)
+    const ids = JSON.parse(fs.readFileSync(receipt, 'utf8')), target = ids.incomeNoteTarget
+    assert.match(ids.incomeNoteOriginal.business_time, /:00\.000Z$/, '与原页面分钟精度一致，编辑仍须保护原业务时间')
+    assert.deepEqual({ ...database.prepare('SELECT note,row_version FROM ledger_entry WHERE id=?').get(target) }, { note: null, row_version: 1 })
+    assert.notEqual(execute('debug-check-income-note').status, 0, '预置空备注不能通过')
+    assert.notEqual(execute('debug-check-entry-cycle').status, 0, '预置来源不能冒充真实收支保存')
+    database.prepare("UPDATE ledger_entry SET note='T6 edited',row_version=2,search_text='测试工资 合成公司 工资 测试现金 t6 edited',adjustment_source_search_text='测试现金' WHERE id=?").run(target)
+    assert.equal(execute('debug-check-income-note').status, 0)
+    for (const column of ['search_text','adjustment_source_search_text']) {
+      const original = database.prepare(`SELECT ${column} AS value FROM ledger_entry WHERE id=?`).get(target).value
+      database.prepare(`UPDATE ledger_entry SET ${column}='wrong' WHERE id=?`).run(target)
+      assert.notEqual(execute('debug-check-income-note').status, 0, '派生索引也必须正确：' + column)
+      database.prepare(`UPDATE ledger_entry SET ${column}=? WHERE id=?`).run(original,target)
+    }
+    database.prepare('UPDATE ledger_entry SET amount_cents=1 WHERE id=?').run(target)
+    assert.notEqual(execute('debug-check-income-note').status, 0, '目标其他字段改变必须拒绝')
+    database.prepare('UPDATE ledger_entry SET amount_cents=100000 WHERE id=?').run(target)
+    database.prepare("UPDATE ledger_meta SET dataset_id='other-dataset'").run()
+    assert.notEqual(execute('debug-check-income-note').status, 0, '数据集改变必须拒绝')
+    database.prepare("UPDATE ledger_meta SET dataset_id='note-dataset'").run()
+    database.prepare("UPDATE ledger_entry SET note='unexpected' WHERE id='t6-name-history'").run()
+    assert.notEqual(execute('debug-check-income-note').status, 0, '其他历史账目改变必须拒绝')
+  } finally { database.close() }
+})
+test('连续保存后备注局部只重放已授权的一项前置，夹具不预写正式收入', t => {
+  assert.deepEqual(selection('--scenario', incomeNoteAfterSaveScenario, []), {
+    scheme: 'DictionaryTouch', configuration: 'Release', fixture: 'income-note-after-save',
+    cases: ['test16IncomeBSaveContinue','test16IncomeContinueEdit'].map(name => 'DictionaryUITests/DictionaryTouchTests/' + name),
+  })
+  const { file, receipt, execute } = touchFixture(temporary(t)), db = new DatabaseSync(file)
+  try {
+    db.prepare("INSERT INTO ledger_meta VALUES(1,9,'save-note-dataset',1,1,'2026-11-26','2026-11-26')").run()
+    const prepared = execute('debug-income-note-after-save')
+    assert.equal(prepared.status, 0, prepared.stderr)
+    const ids = JSON.parse(fs.readFileSync(receipt,'utf8'))
+    assert.equal(db.prepare("SELECT count(*) AS n FROM ledger_entry WHERE payer_id='t6-payer' AND id<>'t6-name-history'").get().n, 0)
+    assert.equal(db.prepare('SELECT count(*) AS n FROM ledger_draft').get().n, 2)
+    assert.notEqual(execute('debug-check-income-note-after-save').status, 0, '未保存不能通过')
+    const target = writeEntryOutcome(db,16)
+    db.prepare("UPDATE ledger_entry SET business_time=?,business_date=?,income_category_id='61000000-0000-0000-0000-000000000001',search_text='测试工资 合成公司 工资 测试现金 t6 edited',adjustment_source_search_text='测试现金' WHERE id=?").run(ids.incomeSaveBusinessTime,ids.incomeSaveBusinessDate,target)
+    assert.equal(execute('debug-check-income-note-after-save').status, 0)
+    db.prepare("UPDATE ledger_entry SET note='T' WHERE id=?").run(target)
+    assert.notEqual(execute('debug-check-income-note-after-save').status, 0, '截断输入不能通过')
+    db.prepare("UPDATE ledger_entry SET note='T6 edited' WHERE id=?").run(target)
+    db.prepare("UPDATE ledger_meta SET dataset_id='other-dataset'").run()
+    assert.notEqual(execute('debug-check-income-note-after-save').status, 0, '跨数据集不能通过')
+    db.prepare("UPDATE ledger_meta SET dataset_id='save-note-dataset'").run()
+    db.prepare("UPDATE ledger_draft SET data_json='{}' WHERE entry_type='EXPENSE'").run()
+    assert.notEqual(execute('debug-check-income-note-after-save').status, 0, '原支出草稿不能丢失')
+  } finally { db.close() }
+})
+test('原生收键盘有终态且重复调用无操作，输入窗口交接不重放保存或更改金额', () => {
+  const swift = fs.readFileSync(new URL('../../app/ios/App/UITests/DictionaryTouchTests.swift', import.meta.url), 'utf8')
+  const verify = source => {
+    const native = source.slice(source.indexOf('private func dismissNativeKeyboard()'), source.indexOf('private func searchAndGoToLastPage('))
+    assert.match(native, /if app.keyboards.firstMatch.exists \{[\s\S]*done\?\.tap\(\)[\s\S]*disappears\(app.keyboards.firstMatch\)/)
+    assert.doesNotMatch(native, /swipe|typeText|else \{/)
+    for (const name of ['dismissSearchKeyboard','dismissEntryKeyboard'])
+      assert.match(source, new RegExp('private func '+name+'\\(\\) \\{\\s*dismissNativeKeyboard\\(\\)\\s*\\}'))
+    const handoff = source.slice(source.indexOf('func test16IncomeCFocusHandoff()'), source.indexOf('func test16IncomeContinueEdit()'))
+    assert.match(handoff, /let original = try XCTUnwrap\(amount.value as\? String\)[\s\S]*amount.tap\(\)[\s\S]*waitForExistence\(timeout: 3\)[\s\S]*dismissEntryKeyboard\(\)[\s\S]*dismissEntryKeyboard\(\)[\s\S]*XCTAssertFalse\(app.keyboards.firstMatch.exists\)[\s\S]*expectValue\(amount, original\)/)
+    assert.doesNotMatch(handoff, /typeText|tap\("保存|terminate\(|launch\(|sleep\(/)
+    const edit = source.slice(source.indexOf('func test16IncomeContinueEdit()'), source.indexOf('func test17ExpenseTemplateUpsert()'))
+    assert.match(edit, /note.coordinate\(withNormalizedOffset: CGVector\(dx: 0.1, dy: 0.1\)\).tap\(\)[\s\S]*keyboards.firstMatch.waitForExistence\(timeout: 3\)[\s\S]*keyboards.firstMatch.keys.count, 0\)[\s\S]*note.typeText/)
+    assert.match(edit, /note.typeText\("T6 edited"\)[\s\S]*expectValue\(note, "T6 edited"\)[\s\S]*dismissEntryKeyboard\(\)[\s\S]*expectValue\(note, "T6 edited"\)[\s\S]*tap\("保存修改"\)/)
+  }
+  verify(swift)
+  assert.throws(() => verify(swift.replace('if app.keyboards.firstMatch.exists {', 'if true {')))
+  assert.throws(() => verify(swift.replace('disappears(app.keyboards.firstMatch)', 'app.webViews.firstMatch.swipeUp()')))
+  assert.throws(() => verify(swift.replace('expectValue(amount, original)', 'expectValue(amount, "")')))
+  const target = swift.indexOf('func test16IncomeContinueEdit()')
+  assert.throws(() => verify(swift.slice(0,target) + swift.slice(target).replace('expectValue(note, "T6 edited")', '')))
+})
 test('T8 局部选择保留业务前置并隔离清理场景', () => {
   const selected = selection('--scenario', 'lifecycle-cycle', [])
   assert.equal(selected.fixture, 'lifecycle-26,27,28,29,30')
@@ -391,6 +650,39 @@ test('T8 局部选择保留业务前置并隔离清理场景', () => {
   assert.deepEqual(selection('--case', 'NativeTests/NativeSqliteTests/testNativeLifecycleDraftWindow', []).cases,
     ['NativeTests/NativeSqliteTests/testNativeLifecycleDraftWindow'])
 })
+test('金额空值断言拒绝不可读值，调整输入保持无关用例范围', () => {
+  const swift=fs.readFileSync(new URL('../../app/ios/App/UITests/DictionaryTouchTests.swift',import.meta.url),'utf8')
+  let old=swift
+  for(const [name,next,value] of [['test26AdjustmentCreate','test27AdjustmentLimits','3'],['test27AdjustmentLimits','test28SourceTrashRestore','13']]) {
+    const body=swift.slice(swift.indexOf('func '+name+'()'),swift.indexOf('func '+next+'()'))
+    const check=source=>{
+      assert.match(source,/guard let old = amount.value as\? String, old.isEmpty \|\| old == amount.placeholderValue else \{[\s\S]*XCTFail\([\s\S]*return/)
+      assert.match(source,/waitForExistence\(timeout: 3\)[\s\S]*amount.typeText\("[0-9]+"\)[\s\S]*XCTAssertLessThan\(app.frame.width, app.frame.height\)[\s\S]*app.coordinate\(withNormalizedOffset: CGVector\(dx: 0.92, dy: 0.965\)\).tap\(\)[\s\S]*disappears\(app.keyboards.firstMatch\)[\s\S]*expectValue\(amount, "[0-9]+"\)/)
+    }
+    check(body)
+    assert.throws(()=>check(body.replace('guard let old = amount.value as? String, old.isEmpty || old == amount.placeholderValue else {','if (amount.value as? String) != amount.placeholderValue {')))
+    assert.throws(()=>check(body.replace('expectValue(amount, "'+value+'")','')))
+    const start=old.indexOf('        // 本套固定 14 Pro Max 竖屏',old.indexOf('func '+name+'()'))
+    const end=old.indexOf('        expectValue(amount, "'+value+'")',start)+('        expectValue(amount, "'+value+'")').length
+    old=old.slice(0,start)+'        replaceEntryField("adjustment-amount", "调整金额", "'+value+'")\n        dismissEntryKeyboard()'+old.slice(end)
+  }
+  for(const name of ['test17ExpenseTemplateUpsert','test19DisableTemplateUnit','test21IncomeTemplateCycle',
+    'test15ExpensePrepareSave','test16IncomeCFocusHandoff','test23SaveThemePreference','test37ReportTimeGrains'])
+    assert.equal(swiftCaseInput(swift,name),swiftCaseInput(old,name),name)
+  for(const name of ['test26AdjustmentCreate','test27AdjustmentLimits'])assert.notEqual(swiftCaseInput(swift,name),swiftCaseInput(old,name),name)
+  const income=swift.slice(swift.indexOf('func test16IncomeBSaveContinue()'),swift.indexOf('func test16IncomeCFocusHandoff()'))
+  const checkIncome=source=>assert.match(source,/guard let old = amount.value as\? String, old.isEmpty \|\| old == amount.placeholderValue else \{[\s\S]*XCTFail\([\s\S]*return/)
+  checkIncome(income)
+  assert.throws(()=>checkIncome(income.replace('guard let old = amount.value as? String','if let old = amount.placeholderValue')))
+
+  const note=swift.slice(swift.indexOf('func test18ExpenseTemplateFill()'),swift.indexOf('func test19DisableTemplateUnit()'))
+  assert.match(note,/guard let value = note.value as\? String else \{[\s\S]*XCTFail\([\s\S]*return[\s\S]*XCTAssertTrue\(value.isEmpty \|\| value == note.placeholderValue\)/)
+  const rejectNullable=source=>assert.doesNotMatch(source,/\(\w+\.value as\? String\)\s*==\s*\w+\.placeholderValue/,'不能把 nil == nil 视为已验证空值')
+  rejectNullable(swift)
+  assert.throws(()=>rejectNullable(swift+'\nXCTAssertTrue((note.value as? String) == note.placeholderValue)'))
+
+})
+
 test('T7 局部选择保留必要前置，模板与重启场景不混入另一组', () => {
   const templates = selection('--scenario', 'template-cycle', [])
   assert.equal(templates.fixture, 'personal-17,18,19,20,21')
@@ -455,14 +747,64 @@ test('T7 单位停用在长列表中先搜索，夹具保留首屏外目标且�
   assertSearch(swift)
   assert.throws(() => assertSearch(swift.replace('searchDictionary(kind: "单位", text: "日常份")', 'openKind("单位")')))
   const assertKeyboard = source => {
-    const body = source.slice(source.indexOf('func test00DebugKeyboardReady()'), source.indexOf('private func openKind('))
-    assert.match(body, /XCUIKeyboardKey.delete.rawValue[\s\S]*XCTWaiter.wait\(for: \[empty\][\s\S]*dismissSearchKeyboard\(\)[\s\S]*tap\("记一笔"\)/)
+    const body = source.slice(source.indexOf('func test00DebugKeyboardReady()'), source.indexOf('func test51IosKeyboardNavigation()'))
+    assert.match(body, /tap\("明细"\)[\s\S]*tapVisibleText\("搜索账目", containing: true\)[\s\S]*XCTAssertTrue\(keyboard.waitForExistence\(timeout: 3\)/)
+    assert.match(body, /XCTAssertGreaterThan\(keyboard.keys.count, 0,[\s\S]*XCTWaiter.wait\(for: \[empty\][\s\S]*dismissSearchKeyboard\(\)[\s\S]*tapVisibleText\("记一笔"\)/)
+    assert.match(body, /XCTAssertTrue\(field.waitForExistence\(timeout: 3\)/)
+    assert.match(body, /keyboard.waitForExistence\(timeout: 3\)[\s\S]*completeKeyboardIntroductionIfPresent\(\)[\s\S]*XCTAssertGreaterThan\(keyboard.keys.count/)
+    const introduction = source.slice(source.indexOf('private func completeKeyboardIntroductionIfPresent()'), source.indexOf('func test51IosKeyboardNavigation()'))
+    assert.match(introduction, /if visualText\("Speed up your typing", containing: true\) != nil \{[\s\S]*tapVisibleText\("Continue"\)[\s\S]*self.visualText\("Speed up your typing", containing: true\) == nil[\s\S]*XCTWaiter.wait\(for: \[dismissed\], timeout: 3\)/)
+    assert.match(body, /guard let value = field.value as\? String else \{ return false \}/)
+    assert.match(body,/if visualText\("记一笔"\) == nil \{ activateWebContent\(\) \}/)
+    assert.doesNotMatch(body, /typeText\(|field.tap\(|sleep\(/, '只验键盘就绪，不额外提交和清除搜索')
+    const visible = source.slice(source.indexOf('private func tapVisibleText('), source.indexOf('private func appears('))
+    assert.match(visible, /containing: Bool = false/)
+    assert.match(visible, /self.visualText\(label, containing: containing\)/)
     const search = source.slice(source.indexOf('private func searchDictionary('), source.indexOf('private func dismissSearchKeyboard('))
-    assert.match(search, /expectValue\(field, text\)[\s\S]*dismissSearchKeyboard\(\)/)
+    assert.match(search, /field.tap\(\)[\s\S]*XCTAssertTrue\(app.keyboards.firstMatch.waitForExistence\(timeout: 3\)\)[\s\S]*field.typeText\(text\)[\s\S]*dismissSearchKeyboard\(\)[\s\S]*expectValue\(field, text\)/)
+    const dismissal = source.slice(source.indexOf('private func dismissNativeKeyboard()'), source.indexOf('private func dismissEntryKeyboard('))
+    assert.match(dismissal, /let first = buttons.firstMatch[\s\S]*if first.exists && first.isHittable \{[\s\S]*done = first[\s\S]*return true[\s\S]*done = buttons.allElementsBoundByIndex.last\(where: \{ \$0.isHittable \}\)/)
+    assert.match(dismissal, /XCTWaiter.wait\(for: \[ready\], timeout: 3\)[\s\S]*done\?\.tap\(\)[\s\S]*disappears\(app.keyboards.firstMatch\)/)
   }
   assertKeyboard(swift)
+  const navigation = fs.readFileSync(new URL('../../app/src/components/BottomNavigation.vue', import.meta.url), 'utf8')
+  assert.match(navigation, /page.title === '收支明细' \? '明细'/, '截图定位使用可见简称，不能误用 aria 名称')
+  assert.throws(() => assertKeyboard(swift.replaceAll('tap("明细")', 'tap("收支明细")')))
+  assert.throws(() => assertKeyboard(swift.replace('if visualText("记一笔") == nil { activateWebContent() }','activateWebContent()')))
+  assert.throws(() => assertKeyboard(swift.replace('tapVisibleText("搜索账目", containing: true)', 'tapVisibleText("搜索账目")')))
+  assert.throws(() => assertKeyboard(swift.replace('self.visualText(label, containing: containing)', 'self.visualText(label)')))
+  assert.throws(() => assertKeyboard(swift.replace('XCTAssertTrue(keyboard.waitForExistence(timeout: 3)', 'XCTAssertTrue(true')))
+  assert.throws(() => assertKeyboard(swift.replace('XCTAssertGreaterThan(keyboard.keys.count, 0,', 'XCTAssertGreaterThan(keyboard.keys.count, -1,')))
+  assert.throws(() => assertKeyboard(swift.replace('        completeKeyboardIntroductionIfPresent()', '')))
+  assert.throws(() => assertKeyboard(swift.replace('if visualText("Speed up your typing", containing: true) != nil {', 'if true {')))
+  assert.throws(() => assertKeyboard(swift.replace('self.visualText("Speed up your typing", containing: true) == nil', 'true')))
+  assert.throws(() => assertKeyboard(swift.replace('if first.exists && first.isHittable {', 'if first.exists {')))
+  assert.throws(() => assertKeyboard(swift.replace('done = buttons.allElementsBoundByIndex.last(where: { $0.isHittable })', 'done = first')))
+  assert.throws(() => assertKeyboard(swift.replace('guard let value = field.value as? String else { return false }', 'let value = field.value as? String ?? ""')))
+  const save = swift.slice(swift.indexOf('func test15ExpensePrepareSave()'), swift.indexOf('func test15ExpenseRestart()'))
+  assert.match(save, /tap\("保存支出"\)[\s\S]*appears\("刚刚保存"\)[\s\S]*appears\("测试苹果", containing: true\)[\s\S]*appears\("撤销"\)[\s\S]*app.terminate\(\)/)
   assert.throws(() => assertKeyboard(swift.replace('XCTWaiter.wait(for: [empty], timeout: 3)', 'XCTWaiter.wait(for: [], timeout: 3)')))
 })
+test('字典搜索完成原生编辑后精确回读，局部修改不作废收支与报表', () => {
+  const swift=fs.readFileSync(new URL('../../app/ios/App/UITests/DictionaryTouchTests.swift',import.meta.url),'utf8')
+  const start=swift.indexOf('private func searchDictionary('),end=swift.indexOf('private func dismissSearchKeyboard(')
+  const helper=swift.slice(start,end)
+  const check=source=>{
+    assert.match(source,/field.tap\(\)[\s\S]*XCTAssertTrue\(app.keyboards.firstMatch.waitForExistence\(timeout: 3\)\)[\s\S]*field.typeText\(text\)[\s\S]*dismissSearchKeyboard\(\)[\s\S]*expectValue\(field, text\)/)
+    assert.equal(source.match(/typeText\(text\)/g)?.length,1,'不能重放输入掩盖首次丢字')
+  }
+  check(helper)
+  assert.throws(()=>check(helper.replace('dismissSearchKeyboard()','')))
+  assert.throws(()=>check(helper.replace('expectValue(field, text)','')))
+  assert.throws(()=>check(helper.replace('timeout: 3','timeout: 30')))
+  const before=swift.slice(0,start)+helper.replace('        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 3))\n','')
+    .replace(/        dismissSearchKeyboard\(\)\n        \/\/[^\n]*\n        expectValue\(field, text\)/,'        expectValue(field, text)\n        dismissSearchKeyboard()')+swift.slice(end)
+  for(const name of ['test15ExpensePrepareSave','test15ExpenseRestart','test15ExpenseWriteReopen','test16IncomeAConfigure',
+    'test16IncomeBSaveContinue','test16IncomeCFocusHandoff','test16IncomeContinueEdit','test23SaveThemePreference',
+    'test37ReportTimeGrains','test37ReportTimeGrainsQuarterYear'])assert.equal(swiftCaseInput(swift,name),swiftCaseInput(before,name),name)
+  assert.notEqual(swiftCaseInput(swift,'test19DisableTemplateUnit'),swiftCaseInput(before,'test19DisableTemplateUnit'))
+})
+
 test('T7 金额替换定位末尾并原生退格，双草稿覆盖零值和小数替换', () => {
   const swift = fs.readFileSync(new URL('../../app/ios/App/UITests/DictionaryTouchTests.swift', import.meta.url), 'utf8')
   const validate = source => {
@@ -482,7 +824,15 @@ test('T7 金额替换定位末尾并原生退格，双草稿覆盖零值和小�
     ['CGVector(dx: 0.99, dy: 0.5)', 'CGVector(dx: 0.5, dy: 0.5)'],
     ['field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: max(1, old.count)))', ''],
     ['expectValue(field, value)', '']
-  ]) assert.throws(() => validate(swift.replace(before, after)), '缺少替换步骤或结果断言必须拒绝')
+  ]) {
+    // 同样的末尾点按也用于搜索准备；反例必须删除被测金额辅助方法的步骤。
+    const start = swift.indexOf('private func replaceEntryField(')
+    const end = swift.indexOf('private func dismissEntryKeyboard(')
+    const helper = swift.slice(start, end)
+    assert.ok(helper.includes(before), '反例必须实际命中目标辅助方法')
+    const broken = swift.slice(0, start) + helper.replace(before, after) + swift.slice(end)
+    assert.throws(() => validate(broken), '缺少替换步骤或结果断言必须拒绝')
+  }
 })
 for (const [type, key, invalid] of [['EXPENSE', 'paidAmount', '077'], ['INCOME', 'amount', '1234.56222']]) {
   test(`T7 双草稿回读拒绝 ${type} 旧金额残留、单类型和跨数据集结果`, t => {
@@ -830,7 +1180,7 @@ test('T10 原生日期控件选择实际输入并按固定年月跳过无效滚�
   assert.throws(() => assertDateInput(helper.replace('if heading.value as? String != "\\(parts[0])年\\(parts[1])月"', 'if false')))
 })
 
-test('T10 总览及编辑金额使用带符号的精确原生节点，不依赖通用 Any/OCR 后备', () => {
+test('T10 总览带符号、净支出下钻返回使用正金额的精确原生节点，不依赖通用 Any/OCR 后备', () => {
   const swift = fs.readFileSync(new URL('../../app/ios/App/UITests/DictionaryTouchTests.swift', import.meta.url), 'utf8')
   const assertExactMoney = source => {
     const helper = source.slice(source.indexOf('private func expectReportAmount('), source.indexOf('func test36ReportOverview()'))
@@ -840,11 +1190,16 @@ test('T10 总览及编辑金额使用带符号的精确原生节点，不依赖�
     for (const amount of ['+¥1,000', '-¥15', '+¥3', '-¥12', '+¥988']) assert.ok(overview.includes('"' + amount + '"'))
     assert.ok(overview.includes('expectReportAmount(amount)'))
     assert.doesNotMatch(overview, /appears\("¥/)
-    assert.ok(source.includes('expectReportAmount("-¥13")'))
+    const drill=source.slice(source.indexOf('func test38ReportDrillReturn()'),source.indexOf('func test00PrepareDimensionReport()'))
+    assert.ok(drill.includes('let range = app.staticTexts["范围合计 ¥13"]'))
+    assert.ok(drill.includes('app.staticTexts.matching(NSPredicate(format: "label == %@", "¥13"))'))
+    assert.match(drill,/period.value as\? String == expected && period.isEnabled[\s\S]*drill.exists && drill.isEnabled && range.exists && amounts.count == 2/)
   }
   assertExactMoney(swift)
   for (const change of [source => source.replace('app.staticTexts.matching(NSPredicate(format: "label == %@", label))', 'app.descendants(matching: .any)'),
-    source => source.replace('"+¥988"', '"¥988"'), source => source.replace('expectReportAmount(amount)', 'appears(amount)')]) {
+    source => source.replace('"+¥988"', '"¥988"'), source => source.replace('expectReportAmount(amount)', 'appears(amount)'),
+    source => source.replace('"范围合计 ¥13"','"范围合计 -¥13"'),
+    source => source.replace('amounts.count == 2','amounts.count >= 1')]) {
     assert.throws(() => assertExactMoney(change(swift)))
   }
 })
@@ -903,6 +1258,54 @@ test('T10 夹具与其他阶段隔离，编辑用例必须且只能产生约定�
   } finally { db.close() }
 })
 
+
+test('T16 页面就绪与值同步保留原预算，诊断不以超时后的新读数伪装窗口内状态', () => {
+  const swift=fs.readFileSync(new URL('../../app/ios/App/UITests/DictionaryTouchTests.swift',import.meta.url),'utf8')
+  const check=source=>{
+    const keyboard=source.slice(source.indexOf('func test00DebugKeyboardReady()'),source.indexOf('private func completeKeyboardIntroductionIfPresent()'))
+    assert.match(keyboard,/appears\("记一笔", timeout: 20\)[\s\S]*tap\("明细"\)/)
+    assert.match(keyboard,/if visualText\("记一笔"\) == nil \{ activateWebContent\(\) \}[\s\S]*appears\("记一笔", timeout: 20\)/)
+    const helper=source.slice(source.indexOf('private func expectValue('),source.indexOf('private func openIndex('))
+    assert.match(helper,/systemUptime \+ 3/)
+    assert.match(helper,/guard start < deadline else \{ return false \}[\s\S]*let actual = field.value as\? String[\s\S]*return end <= deadline && actual == value/)
+    assert.equal(helper.match(/field.value/g)?.length,1,'超时消息不得再次读取 AX 值')
+    assert.match(helper,/object: nil/)
+    assert.match(helper,/if matches.evaluate\(with: nil\) \{ return \}[\s\S]*let remaining = max\(0, deadline - ProcessInfo.processInfo.systemUptime\)/)
+    assert.match(helper,/XCTWaiter.wait\(for: \[ready\], timeout: remaining\)/)
+    assert.match(source,/executionTimeAllowance = 60/)
+  }
+  check(swift)
+  const keyboardStart=swift.indexOf('func test00DebugKeyboardReady()'),keyboardEnd=swift.indexOf('private func completeKeyboardIntroductionIfPresent()')
+  const oldKeyboard=swift.slice(0,keyboardStart)+swift.slice(keyboardStart,keyboardEnd).replace('tap("明细")','tapVisibleText("明细")')+swift.slice(keyboardEnd)
+  for(const name of ['test15ExpensePrepareSave','test16IncomeCFocusHandoff','test23SaveThemePreference','test37ReportTimeGrains'])
+    assert.equal(swiftCaseInput(swift,name),swiftCaseInput(oldKeyboard,name),'导航定位只影响键盘前置：'+name)
+  assert.notEqual(swiftCaseInput(swift,'test00DebugKeyboardReady'),swiftCaseInput(oldKeyboard,'test00DebugKeyboardReady'))
+  for(const changed of [swift.replaceAll('        appears("记一笔", timeout: 20)\n',''),
+    swift.replace('return end <= deadline && actual == value','return actual == value'),
+    swift.replace('actual == value','actual != nil'),swift.replace('timeout: remaining','timeout: 30'),
+    swift.replace('窗口内最后观测 \\(observed)','窗口内最后观测 \\(field.value)')])assert.throws(()=>check(changed))
+})
+
+test('T11 多维下钻将精确计数滚入可见区，改动不使无关触摸输入失效', () => {
+  const swift=fs.readFileSync(new URL('../../app/ios/App/UITests/DictionaryTouchTests.swift',import.meta.url),'utf8')
+  const check=source=>{
+    const body=source.slice(source.indexOf('private func verifyDimension('),source.indexOf('func test40ExpenseDimensionGroups()'))
+    assert.match(body,/let summary = app.staticTexts\["已加载 \\\(count\) 笔"\]/)
+    assert.match(body,/summary.waitForExistence\(timeout: 5\)[\s\S]*let bottom = navigation.frame.minY[\s\S]*for _ in 0\.\.<5[\s\S]*summary.frame.minY >= top && summary.frame.maxY <= bottom[\s\S]*app.webViews.firstMatch.swipeUp\(\)[\s\S]*XCTAssertTrue\(summary.frame.minY >= top && summary.frame.maxY <= bottom[\s\S]*XCTAssertEqual\(summary.label, "已加载 \\\(count\) 笔"\)/)
+    assert.doesNotMatch(body,/revealReportRow\(summary\)/,'只读计数不能套用排行点击的固定底部余量')
+  }
+  check(swift)
+  const changed=swift.replace('let bottom = navigation.frame.minY','let bottom = app.frame.maxY')
+  assert.throws(()=>check(changed))
+  assert.throws(()=>check(swift.replace('XCTAssertEqual(summary.label, "已加载 \\(count) 笔")','XCTAssertTrue(summary.exists)')))
+  const consumers=new Set(['test40ExpenseDimensionGroups','test40ExpensePaymentChannels','test40ExpenseLocations',
+    'test41ExpenseDimensionAnalysis','test41ExpenseFrequencyQuality','test42IncomeDimensions','test42IncomePayerName','test42IncomeFrequency'])
+  for(const id of [...uiCases,'test00DebugKeyboardReady']) {
+    const before=swiftCaseInput(swift,id),after=swiftCaseInput(changed,id)
+    if(consumers.has(id))assert.notEqual(before,after,id)
+    else assert.equal(before,after,'无关方法不受多维滚动改动影响：'+id)
+  }
+})
 
 test('T11 多维单组/单用例共用原生入口，夹具隔离且回读拒绝分析改账', t => {
   assert.deepEqual(selection('--case','NativeTests/NativeSqliteTests/testOfflineDimensionReports',[]).cases,

@@ -16,7 +16,7 @@ export function registryBlock(r) {
   })
   const rules = [...r.rules.map((rule, i) => ['R' + (i + 1), rule]), ...(r.unknownSource ? [['F', r.unknownSource]] : [])]
     .map(([id, rule]) => `| ${id} | ${rule.paths.join(', ')} | ${(rule.exclude ?? []).join(', ') || '无'} | ${rule.suites.join(', ')} |`)
-  return `${begin}\n变更固定基础：${r.changeBase.join(', ')}；F 仅用于尚未命中已知专项的运行期源码。\n\n` +
+  return `${begin}\n变更固定基础：${r.changeBase.join(', ')}；F 仅用于尚未命中已知专项的运行期源码。路径先命中下表，再由可信差异分析排除普通 TS 的局部纯类型变化（AST 识别的导出契约及默认赋值导出保守保留）、按 Swift 用例及共享辅助的实际依赖细分；未知或无法解析时保守保留。常规检查不被该细分取消。\n\n` +
     `| 套件 | 能力 | 执行环境 | 固定范围 | 影响规则 |\n| --- | --- | --- | --- | --- |\n${rows.join('\n')}\n\n` +
     `| 规则 | 路径 | 排除 | 命中套件 |\n| --- | --- | --- | --- |\n${rules.join('\n')}\n${end}`
 }

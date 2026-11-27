@@ -92,6 +92,11 @@ export const uiCases = [
 export const recoveryPhases = ['snapshot-ready', 'migration-recorded', 'upgrade-committed']
 export const recoveryScenarios = [...recoveryPhases.map((p) => 'interruption-' + p), 'interruption-all']
 
+// 仅调试前置；不能登记为业务 CI 套件，且不提供任意测试过滤器。
+export const keyboardReadyScenario = 'keyboard-ready'
+export const incomeNoteScenario = 'income-note'
+export const incomeNoteAfterSaveScenario = 'income-note-after-save'
+
 export const uiScenarios = {
   'ios-interaction':[61,62,63],
   'ios-candidates':[62,63],
@@ -176,6 +181,14 @@ export function selection(kind, name, nativeScenarios) {
         scenario: name,
         cases: ['NativeTests/NativeSqliteTests/testOfflineDictionaryScenario']
       }
+    if (name === keyboardReadyScenario)
+      return { ...uiSelection([0]), cases: ['DictionaryUITests/DictionaryTouchTests/test00DebugKeyboardReady'] }
+    if (name === incomeNoteScenario)
+      return { scheme: 'DictionaryTouch', configuration: 'Release', fixture: 'income-note',
+        cases: ['test16IncomeCFocusHandoff','test16IncomeContinueEdit'].map(name => 'DictionaryUITests/DictionaryTouchTests/' + name) }
+    if (name === incomeNoteAfterSaveScenario)
+      return { scheme: 'DictionaryTouch', configuration: 'Release', fixture: name,
+        cases: ['test16IncomeBSaveContinue','test16IncomeContinueEdit'].map(name => 'DictionaryUITests/DictionaryTouchTests/' + name) }
     if (Object.hasOwn(uiScenarios, name)) return uiSelection(uiScenarios[name])
   } else if (kind === '--case') {
     const parts = name.split('/')
@@ -206,6 +219,7 @@ export function selection(kind, name, nativeScenarios) {
 }
 function uiSelection(indices) {
   if (indices.every(index => index >= 61)) return { scheme:'DictionaryTouch',configuration:'Release',
+    fixture:'interaction-'+indices.join(','),
     cases:indices.map(index => 'DictionaryUITests/DictionaryTouchTests/'+uiCases[index]) }
   return {
     scheme: 'DictionaryTouch',
@@ -220,7 +234,10 @@ function uiSelection(indices) {
       ...(indices.some((i) => (i >= 1 && i <= 5) || i === 11 || i === 13 || (i >= 15 && i <= 35) || i === 38 || i >= 53)
         ? ['DictionaryUITests/DictionaryTouchTests/test00DebugKeyboardReady']
         : []),
-      ...indices.map((i) => `DictionaryUITests/DictionaryTouchTests/${uiCases[i]}`)
+      ...indices.flatMap(i => (i === 15
+        ? ['test15ExpensePrepareSave', 'test15ExpenseRestart', uiCases[i]]
+        : i === 16 ? ['test16IncomeAConfigure', 'test16IncomeBSaveContinue', 'test16IncomeCFocusHandoff', uiCases[i]]
+        : [uiCases[i]]).map(name => 'DictionaryUITests/DictionaryTouchTests/' + name))
     ]
   }
 }

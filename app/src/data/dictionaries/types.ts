@@ -1,14 +1,14 @@
-import type { components } from '../../api/generated/schema'
+import type { LedgerContracts } from '../../domain/ledgerContracts'
 
 // 迁移期保持原页面 DTO，运行期不经过旧 HTTP 客户端或身份上下文。
-export type DictionaryType = components['schemas']['DictionaryType']
-export type DictionaryItem = components['schemas']['DictionaryItem']
-export type DictionaryPage = components['schemas']['DictionaryPage']
-export type DictionaryStatus = components['schemas']['DictionaryStatus']
-export type DictionarySummaries = components['schemas']['DictionarySummaries']
-export type ProductMergePreview = components['schemas']['ProductMergePreview']
-export type ProductMergeResult = components['schemas']['ProductMergeResult']
-export type ProductSuggestion = components['schemas']['ProductSuggestion']
+export type DictionaryType = LedgerContracts['DictionaryType']
+export type DictionaryItem = LedgerContracts['DictionaryItem']
+export type DictionaryPage = LedgerContracts['DictionaryPage']
+export type DictionaryStatus = LedgerContracts['DictionaryStatus']
+export type DictionarySummaries = LedgerContracts['DictionarySummaries']
+export type ProductMergePreview = LedgerContracts['ProductMergePreview']
+export type ProductMergeResult = LedgerContracts['ProductMergeResult']
+export type ProductSuggestion = LedgerContracts['ProductSuggestion']
 
 export const dictionaryKinds = {
   product: 'PRODUCT',

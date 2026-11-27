@@ -25,6 +25,10 @@ it.each([10_000,100_000])('固定 %i 条覆盖收支、历史、退款和回收�
   const db = new LedgerDatabase('probe_scale_'+crypto.randomUUID().replaceAll('-','')+'_main'), other = new LedgerDatabase('capacity_other_'+count)
   databases.push(db,other)
   await db.open(); await other.open()
+  // 本例核验真实夹具组成和隔离，不测设备性能。固定有界页缓存，避免十万条索引
+  // 在 Node SQLite 默认小缓存下反复换页；不改 SQL、事务、持久化或 30 秒预算。
+  await db.read(sql => sql.run('PRAGMA cache_size=-65536'))
+  expect((await db.read(sql => sql.query('PRAGMA cache_size')))[0].cache_size).toBe(-65536)
   await seedCapacity(db,count)
   const rows = await db.read(sql => sql.query(`SELECT count(*) AS n,
     sum(entry_type='EXPENSE') AS expense,sum(entry_type='INCOME') AS income,

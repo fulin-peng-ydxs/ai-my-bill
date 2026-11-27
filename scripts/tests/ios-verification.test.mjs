@@ -5,7 +5,7 @@ import path from 'node:path'
 import os from 'node:os'
 import { randomUUID } from 'node:crypto'
 import { spawnSync, spawn } from 'node:child_process'
-import { selection, APP_ID, RUNTIME, DEVICE_TYPE } from '../lib/ios-debug.mjs'
+import { selection, APP_ID, RUNTIME, DEVICE_TYPE, uiCases, uiScenarios } from '../lib/ios-debug.mjs'
 import { executionMatrix, registry, selectSuites } from '../lib/ios-ci-plan.mjs'
 import {
   controlInputs,
@@ -33,6 +33,9 @@ import {
   readVitest
 } from '../lib/ios-verification.mjs'
 import { checkDefinition } from '../lib/ios-checks.mjs'
+import { partialMeasurement, partialSeal } from '../lib/ios-local-measurement.mjs'
+import { uiReadbackMarkers } from '../lib/ios-ui-readback.mjs'
+import { commandScope } from '../lib/ios-process-scope.mjs'
 const environment = JSON.stringify({
   sdk: '27.0',
   xcode: 'Xcode 27.0\n',
@@ -43,6 +46,24 @@ const environment = JSON.stringify({
 })
 const ui = (name) => 'DictionaryUITests/DictionaryTouchTests/' + name
 const target = ui('test02RenameProduct')
+// Controlled CLI tests mock Python's capture/fixture boundaries and their durable artifacts;
+// the real SQLite baseline format and ownership checks remain covered by ios-cache tests.
+const controlledReadbacks = Object.fromEntries([
+  ...uiCases.map(name=>selection('--case',ui(name),[])),
+  ...Object.keys(uiScenarios).map(name=>selection('--scenario',name,[])),
+  ...['keyboard-ready','income-note','income-note-after-save'].map(name=>selection('--scenario',name,[]))
+].map(selected=>[selected.fixture,uiReadbackMarkers(selected).join('\n')]))
+const controlledFixtureArtifacts = session => `if(mode==='capture'){
+ const receipt=${JSON.stringify(path.join(session, 'ui-baseline/receipt.json'))};
+ fs.mkdirSync(require('node:path').dirname(receipt),{recursive:true});
+ fs.writeFileSync(receipt,JSON.stringify({controlled:'baseline'}));
+}
+if(mode?.startsWith('debug-'))fs.writeFileSync(a.at(-1),JSON.stringify({controlled:'fixture'}));
+if(mode?.startsWith('debug-check-')){
+ const marker=${JSON.stringify(controlledReadbacks)}[mode.slice('debug-check-'.length)]
+ if(!marker)throw new Error('unknown controlled readback')
+ console.log(marker)
+}`
 function project(t) {
   const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'ios-verification-')))
   t.after(() => fs.rmSync(root, { recursive: true, force: true }))
@@ -72,6 +93,14 @@ function project(t) {
     'scripts/normalize-capacitor-spm.mjs'
   ])
     write(name, 'fixture')
+  fs.mkdirSync(path.join(root,'app/node_modules'),{recursive:true})
+  write('app/package.json',JSON.stringify({type:'module'}))
+  write('app/package-lock.json',JSON.stringify({packages:{}}))
+  fs.symlinkSync(new URL('../../app/node_modules/typescript',import.meta.url).pathname,path.join(root,'app/node_modules/typescript'),'dir')
+  // The real CLI captures scoped Swift inputs before any mocked build/install boundary.
+  // Keep the production test source available so each regression reaches its intended fault.
+  write('app/ios/App/UITests/DictionaryTouchTests.swift',
+    fs.readFileSync(new URL('../../app/ios/App/UITests/DictionaryTouchTests.swift', import.meta.url), 'utf8'))
   const scenarios = JSON.parse(
     fs.readFileSync(new URL('../../app/native-tests/scenarios.json', import.meta.url))
   )
@@ -124,6 +153,25 @@ function project(t) {
         `\nExecuted ${selected.cases.length} test${selected.cases.length === 1 ? '' : 's'}, with 0 failures\n` +
         (selected.scenario ? 'NATIVE_DICTIONARY_SCENARIO_VERIFIED ' + selected.scenario : '')
     fs.writeFileSync(path.join(run, 'test.log'), log)
+    // 合成结果可早于制备文件的耗时；先固定共同起点，外层必须包住内层。
+    const started=Math.min(Date.now()-1,result.completedAt), invocationName='ios-invocation-'+randomUUID().replaceAll('-','')
+    const invocation=path.join(base,invocationName,'result.json')
+    fs.mkdirSync(path.dirname(invocation),{recursive:true})
+    fs.writeFileSync(invocation,JSON.stringify({scope:'invocation',mode:'debug run',status:'passed',
+      startedAt:started-1,finishedAt:Math.max(Date.now(),result.completedAt+1),ownerPid:999999}))
+    const measurement={...partialMeasurement(root,selected,environment,{context:{runId,simulatorId}}),
+      startedAt:started,invocation:path.relative(root,invocation)}
+    result.configuration=selected.configuration
+    if(selected.scheme==='DictionaryTouch') {
+      measurement.baseline='b'.repeat(64)
+      fs.writeFileSync(path.join(run,'fixture.json'),JSON.stringify({controlled:'fixture'}))
+      fs.writeFileSync(path.join(run,'readback.log'),uiReadbackMarkers(selected).join('\n')+'\n')
+      result.coverage=[...result.coverage,'native-readback/DictionaryTouch/Release']
+      result.timings=[{stage:'check',status:'passed',coverage:['native-readback/DictionaryTouch/Release'],log:path.join(run,'readback.log')}]
+    }
+    fs.writeFileSync(path.join(run,'local-measurement.json'),JSON.stringify(measurement))
+    result.measurementSeal=partialSeal(run,measurement,result)
+    fs.writeFileSync(path.join(run,'result.json'),JSON.stringify(result))
     return { run, result }
   }
   const bin = path.join(root, 'bin')
@@ -265,7 +313,9 @@ else if(a[1]==='install'){
 }
 `)
   executable('plutil', `if(process.argv.includes('-extract'))console.log('fixture.runner');else{let s='';process.stdin.on('data',x=>s+=x);process.stdin.on('end',()=>process.stdout.write(s))}`)
-  executable('python3', `console.log('controlled fixture boundary')`)
+  executable('python3', `const fs=require('node:fs'),a=process.argv.slice(2),mode=a[0]==='-I'?a[2]:a[1];
+${controlledFixtureArtifacts(p.session)}
+console.log('controlled fixture boundary')`)
   executable('xcodebuild', `
 const fs=require('node:fs'),path=require('node:path'),a=process.argv.slice(2)
 if(a.includes('-version'))console.log('Xcode 27.0')
@@ -315,7 +365,7 @@ for (const interruption of ['cancelled', 'timed-out']) {
 const fs=require('node:fs'),path=require('node:path'),a=process.argv.slice(2),trace=${JSON.stringify(trace)},intent=${JSON.stringify(intent)}
 const mode=a[0]==='-I'?a[2]:a[1]
 const history=fs.existsSync(trace)?JSON.parse(fs.readFileSync(trace)):[];history.push(mode);fs.writeFileSync(trace,JSON.stringify(history))
-if(mode==='capture')fs.mkdirSync(${JSON.stringify(path.join(p.session,'ui-baseline'))},{recursive:true})
+${controlledFixtureArtifacts(p.session)}
 if(mode==='arm-data')fs.writeFileSync(intent,'controlled intent')
 if(mode==='resume-data'||mode==='settle-data')fs.unlinkSync(intent)
 if(mode==='wait-initialized'){
@@ -357,6 +407,17 @@ Object.defineProperty(performance,'now',{value:()=>now()+(fs.existsSync(${JSON.s
     })
 }
 
+test('合成局部证据制备延迟不倒置外层与内层时间，真实外层晚启动仍拒绝', t => {
+  const p=project(t), proof=p.evidence(undefined,{completedAt:Date.now()-1000})
+  const measurement=JSON.parse(fs.readFileSync(path.join(proof.run,'local-measurement.json')))
+  const terminal=path.join(p.root,measurement.invocation)
+  const original=JSON.parse(fs.readFileSync(terminal))
+  assert.ok(original.startedAt<=measurement.startedAt)
+  assert.equal(requireEvidence(p.root,proof.run,inputHash(p.root),environment).result.status,'passed')
+  fs.writeFileSync(terminal,JSON.stringify({...original,startedAt:measurement.startedAt+1}))
+  assert.throws(()=>requireEvidence(p.root,proof.run,inputHash(p.root),environment),/局部命令未完成/)
+})
+
 test('当前局部证据校验：失败/旧输入/错误环境/范围/符号链接拒绝，文档变化不作废', (t) => {
   const p = project(t),
     good = p.evidence(),
@@ -385,12 +446,12 @@ test('Vitest 配置变更使旧证据和完整输入失效，新配置局部通�
   clock(t)
   const p = project(t)
   p.write('app/vitest.config.ts', 'export default { test: { include: ["src/**/*.spec.ts"] } }')
-  const previous = p.evidence(), before = p.hash()
+  const previous = p.evidence('crud'), before = p.hash()
   finishAttempt(p, before, previous, false)
   p.write('app/vitest.config.ts', 'export default { test: { include: ["src/domain/money.spec.ts"] } }')
   assert.notEqual(p.hash(), before)
   assert.throws(() => requireEvidence(p.root, previous.run, inputHash(p.root), environment), /版本不符/)
-  const current = p.evidence()
+  const current = p.evidence('crud')
   assert.doesNotThrow(() => requireEvidence(p.root, current.run, inputHash(p.root), environment))
   const attempt = beginFull(p.root, 'ios-touch', current, p.hash(), process.pid, p.context())
   finishFull(p.root, attempt)
@@ -832,6 +893,9 @@ test('场景名参与失败及成功证据，crud 不能修复 template-tie，�
     path.join(unrelated.run, 'test.log'),
     fs.readFileSync(path.join(unrelated.run, 'test.log'), 'utf8').replace('VERIFIED crud', 'VERIFIED merge')
   )
+  unrelated.result.measurementSeal=partialSeal(unrelated.run,
+    JSON.parse(fs.readFileSync(path.join(unrelated.run,'local-measurement.json'))),unrelated.result)
+  fs.writeFileSync(path.join(unrelated.run,'result.json'),JSON.stringify(unrelated.result))
   assert.throws(() => requireEvidence(p.root, unrelated.run, inputHash(p.root), environment), /场景通过记录/)
   const repaired = p.evidence('template-tie')
   requireEvidence(p.root, repaired.run, inputHash(p.root), environment)
@@ -1102,8 +1166,8 @@ ${originalXcrun.replace(/^#![^\n]*\n/, '')}`)
   }
 )
 
-test('模拟器启动预检不构建 App，共享启动预算，失败和取消只清理本次设备', { timeout:20000 }, async t => {
-  for (const mode of ['passed','direct','quiesced','closed','close-failed','quiesce-failed','quiesce-journal-failed','failed','journal-failed','invalid-terminal','wrong-terminal','expired','cancelled']) await t.test(mode, async t => {
+for (const mode of ['passed','direct','quiesced','closed','close-failed','quiesce-failed','quiesce-journal-failed','failed','journal-failed','invalid-terminal','wrong-terminal','expired','cancelled']) {
+  test('模拟器启动预检不构建 App，共享启动预算，失败和取消只清理本次设备：' + mode, { timeout:20000 }, async t => {
     const p = project(t)
     const succeeds=['passed','direct','quiesced','closed','close-failed','quiesce-failed','quiesce-journal-failed'].includes(mode), id = randomUUID(), sentinel = randomUUID()
     const state = p.write('.local/boot-state.json', JSON.stringify({ device:null }))
@@ -1243,7 +1307,7 @@ else throw new Error('unexpected simulator command');
     }
     assert.equal(fs.existsSync(path.join(p.root,'app/dist')),false,'环境预检不编译 App')
   })
-})
+}
 
 test('T15 完整规模 CLI 在校验前传入结束阶段，拒绝后不发布成功回执', { timeout:15000 }, t => {
   const p = project(t)
@@ -1276,6 +1340,14 @@ export function validateScenario(root,scenario,result) {
     assert.ok(directory,child.stdout)
     const observed = JSON.parse(fs.readFileSync(path.join(p.root,'validation-input.json')))
     const result = JSON.parse(fs.readFileSync(path.join(directory,'result.json')))
+    const registration = JSON.parse(fs.readFileSync(path.join(directory,'local-measurement.json')))
+    assert.equal(registration.kind,'capacity')
+    assert.equal(registration.target,name)
+    assert.deepEqual(readState(p.root).capacityAttempts[path.relative(p.root,directory)],registration,
+      '真实 CLI 在执行前登记原始范围与外层命令，不补造终态关联')
+    const terminal=JSON.parse(fs.readFileSync(path.join(p.root,registration.invocation)))
+    assert.equal(terminal.ownerPid,registration.ownerPid)
+    assert.equal(terminal.status,'passed')
     assert.equal(observed.scenario,name)
     assert.ok(observed.result.timings?.length,'共享校验器收到阶段记录，不能依赖 finally 事后补齐')
     assert.deepEqual(observed.result.timings,result.timings)
@@ -1295,6 +1367,10 @@ export function validateScenario(root,scenario,result) {
   const result = JSON.parse(fs.readFileSync(path.join(directory,'result.json')))
   assert.equal(result.status,'failed')
   assert.match(result.error,/CONTROLLED_REPORT_REJECTED/)
+  const measured=JSON.parse(fs.readFileSync(path.join(directory,'local-measurement.json')))
+  assert.equal(JSON.parse(fs.readFileSync(path.join(p.root,measured.invocation))).status,'failed')
+  assert.deepEqual(readState(p.root).capacityAttempts[path.relative(p.root,directory)],measured,
+    '失败后仍保留原始登记，不改写成成功或删除')
 })
 
 test('UI 局部 CLI 只在夹具关闭后预启动，runner 准备复用前台 App，不扩大用例',
@@ -1305,12 +1381,24 @@ test('UI 局部 CLI 只在夹具关闭后预启动，runner 准备复用前台 A
       fs.chmodSync(file, 0o755)
     }
     const trace = path.join(p.root, 'ui-order.log')
+    const capturePhase = p.write('.local/capture-ui-phase.cjs', `
+const fs=require('node:fs'),path=require('node:path');
+const output=process.argv.slice(2).find(arg=>arg.startsWith('--stdout='))?.slice(9);
+if(output&&path.basename(output)==='app-stdout.log')
+ fs.writeFileSync(${JSON.stringify(trace+'.phase')},fs.readFileSync(path.join(path.dirname(output),'progress.json')));
+`)
     const originalXcrun = fs.readFileSync(path.join(p.root, 'bin/xcrun'), 'utf8')
     executable('xcrun', `#!/bin/sh
 printf 'sim:%s\\n' "$2" >> "${trace}"
+"${process.execPath}" "${capturePhase}" "$@"
+if [ "$2" = launch ]; then printf 'arg:%s\\n' "$@" >> "${trace}.args"; fi
 ${originalXcrun.replace(/^#![^\n]*\n/, '')}`)
     executable('plutil', '#!/bin/sh\nprintf "{}"\n')
-    executable('python3', `#!/bin/sh\nprintf 'python:%s\\n' "$2" >> "${trace}"\n`)
+    executable('python3', `#!${process.execPath}
+const fs=require('node:fs'),a=process.argv.slice(2),mode=a[0]==='-I'?a[2]:a[1];
+${controlledFixtureArtifacts(p.session)}
+fs.appendFileSync(${JSON.stringify(trace)},'python:'+a[1]+'\\n');
+`)
     executable('xcodebuild', `#!${process.execPath}
 const fs = require('node:fs'), path = require('node:path'), args = process.argv.slice(2)
 if (args.includes('-version')) console.log('Xcode 27.0')
@@ -1322,6 +1410,13 @@ else if (args[0] === 'build-for-testing') {
   }
   fs.writeFileSync(path.join(products, 'DictionaryTouch.xctestrun'), 'controlled plan')
 } else if (args[0] === 'test-without-building') {
+  const before=JSON.parse(fs.readFileSync(${JSON.stringify(trace+'.phase')}));
+  const run=path.dirname(args[args.indexOf('-resultBundlePath')+1]);
+  const current=JSON.parse(fs.readFileSync(path.join(run,'progress.json')));
+  require('node:assert/strict').equal(before.stage,'test','UI 预启动属于测试启动而非初始化');
+  require('node:assert/strict').equal(current.id,before.id,'runner 启动不能重置预启动已消耗的窗口');
+  require('node:assert/strict').equal(current.startedAt,before.startedAt);
+  require('node:assert/strict').equal(current.log,path.join(run,'test.log'));
   fs.appendFileSync(${JSON.stringify(trace)}, 'test\\n')
   console.log("Test Case '-[DictionaryUITests.DictionaryTouchTests test00PrepareReportApp]' passed (0.1 seconds).")
   console.log('Executed 1 test, with 0 failures')
@@ -1347,8 +1442,12 @@ else if (args[0] === 'build-for-testing') {
     assert.deepEqual(lines.slice(fixture + 1, lines.indexOf('test')), ['sim:launch'],
       '夹具完成后启动且保持前台，不在 runner 之前再次终止')
     const run = result.stdout.match(/^EVIDENCE=(.+)$/m)[1]
-    for (const file of ['app-stdout.log','app-stderr.log'])
+    const launchArgs=fs.readFileSync(trace+'.args','utf8')
+    for (const file of ['app-stdout.log','app-stderr.log','initialize-app-stdout.log','initialize-app-stderr.log']) {
       assert.equal(fs.statSync(path.join(run,file)).mode & 0o777,0o600,'App 原生日志保持私有')
+      const option=file.includes('stdout')?'stdout':'stderr'
+      assert.ok(launchArgs.includes('arg:--'+option+'='+path.join(run,file)+'\n'),'初始化与预启动均传递独立日志路径')
+    }
     assert.equal(JSON.parse(fs.readFileSync(path.join(run, 'result.json'))).executedCases.length, 1)
   })
 
@@ -1429,7 +1528,8 @@ test('新候选 App 在卸载前拒绝错误沙盒回执，保留有效安装、
     assert.equal(fs.readFileSync(p.trace, 'utf8'), before)
     // 模拟基线工具已核实同一数据集的合法搬迁；必须使用旧安装摘要，而非新候选摘要。
     const python = p.write('bin/python3', '#!' + process.execPath + '\n' + `
-const fs=require('node:fs'),a=process.argv.slice(2)
+const fs=require('node:fs'),a=process.argv.slice(2),mode=a[0]==='-I'?a[2]:a[1]
+${controlledFixtureArtifacts(p.session)}
 if(a[2]==='rebind'){
  if(a[5]!==${JSON.stringify(lease.appHash)})process.exit(9)
  const file=${JSON.stringify(leaseFile)},value=JSON.parse(fs.readFileSync(file))
@@ -1495,10 +1595,11 @@ test('完整入口借用会话共用安装校验，只有卸载成功才失效�
     const context = JSON.parse(fs.readFileSync(path.join(p.session, 'test-context.json')))
     // 仅执行实际完整脚本中的借用重置块，不编译或运行完整验收。
     const shell = fs.readFileSync(path.join(p.root, 'scripts/lib/ios-app-full.sh'), 'utf8')
-    const code = shell.split('node --input-type=module - "${MYBILL_FULL_SESSION}" "${SIMULATOR_ID}" "${INSTALLED}" <<\'JS\'\n')[1]?.split('\nJS')[0]
+    const code = shell.split('node --input-type=module - "${MYBILL_FULL_SESSION}" "${SIMULATOR_ID}" "${INSTALLED}" "${RUN_DIRECTORY}/reset-stop" <<\'JS\'\n')[1]?.split('\nJS')[0]
     assert.ok(code)
-    const reset = () => spawnSync(process.execPath, ['--input-type=module', '-', p.session, context.simulatorId, 'true'], {
+    const reset = () => spawnSync(process.execPath, ['--input-type=module', '-', p.session, context.simulatorId, 'true', path.join(p.root,'reset-stop-'+randomUUID())], {
       cwd: p.root, input: code, encoding: 'utf8', env: { ...process.env,
+        MYBILL_FULL_SIMCTL_PROGRAM: 'xcrun', // 与完整入口解析后的 SDK 回退一致。
         PATH: path.join(p.root, 'bin') + path.delimiter + process.env.PATH }
     })
     const marker = p.write(path.relative(p.root, path.join(p.session, 'ui-baseline/marker')), 'old baseline')
@@ -1512,8 +1613,41 @@ test('完整入口借用会话共用安装校验，只有卸载成功才失效�
     assert.equal(fs.readFileSync(p.trace, 'utf8'), before)
     assert.equal(fs.readFileSync(marker, 'utf8'), 'old baseline')
     fs.writeFileSync(leaseFile, JSON.stringify(lease))
+    // 终止工具的后代继承输出句柄，不得让已退出的终止请求等到管道 EOF。
+    const originalXcrun = fs.readFileSync(path.join(p.root,'bin/xcrun'),'utf8')
+    p.write('bin/xcrun', `#!${process.execPath}
+if (process.argv[3] === 'terminate') {
+ const resetFs=require('node:fs');
+ if(resetFs.existsSync('fail-reset-stop')){console.error('controlled stop failure');process.exit(9)}
+ if(resetFs.existsSync('inherit-reset-output')){
+  const helper=require('node:child_process').spawn(process.execPath,['-e','setTimeout(()=>{},30000)'],{stdio:'inherit'});
+  resetFs.appendFileSync('reset-helper-pids',String(helper.pid)+'\\n');helper.unref();
+  console.error('found nothing to terminate');process.exit(3);
+ }
+}
+` + originalXcrun.replace(/^#![^\n]*\n/,''))
+    // 打开句柄保留到 after，项目夹具先删除目录也能读回并结束本测试的后代。
+    const helperFd=fs.openSync(path.join(p.root,'reset-helper-pids'),'wx+',0o600)
+    t.after(()=>{
+      try {
+        for(const pid of fs.readFileSync(helperFd,'utf8').trim().split('\n').filter(Boolean).map(Number))
+          try{process.kill(pid,'SIGKILL')}catch(e){if(e.code!=='ESRCH')throw e}
+      } finally {fs.closeSync(helperFd)}
+    })
+    p.write('fail-reset-stop','failure')
+    const stopFailure=reset()
+    assert.notEqual(stopFailure.status,0);assert.match(stopFailure.stderr,/exit=9.*error=|controlled stop failure/)
+    assert.deepEqual(JSON.parse(fs.readFileSync(leaseFile)),lease)
+    assert.equal(fs.readFileSync(marker,'utf8'),'old baseline')
+    fs.unlinkSync(path.join(p.root,'fail-reset-stop'))
+    p.write('inherit-reset-output','inherited pipe')
     p.write('fail-uninstall', 'controlled uninstall failure')
-    assert.notEqual(reset().status, 0)
+    const stopStarted=performance.now()
+    const uninstallFailure=reset()
+    assert.notEqual(uninstallFailure.status,0)
+    assert.doesNotMatch(uninstallFailure.stderr,/结束本轮 App 失败/)
+    assert.ok(performance.now()-stopStarted<10000,'已退出的 terminate 不等待后代输出句柄关闭')
+    fs.unlinkSync(path.join(p.root,'inherit-reset-output'))
     assert.deepEqual(JSON.parse(fs.readFileSync(leaseFile)), lease)
     assert.equal(fs.readFileSync(marker, 'utf8'), 'old baseline')
     assert.equal(fs.readFileSync(journal, 'utf8'), 'pending reset')
@@ -1685,8 +1819,12 @@ const spawn = cp.spawn
 cp.spawn = (program, args, options) => {
   const child = spawn(program, args, options)
   const values = ${JSON.stringify(durations)}
-  const duration = program === 'xcrun' || program === 'xcodebuild' ? values.toolchain
-    : program === 'bash' && args[0] === '-n' ? values.syntax : program === 'bash' && args[0] === '-s' ? values.body : 0
+  // The managed nested path launches a gate first; charge its actual tool exactly once.
+  const gate = args.findIndex(arg => /\\/ios-process-launch\\.(?:sh|mjs)$/.test(arg))
+  const tool = gate < 0 ? program : args[gate + 1]
+  const toolArgs = gate < 0 ? args : args.slice(gate + 2)
+  const duration = tool === 'xcrun' || tool === 'xcodebuild' ? values.toolchain
+    : tool === 'bash' && toolArgs[0] === '-n' ? values.syntax : tool === 'bash' && toolArgs[0] === '-s' ? values.body : 0
   const once = child.once.bind(child)
   child.once = (event, fn) => once(event, event === 'close' ? (...args) => {
     elapsed += duration
@@ -1697,6 +1835,23 @@ cp.spawn = (program, args, options) => {
 syncBuiltinESMExports()
 `
   )
+}
+
+/** Exercise the nested launch gate even when the regression is run directly from a terminal. */
+function scopedClockRun(p,args,env) {
+  const scope=commandScope(p.root,{})
+  scope.bind(process.pid)
+  try { return p.run(args,{...env,MYBILL_PROCESS_SCOPE:scope.env.MYBILL_PROCESS_SCOPE}) }
+  finally { scope.finish() }
+}
+
+/** Evidence fixtures also contain invocations; bind observations to the CLI that actually ran. */
+function clockInvocation(p,result) {
+  const receipts=fs.readdirSync(p.base).filter(name=>name.startsWith('ios-invocation-'))
+    .map(name=>JSON.parse(fs.readFileSync(path.join(p.base,name,'result.json'))))
+    .filter(receipt=>receipt.ownerPid===result.pid)
+  assert.equal(receipts.length,1,'本次 CLI 必须有唯一实际调用回执，不能读取合成前置的成功终态')
+  return receipts[0]
 }
 
 for (const kind of ['preflight', 'execution', 'within-budget']) {
@@ -1712,15 +1867,14 @@ for (const kind of ['preflight', 'execution', 'within-budget']) {
           ? { syntax: 0, toolchain: 180000, body: 300000 }
           : { syntax: 0, toolchain: 100000, body: 100000 }
     const preload = virtualClock(p, durations)
-    const result = p.run(['ios-smoke', '--from', proof.run], {
+    const result = scopedClockRun(p,['ios-smoke', '--from', proof.run], {
       DEVELOPER_DIR: '/controlled/sdk',
       NODE_OPTIONS: '--import=' + preload
     })
     const passed = kind === 'within-budget'
     assert.equal(result.status, passed ? 0 : 1, result.stderr)
     if (!passed) assert.match(result.stderr, /整轮执行超时/)
-    const directory = fs.readdirSync(p.base).find((name) => name.startsWith('ios-invocation-'))
-    const receipt = JSON.parse(fs.readFileSync(path.join(p.base, directory, 'result.json')))
+    const receipt = clockInvocation(p,result)
     assert.equal(receipt.status, passed ? 'passed' : 'failed')
     assert.equal(receipt.deadline.budgetMs, 900000)
     assert.ok(receipt.deadline.elapsedMs >= (passed ? 400000 : 900000))
@@ -1746,12 +1900,11 @@ for (const passed of [true, false]) {
     const preload = virtualClock(p, passed
       ? { syntax: 240000, toolchain: 240000, body: 1000000 }
       : { syntax: 240000, toolchain: 240000, body: 1600000 })
-    const result = p.run(['ios-touch', '--from', proof.run], {
+    const result = scopedClockRun(p,['ios-touch', '--from', proof.run], {
       DEVELOPER_DIR: '/controlled/sdk', NODE_OPTIONS: '--import=' + preload
     })
     assert.equal(result.status, passed ? 0 : 1, result.stderr)
-    const directory = fs.readdirSync(p.base).find(name => name.startsWith('ios-invocation-'))
-    const receipt = JSON.parse(fs.readFileSync(path.join(p.base, directory, 'result.json')))
+    const receipt = clockInvocation(p,result)
     assert.equal(receipt.deadline.budgetMs, 2_400_000)
     assert.ok(receipt.deadline.elapsedMs > 900_000, '实际越过原单场景预算，不能只证明短路径')
     assert.equal(receipt.status, passed ? 'passed' : 'failed')
@@ -1781,7 +1934,7 @@ echo SHOULD_NOT_CONTINUE > continued
   const proof = p.evidence('NativeTests/NativeSqliteTests/testLedgerLifecycleAndProtection')
   // 四次受控工具链查询共 897000ms，仍给执行体留下原来的约三秒；不调整生产预算。
   const preload = virtualClock(p, { syntax: 0, toolchain: 224250, body: 0 })
-  const result = p.run(['ios-smoke', '--from', proof.run], {
+  const result = scopedClockRun(p,['ios-smoke', '--from', proof.run], {
     DEVELOPER_DIR: '/controlled/sdk',
     NODE_OPTIONS: '--import=' + preload
   })
@@ -1790,8 +1943,7 @@ echo SHOULD_NOT_CONTINUE > continued
   assert.ok(fs.existsSync(path.join(p.root, 'cleanup-receipt')))
   assert.equal(fs.existsSync(path.join(p.root, 'continued')), false)
   assert.equal(fs.existsSync(path.join(p.base, 'ios-command.lock')), false)
-  const directory = fs.readdirSync(p.base).find((name) => name.startsWith('ios-invocation-'))
-  const receipt = JSON.parse(fs.readFileSync(path.join(p.base, directory, 'result.json')))
+  const receipt = clockInvocation(p,result)
   assert.equal(receipt.status, 'failed')
   assert.ok(receipt.deadline.elapsedMs >= receipt.deadline.budgetMs)
 })

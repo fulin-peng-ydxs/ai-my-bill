@@ -1,10 +1,10 @@
-import type { components } from './generated/schema'
+import type { LedgerContracts } from '../domain/ledgerContracts'
 import { entries, mutateEntry } from './localEntries'
 import { localOperation } from '../data/localOperation'
 
-export type CreateIncomeRequest = components['schemas']['CreateIncomeRequest']
-export type IncomeResponse = components['schemas']['IncomeResponse']
-export type UpdateIncomeRequest = components['schemas']['UpdateIncomeRequest']
+export type CreateIncomeRequest = LedgerContracts['CreateIncomeRequest']
+export type IncomeResponse = LedgerContracts['IncomeResponse']
+export type UpdateIncomeRequest = LedgerContracts['UpdateIncomeRequest']
 
 export function listRecentIncomeNames(query: string, signal?: AbortSignal): Promise<{ items: string[] }> {
   return localOperation(() => entries.recentIncomeNames(query, signal))

@@ -1,4 +1,5 @@
 import fs from 'node:fs'
+import { validateLocalPartial } from './ios-local-partials.mjs'
 import path from 'node:path'
 import { createHash, randomUUID } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
@@ -219,6 +220,9 @@ export function readVitest(file, root) {
 }
 export function recordLocal(root, run, result) {
   const state = readState(root)
+  const registered = state.localAttempts?.[path.relative(root, run)]
+  if (registered) Object.assign(registered, { status: result.status, completedAt: result.completedAt,
+    required: result.failure?.required, cancelled: result.cancelled })
   if (result.status !== 'passed' && !result.cancelled && result.failure?.observed !== false) {
     const failure = result.failure ?? { required: result.coverage ?? ['check/script-tests'] }
     const key = digest(
@@ -285,8 +289,39 @@ export function needsPhaseRepair(root, key, environment) {
   )
 }
 
-/** 校验本工作区的实际局部回执；Node 局部不绑定 Xcode，原生局部须匹配运行环境。 */
+/** All native/UI consumers, including an identical --from input, must re-read the original seal.
+ * The low-level reader below checks structure only and is used internally by checkedPartial;
+ * keeping the two levels separate avoids recursive validation and an identical-input bypass.
+ */
 export function requireEvidence(root, input, currentInput, environment) {
+  if (!input) throw new Error('完整验收前必须先通过局部验证，并用 --from RUN_DIRECTORY 指定成功证据。')
+  const run = path.resolve(input), base = fs.realpathSync(evidenceRoot(root))
+  if (fs.realpathSync(run) !== run) throw new Error('拒绝非受管局部证据路径。')
+  if (path.dirname(run) === base && /^ios-check-[A-Za-z0-9]+$/.test(path.basename(run)))
+    return readEvidenceResult(root, run, currentInput, environment)
+  const session = readSession(base, path.dirname(run), true)
+  if (!/^run-[A-Za-z0-9]+$/.test(path.basename(run))) throw new Error('拒绝非受管局部证据路径。')
+  const result = readJson(path.join(run, 'result.json'))
+  const selected = selection('--' + result.requested?.kind, result.requested?.name,
+    readJson(path.join(root, 'app/native-tests/scenarios.json')))
+  // Registration takes precedence over a result's claimed selector, including Capacity.
+  if (result.inputHash !== currentInput && currentInput !== inputHash(root))
+    throw new Error('局部证据失败、过期、版本不符或环境不符。')
+  try {
+    const checked = validateLocalPartial(root, run)
+    if (checked.runId !== session.context.runId || checked.simulatorId !== session.context.simulatorId ||
+        (checked.environment && checked.environment !== environment) ||
+        digest(JSON.stringify(checked)) !== digest(JSON.stringify(result)))
+      throw new Error('局部证据环境、归属或原始结果发生变化。')
+    // Capacity may only prove its measured cases, not borrow unsealed generic build keys.
+    return { run, result: selected.scheme === 'Capacity' ? {...checked,coverage:selectedCoverage(selected)} : checked }
+  } catch (cause) {
+    throw new Error(`局部证据失败、过期、版本不符或环境不符（无有效原始封存证据）：${errorMessage(cause)}`, { cause })
+  }
+}
+
+/** 校验本工作区的实际局部回执；Node 局部不绑定 Xcode，原生局部须匹配运行环境。 */
+export function readEvidenceResult(root, input, currentInput, environment) {
   if (!input) throw new Error('完整验收前必须先通过局部验证，并用 --from RUN_DIRECTORY 指定成功证据。')
   const run = path.resolve(input),
     base = fs.realpathSync(evidenceRoot(root))
@@ -304,6 +339,7 @@ export function requireEvidence(root, input, currentInput, environment) {
   if (
     result.scope !== 'partial' ||
     result.status !== 'passed' ||
+    !/^[a-f0-9]{64}$/.test(result.inputHash ?? '') ||
     result.inputHash !== currentInput ||
     (result.environment && result.environment !== environment) ||
     !result.coverage?.length ||

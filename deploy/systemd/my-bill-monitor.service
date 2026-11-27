@@ -1,9 +1,0 @@
-[Unit]
-Description=My Bill local operational checks
-After=docker.service
-
-[Service]
-Type=oneshot
-ExecStart=/bin/bash /opt/my-bill/current/deploy/scripts/check-operations.sh
-User=root
-Group=root

@@ -1,16 +1,16 @@
-import type { components } from './generated/schema'
+import type { LedgerContracts } from '../domain/ledgerContracts'
 import { EntryReadbackQuery } from '../data/entries/readbackQuery'
 import { appDatabase } from '../data/appDatabase'
 import { localOperation } from '../data/localOperation'
 
 const readback = new EntryReadbackQuery(appDatabase)
 
-export type LedgerItem = components['schemas']['LedgerItem']
-export type LedgerPage = components['schemas']['LedgerPage']
-export type LedgerEntryTypeFilter = components['schemas']['LedgerEntryTypeFilter']
-export type LedgerDateRange = components['schemas']['LedgerDateRange']
-export type LedgerLifecycleFilter = components['schemas']['LedgerLifecycleFilter']
-export type ExpenseTimeBand = components['schemas']['ExpenseTimeBand']
+export type LedgerItem = LedgerContracts['LedgerItem']
+export type LedgerPage = LedgerContracts['LedgerPage']
+export type LedgerEntryTypeFilter = LedgerContracts['LedgerEntryTypeFilter']
+export type LedgerDateRange = LedgerContracts['LedgerDateRange']
+export type LedgerLifecycleFilter = LedgerContracts['LedgerLifecycleFilter']
+export type ExpenseTimeBand = LedgerContracts['ExpenseTimeBand']
 
 export interface LedgerFilters {
   query: string

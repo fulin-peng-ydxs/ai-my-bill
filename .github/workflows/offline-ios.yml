@@ -54,6 +54,22 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - name: Resolve requested profile before dependency preparation
+        id: request
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs'
+          import { requestedScope } from './scripts/lib/ios-ci.mjs'
+          const { profile } = requestedScope(process.env.GITHUB_EVENT_NAME,
+            JSON.parse(fs.readFileSync(process.env.GITHUB_EVENT_PATH, 'utf8')))
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `profile=${profile}\n`)
+          NODE
+      # AST 规划、执行和对账使用相同锁定解析器；定时/显式审计仍只读取锁文件。
+      - name: Prepare locked planning dependencies
+        if: steps.request.outputs.profile != 'dependency-audit'
+        run: npm --prefix app ci --ignore-scripts
       - name: Validate registry and plan required suites
         id: plan
         run: |
@@ -196,6 +212,11 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - name: Prepare locked reconciliation dependencies
+        if: needs.plan.result == 'success' && needs.plan.outputs.profile != 'dependency-audit'
+        run: npm --prefix app ci --ignore-scripts
       - uses: actions/download-artifact@v4
         if: needs.plan.result == 'success'
         with:

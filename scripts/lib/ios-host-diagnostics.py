@@ -4,6 +4,7 @@
 主命令、阶段预算与进程清理仍由既有 CI 入口负责。
 """
 import ctypes
+import errno
 from collections import Counter
 import json
 import math
@@ -54,6 +55,33 @@ def observer():
     library.proc_listallpids.argtypes = [ctypes.c_void_p, ctypes.c_int]
     library.proc_listallpids.restype = ctypes.c_int
     read.summary = summary
+    def process_tree():
+        # Only PID/PPID/PGID are needed for cancellation. Avoid ps argument/symbol enumeration.
+        capacity = max(256, library.proc_listallpids(None, 0) * 2 + 32)
+        for _ in range(3):
+            if capacity > 65536:
+                raise RuntimeError("process tree exceeds bounded snapshot capacity")
+            pids = (ctypes.c_int * capacity)()
+            count = library.proc_listallpids(pids, ctypes.sizeof(pids))
+            if count <= 0:
+                raise RuntimeError("process tree enumeration failed")
+            if count >= capacity:
+                capacity *= 2
+                continue
+            rows = []
+            for pid in pids[:count]:
+                if pid <= 0:
+                    continue
+                ctypes.set_errno(0)
+                info = read(pid)
+                if "unavailable" in info:
+                    if info["unavailable"] == errno.ESRCH:
+                        continue  # A process that exited during the snapshot is no longer a child.
+                    raise RuntimeError("process tree metadata unavailable")
+                rows.append((info["pid"], info["ppid"], info["pgid"]))
+            return rows
+        raise RuntimeError("process tree changed beyond bounded enumeration")
+    read.process_tree = process_tree
     return read
 
 
@@ -102,6 +130,10 @@ class StallSample:
 
 
 def run(args):
+    if args == ["--process-tree"]:
+        for row in observer().process_tree():
+            print(*row)
+        return 0
     host_summary = bool(args and args[0] == "--host-summary")
     if host_summary:
         if os.environ.get("GITHUB_ACTIONS") != "true" or os.environ.get("RUNNER_OS") != "macOS":

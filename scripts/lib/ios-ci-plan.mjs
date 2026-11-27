@@ -7,6 +7,8 @@ import { contentHash, generated } from './ios-cache.mjs'
 import { scriptSkipPolicy } from './ios-test-reports.mjs'
 import { assertNpmSources } from './ios-ci.mjs'
 import { measurementInputs } from './ios-evidence-inputs.mjs'
+import { relevantChange, suiteMeasurement } from './ios-measurement-scope.mjs'
+import { equivalentSuiteInputs } from './ios-equivalent-evidence.mjs'
 
 export const digest = (value) =>
   createHash('sha256')
@@ -110,7 +112,7 @@ export function registry(root, document) {
     'utf8'
   )
   const discovered = [...swift.matchAll(/^\s*func\s+(test\w+)\s*\(/gm)].map((match) => match[1])
-  if (discovered.some((name) => name !== 'test00DebugKeyboardReady' && !uiCases.includes(name)))
+  if (discovered.some(name => !registeredCases.has('DictionaryUITests/DictionaryTouchTests/' + name)))
     throw new Error('Swift UI 新用例未接入局部选择器及套件登记。')
   // 固定候选的最小能力不由可编辑登记任意降级；变更专项和单套件不会生成完整候选。
   for (const [profile, required] of Object.entries({
@@ -202,7 +204,7 @@ export function sourceIdentity(root) {
 }
 
 /** 选中的专项可有多条理由；完整 touch 覆盖局部 UI，但局部不会反向替代完整。 */
-export function selectSuites(r, profile, files = [], {execution}={}) {
+export function selectSuites(r, profile, files = [], {execution, changes}={}) {
   if (!['change', 'pull-request', ...Object.keys(r.profiles), ...Object.keys(r.suites)].includes(profile))
     throw new Error('未知 CI 范围。')
   const change = ['change', 'pull-request'].includes(profile)
@@ -217,8 +219,10 @@ export function selectSuites(r, profile, files = [], {execution}={}) {
       )
       if (hits.length)
         for (const name of rule.suites) {
+          const relevant = remoteSuite(r.suites[name]) ? hits : hits.filter(file => relevantChange(r.suites[name], file, changes))
+          if (!relevant.length) continue
           chosen.add(name)
-          reasons[name] = [...new Set([...(reasons[name] ?? []), ...hits])]
+          reasons[name] = [...new Set([...(reasons[name] ?? []), ...relevant])]
         }
     }
   if (change && r.unknownSource) {
@@ -227,7 +231,10 @@ export function selectSuites(r, profile, files = [], {execution}={}) {
       const known = r.rules.some(rule=>rule.suites.some(name=>!['secrets','app-common','scripts','scripts-macos'].includes(name)) &&
         rule.paths.some(pattern=>path.matchesGlob(file,pattern)) && !(rule.exclude ?? []).some(pattern=>path.matchesGlob(file,pattern)))
       if (!known && fallback.paths.some(pattern=>path.matchesGlob(file,pattern)) && !(fallback.exclude ?? []).some(pattern=>path.matchesGlob(file,pattern)))
-        for (const name of fallback.suites) {chosen.add(name);reasons[name]=[...(reasons[name] ?? []),'unknown:'+file]}
+        for (const name of fallback.suites) {
+          if (!remoteSuite(r.suites[name]) && !relevantChange(r.suites[name], file, changes)) continue
+          chosen.add(name);reasons[name]=[...(reasons[name] ?? []),'unknown:'+file]
+        }
     }
   }
   if (profile === 'pull-request' || (profile==='change' && execution==='local'))
@@ -241,10 +248,10 @@ export function selectSuites(r, profile, files = [], {execution}={}) {
 }
 
 /** Keep both policy requirements during a PR; an unmerged registry cannot waive its base's local checks. */
-export function requiredLocalFromPolicies(baseRegistry, headRegistry, files) {
+export function requiredLocalFromPolicies(baseRegistry, headRegistry, files, changes) {
   const selected = new Map()
   for (const r of [baseRegistry, headRegistry]) {
-    for (const suite of selectSuites(r, 'change', files, { execution: 'local' }).filter(s => !remoteSuite(s))) {
+    for (const suite of selectSuites(r, 'change', files, { execution: 'local', changes }).filter(s => !remoteSuite(s))) {
       const { reasons, ...definition } = suite
       const prior = selected.get(suite.name)
       if (prior) {
@@ -255,6 +262,21 @@ export function requiredLocalFromPolicies(baseRegistry, headRegistry, files) {
     }
   }
   return [...selected.values()]
+}
+
+/** Read blobs as data only; the trusted base verifier never imports or executes PR code. */
+export function changeContents(root, files, base, head) {
+  const read = (revision, file) => {
+    try { return git(root, 'show', revision + ':' + file).toString() }
+    catch { return null }
+  }
+  return new Map(files.filter(file => file.endsWith('.ts') || file === 'app/ios/App/UITests/DictionaryTouchTests.swift')
+    .map(file => {
+      const absolute = path.join(root, file)
+      const after = head ? read(head, file) : fs.existsSync(absolute) && fs.lstatSync(absolute).isFile() &&
+        !fs.lstatSync(absolute).isSymbolicLink() ? fs.readFileSync(absolute, 'utf8') : null
+      return [file, { before: read(base, file), after }]
+    }))
 }
 
 export function createPlan(root, profile, { base, head, execution=profile==='pull-request'?'remote':'local' } = {}) {
@@ -275,13 +297,14 @@ export function createPlan(root, profile, { base, head, execution=profile==='pul
       files = changedPaths(root, range.mergeBase, head)
     }
   }
-  const suites = selectSuites(r, profile, files,{execution})
+  const changes = range ? changeContents(root, files, range.mergeBase ?? base) : undefined
+  const suites = selectSuites(r, profile, files,{execution, changes})
   const changing=['change','pull-request'].includes(profile)
   const localRequired=changing && execution==='remote'
     ? profile === 'pull-request'
-      ? requiredLocalFromPolicies(JSON.parse(git(root, 'show', base + ':' + registryPath)), r, files)
-      : selectSuites(r,'change',files,{execution:'local'}).filter(s=>!remoteSuite(s)) : []
-  const deferred=changing ? selectSuites(r,'change',files).filter(s=>!suites.some(x=>x.name===s.name)) : []
+      ? requiredLocalFromPolicies(JSON.parse(git(root, 'show', base + ':' + registryPath)), r, files, changes)
+      : selectSuites(r,'change',files,{execution:'local',changes}).filter(s=>!remoteSuite(s)) : []
+  const deferred=changing ? selectSuites(r,'change',files,{changes}).filter(s=>!suites.some(x=>x.name===s.name)) : []
   const plan = {
     schema: 1,
     profile,
@@ -290,6 +313,8 @@ export function createPlan(root, profile, { base, head, execution=profile==='pul
     range,
     registryHash: digest(r),
     measurementInput: measurementInputs(root),
+    measurementScopes: Object.fromEntries([...suites, ...localRequired].filter(s => !remoteSuite(s))
+      .map(s => [s.name, suiteMeasurement(root, s)])),
     files,
     suites,
     ...(changing ? {deferred,localRequired} : {})
@@ -323,9 +348,19 @@ export function assertPlan(root, plan) {
 }
 
 /** Rebind delivery metadata without editing measured reports; legacy or changed execution inputs fail closed. */
-export function assertMeasuredPlan(root, plan) {
+export function assertMeasuredPlan(root, plan, suiteName) {
   const { id, ...body } = plan
   const r = registry(root)
+  if (suiteName && plan.measurementScopes) {
+    const suite = plan.suites.find(s => s.name === suiteName)
+    const { reasons, name, ...definition } = suite ?? {}
+    if (plan.schema !== 1 || plan.execution !== 'local' || id !== digest(body) || !suite ||
+        digest(definition) !== digest(r.suites[suiteName]) ||
+        !equivalentSuiteInputs(root, suite).includes(plan.measurementScopes[suiteName]))
+      throw new Error('历史专项的执行输入或定义已失效。')
+    git(root, 'cat-file', '-e', plan.source.commit + '^{commit}')
+    return plan
+  }
   if (plan.schema !== 1 || plan.execution !== 'local' || id !== digest(body) ||
       plan.registryHash !== digest(r) || plan.measurementInput !== measurementInputs(root) ||
       JSON.stringify(plan.suites) !== JSON.stringify(selectSuites(r, plan.profile, plan.files, { execution: 'local' })))
