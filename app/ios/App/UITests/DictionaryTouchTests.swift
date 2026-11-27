@@ -85,11 +85,11 @@ final class DictionaryTouchTests: XCTestCase {
         }
     }
 
-    private func tapVisibleText(_ label: String) {
+    private func tapVisibleText(_ label: String, containing: Bool = false) {
         var box: CGRect?
         // HTML select 的提示值未必是 AX label；从当前画面定位，再执行原生触摸。
         let ready = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
-            box = self.visualText(label)
+            box = self.visualText(label, containing: containing)
             return box != nil
         }, object: nil)
         XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 10), .completed, "画面未显示 \(label)")
@@ -98,7 +98,8 @@ final class DictionaryTouchTests: XCTestCase {
 
     private func appears(_ label: String, timeout: TimeInterval = 10, containing: Bool = false) {
         let ready = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
-            self.matching(label).firstMatch.exists || self.visualText(label, containing: containing) != nil
+            // 先观察画面，避免 iOS WebKit 的 AX 快照阻塞而错过短暂提示；判据仍为同一组 OR。
+            self.visualText(label, containing: containing) != nil || self.matching(label).firstMatch.exists
         }, object: nil)
         XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: timeout), .completed, "没有显示 \(label)\n\(app.debugDescription)")
     }
@@ -109,10 +110,24 @@ final class DictionaryTouchTests: XCTestCase {
     }
 
     private func expectValue(_ field: XCUIElement, _ value: String) {
-        // WKWebView 的 AX 值可短暂落后于已完成的原生输入；等精确值，不重放输入或改写页面。
-        let ready = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", value), object: field)
-        XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 3), .completed,
-                       "输入值未就绪：期望 \(value)，实际 \(String(describing: field.value))，类型 \(field.value.map { String(reflecting: type(of: $0)) } ?? "nil")")
+        // 用显式新查询观测值，不由 KVC 谓词持有旧快照；超时诊断只能使用窗口内的同一观测。
+        let deadline = ProcessInfo.processInfo.systemUptime + 3
+        var observed = "尚未读取"
+        var readSeconds: TimeInterval = 0
+        let matches = NSPredicate { _, _ in
+            let start = ProcessInfo.processInfo.systemUptime
+            guard start < deadline else { return false }
+            let actual = field.value as? String
+            let end = ProcessInfo.processInfo.systemUptime
+            readSeconds = end - start
+            observed = actual ?? "非字符串或空值"
+            return end <= deadline && actual == value
+        }
+        if matches.evaluate(with: nil) { return }
+        let remaining = max(0, deadline - ProcessInfo.processInfo.systemUptime)
+        let ready = XCTNSPredicateExpectation(predicate: matches, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: remaining), .completed,
+                       "输入值未就绪：期望 \(value)，窗口内最后观测 \(observed)，查询耗时 \(readSeconds) 秒")
     }
 
     private func openIndex() {
@@ -129,29 +144,51 @@ final class DictionaryTouchTests: XCTestCase {
         tap("关闭")
     }
 
-    /// 直接通过现有常驻搜索建立键盘会话并清空；不绕行字典编辑，不写业务数据。
-    /// 完整套件已有新增输入步骤，不选中此局部准备方法。
+    /// 通过原搜索控件建立完整键盘会话；不提交查询、不写业务数据。
+    /// 字典完整组不选中；局部输入场景与收支组合显式选择。
     func test00DebugKeyboardReady() {
-        tap("收支明细")
+        // 局部入口预启动后跳过 setUp 的激活分支；空 WebView 仍需原生触摸激活。
+        // 已绘制时不追加触摸，保留既有就绪窗口与 60 秒单例总预算。
+        if visualText("记一笔") == nil { activateWebContent() }
+        appears("记一笔", timeout: 20)
+        // 优先复用可触摸的原生导航控件，仅 AX 尚未暴露控件时由既有点按器回退截图。
+        // 避免单独 OCR 漏识别导航文字，仍执行原生点按并保留原空闲等待。
+        tap("明细")
+        // Vision 会把左侧搜索图标识别为同一行的 “Q”，仅此控件允许包含匹配。
+        tapVisibleText("搜索账目", containing: true)
         let field = app.searchFields.firstMatch
-        field.tap()
-        field.typeText("Debug Ready")
-        expectValue(field, "Debug Ready")
-        // 只准备键盘，不验收条件显示的清空按钮；真实退格后核对空输入，再收键盘返回导航。
-        field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: "Debug Ready".count))
+        let keyboard = app.keyboards.firstMatch
+        XCTAssertTrue(keyboard.waitForExistence(timeout: 3), "搜索输入的原生键盘尚未就绪")
+        completeKeyboardIntroductionIfPresent()
+        XCTAssertGreaterThan(keyboard.keys.count, 0, "仅输入辅助栏不能作为完整键盘就绪")
+        XCTAssertTrue(field.waitForExistence(timeout: 3), "键盘就绪后搜索控件仍不可读取")
+        // 前置只负责输入会话，输入/退格/Unicode/防抖由对应业务用例验证，避免重复提交搜索。
         let empty = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
-            let value = field.value as? String ?? ""
+            guard let value = field.value as? String else { return false }
             return value.isEmpty || value == field.placeholderValue
         }, object: nil)
-        XCTAssertEqual(XCTWaiter.wait(for: [empty], timeout: 3), .completed)
+        XCTAssertEqual(XCTWaiter.wait(for: [empty], timeout: 3), .completed, "键盘准备改变了搜索：\(String(describing: field.value))")
         dismissSearchKeyboard()
-        tap("记一笔")
+        tapVisibleText("记一笔")
         print("DEBUG_NATIVE_KEYBOARD_READY")
+    }
+
+    private func completeKeyboardIntroductionIfPresent() {
+        // iOS 首次键盘可能覆盖滑行输入引导；底层 keys 仍存在，不能据此当作可操作键盘。
+        // 仅处理本轮录像确认的系统引导，不泛化点击任意 Continue 或处理业务弹窗。
+        if visualText("Speed up your typing", containing: true) != nil {
+            tapVisibleText("Continue")
+            let dismissed = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+                self.visualText("Speed up your typing", containing: true) == nil
+            }, object: nil)
+            XCTAssertEqual(XCTWaiter.wait(for: [dismissed], timeout: 3), .completed, "首次键盘引导未关闭")
+        }
     }
 
     func test51IosKeyboardNavigation() {
         let original = XCUIDevice.shared.orientation
         defer { XCUIDevice.shared.orientation = original }
+        let price = app.textFields.matching(NSPredicate(format:"identifier == %@ OR label == %@","expense-unit-price","单价")).firstMatch
         for orientation in [UIDeviceOrientation.portrait,.landscapeLeft] {
             XCUIDevice.shared.orientation = orientation
             let rotated = XCTNSPredicateExpectation(predicate:NSPredicate { _,_ in
@@ -161,21 +198,46 @@ final class DictionaryTouchTests: XCTestCase {
             XCTAssertEqual(XCTWaiter.wait(for:[rotated],timeout:3),.completed,"实际 App 未切换到目标方向")
             tap("收支明细")
             let search = app.searchFields.firstMatch
-            XCTAssertTrue(search.waitForExistence(timeout: 3))
+            XCTAssertTrue(search.exists || search.waitForExistence(timeout: 3))
+            if orientation == .landscapeLeft { expectValue(search,"中文输入") }
             search.tap()
-            search.typeText("中文输入")
-            expectValue(search,"中文输入")
-            search.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue,count:4))
+            XCTAssertTrue(app.keyboards.firstMatch.exists || app.keyboards.firstMatch.waitForExistence(timeout: 3))
+            if orientation == .portrait {
+                completeKeyboardIntroductionIfPresent()
+                // 冷键盘先完成一次原生编辑窗口交接，再输入 Unicode；与局部键盘前置一致。
+                dismissSearchKeyboard()
+                search.tap()
+                XCTAssertTrue(app.keyboards.firstMatch.exists || app.keyboards.firstMatch.waitForExistence(timeout: 3))
+            }
+            XCTAssertGreaterThan(app.keyboards.firstMatch.keys.count, 0)
+            if orientation == .portrait {
+                search.typeText("中文输入")
+            } else {
+                // 横屏消费竖屏留下的同一搜索，再真实退格；避免重复输入整条文本。
+                search.coordinate(withNormalizedOffset:CGVector(dx:0.99,dy:0.5)).tap()
+                search.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue,count:4))
+            }
+            // 完成原生预编辑后才读提交值；不重复输入，也不扩大原 3 秒精确值窗口。
             dismissSearchKeyboard()
+            if orientation == .portrait {
+                expectValue(search,"中文输入")
+            } else {
+                var observed = "尚未读取"
+                let empty = XCTNSPredicateExpectation(predicate:NSPredicate { _,_ in
+                    guard let value = search.value as? String else { return false }
+                    observed = value
+                    return value.isEmpty || value == search.placeholderValue
+                },object:nil)
+                XCTAssertEqual(XCTWaiter.wait(for:[empty],timeout:3),.completed,"横屏退格后搜索未清空：\(observed)")
+            }
             tap("记一笔")
             if orientation == .portrait {
                 replaceEntryField("expense-unit-price","单价","12.3456")
             } else {
                 // 横屏复核保留值、重新唤起数值键盘与保存可达；金额替换由既有专项覆盖。
-                let price = entryField("expense-unit-price","单价")
                 expectValue(price,"12.3456")
                 price.tap()
-                XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout:3))
+                XCTAssertTrue(app.keyboards.firstMatch.exists || app.keyboards.firstMatch.waitForExistence(timeout:3))
                 dismissEntryKeyboard()
             }
             let save = app.buttons.matching(NSPredicate(format:"label == %@","保存支出")).firstMatch
@@ -186,7 +248,7 @@ final class DictionaryTouchTests: XCTestCase {
             XCTAssertTrue(save.exists && save.isHittable,"键盘收起后保存不可达")
             tap("我的")
             tap("记一笔")
-            expectValue(entryField("expense-unit-price","单价"),"12.3456")
+            expectValue(price,"12.3456")
         }
         print("IOS_KEYBOARD_NAVIGATION_VERIFIED")
     }
@@ -422,22 +484,35 @@ final class DictionaryTouchTests: XCTestCase {
             tap("清空搜索")
         }
         field.tap()
+        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 3))
         field.typeText(text)
-        expectValue(field, text)
         dismissSearchKeyboard()
+        // 与金额输入一致：先完成原生编辑，再核对精确值，不重放输入。
+        expectValue(field, text)
     }
 
     /// 搜索清空后输入仍保持焦点；离开前显式收起软键盘，不能依赖底部导航仍可触摸。
     private func dismissSearchKeyboard() {
+        dismissNativeKeyboard()
+    }
+
+    private func dismissNativeKeyboard() {
         if app.keyboards.firstMatch.exists {
             let buttons = app.buttons.matching(NSPredicate(format: "label IN %@", ["Done", "完成"]))
             var done: XCUIElement?
             // WebKit 可保留上一编辑器的同名 AX 节点；必须命中当前可触摸的键盘控件。
             let ready = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+                // 正常键盘优先取首个匹配，避免全量 AX 枚举耗尽条件等待。
+                // 首项若是不可触摸的旧节点，仍筛选全部候选，不放宽可触摸判据。
+                let first = buttons.firstMatch
+                if first.exists && first.isHittable {
+                    done = first
+                    return true
+                }
                 done = buttons.allElementsBoundByIndex.last(where: { $0.isHittable })
                 return done != nil
             }, object: nil)
-            XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 3), .completed, "原生搜索键盘缺少可触摸的完成按钮")
+            XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 3), .completed, "原生键盘缺少可触摸的完成按钮")
             done?.tap()
             disappears(app.keyboards.firstMatch)
         }
@@ -514,13 +589,7 @@ final class DictionaryTouchTests: XCTestCase {
     }
 
     private func dismissEntryKeyboard() {
-        let done = app.buttons.matching(NSPredicate(format: "label IN %@", ["完成", "Done"])).firstMatch
-        if done.exists && done.isHittable {
-            done.tap()
-        } else {
-            // 键盘期间保存区按原契约回到正文流；原生滚动到动作区，不改页面布局。
-            app.webViews.firstMatch.swipeUp()
-        }
+        dismissNativeKeyboard()
     }
 
     private func tapLedgerRow(_ title: String, kind: String) {
@@ -548,7 +617,7 @@ final class DictionaryTouchTests: XCTestCase {
         }
     }
 
-    func test15ExpenseWriteReopen() {
+    func test15ExpensePrepareSave() {
         tap("记一笔")
         tap("选择或新增商品")
         tap("测试苹果")
@@ -556,10 +625,20 @@ final class DictionaryTouchTests: XCTestCase {
         replaceEntryField("expense-paid-amount", "实付金额", "15.00")
         dismissEntryKeyboard()
         tap("保存支出")
-        appears("支出已保存，可撤销本次保存。")
+        // 原页面持续结果卡证明保存完成；短暂 toast 可能在 WebKit 快照返回前消失。
+        appears("刚刚保存")
+        appears("测试苹果", containing: true)
+        appears("撤销")
         app.terminate()
-        app.launch()
-        activateWebContent()
+    }
+
+    func test15ExpenseRestart() {
+        // setUp 从已终止状态启动并激活 WebKit；这一步与保存、字段回读各自受 60 秒限制。
+        XCTAssertEqual(app.state, .runningForeground)
+        appears("记一笔")
+    }
+
+    func test15ExpenseWriteReopen() {
         tap("明细")
         tapLedgerRow("测试苹果", kind: "支出")
         appears("编辑支出")
@@ -571,7 +650,7 @@ final class DictionaryTouchTests: XCTestCase {
         print("ENTRY_TOUCH_EXPENSE_REOPEN_VERIFIED")
     }
 
-    func test16IncomeContinueEdit() {
+    func test16IncomeAConfigure() {
         tap("记一笔")
         replaceEntryField("expense-unit-price", "单价", "77")
         tap("收入")
@@ -584,25 +663,55 @@ final class DictionaryTouchTests: XCTestCase {
         tap("合成公司")
         tap("收款方式")
         tap("测试现金")
+    }
+
+    func test16IncomeBSaveContinue() {
         replaceEntryField("income-amount", "收入金额", "1000.00")
         dismissEntryKeyboard()
         tap("保存并继续")
         appears("收入已保存，可撤销本次保存。")
         let amount = entryField("income-amount", "收入金额")
-        XCTAssertTrue((amount.value as? String) == "" || (amount.value as? String) == amount.placeholderValue)
+        guard let old = amount.value as? String, old.isEmpty || old == amount.placeholderValue else {
+            XCTFail("金额不可读或不为空，不能视为已清空")
+            return
+        }
         appears("测试现金")
         tap("支出")
         expectValue(entryField("expense-unit-price", "单价"), "77")
         tap("收入")
+    }
+
+    func test16IncomeCFocusHandoff() throws {
+        // 只复现数值编辑器到备注编辑器的原生输入窗口交接，不重放保存或更改金额。
+        tap("记一笔")
+        tap("收入")
+        let amount = entryField("income-amount", "收入金额")
+        let original = try XCTUnwrap(amount.value as? String)
+        amount.tap()
+        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 3))
+        dismissEntryKeyboard()
+        dismissEntryKeyboard() // 已收起必须是无操作，不能转成 swipe 或再次输入。
+        XCTAssertFalse(app.keyboards.firstMatch.exists)
+        expectValue(amount, original)
+        print("ENTRY_TOUCH_KEYBOARD_HANDOFF_READY")
+    }
+
+    func test16IncomeContinueEdit() {
         tap("明细")
         tapLedgerRow("测试工资", kind: "收入")
         appears("编辑收入")
         tap("补充信息")
         let note = app.textViews.firstMatch
         XCTAssertTrue(note.waitForExistence(timeout: 3))
-        note.tap()
+        // 备注框位于抽屉底部，点其上部可见内容，避免 AX 为中心点重新滚动编辑器。
+        XCTAssertGreaterThan(note.frame.height, 0)
+        note.coordinate(withNormalizedOffset: CGVector(dx: 0.1, dy: 0.1)).tap()
+        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 3))
+        XCTAssertGreaterThan(app.keyboards.firstMatch.keys.count, 0)
         note.typeText("T6 edited")
+        expectValue(note, "T6 edited")
         dismissEntryKeyboard()
+        expectValue(note, "T6 edited")
         tap("保存修改")
         appears("收入修改已保存。")
         print("ENTRY_TOUCH_INCOME_CONTINUE_EDIT_VERIFIED")
@@ -625,6 +734,12 @@ final class DictionaryTouchTests: XCTestCase {
     func test18ExpenseTemplateFill() {
         tap("记一笔")
         tap("支出")
+        // The expected first-clock notice covers the heading; use its existing close action.
+        let notice = matching("到期清理已延期：尚无时钟观测基线。").firstMatch
+        if notice.exists {
+            tap("关闭提示")
+            disappears(notice)
+        }
         tap("日常支出")
         tap("日常苹果")
         expectValue(entryField("expense-paid-amount", "实付金额"), "15")
@@ -632,7 +747,11 @@ final class DictionaryTouchTests: XCTestCase {
         tap("补充信息")
         let note = app.textViews.firstMatch
         XCTAssertTrue(note.waitForExistence(timeout: 3))
-        XCTAssertTrue((note.value as? String) == "" || (note.value as? String) == note.placeholderValue)
+        guard let value = note.value as? String else {
+            XCTFail("模板备注不可读，不能视为已清空")
+            return
+        }
+        XCTAssertTrue(value.isEmpty || value == note.placeholderValue)
         print("PERSONAL_TOUCH_EXPENSE_TEMPLATE_FILL")
     }
 
@@ -649,6 +768,12 @@ final class DictionaryTouchTests: XCTestCase {
     func test20TemplateFallbackRemove() {
         tap("记一笔")
         tap("支出")
+        // The expected first-clock notice covers the heading; use its existing close action.
+        let notice = matching("到期清理已延期：尚无时钟观测基线。").firstMatch
+        if notice.exists {
+            tap("关闭提示")
+            disappears(notice)
+        }
         tap("日常支出")
         tap("日常苹果")
         appears("模板中的部分选项已不可用")
@@ -671,6 +796,12 @@ final class DictionaryTouchTests: XCTestCase {
         tap("关闭")
         tap("记一笔")
         tap("收入")
+        // The expected first-clock notice covers the heading; use its existing close action.
+        let notice = matching("到期清理已延期：尚无时钟观测基线。").firstMatch
+        if notice.exists {
+            tap("关闭提示")
+            disappears(notice)
+        }
         tap("日常收入")
         tap("日常工资")
         expectValue(entryField("income-amount", "收入金额"), "1000")
@@ -743,8 +874,19 @@ final class DictionaryTouchTests: XCTestCase {
         tapLedgerRow("生命周期苹果", kind: "支出")
         tap("更多操作")
         tap("记录退款/报销")
-        replaceEntryField("adjustment-amount", "调整金额", "3")
-        dismissEntryKeyboard()
+        // 本套固定 14 Pro Max 竖屏；iOS 27 数字输入栏用右端勾选图标，无“完成”文字。
+        let amount = entryField("adjustment-amount", "调整金额")
+        guard let old = amount.value as? String, old.isEmpty || old == amount.placeholderValue else {
+            XCTFail("金额不可读或不为空，不能视为已清空")
+            return
+        }
+        amount.tap()
+        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 3))
+        amount.typeText("3")
+        XCTAssertLessThan(app.frame.width, app.frame.height)
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.92, dy: 0.965)).tap()
+        disappears(app.keyboards.firstMatch)
+        expectValue(amount, "3")
         tap("保存调整")
         disappears(app.textFields.matching(NSPredicate(format: "identifier == %@ OR label == %@", "adjustment-amount", "调整金额")).firstMatch)
         tap("关闭")
@@ -758,8 +900,19 @@ final class DictionaryTouchTests: XCTestCase {
         tapLedgerRow("生命周期苹果", kind: "支出")
         tap("更多操作")
         tap("记录退款/报销")
-        replaceEntryField("adjustment-amount", "调整金额", "13")
-        dismissEntryKeyboard()
+        // 本套固定 14 Pro Max 竖屏；iOS 27 数字输入栏用右端勾选图标，无“完成”文字。
+        let amount = entryField("adjustment-amount", "调整金额")
+        guard let old = amount.value as? String, old.isEmpty || old == amount.placeholderValue else {
+            XCTFail("金额不可读或不为空，不能视为已清空")
+            return
+        }
+        amount.tap()
+        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 3))
+        amount.typeText("13")
+        XCTAssertLessThan(app.frame.width, app.frame.height)
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.92, dy: 0.965)).tap()
+        disappears(app.keyboards.firstMatch)
+        expectValue(amount, "13")
         tap("保存调整")
         appears("当前最多还可调整")
         tap("关闭")
@@ -1112,7 +1265,27 @@ final class DictionaryTouchTests: XCTestCase {
         disappears(matching("编辑支出").firstMatch)
         tap("返回报表")
         appears("净支出趋势")
-        expectReportAmount("-¥13")
+        // Trend metrics retain their original positive magnitude; overview outflows use a minus sign.
+        // Verify all three refreshed readouts and the original period, not an unrelated matching amount.
+        let fixture = try reportFixture()
+        let grain = try XCTUnwrap(reportControl("report-grain", label: "时间粒度").value as? String)
+        let expected = try XCTUnwrap(fixture.periods[grain])
+        let period = reportControl("time-point", label: "查看时段")
+        let drill = app.buttons["查看\(expected)的净支出明细"]
+        // WebKit combines the inline range caption with its amount, while the two readouts are separate nodes.
+        let range = app.staticTexts["范围合计 ¥13"]
+        let amounts = app.staticTexts.matching(NSPredicate(format: "label == %@", "¥13"))
+        let ready = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            period.value as? String == expected && period.isEnabled
+                && drill.exists && drill.isEnabled && range.exists && amounts.count == 2
+        }, object: nil)
+        let refreshed = XCTWaiter.wait(for: [ready], timeout: 3)
+        if refreshed != .completed {
+            let labels = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "13")).allElementsBoundByIndex.map { $0.label }
+            print("REPORT_DRILL_READOUT period=\(period.value ?? "nil") expected=\(expected) enabled=\(period.isEnabled) drill=\(drill.exists)/\(drill.isEnabled) exactCount=\(amounts.count) labels=\(labels)")
+        }
+        XCTAssertEqual(refreshed, .completed,
+                       "返回后范围/当期/累计均须为正净支出 ¥13，且原时段及下钻恢复就绪")
         print("REPORT_TOUCH_NET_DRILL_EDIT_RETURN_REFRESH")
     }
 
@@ -1145,7 +1318,20 @@ final class DictionaryTouchTests: XCTestCase {
         let counts = ["分类结构": 7, "商品排行": 3, "支付方式": 7, "购买渠道": 6, "常用地点": 6,
                       "消费习惯": 7, "价格观察": 1, "消费频次": 4]
         let count = counts[title] ?? 1
-        appears("已加载 \(count) 笔", timeout: 5)
+        // The exact loaded count is below longer drill-down lists; bring it into the content viewport.
+        let summary = app.staticTexts["已加载 \(count) 笔"]
+        XCTAssertTrue(summary.waitForExistence(timeout: 5))
+        let navigation = app.otherElements.matching(NSPredicate(format: "label BEGINSWITH %@", "主导航")).firstMatch
+        XCTAssertTrue(navigation.exists)
+        let top = app.frame.minY + 100
+        let bottom = navigation.frame.minY
+        for _ in 0..<5 {
+            if summary.frame.minY >= top && summary.frame.maxY <= bottom { break }
+            app.webViews.firstMatch.swipeUp()
+        }
+        XCTAssertTrue(summary.frame.minY >= top && summary.frame.maxY <= bottom,
+                      "下钻条数须完整显示在原底栏上方")
+        XCTAssertEqual(summary.label, "已加载 \(count) 笔")
         XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "返回报表")).firstMatch.exists)
         tap("返回报表")
         expectValue(reportControl("report-dimension", label: "维度"), title)

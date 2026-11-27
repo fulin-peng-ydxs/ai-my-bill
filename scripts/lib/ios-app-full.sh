@@ -135,14 +135,38 @@ if [[ "${MODE}" == ios-build ]]; then
   run_phase check check/resources/device "${RUN_DIRECTORY}/device-resources.log" '' node scripts/verify-ios-resources.mjs .local/ios/DerivedData/Build/Products/Release-iphoneos/App.app
 else
   phase boot native-boot "${RUN_DIRECTORY}/boot.log"
+  # Resolve once for this native lifecycle, using the same trust/version checks as debug.
+  node --input-type=module - "${RUN_DIRECTORY}/simctl-tool.json" <<'JS'
+import fs from 'node:fs'
+import { execFileSync } from 'node:child_process'
+import { resolveSimctl } from './scripts/lib/ios-simctl.mjs'
+const tool = await resolveSimctl(async (program, args) => ({ text: execFileSync(program, args,
+  { encoding: 'utf8', timeout: 30_000, stdio: ['ignore', 'pipe', 'pipe'] }) }))
+if (!(tool.program === 'xcrun' && JSON.stringify(tool.prefix) === '["simctl"]') &&
+    !(tool.program.startsWith('/') && tool.prefix.length === 0)) throw new Error('未知 simctl 调用形式。')
+fs.writeFileSync(process.argv[2], JSON.stringify(tool), { mode: 0o600 })
+JS
+  MYBILL_FULL_SIMCTL_PROGRAM="$(node -e 'console.log(JSON.parse(require("fs").readFileSync(process.argv[1])).program)' "${RUN_DIRECTORY}/simctl-tool.json")"
+  export MYBILL_FULL_SIMCTL_PROGRAM
+  # full-simctl-adapter:start
+  xcrun() {
+    if [[ "${1:-}" == simctl && "${MYBILL_FULL_SIMCTL_PROGRAM}" != xcrun ]]; then
+      shift
+      "${MYBILL_FULL_SIMCTL_PROGRAM}" "$@"
+    else
+      command xcrun "$@"
+    fi
+  }
+  # full-simctl-adapter:end
   if [[ -n "${MYBILL_FULL_SESSION:-}" ]]; then
     # 借用只限本仓库明确打开的调试会话；独立校验后才允许结束/卸载其中的合成测试 App。
-    SESSION_INFO="$(node --input-type=module - "${MYBILL_FULL_SESSION}" <<'JS'
+    SESSION_INFO="$(node --input-type=module - "${MYBILL_FULL_SESSION}" "${RUN_DIRECTORY}/inspect" <<'JS'
 import { readSession, assertDevice } from './scripts/lib/ios-debug.mjs'
-import { execFileSync } from 'node:child_process'
+import { simctlOutput } from './scripts/lib/ios-simctl-sync.mjs'
 import path from 'node:path'
 const session = readSession(path.resolve('.local/ios/tmp/ai-agent'), process.argv[2])
-const device = assertDevice(session.context, JSON.parse(execFileSync('xcrun', ['simctl', 'list', 'devices', '--json'], { encoding: 'utf8' })))
+const program = process.env.MYBILL_FULL_SIMCTL_PROGRAM
+const device = assertDevice(session.context, JSON.parse(simctlOutput(program, program === 'xcrun' ? ['simctl'] : [], ['list', 'devices', '--json'], process.argv[3])))
 if (!['Booted', 'Shutdown'].includes(device.state)) throw new Error('设备状态正在切换，未接管或重置 App。')
 console.log(JSON.stringify({ id: device.udid, state: device.state, context: session.file }))
 JS
@@ -154,21 +178,26 @@ JS
     xcrun simctl bootstatus "${SIMULATOR_ID}" -b > "${RUN_DIRECTORY}/boot.log" 2>&1
     INSTALLED="$(xcrun simctl listapps "${SIMULATOR_ID}" | plutil -convert json -o - - | node -e 'let s=""; process.stdin.on("data",c=>s+=c);process.stdin.on("end",()=>console.log(Boolean(JSON.parse(s)["com.mybill.offline"])))')"
     # 与局部入口共用归属校验；完整流程明确冷重置，卸载成功后失效旧登记，不能留下误拦后续调试的回执。
-    node --input-type=module - "${MYBILL_FULL_SESSION}" "${SIMULATOR_ID}" "${INSTALLED}" <<'JS'
-import { execFileSync, spawnSync } from 'node:child_process'
+    node --input-type=module - "${MYBILL_FULL_SESSION}" "${SIMULATOR_ID}" "${INSTALLED}" "${RUN_DIRECTORY}/reset-stop" <<'JS'
+import { execFileSync } from 'node:child_process'
+import { simctlSync, simctlOutput } from './scripts/lib/ios-simctl-sync.mjs'
 import { readSession, APP_ID, hashPaths } from './scripts/lib/ios-debug.mjs'
 import { inspectInstallation, forgetInstallation } from './scripts/lib/ios-cache.mjs'
 import path from 'node:path'
 const session = readSession(path.resolve('.local/ios/tmp/ai-agent'), process.argv[2])
 if (session.context.simulatorId !== process.argv[3]) throw new Error('安装登记设备归属不符。')
-const sim = (...args) => execFileSync('xcrun', ['simctl', ...args], { encoding: 'utf8', timeout: 30_000 }).trim()
+const program = process.env.MYBILL_FULL_SIMCTL_PROGRAM
+const prefix = program === 'xcrun' ? ['simctl'] : []
+const sim = (...args) => simctlOutput(program, prefix, args, process.argv[5])
 const installed = process.argv[4] === 'true'
 const container = installed ? sim('get_app_container', session.context.simulatorId, APP_ID, 'data') : undefined
 const hash = installed ? hashPaths(sim('get_app_container', session.context.simulatorId, APP_ID, 'app'), ['.']) : undefined
 await inspectInstallation(session, container, hash, async (lease, mode) => {
-  const stopped = spawnSync('xcrun', ['simctl', 'terminate', session.context.simulatorId, APP_ID], { encoding: 'utf8', timeout: 30_000 })
-  if (stopped.error || stopped.status !== 0 && !(stopped.status === 3 && (stopped.stdout + stopped.stderr).includes('found nothing to terminate')))
-    throw new Error('结束本轮 App 失败，拒绝重绑或卸载。')
+  const stopped = simctlSync(program, prefix, ['terminate', session.context.simulatorId, APP_ID], process.argv[5])
+  const output = stopped.stdout + stopped.stderr
+  if (stopped.error || stopped.status !== 0 && !(stopped.status === 3 && output.includes('found nothing to terminate')))
+    throw new Error('结束本轮 App 失败，拒绝重绑或卸载。' +
+      ' exit=' + stopped.status + ' error=' + (stopped.error?.code ?? '') + '\n' + output.slice(-2048))
   execFileSync('python3', ['-I', 'scripts/fixtures/ios-ui-baseline.py', mode, session.file, container, lease.appHash],
     { stdio: 'inherit', timeout: 30_000 })
 }, true)
@@ -190,7 +219,10 @@ JS
   # 这不是冷启动性能验收；readyWebView 的 20 秒和单用例 60 秒预算保持不变。
   prepare_test "${RUN_DIRECTORY}/prepare.log" "${XCODE_ARGUMENTS[@]}" -destination "platform=iOS Simulator,id=${SIMULATOR_ID}"
   phase initialize native-initialize/App/Debug "${RUN_DIRECTORY}/prepare-host.log"
-  xcrun simctl launch "${SIMULATOR_ID}" com.mybill.offline > "${RUN_DIRECTORY}/prepare-launch.log"
+  : > "${RUN_DIRECTORY}/prepare-app-stdout.log"
+  : > "${RUN_DIRECTORY}/prepare-app-stderr.log"
+  chmod 600 "${RUN_DIRECTORY}/prepare-app-stdout.log" "${RUN_DIRECTORY}/prepare-app-stderr.log"
+  xcrun simctl launch --stdout="${RUN_DIRECTORY}/prepare-app-stdout.log" --stderr="${RUN_DIRECTORY}/prepare-app-stderr.log" "${SIMULATOR_ID}" com.mybill.offline > "${RUN_DIRECTORY}/prepare-launch.log"
   PREPARE_CONTAINER="$(xcrun simctl get_app_container "${SIMULATOR_ID}" com.mybill.offline data)"
   python3 scripts/fixtures/dictionary-touch.py wait-initialized "${PREPARE_CONTAINER}" "${SIMULATOR_ID}" "${RUN_DIRECTORY}/unused-receipt.json" > "${RUN_DIRECTORY}/prepare-host.log" 2>&1
   xcrun simctl terminate "${SIMULATOR_ID}" com.mybill.offline
@@ -245,7 +277,7 @@ JS
     # 在字典/偏好等业务触摸前保存同一安装的清空参照，T12 不从已修改的账本猜默认值。
     python3 scripts/fixtures/dictionary-touch.py capture-data-defaults "${APP_CONTAINER}" "${SIMULATOR_ID}" "${RUN_DIRECTORY}/touch-data-fixture.json"
     python3 scripts/fixtures/dictionary-touch.py prepare "${APP_CONTAINER}" "${SIMULATOR_ID}" "${RUN_DIRECTORY}/touch-fixture.json"
-    if ! positive_test "${RUN_DIRECTORY}/touch.log" "${XCODE_COMMON_ARGUMENTS[@]}" -scheme DictionaryTouch -configuration Release -destination "platform=iOS Simulator,id=${SIMULATOR_ID}" -parallel-testing-enabled NO -test-timeouts-enabled YES -maximum-test-execution-time-allowance 60 -skip-testing:DictionaryUITests/DictionaryTouchTests/test00DebugKeyboardReady -skip-testing:DictionaryUITests/DictionaryTouchTests/test11ProductLastPage -skip-testing:DictionaryUITests/DictionaryTouchTests/test12MergeLastPageProduct -skip-testing:DictionaryUITests/DictionaryTouchTests/test13UnitLastPage -skip-testing:DictionaryUITests/DictionaryTouchTests/test14DisableLastPageUnit -skip-testing:DictionaryUITests/DictionaryTouchTests/test15ExpenseWriteReopen -skip-testing:DictionaryUITests/DictionaryTouchTests/test16IncomeContinueEdit -skip-testing:DictionaryUITests/DictionaryTouchTests/test17ExpenseTemplateUpsert -skip-testing:DictionaryUITests/DictionaryTouchTests/test18ExpenseTemplateFill -skip-testing:DictionaryUITests/DictionaryTouchTests/test19DisableTemplateUnit -skip-testing:DictionaryUITests/DictionaryTouchTests/test20TemplateFallbackRemove -skip-testing:DictionaryUITests/DictionaryTouchTests/test21IncomeTemplateCycle -skip-testing:DictionaryUITests/DictionaryTouchTests/test22PrepareDualDrafts -skip-testing:DictionaryUITests/DictionaryTouchTests/test23SaveThemePreference -skip-testing:DictionaryUITests/DictionaryTouchTests/test24RelaunchPersonalState -skip-testing:DictionaryUITests/DictionaryTouchTests/test25ResetPreferencesKeepsDrafts -skip-testing:DictionaryUITests/DictionaryTouchTests/test26AdjustmentCreate -skip-testing:DictionaryUITests/DictionaryTouchTests/test27AdjustmentLimits -skip-testing:DictionaryUITests/DictionaryTouchTests/test28SourceTrashRestore -skip-testing:DictionaryUITests/DictionaryTouchTests/test29LinkedPurgeCancelConfirm -skip-testing:DictionaryUITests/DictionaryTouchTests/test30AutomaticCleanup -skip-testing:DictionaryUITests/DictionaryTouchTests/test31LedgerPagingSearch -skip-testing:DictionaryUITests/DictionaryTouchTests/test32LedgerFilterReset -skip-testing:DictionaryUITests/DictionaryTouchTests/test33LedgerEditReturn -skip-testing:DictionaryUITests/DictionaryTouchTests/test34LedgerUnicodeInput -skip-testing:DictionaryUITests/DictionaryTouchTests/test35LedgerUnicodePaste -skip-testing:DictionaryUITests/DictionaryTouchTests/test36ReportOverview -skip-testing:DictionaryUITests/DictionaryTouchTests/test37ReportTimeGrains -skip-testing:DictionaryUITests/DictionaryTouchTests/test38ReportDrillReturn -skip-testing:DictionaryUITests/DictionaryTouchTests/test39ReportComparison -skip-testing:DictionaryUITests/DictionaryTouchTests/test37ReportTimeGrainsQuarterYear -skip-testing:DictionaryUITests/DictionaryTouchTests/test36ReportTimePreparation -skip-testing:DictionaryUITests/DictionaryTouchTests/test00PrepareReportApp -skip-testing:DictionaryUITests/DictionaryTouchTests/test40ExpenseDimensionGroups -skip-testing:DictionaryUITests/DictionaryTouchTests/test41ExpenseDimensionAnalysis -skip-testing:DictionaryUITests/DictionaryTouchTests/test42IncomeDimensions -skip-testing:DictionaryUITests/DictionaryTouchTests/test43QualityThresholdDrill -skip-testing:DictionaryUITests/DictionaryTouchTests/test00PrepareDimensionReport -skip-testing:DictionaryUITests/DictionaryTouchTests/test40ExpensePaymentChannels -skip-testing:DictionaryUITests/DictionaryTouchTests/test40ExpenseLocations -skip-testing:DictionaryUITests/DictionaryTouchTests/test41ExpenseFrequencyQuality -skip-testing:DictionaryUITests/DictionaryTouchTests/test42IncomePayerName -skip-testing:DictionaryUITests/DictionaryTouchTests/test42IncomeFrequency -skip-testing:DictionaryUITests/DictionaryTouchTests/test45DataBackupCancel -skip-testing:DictionaryUITests/DictionaryTouchTests/test44DataCsv -skip-testing:DictionaryUITests/DictionaryTouchTests/test45DataBackupSave -skip-testing:DictionaryUITests/DictionaryTouchTests/test46DataWrongPassword -skip-testing:DictionaryUITests/DictionaryTouchTests/test47DataRestorePreviewCancel -skip-testing:DictionaryUITests/DictionaryTouchTests/test48DataRestoreConfirm -skip-testing:DictionaryUITests/DictionaryTouchTests/test49DataClearCancelConfirm -skip-testing:DictionaryUITests/DictionaryTouchTests/test50DataExternalRestore -resultBundlePath "${RUN_DIRECTORY}/touch.xcresult"; then
+    if ! positive_test "${RUN_DIRECTORY}/touch.log" "${XCODE_COMMON_ARGUMENTS[@]}" -scheme DictionaryTouch -configuration Release -destination "platform=iOS Simulator,id=${SIMULATOR_ID}" -parallel-testing-enabled NO -test-timeouts-enabled YES -maximum-test-execution-time-allowance 60 -skip-testing:DictionaryUITests/DictionaryTouchTests/test00DebugKeyboardReady -skip-testing:DictionaryUITests/DictionaryTouchTests/test11ProductLastPage -skip-testing:DictionaryUITests/DictionaryTouchTests/test12MergeLastPageProduct -skip-testing:DictionaryUITests/DictionaryTouchTests/test13UnitLastPage -skip-testing:DictionaryUITests/DictionaryTouchTests/test14DisableLastPageUnit -skip-testing:DictionaryUITests/DictionaryTouchTests/test15ExpensePrepareSave -skip-testing:DictionaryUITests/DictionaryTouchTests/test15ExpenseRestart -skip-testing:DictionaryUITests/DictionaryTouchTests/test15ExpenseWriteReopen -skip-testing:DictionaryUITests/DictionaryTouchTests/test16IncomeAConfigure -skip-testing:DictionaryUITests/DictionaryTouchTests/test16IncomeBSaveContinue -skip-testing:DictionaryUITests/DictionaryTouchTests/test16IncomeCFocusHandoff -skip-testing:DictionaryUITests/DictionaryTouchTests/test16IncomeContinueEdit -skip-testing:DictionaryUITests/DictionaryTouchTests/test17ExpenseTemplateUpsert -skip-testing:DictionaryUITests/DictionaryTouchTests/test18ExpenseTemplateFill -skip-testing:DictionaryUITests/DictionaryTouchTests/test19DisableTemplateUnit -skip-testing:DictionaryUITests/DictionaryTouchTests/test20TemplateFallbackRemove -skip-testing:DictionaryUITests/DictionaryTouchTests/test21IncomeTemplateCycle -skip-testing:DictionaryUITests/DictionaryTouchTests/test22PrepareDualDrafts -skip-testing:DictionaryUITests/DictionaryTouchTests/test23SaveThemePreference -skip-testing:DictionaryUITests/DictionaryTouchTests/test24RelaunchPersonalState -skip-testing:DictionaryUITests/DictionaryTouchTests/test25ResetPreferencesKeepsDrafts -skip-testing:DictionaryUITests/DictionaryTouchTests/test26AdjustmentCreate -skip-testing:DictionaryUITests/DictionaryTouchTests/test27AdjustmentLimits -skip-testing:DictionaryUITests/DictionaryTouchTests/test28SourceTrashRestore -skip-testing:DictionaryUITests/DictionaryTouchTests/test29LinkedPurgeCancelConfirm -skip-testing:DictionaryUITests/DictionaryTouchTests/test30AutomaticCleanup -skip-testing:DictionaryUITests/DictionaryTouchTests/test31LedgerPagingSearch -skip-testing:DictionaryUITests/DictionaryTouchTests/test32LedgerFilterReset -skip-testing:DictionaryUITests/DictionaryTouchTests/test33LedgerEditReturn -skip-testing:DictionaryUITests/DictionaryTouchTests/test34LedgerUnicodeInput -skip-testing:DictionaryUITests/DictionaryTouchTests/test35LedgerUnicodePaste -skip-testing:DictionaryUITests/DictionaryTouchTests/test36ReportOverview -skip-testing:DictionaryUITests/DictionaryTouchTests/test37ReportTimeGrains -skip-testing:DictionaryUITests/DictionaryTouchTests/test38ReportDrillReturn -skip-testing:DictionaryUITests/DictionaryTouchTests/test39ReportComparison -skip-testing:DictionaryUITests/DictionaryTouchTests/test37ReportTimeGrainsQuarterYear -skip-testing:DictionaryUITests/DictionaryTouchTests/test36ReportTimePreparation -skip-testing:DictionaryUITests/DictionaryTouchTests/test00PrepareReportApp -skip-testing:DictionaryUITests/DictionaryTouchTests/test40ExpenseDimensionGroups -skip-testing:DictionaryUITests/DictionaryTouchTests/test41ExpenseDimensionAnalysis -skip-testing:DictionaryUITests/DictionaryTouchTests/test42IncomeDimensions -skip-testing:DictionaryUITests/DictionaryTouchTests/test43QualityThresholdDrill -skip-testing:DictionaryUITests/DictionaryTouchTests/test00PrepareDimensionReport -skip-testing:DictionaryUITests/DictionaryTouchTests/test40ExpensePaymentChannels -skip-testing:DictionaryUITests/DictionaryTouchTests/test40ExpenseLocations -skip-testing:DictionaryUITests/DictionaryTouchTests/test41ExpenseFrequencyQuality -skip-testing:DictionaryUITests/DictionaryTouchTests/test42IncomePayerName -skip-testing:DictionaryUITests/DictionaryTouchTests/test42IncomeFrequency -skip-testing:DictionaryUITests/DictionaryTouchTests/test45DataBackupCancel -skip-testing:DictionaryUITests/DictionaryTouchTests/test44DataCsv -skip-testing:DictionaryUITests/DictionaryTouchTests/test45DataBackupSave -skip-testing:DictionaryUITests/DictionaryTouchTests/test46DataWrongPassword -skip-testing:DictionaryUITests/DictionaryTouchTests/test47DataRestorePreviewCancel -skip-testing:DictionaryUITests/DictionaryTouchTests/test48DataRestoreConfirm -skip-testing:DictionaryUITests/DictionaryTouchTests/test49DataClearCancelConfirm -skip-testing:DictionaryUITests/DictionaryTouchTests/test50DataExternalRestore -resultBundlePath "${RUN_DIRECTORY}/touch.xcresult"; then
       tail -80 "${RUN_DIRECTORY}/touch.log" >&2
       exit 1
     fi
@@ -262,7 +294,7 @@ JS
     phase check native-readback/DictionaryTouch/Release "${RUN_DIRECTORY}/touch-paging-readback.log"
     python3 scripts/fixtures/dictionary-touch.py check-paging "${APP_CONTAINER}" "${SIMULATOR_ID}" "${RUN_DIRECTORY}/touch-fixture.json" | tee "${RUN_DIRECTORY}/touch-paging-readback.log"
     python3 scripts/fixtures/dictionary-touch.py prepare-entry "${APP_CONTAINER}" "${SIMULATOR_ID}" "${RUN_DIRECTORY}/touch-fixture.json"
-    if ! positive_test "${RUN_DIRECTORY}/touch-entry.log" "${XCODE_COMMON_ARGUMENTS[@]}" -scheme DictionaryTouch -configuration Release -destination "platform=iOS Simulator,id=${SIMULATOR_ID}" -parallel-testing-enabled NO -test-timeouts-enabled YES -maximum-test-execution-time-allowance 60 -only-testing:DictionaryUITests/DictionaryTouchTests/test15ExpenseWriteReopen -only-testing:DictionaryUITests/DictionaryTouchTests/test16IncomeContinueEdit -resultBundlePath "${RUN_DIRECTORY}/touch-entry.xcresult"; then
+    if ! positive_test "${RUN_DIRECTORY}/touch-entry.log" "${XCODE_COMMON_ARGUMENTS[@]}" -scheme DictionaryTouch -configuration Release -destination "platform=iOS Simulator,id=${SIMULATOR_ID}" -parallel-testing-enabled NO -test-timeouts-enabled YES -maximum-test-execution-time-allowance 60 -only-testing:DictionaryUITests/DictionaryTouchTests/test00DebugKeyboardReady -only-testing:DictionaryUITests/DictionaryTouchTests/test15ExpensePrepareSave -only-testing:DictionaryUITests/DictionaryTouchTests/test15ExpenseRestart -only-testing:DictionaryUITests/DictionaryTouchTests/test15ExpenseWriteReopen -only-testing:DictionaryUITests/DictionaryTouchTests/test16IncomeAConfigure -only-testing:DictionaryUITests/DictionaryTouchTests/test16IncomeBSaveContinue -only-testing:DictionaryUITests/DictionaryTouchTests/test16IncomeCFocusHandoff -only-testing:DictionaryUITests/DictionaryTouchTests/test16IncomeContinueEdit -resultBundlePath "${RUN_DIRECTORY}/touch-entry.xcresult"; then
       tail -80 "${RUN_DIRECTORY}/touch-entry.log" >&2
       exit 1
     fi

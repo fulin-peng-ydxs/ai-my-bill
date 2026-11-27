@@ -66,8 +66,13 @@ export function spawnManaged(program, args, options, { root, graceMs = 10_000 })
 }
 
 /** 仅在取消时读取 PID/PPID/进程组，不读取命令参数；快照须早于 TERM 导致的父子关系消失。 */
-function descendantGroups(pid, timeout) {
-  const result = spawnSync('ps', ['-axo', 'pid=,ppid=,pgid='], {
+export function descendantGroups(pid, timeout, { platform = process.platform, execute = spawnSync } = {}) {
+  // Darwin reads numeric libproc metadata; retain the same snapshot/grace deadline and failure semantics.
+  const program = platform === 'darwin' ? 'python3' : 'ps'
+  const args = platform === 'darwin'
+    ? ['-I', fileURLToPath(new URL('./ios-host-diagnostics.py', import.meta.url)), '--process-tree']
+    : ['-axo', 'pid=,ppid=,pgid=']
+  const result = execute(program, args, {
     encoding: 'utf8',
     timeout,
     maxBuffer: 1024 * 1024,

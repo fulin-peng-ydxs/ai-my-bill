@@ -1,40 +1,28 @@
 # 项目文档索引
 
 | 入口 | 用途 |
-|---|---|
-| [README](../README.md) | 当前 iOS 骨架入口及保留的 Web 使用说明 |
-| [AGENTS](../AGENTS.md) | 项目协作、工程约束与文档维护要求 |
-| [DESIGN](../DESIGN.md) | 视觉、交互、组件及响应式契约、页面登记 |
-| [OpenAPI](../contracts/openapi.yaml) | API 机器契约与生成类型来源 |
-| [开发验证规范](testing/guide.md) | 检查选择、变更维护、模拟器/真机复测与证据要求 |
-| [部署方案](deployment/README.md) | 宿主准备、初始化、持续发布、运维与恢复 |
-| [离线 iOS App 前置开发技术指引](offline-ios-app/pre-development-technical-guide.md) | 保存迁移评估与总体方案原文；技术路线、旧数据迁移与签名方式仍按原文保留待决状态 |
-| [离线 iOS App 开发计划](offline-ios-app/plan.md) | 7 个阶段、17 项任务及逐项验收；集中维护改造决策和实施边界 |
+| --- | --- |
+| [README](../README.md) | 离线 App 使用、安装与开发入口 |
+| [AGENTS](../AGENTS.md) | 工程、协作与文档维护规则 |
+| [DESIGN](../DESIGN.md) | 保留原页面的视觉、交互、组件与响应式契约 |
+| [总体架构](architecture/architecture-decisions.md) | 原生入口、SQLite 生命周期、本地业务/文件闭环及契约 |
+| [环境配置](architecture/environment-configuration.md) | 工具链、测试配置、私密材料与证据位置 |
+| [开发验证规范](testing/guide.md) | 选测、CI、失败锁、模拟器与真机边界 |
+| [前置开发技术指引](offline-ios-app/pre-development-technical-guide.md) | 原样保存的改造评估；决定和实际状态以开发计划为准 |
+| [离线 App 开发计划](offline-ios-app/plan.md) | 已确认范围、17 项任务、验证及待交付边界 |
 
 ## 技术架构
 
-代码与配置是机制依据，实际环境状态见[部署案例](deployment/README.md#部署案例)。
-
-| 专题 | 回答的问题 | 主要代码边界 |
-|---|---|---|
-| [总体架构与契约](architecture/architecture-decisions.md) | iOS 随包入口、原生连接及旧 Web 运行单元与契约 | app、web、server、contracts |
-| [前端与 PWA](architecture/frontend-pwa.md) | 路由与状态复用、资源生命周期、草稿及 PWA 构建与更新 | web/src |
-| [后端与业务模块](architecture/backend-domains.md) | 字典、账目、报表、管理之间如何协作 | server 的领域包 |
-| [认证与租户隔离](architecture/auth-tenant.md) | 身份、CSRF、角色、RLS 如何形成闭环 | auth、SecurityConfig、V007 |
-| [数据库与迁移](architecture/database-migrations.md) | 表归属、数据库角色、版本升级与回退 | db、mapper、persistence |
-| [任务、导出与注销](architecture/jobs-export-deletion.md) | 异步任务、文件与数据库如何协同 | job、ledger、account |
-| [环境与配置加载](architecture/environment-configuration.md) | 变量加载、优先级、密钥边界与生效方式 | scripts、application*.yml、Compose |
-| [部署架构](deployment/architecture.md) | 交付、运行单元与资源边界 | deploy、Dockerfile |
+当前机制由上述总体架构和环境配置维护，代码、迁移、锁文件及实际报告是事实依据。旧 Web、服务器部署与 OpenAPI 不再是当前工程入口。
 
 ## 历史归档
 
-阶段材料标记 `归档状态：已归档` 后停止日常同步，只有用户明确要求修订或解除归档时才更新。归档不取消仍有效的业务要求，不把未完成项改成已通过，也不删除历史证据。后续任务按 [AGENTS](../AGENTS.md#代码与文档定位) 决定是否产档及保存位置。
-
-归档材料中的旧 `.local/<目录>` 路径，现对应 `.local/web/<目录>`；归档正文保留原记录。
+归档不取消未被明确变更的业务要求；历史通过不代表当前候选通过。原文中的旧命令和路径按当时版本解释，不对当前 App 执行；旧 `.local/<目录>` 资料已隔离到 `.local/web/`，后端原有资料保留于 server/.local/web，不为清理受控源码删除私密资料。
 
 | 资料 | 保存内容 |
-|---|---|
-| [初始开发资料](initial-development/README.md) | 一期需求与上游闭环、计划、原型、截图和历史验收 |
-| [统一日志专项](deployment/logging-management/README.md) | 已有实施计划、过程和发布安全验证 |
+| --- | --- |
+| [初始开发资料](initial-development/README.md) | 历史需求、闭环、原型及验证原文 |
+| [日志专项归档](deployment/logging-management/README.md) | 原归档的实施与安全证据，保持原文字节；不再提供服务器运行入口 |
+| [退役前源码与文档基线](https://github.com/fulin-peng-ydxs/ai-my-bill/tree/d152ea615d3c5e25df6dfbd250b342ef4ab790ed/) | 旧 Web、Java/PG、OpenAPI、部署案例和归档相对链接的完整上下文；按此固定版本追溯，勿恢复当前服务 |
 
-实例历史操作从各案例总览进入，按记录时点及对应版本读取；历史通过不代表当前版本或另一环境通过。秘密只保留受控位置引用，不复制到文档。
+原技术指引中的历史绝对路径及归档原文中的退役相对路径保持不变。本仓库的退役路径从上述固定基线定位；外部 stock 项目等绝对路径按计划列明的来源解释，不能用本仓库同名文件替代。不为修链接改写原始指引或历史证据。凭据、证书私钥、真实账本及外部实例均不随源码退役删除。

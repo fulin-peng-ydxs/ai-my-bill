@@ -257,7 +257,8 @@
         "README.md",
         "agent-works/testing/**",
         "agent-works/architecture/environment-configuration.md",
-        "config/ios-security-exceptions.json"
+        "config/ios-security-exceptions.json",
+        "config/ios-measurement-v1.json"
       ],
       "suites": [
         "scripts",
@@ -274,6 +275,7 @@
         "scripts/lib/ios-app-full.sh",
         "scripts/lib/ios-host-diagnostics.py",
         "scripts/lib/ios-simctl.mjs",
+        "scripts/lib/ios-simctl-sync.mjs",
         "scripts/lib/ios-boot-proof.mjs",
         "scripts/lib/ios-ci-run.mjs"
       ],
@@ -509,6 +511,7 @@
         "app/src/components/UnsavedChangesDialog.vue",
         "app/src/styles/**",
         "app/ios/App/UITests/**",
+        "app/ios/App/NativeTests/OwnedSimulatorTestContext.swift",
         "app/src/components/AppStateBlock.vue",
         "app/src/components/AppAsyncRegion.vue",
         "app/src/components/AppRequestError.vue",

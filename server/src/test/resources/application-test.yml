@@ -1,5 +1,0 @@
-my-bill:
-  jobs:
-    poll-delay-ms: 60000
-  export:
-    directory: ${java.io.tmpdir}/my-bill-e2e-exports

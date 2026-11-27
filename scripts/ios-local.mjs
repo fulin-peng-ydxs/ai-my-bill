@@ -148,6 +148,9 @@ async function main() {
     const base = baseSha(config, true)
     let gate = automaticLocalGate(root, base)
     for (const name of gate.missing) {
+      const coverage = gate.result.suites.find(row => row.suite === name)
+      if (coverage?.proofs?.length) throw new Error('专项已有有效局部证据，不自动重复整组：' + name +
+        '；仅补缺项及其必要前置：' + coverage.missingCases.join(', '))
       const plan = createPlan(root, name), directory = resultsDirectory(root, '.local/ios/tmp/ai-agent/ios-ci-local-' + randomUUID(), true)
       writeJson(path.join(directory, 'ci-plan.json'), plan)
       await executeLocalGroup(root, directory, 'macos')

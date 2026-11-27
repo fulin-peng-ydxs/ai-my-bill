@@ -1,9 +1,9 @@
-import type { components } from '../../api/generated/schema'
+import type { LedgerContracts } from '../../domain/ledgerContracts'
 
-export type CreateExpenseRequest = components['schemas']['CreateExpenseRequest']
-export type ExpenseResponse = components['schemas']['ExpenseResponse']
-export type UpdateExpenseRequest = components['schemas']['UpdateExpenseRequest']
-export type CreateIncomeRequest = components['schemas']['CreateIncomeRequest']
-export type IncomeResponse = components['schemas']['IncomeResponse']
-export type UpdateIncomeRequest = components['schemas']['UpdateIncomeRequest']
+export type CreateExpenseRequest = LedgerContracts['CreateExpenseRequest']
+export type ExpenseResponse = LedgerContracts['ExpenseResponse']
+export type UpdateExpenseRequest = LedgerContracts['UpdateExpenseRequest']
+export type CreateIncomeRequest = LedgerContracts['CreateIncomeRequest']
+export type IncomeResponse = LedgerContracts['IncomeResponse']
+export type UpdateIncomeRequest = LedgerContracts['UpdateIncomeRequest']
 export type EntryType = 'EXPENSE' | 'INCOME'

@@ -2,10 +2,11 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { execFileSync } from 'node:child_process'
 import { randomUUID, sign, verify, createPublicKey } from 'node:crypto'
-import { createPlan, requiredLocalFromPolicies, remoteSuite, digest } from './ios-ci-plan.mjs'
+import { createPlan, requiredLocalFromPolicies, remoteSuite, digest, changeContents } from './ios-ci-plan.mjs'
 import { localGate } from './ios-local-gate.mjs'
 import { resultsDirectory, executeGroup } from './ios-ci-run.mjs'
 import { writeJson } from './ios-verification.mjs'
+import { equivalentSuiteInputs } from './ios-equivalent-evidence.mjs'
 
 export const notesRef = 'refs/notes/ios-local-evidence'
 const read = file => {
@@ -36,7 +37,7 @@ export function rememberLocalResult(root, directory) {
     const groupFile = path.join(directory, `group-${suite.runner}.json`)
     const group = fs.existsSync(groupFile) ? read(groupFile) : { status: 'failed', startedAt: Date.now() }
     const receipt = fs.existsSync(receiptFile) ? read(receiptFile) : undefined
-    entries.push({ suite: suite.name, input: plan.measurementInput, directory: path.relative(root, directory),
+    entries.push({ suite: suite.name, input: plan.measurementInput, scopeInput: plan.measurementScopes?.[suite.name], directory: path.relative(root, directory),
       startedAt: receipt?.startedAt ?? group.startedAt ?? Date.now(), completedAt: receipt?.completedAt ?? Date.now(),
       order: process.hrtime.bigint().toString(),
       status: receipt?.status === 'passed' && group.status === 'passed' ? 'passed' : 'failed' })
@@ -69,15 +70,19 @@ export function automaticLocalGate(root, base, options = {}) {
   const directory = resultsDirectory(root, '.local/ios/tmp/ai-agent/ios-ci-gate-' + randomUUID(), true)
   writeJson(path.join(directory, 'ci-plan.json'), plan)
   const rows = plan.localRequired.length ? catalogEntries(root) : []
-  const directories = new Set(), missing = []
+  const directories = new Set(), missing = [], barriers = {}
   for (const suite of plan.localRequired) {
-    const entries = rows.filter(r => r.suite === suite.name && r.input === plan.measurementInput)
+    const accepted = equivalentSuiteInputs(root,suite)
+    const entries = rows.filter(r => r.suite === suite.name &&
+      (r.status !== 'passed' || (r.scopeInput ? accepted.includes(r.scopeInput) : r.input === plan.measurementInput)))
       .sort((a, b) => b.startedAt - a.startedAt || b.completedAt - a.completedAt || (BigInt(b.order) > BigInt(a.order) ? 1 : -1))
-    if (!entries.length || entries[0].status !== 'passed') missing.push(suite.name)
+    if (entries[0]?.status !== 'passed') {
+      if (entries.length) barriers[suite.name] = entries[0].completedAt ?? entries[0].startedAt
+    }
     else directories.add(entries[0].directory)
   }
   writeJson(path.join(directory, 'inputs.json'), [...directories])
-  const result = localGate(root, directory, path.join(directory, 'inputs.json'), { reuse: true, ...options })
+  const result = localGate(root, directory, path.join(directory, 'inputs.json'), { reuse: true, ...options, barriers })
   for (const row of result.suites.filter(s => s.status !== 'passed')) if (!missing.includes(row.suite)) missing.push(row.suite)
   if (missing.length) {
     result.status = 'incomplete'
@@ -111,7 +116,7 @@ export function requiredLocalSuites(root, base, head) {
   const files = git(root, 'diff', '--no-renames', '--name-only', '-z', mergeBase, head, '--').split('\0').filter(Boolean)
   const baseRegistry = JSON.parse(git(root, 'show', base + ':config/ios-ci.json'))
   const headRegistry = JSON.parse(git(root, 'show', head + ':config/ios-ci.json'))
-  return requiredLocalFromPolicies(baseRegistry, headRegistry, files)
+  return requiredLocalFromPolicies(baseRegistry, headRegistry, files, changeContents(root, files, mergeBase, head))
 }
 
 export function verifyEnvelope(envelope, { repository, head, base, tree, required, signers, previousNotesSha, now = Date.now() }) {

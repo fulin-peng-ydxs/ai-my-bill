@@ -33,6 +33,13 @@ if mode == 'wait-initialized':
     raise RuntimeError('本轮模拟器的正式账本未在准备预算内初始化')
 assert database.is_file()
 # debug 数据仅由已校验会话中的全新 App 初始化；复用同一夹具，不开放任意 SQL 或路径。
+interaction_match = re.fullmatch(r'debug-(check-)?interaction-((?:6[1-3])(?:,6[1-3])*)', mode)
+if interaction_match:
+    # 专用协议只读捕获空账本及回读真实草稿，不预写页面待验结果。
+    from ios_interaction import run
+    run(bool(interaction_match[1]), Path(container), simulator_id, Path(receipt_file),
+        [int(case) for case in interaction_match[2].split(',')])
+    sys.exit(0)
 data_match = re.fullmatch(r'debug-(check-)?data-((?:5[3-9]|60)(?:,(?:5[3-9]|60))*)', mode)
 data_cases = [int(case) for case in data_match[2].split(',')] if data_match else []
 if data_match: mode = 'debug-check' if data_match[1] else 'prepare-data'
@@ -52,9 +59,11 @@ personal_match = re.fullmatch(r'debug-(check-)?personal-((?:1[7-9]|2[0-5])(?:,(?
 personal_cases = [int(case) for case in personal_match[2].split(',')] if personal_match else []
 if personal_match:
     mode = 'debug-check' if personal_match[1] else 'prepare'
-debug_match = re.fullmatch(r'debug-(check-)?(\d|1[0-6]|entry-cycle)', mode)
+debug_match = re.fullmatch(r'debug-(check-)?(\d|1[0-6]|entry-cycle|income-note|income-note-after-save)', mode)
 debug_entry_cycle = bool(debug_match and debug_match[2] == 'entry-cycle')
-debug_case = 16 if debug_entry_cycle else int(debug_match[2]) if debug_match else None
+debug_income_note = bool(debug_match and debug_match[2] == 'income-note')
+debug_income_after_save = bool(debug_match and debug_match[2] == 'income-note-after-save')
+debug_case = 16 if debug_entry_cycle or debug_income_note or debug_income_after_save else int(debug_match[2]) if debug_match else None
 debug_check = bool(debug_match and debug_match[1])
 if debug_match:
     mode = 'debug-check' if debug_check else 'prepare'
@@ -93,6 +102,51 @@ def check_entries(connection, case):
         rows = connection.execute("SELECT CAST(amount_cents AS TEXT),income_name,payer_name_snapshot,note,row_version,product_id,quantity_scaled FROM ledger_entry WHERE payer_id='t6-payer' AND id<>'t6-name-history'").fetchall()
         assert [tuple(r) for r in rows] == [('100000', '测试工资', '合成公司', 'T6 edited', 2, None, None)]
     print('ENTRY_TOUCH_SQLITE_VERIFIED case=' + str(case))
+
+
+def income_note_baseline(connection, target):
+    """局部备注编辑只允许目标备注及版本变化，不把预置收入算作页面保存证明。"""
+    rows = {table: [list(row) for row in connection.execute(
+        f'SELECT * FROM {table}' + (' WHERE id<>?' if table == 'ledger_entry' else '') + (' ORDER BY product_id' if table == 'product_details' else ' ORDER BY id'),
+        (target,) if table == 'ledger_entry' else ())]
+        for table in ['ledger_entry', 'dictionary_item', 'product_details', 'daily_entry_template']}
+    rows['dataset'] = [list(row) for row in connection.execute('SELECT dataset_id,schema_version,initialized FROM ledger_meta ORDER BY singleton')]
+    return rows
+
+
+def add_income_note_source(connection, ids):
+    now = datetime.now(ZoneInfo('Asia/Shanghai'))
+    stamp = now.astimezone(ZoneInfo('UTC')).isoformat(timespec='milliseconds').replace('+00:00', 'Z')
+    row = dict(connection.execute("SELECT * FROM ledger_entry WHERE id='t6-name-history'").fetchone())
+    # 原页面的 datetime-local 以分钟保存，局部来源与真实前序保存的精度一致。
+    business_stamp = now.replace(second=0, microsecond=0).astimezone(ZoneInfo('UTC')).isoformat(timespec='milliseconds').replace('+00:00', 'Z')
+    row.update(id=str(uuid.uuid4()), amount_cents=100000, business_time=business_stamp, business_date=now.date().isoformat(),
+               created_at=stamp, updated_at=stamp, note=None, row_version=1)
+    connection.execute('INSERT INTO ledger_entry (' + ','.join(row) + ') VALUES (' + ','.join('?' for _ in row) + ')', tuple(row.values()))
+    connection.execute("INSERT OR REPLACE INTO preference(key,value) VALUES('recentEntryType','\"INCOME\"')")
+    ids['incomeNoteTarget'] = row['id']
+    ids['incomeNoteBaseline'] = income_note_baseline(connection, row['id'])
+    ids['incomeNoteOriginal'] = row
+
+
+def add_income_save_drafts(connection, ids):
+    """只准备原连续保存的输入状态；正式收入必须由该页面前置创建。"""
+    dataset = connection.execute('SELECT dataset_id FROM ledger_meta WHERE singleton=1').fetchone()[0]
+    now = datetime.now(ZoneInfo('Asia/Shanghai')).replace(second=0, microsecond=0)
+    local = now.strftime('%Y-%m-%dT%H:%M')
+    stamp = now.astimezone(ZoneInfo('UTC')).isoformat(timespec='milliseconds').replace('+00:00', 'Z')
+    drafts = {
+        'EXPENSE': {'unitPrice': '77', 'quantity': '1', 'paidAmount': '77', 'occurredAt': local,
+                    'productSelectionState': json.dumps({'version': 1, 'productId': '', 'paidManual': False, 'rollback': {}}, separators=(',', ':'))},
+        'INCOME': {'incomeName': '测试工资', 'incomeCategoryId': '61000000-0000-0000-0000-000000000001',
+                   'payerId': 't6-payer', 'fundingChannelId': 't6-funding', 'amount': '', 'occurredAt': local, 'note': ''},
+    }
+    for entry_type, data in drafts.items():
+        connection.execute('INSERT INTO ledger_draft VALUES(?,?,1,?,?,?)', (dataset, entry_type, json.dumps(data), stamp, stamp))
+    connection.execute("INSERT OR REPLACE INTO preference(key,value) VALUES('recentEntryType','\"INCOME\"')")
+    ids['incomeSaveBaseline'] = income_note_baseline(connection, '')
+    ids['incomeSaveBusinessTime'] = stamp
+    ids['incomeSaveBusinessDate'] = now.date().isoformat()
 
 
 def add_personal_items(connection, prefix='t7', label='日常', dictionary_ids=None, occurred_at=None, ledger_ids=None):
@@ -350,6 +404,28 @@ try:
         print('DICTIONARY_DEBUG_SQLITE_VERIFIED case=' + str(debug_case))
         if debug_case in [15, 16]:
             check_entries(connection, debug_case)
+            if debug_income_after_save:
+                row = connection.execute("SELECT * FROM ledger_entry WHERE payer_id='t6-payer' AND id<>'t6-name-history'").fetchone()
+                assert income_note_baseline(connection, row['id']) == ids['incomeSaveBaseline']
+                assert row['business_time'] == ids['incomeSaveBusinessTime'] and row['business_date'] == ids['incomeSaveBusinessDate']
+                assert row['income_category_id'] == '61000000-0000-0000-0000-000000000001' and row['funding_channel_id'] == 't6-funding'
+                assert row['search_text'] == '测试工资 合成公司 工资 测试现金 t6 edited'
+                assert row['adjustment_source_search_text'] == '测试现金'
+                dataset = connection.execute('SELECT dataset_id FROM ledger_meta WHERE singleton=1').fetchone()[0]
+                draft = json.loads(connection.execute("SELECT data_json FROM ledger_draft WHERE dataset_id=? AND entry_type='EXPENSE'", (dataset,)).fetchone()[0])
+                assert draft['unitPrice'] == '77' and draft['paidAmount'] == '77' and draft['quantity'] == '1'
+            if debug_income_note:
+                target = ids['incomeNoteTarget']
+                assert income_note_baseline(connection, target) == ids['incomeNoteBaseline']
+                row = dict(connection.execute('SELECT * FROM ledger_entry WHERE id=?', (target,)).fetchone())
+                assert row['note'] == 'T6 edited' and row['row_version'] == 2
+                # 修改会重建检索派生列；初始历史来源可为空，但不能放行错误的终态索引。
+                expected_search = '测试工资 合成公司 工资 测试现金 t6 edited'
+                assert row['search_text'] == expected_search
+                assert row['adjustment_source_search_text'] == '测试现金'
+                for key, value in ids['incomeNoteOriginal'].items():
+                    if key not in ['note', 'row_version', 'updated_at', 'search_text', 'adjustment_source_search_text']:
+                        assert row[key] == value, key
             if debug_case == 16:
                 # 单收入场景不提交支出草稿；组合场景必须保留前一用例的支出。
                 if debug_entry_cycle:
@@ -426,6 +502,10 @@ try:
             with connection:
                 if debug_case in [15, 16]:
                     add_entry_items(connection)
+                    if debug_income_note:
+                        add_income_note_source(connection, ids)
+                    if debug_income_after_save:
+                        add_income_save_drafts(connection, ids)
                 if debug_case == 2:
                     connection.execute("INSERT INTO dictionary_item(id,kind,name,normalized_name,status,sort_order) VALUES(?,'PRODUCT','Touch Created','touch created','ACTIVE',20)", (str(uuid.uuid4()),))
                 if debug_case == 7:

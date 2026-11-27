@@ -2,17 +2,17 @@
 
 ## 范围与结论
 
-面向开发与运维，描述正在改造中的 iPhone 离线 App，以及保留的 Vue PWA、Spring Boot 模块化单体和 PostgreSQL 的组成、依赖及共享契约。下图及 Web 专题描述旧工程；旧工程源码尚未退役，日常本地服务保持停止。Web 实际运行环境资料见[部署案例](../deployment/README.md#部署案例)。
+面向离线 App 开发者，描述 iPhone 随包入口、本地账本、业务与文件闭环。旧 Web、Java/PG、OpenAPI 和服务器部署链路已退役；原需求及必要历史证据从[历史索引](../README.md#历史归档)追溯。本机私密资料保留，不是 App 运行依赖。
 
 ## 离线 iOS 原生入口
 
-`app/` 是独立的 Vue 3 + Capacitor iPhone 工程，最低 iOS 27.0；`app/ios/App/App.xcodeproj` 的 `App` scheme 仅声明 iPhone 设备家族，关闭 Mac Catalyst、Mac 上的 iPhone/iPad 兼容运行和 visionOS 兼容运行。个人页面及共享组件已经沿原布局迁入 `app/src`，四个主导航及六个个人路由沿用原顺序和交互；旧 `web/src` 保留对照。启动由 bootstrap store 打开真实 LedgerDatabase，loading/error 时不挂载页面，成功后以 datasetId 隔离 KeepAlive。打开失败不重建库，仅可重试错误提供重试；本地业务与数据管理均经下述原生入口接入；最终签名交付和容量验收另行执行。
+`app/` 是独立的 Vue 3 + Capacitor iPhone 工程，最低 iOS 27.0；`app/ios/App/App.xcodeproj` 的 `App` scheme 仅声明 iPhone 设备家族，关闭 Mac Catalyst、Mac 上的 iPhone/iPad 兼容运行和 visionOS 兼容运行。个人页面及共享组件已经沿原布局迁入 `app/src`，四个主导航及六个个人路由沿用原顺序和交互；旧 Web 与服务端源码已退役，历史实现从文档索引定位。启动由 bootstrap store 打开真实 LedgerDatabase，loading/error 时不挂载页面，成功后以 datasetId 隔离 KeepAlive。打开失败不重建库，仅可重试错误提供重试；本地业务与数据管理均经下述原生入口接入；最终签名交付和容量验收另行执行。
 
 构建由 [ios-app.sh](../../scripts/ios-app.sh) 调用 app 的 `native:sync`：Vite 将 Vue 编译至 app/dist，Capacitor 将资源复制到原生 App/public，并生成配置和 CapApp-SPM 清单。配置不接受环境变量覆盖远程地址，未配置 `server.url`；WKWebView 从 `capacitor://localhost` 随包入口加载，HTML 的 CSP 将资源连接限制为自身。SwiftPM 清单由 CLI 生成，不维护另一份手工副本。[生成适配](../../scripts/normalize-capacitor-spm.mjs) 的 `--prepare` 在 sync 前从锁定 CLI 自带模板补齐缺失的 CapApp-SPM 文件（包含 Swift target 源），使干净检出也选择 SPM；已有工程与生成物不被准备阶段覆盖。普通构建和局部分层构建共用该入口。CLI 8.6.2 在 tools 5.9 清单中生成 `.iOS(.v27)`，sync 后同一脚本将这一已知形态转换为等价的 `.iOS("27.0")`；形态变化时明确失败，升级 CLI 时需重新评估。npm 依赖由 app/package-lock.json 锁定，原生远程依赖由 [Package.resolved](../../app/ios/App/App.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved) 固定，禁止自动漂移。
 
 [nativeConnection](../../app/src/infrastructure/database/nativeConnection.ts) 是最小原生连接边界：只允许 iOS 且必须存在 CapacitorSQLite 插件，拒绝浏览器替代存储。[nativeAdapter](../../app/src/infrastructure/database/nativeAdapter.ts) 只注册 CapacitorSQLite 原生插件并持有有界于实际连接数的注册表，不导入插件的 Web 实现；所有 SQL 操作仍委托锁定插件。正式账本经 createIosDatabase 创建并接管句柄后再打开，打开失败由同一生命周期释放；原生探针沿用 openIosDatabase 的独立打开/清理入口。插件配置将数据库放在沙盒 `Library/OfflineLedger`，并设置系统备份排除标记；该标记已经由模拟器上的原生测试读取确认。[LedgerDatabase](../../app/src/data/ledgerDatabase.ts) 在这一边界之上管理账本连接、生命周期与事务；启动和本地业务服务共用 appDatabase 单一所有者；页面不持有连接或执行 SQL。
 
-App 的 API DTO 沿用旧接口类型维持页面兼容；字典 API 与支出商品候选调用本地 DictionaryService/ProductService；收支 API 调用 EntryService，均不经过 HTTP。八类字典的新增、改名、停用/恢复、分页搜索、同级排序、引用保护及商品合并已经接通。其他未接通业务由 `api/http.ts` 明确拒绝，不返回假数据。localOperation 将未知存储错误包装为安全提示，保留内部原因；字典变更通知仅在事务提交后发布。运行期 Pinia 偏好和 useLedgerDraft 通过下述个人状态服务消费原生 SQLite，维持页面缓存与持久化状态；不使用浏览器持久化。账号、管理员和 PWA 入口不进入 App 路由。原 UI 的 PageWorkspace、AppDrawer/AppDialog、CachedPageView、键盘可见视口及未保存作用域继续复用，样式与模板基线由设计契约保护。图表与报表页面按需分包。 候选定位把可见视口偏移与文档滚动换算到同一 DOMRect 坐标，不重复叠加键盘平移；短屏编辑差异受 DESIGN 的可逆基线限制。
+App 的页面与本地服务共用本地 LedgerContracts 类型维持业务字段兼容；字典 API 与支出商品候选调用本地 DictionaryService/ProductService；收支 API 调用 EntryService，均不经过 HTTP。八类字典的新增、改名、停用/恢复、分页搜索、同级排序、引用保护及商品合并已经接通。全部生产 API 由本地应用服务承接，不保留 HTTP 兼容入口。localOperation 将未知存储错误包装为安全提示，保留内部原因；字典变更通知仅在事务提交后发布。运行期 Pinia 偏好和 useLedgerDraft 通过下述个人状态服务消费原生 SQLite，维持页面缓存与持久化状态；不使用浏览器持久化。账号、管理员和 PWA 入口不进入 App 路由。原 UI 的 PageWorkspace、AppDrawer/AppDialog、CachedPageView、键盘可见视口及未保存作用域继续复用，样式与模板基线由设计契约保护。图表与报表页面按需分包。 候选定位把可见视口偏移与文档滚动换算到同一 DOMRect 坐标，不重复叠加键盘平移；短屏编辑差异受 DESIGN 的可逆基线限制。
 
 [LedgerAppearance](../../app/ios/App/App/LedgerAppearancePlugin.swift) 独立承接系统文字大小通知和状态栏明暗；前端共享入口先订阅再读取初态，拒绝迟到初态覆盖新通知，卸载释放监听。主题仍以原生 SQLite 偏好为源，系统模式不改写 UIKit 系统主题，桥失败不阻断账本。LedgerFiles 继续只负责原文件与生命周期职责，外观不复用草稿后台窗口。
 
@@ -20,7 +20,7 @@ App 的 API DTO 沿用旧接口类型维持页面兼容；字典 API 与支出�
 
 [DictionaryTouch scheme](../../app/ios/App/App.xcodeproj/xcshareddata/xcschemes/DictionaryTouch.xcscheme)另建外部 UI 测试 runner，对随包 Release App 使用原生触摸和键盘，不导入 App 模块、不注入脚本或测试参数。局部入口允许同一显式会话复用脚本新建的模拟器、按内容摘要复用测试产物，完整入口默认新建设备，也可重新校验后借用同一会话设备，以全新合成 App 数据独立验收；两者共用脚本命令锁、测试源与夹具，具体操作见[开发验证规范](../testing/guide.md#原生局部调试与完整验收)。两个测试 target 仅允许 simulator SDK，并共用 [隔离守卫](../../app/ios/App/NativeTests/OwnedSimulatorTestContext.swift)：探针注入及 UI 启动前，校验脚本生成的设备清单与当前模拟器 UUID；缺少或不匹配即拒绝。测试源与 runner 不属于生产 target，正式 App 不读取清单；只有独立模拟器的空账本可准备合成历史引用，真实本地服务完成交互后再回读数据库核对持久化，机制和运行入口见开发验证规范。
 
-精确金额、业务时间和文本纯函数统一位于 app/src/domain；旧 Web 的对应模块仅重导出同一实现，兼容测试验证入口一致，避免保留两份业务规则。金额跨 SQLite 桥只接受规范十进制整数字符串，并校验 64 位整数边界。[SerialQueue](../../app/src/infrastructure/database/serialQueue.ts) 提供默认容量 32 的串行执行能力，排队取消释放名额，运行中的取消由事务安全边界处理；LedgerDatabase 的生命周期、读写和关闭均通过这一队列执行，事务在同一独占操作内提交或回滚。
+精确金额、业务时间和文本纯函数统一位于 app/src/domain；所有运行消费者直接使用同一套本地领域实现。金额跨 SQLite 桥只接受规范十进制整数字符串，并校验 64 位整数边界。[SerialQueue](../../app/src/infrastructure/database/serialQueue.ts) 提供默认容量 32 的串行执行能力，排队取消释放名额，运行中的取消由事务安全边界处理；LedgerDatabase 的生命周期、读写和关闭均通过这一队列执行，事务在同一独占操作内提交或回滚。
 
 [账本生命周期](../../app/src/data/ledgerDatabase.ts) 取得同名库的单一所有权后，校验原生外键及 schema/履历，初始化或升级成功且文件策略生效后才接受业务操作。结构链由 [migrations](../../app/src/data/migrations/index.ts) 维护，纯 SQL 迁移沿用原 SQL 的 SHA-256；含数据步骤的迁移将 SQL、数据步骤及其版本化算法源码一并计入摘要，DDL、数据回填和履历在同一事务提交；各版本同时维护完整结构清单，启动先按旧版本清单校验，再在迁移事务中按目标清单核对。结构检查比较表/索引/触发器的类型、归属和 SQL 词法单元，覆盖列类型、CHECK、外键及唯一性；只忽略语法外空白与注释，不忽略字符串内容或词边界。当前尚无正式发布的历史数据库版本，兼容测试使用受控旧版夹具。未知高版本、断档、历史摘要不符或不能解释的元信息缺失均拒绝，不删库重建。基础表承载元信息、字典标识、偏好、幂等结果及带定点金额/历史渠道快照的收支共同记录，类型专有字段和规则按相应功能追加迁移。
 
@@ -85,50 +85,10 @@ CleanupService 在启动/回到前台执行一次有界轮次，最多 5 批，�
 
 [Capacity scheme](../../app/ios/App/App.xcodeproj/xcshareddata/xcschemes/Capacity.xcscheme) 提供 Release hosted 页面/原生容量探针及外部冷启动 runner，单独使用 `com.mybill.offline.capacity`，编译和执行均拒绝正式 Bundle。测试代码和合成数据不进入生产资源；同一夹具由正式迁移/服务生成，模拟器脚本验证归属、摘要与数据集后仅替换隔离 App 沙盒。模拟器 RSS、服务计时与页面端到端计时分别登记，不能替代目标真机指标。执行入口、样本与报告拒绝规则统一见[验证规范](../testing/guide.md#ios-交互与容量复核)。
 
-## 保留的 Web 运行拓扑
+## 本地契约与开发入口
 
-```mermaid
-flowchart LR
-  Browser[Vue PWA] -->|同源 HTTPS| Proxy[Caddy 静态资源与反向代理]
-  Proxy -->|/api/v1| App[Spring Boot 单体]
-  App --> Auth[身份与租户事务]
-  Auth --> DB[(PostgreSQL)]
-  App --> Jobs[数据库任务协调器]
-  Jobs --> DB
-  Jobs --> Files[个人导出卷]
-  Migration[一次性 Flyway] --> DB
-```
+[LedgerContracts](../../app/src/domain/ledgerContracts.d.ts) 维护当前页面和应用服务实际使用的数据结构；金额、数量及时间继续遵守本地领域校验，不以 TypeScript 声明代替 SQLite 约束。原 OpenAPI 的 HTTP 路径、身份/管理员 DTO 和生成工具已移除。本地契约保留已有业务字段及精确字符串类型，类型调整须同步真实服务与消费方。
 
-## 技术选择与模块关系
+[本地调用边界](../../app/src/api) 只调用本机服务；[错误归一化](../../app/src/api/errors.ts)消费 LocalError、取消及运行失败，页面保留字段反馈、原因链与明确重试资格，不发身份或网络请求。原页面模板和样式仍由 DESIGN 及基线摘要保护。
 
-| 层 | 实现与入口 | 依赖边界 |
-|---|---|---|
-| 前端 | Node 24.11.1、Vue 3、Vite、TypeScript、Pinia、Vue Router；web/package.json | 只调用同源 API；报表使用 ECharts；不保存认证令牌到本地存储 |
-| 接口 | contracts/openapi.yaml、web/src/api/generated/schema.ts | OpenAPI 为接口契约；生成类型不能手工修订 |
-| 服务端 | Java 21、Spring Boot 3.5.16、MyBatis-Plus 3.5.17；server/pom.xml | Controller → 应用服务 → Repository/Mapper；跨领域写入通过应用服务 |
-| 持久化 | PostgreSQL 16+；生产镜像 16.14-bookworm、Flyway 11.7.2 | 应用不拥有 schema；迁移一次性执行，prod 启动只读核验版本 012 |
-| 异步 | job_run、JobCoordinator、JobPoller | 同一服务内数据库任务，无 Redis、消息队列或独立调度服务 |
-| 发布 | server/Dockerfile、deploy/compose*.yaml | db/app/proxy 常驻；provision/migrate/bootstrap-admin 短生命周期 |
-
-具体机制分见 [前端](frontend-pwa.md)、[后端](backend-domains.md)、[数据库](database-migrations.md)、[任务](jobs-export-deletion.md)。不引入账户余额、转账、地图服务；地点仅为个人标签。
-
-## 核心数据与 HTTP 契约
-
-- 金额通过十进制字符串传输，Java BigDecimal、PostgreSQL numeric 计算；前端业务计算用精确金额工具。人民币金额上限 `999,999,999.99`，通用金额最多两位小数。图表显示转换不作为业务金额计算。
-- 日期按 `Asia/Shanghai`；发生时间使用带偏移 ISO 8601，服务端校验不能超出当前时间 5 分钟。报表日期由 BusinessDateRange 统一解析；CSV 时间显式带 `+08:00`。
-- 错误固定为 `code/message/fieldErrors/traceId/retryable`，HTTP 状态表达失败，不以 200 包装失败；不得返回堆栈、凭据或租户标识。
-- 用户名 3–64 位可见 ASCII；备注去首尾空白后最多 500 Unicode code point。详见 LedgerWritePolicy、AuthDtos 和 contracts。
-- 支出与导出创建使用 1–128 字符幂等键，规范化内容摘要相同才返回原结果，键相同内容不同则冲突。导出终态后的新操作必须换键。
-- 身份与租户只从服务端认证上下文取得，ADMIN 不具备个人账目读取能力。完整链路见 [认证与租户](auth-tenant.md)。
-
-## 开发接入与验证
-
-复用及工程硬约束见 [AGENTS](../../AGENTS.md#工程与业务硬约束)，接口/SQL 变更维护与检查见[开发验证规范](../testing/guide.md#变更维护与验证)。ModuleBoundaryTest、PersistenceSourceBoundaryTest、HttpContractTest 和前端页面登记契约测试分别覆盖模块、持久化、HTTP 及页面关系。
-
-## 风险与限制
-
-| 类型 | 当前事实 | 影响与处理 |
-|---|---|---|
-| 已知限制 | 一期单机 Compose，无高可用切换 | 主机故障影响服务；恢复能力按部署方案与案例分别评价 |
-| 验收边界 | 工程检查不能证明终端 PWA、真实恢复切换或新实例通过 | 按候选及实例分别核验，证据与例外见部署案例 |
-| 实现边界 | 管理概况读取宿主只读状态文件 | 已接入成功/失败/运行与新鲜度判定；仅本机告警，见部署案例 |
+工程检查与未签名编译由根 package.json 的 App 命令提供；模拟器、真机、完整候选和 CI 门禁的触发及证据边界统一见[验证规范](../testing/guide.md)。最终真机签名、覆盖升级及 Release 指标须对实际交付候选另验，常规绿色不能替代。

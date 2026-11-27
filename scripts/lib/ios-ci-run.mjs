@@ -95,12 +95,15 @@ function collectEvidence(root, directory, proof, role) {
 }
 
 /** 同一组复用本轮独立模拟器；完整入口继续要求新局部证据并自行执行全部原门禁。 */
-export async function executeGroup(root, directory, group, { command = runCommand,session:borrowedSession } = {}) {
+export async function executeGroup(root, directory, group, { command = runCommand,session:borrowedSession, evidence = [] } = {}) {
   const groupStarted = performance.now()
   const plan = assertPlan(root, read(path.join(directory, 'ci-plan.json')))
   if (!['linux', 'macos'].includes(group)) throw new Error('未知 CI 执行组。')
   const suites = plan.suites.filter((s) => s.runner === group)
   if (!suites.length) throw new Error('计划没有该执行组。')
+  if (!Array.isArray(evidence) || evidence.length > 31 || new Set(evidence.map(p => path.resolve(root, p))).size !== evidence.length ||
+      (evidence.length && (group !== 'macos' || !suites.some(s => s.kind === 'full'))))
+    throw new Error('额外局部修复证据只用于本机完整原生入口，最多 31 份且不能重复。')
   const budgetMs =
     executionMatrix(plan).include.find((item) => item.group === group).timeout * 60_000
   const remaining = () => {
@@ -251,8 +254,12 @@ export async function executeGroup(root, directory, group, { command = runComman
               'EVIDENCE'
             )
             receipt.reports.push(...collectEvidence(root, dest, local, 'precondition'))
+            // Preserve every repair proof; the full entry rechecks scope, time, environment and failure locks.
+            for (const [index, repair] of evidence.entries())
+              receipt.reports.push(...collectEvidence(root, dest, path.resolve(root, repair), 'repair-' + index))
             proof = marker(
-              await exec([suite.mode, '--session', await ensureSession(), '--from', local]),
+              await exec([suite.mode, '--session', await ensureSession(), '--from', local,
+                ...evidence.flatMap(repair => ['--from', path.resolve(root, repair)])]),
               'CI_RESULT'
             )
           }
@@ -302,6 +309,27 @@ export async function executeGroup(root, directory, group, { command = runComman
     })
   }
   if (error) throw error
+}
+
+// CI_CONSUMER_BOUNDARY: result validation below does not change executed native commands.
+import { assertUiReadback } from './ios-ui-readback.mjs'
+import { validateLocalPartial } from './ios-local-partials.mjs'
+
+/** Collection only stages artifacts. Before issuing a suite success, and on every
+ * later consumption, compare the archive with the strict original partial proof.
+ */
+function assertOriginalPartial(root,directory,receipt,result) {
+  const original = receipt.reports.find(r => r.role === 'primary' && r.primary)
+  const base = path.join(root,'.local/ios/tmp/ai-agent')
+  if (!original?.origin || !original.origin.endsWith('/result.json')) throw new Error('缺少受管原始局部结果。')
+  const originalRun = path.dirname(path.resolve(base,original.origin))
+  if (!originalRun.startsWith(base+path.sep) || digest(validateLocalPartial(root,originalRun)) !== digest(result))
+    throw new Error('局部归档结果与原始封存结果不一致。')
+  for (const report of receipt.reports.filter(r=>r.role==='primary')) {
+    const source = path.resolve(base,report.origin)
+    if (!source.startsWith(base+path.sep) || !plainFile(source).equals(plainFile(path.join(directory,report.path))))
+      throw new Error('局部归档证据与原始受管文件不一致。')
+  }
 }
 
 /** 逐份核实原报告；只收集到成功 exit 或手填 passed 不能补足实际执行证据。 */
@@ -463,7 +491,9 @@ function validateReports(root, directory, suite, receipt,plan) {
         .filter((p) => p.stage === 'test')
         .map((p) => phaseRaw(p.log))
         .join('\n')
-      if (!uiCases.every((name) => logs.includes(` ${name}]' passed`)))
+      const requiredUiCases = new Set([...uiCases,
+        ...selection('--scenario', 'entry-cycle', []).cases.map(id => id.split('/').at(-1))])
+      if (![...requiredUiCases].every((name) => logs.includes(` ${name}]' passed`)))
         throw new Error('完整触摸缺少已登记专项的实际用例。')
     }
   }
@@ -474,6 +504,8 @@ function validateReports(root, directory, suite, receipt,plan) {
       return path.join(directory,item.path)
     }
     validateScenario(root,suite.scenario,result,name=>plainFile(reportFor(name)).toString(),name=>readScaleCold(reportFor(name)))
+    if (selection('--scenario',suite.scenario,[]).scheme === 'Capacity')
+      assertOriginalPartial(root,directory,receipt,result)
   }
   if (suite.kind === 'ui') {
     const kind = suite.case ? 'case' : 'scenario'
@@ -496,7 +528,38 @@ function validateReports(root, directory, suite, receipt,plan) {
       )
     )
       throw new Error('UI 实际执行数或原始日志不符。')
+    const readback = receipt.reports.find(r => r.role === 'primary' && r.origin?.endsWith('/readback.log'))
+    if (!readback) throw new Error('UI 缺少真实回读日志。')
+    assertUiReadback(selection('--' + kind, target, []), plainFile(path.join(directory, readback.path)).toString())
+    assertOriginalPartial(root,directory,receipt,result)
   }
+}
+
+/** Re-read one immutable suite without requiring unrelated suites to stay current or rewriting reports. */
+export function validateSuiteEvidence(root, directory, plan, suite, { reuse = false } = {}) {
+  if (reuse) assertMeasuredPlan(root, plan, suite.name)
+  const dest = path.join(directory, suite.name),
+    receipt = JSON.parse(plainFile(path.join(dest, 'receipt.json')))
+  if (
+    receipt.schema !== 1 ||
+    receipt.plan !== plan.id ||
+    receipt.suite !== suite.name ||
+    receipt.definition !== digest(suite) ||
+    JSON.stringify(receipt.source) !== JSON.stringify(plan.source) ||
+    !Number.isSafeInteger(receipt.startedAt) ||
+    !Number.isSafeInteger(receipt.completedAt) ||
+    receipt.completedAt < receipt.startedAt ||
+    !/^v24\./.test(receipt.node) ||
+    (suite.runner === 'macos' && receipt.platform !== 'darwin')
+  )
+    throw new Error('套件回执失败、版本或执行环境不符。')
+  if (reuse && receipt.measurementHost !== measurementHost()) throw new Error('历史证据的宿主/Node 环境失效。')
+  if (receipt.status !== 'passed' || receipt.exit !== 0)
+    throw new Error(receipt.error ?? '套件未完成或取消。')
+  const group = read(path.join(directory, `group-${suite.runner}.json`))
+  if (group.plan !== plan.id || group.status !== 'passed')
+    throw new Error('执行组未完成或清理失败。')
+  validateReports(root, dest, suite, receipt,plan)
 }
 
 /** 计划与实际逐项对账；未知/缺失/失败/取消/旧版本/篡改报告均不通过，不覆盖原失败回执。 */
@@ -518,28 +581,7 @@ export function reconcile(root, directory, jobsStatus, planStatus, { reuse = fal
   for (const suite of plan.suites) {
     const row = { suite: suite.name, status: 'not-executed' }
     try {
-      const dest = path.join(directory, suite.name),
-        receipt = JSON.parse(plainFile(path.join(dest, 'receipt.json')))
-      if (
-        receipt.schema !== 1 ||
-        receipt.plan !== plan.id ||
-        receipt.suite !== suite.name ||
-        receipt.definition !== digest(suite) ||
-        JSON.stringify(receipt.source) !== JSON.stringify(plan.source) ||
-        !Number.isSafeInteger(receipt.startedAt) ||
-        !Number.isSafeInteger(receipt.completedAt) ||
-        receipt.completedAt < receipt.startedAt ||
-        !/^v24\./.test(receipt.node) ||
-        (suite.runner === 'macos' && receipt.platform !== 'darwin')
-      )
-        throw new Error('套件回执失败、版本或执行环境不符。')
-      if (reuse && receipt.measurementHost !== measurementHost()) throw new Error('历史证据的宿主/Node 环境失效。')
-      if (receipt.status !== 'passed' || receipt.exit !== 0)
-        throw new Error(receipt.error ?? '套件未完成或取消。')
-      const group = read(path.join(directory, `group-${suite.runner}.json`))
-      if (group.plan !== plan.id || group.status !== 'passed')
-        throw new Error('执行组未完成或清理失败。')
-      validateReports(root, dest, suite, receipt,plan)
+      validateSuiteEvidence(root, directory, plan, suite, { reuse })
       row.status = 'passed'
     } catch (e) {
       row.status = e.code === 'ENOENT' ? 'not-executed' : 'failed'

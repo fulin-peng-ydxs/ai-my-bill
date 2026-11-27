@@ -5,6 +5,7 @@ import { randomUUID } from 'node:crypto'
 import { execFileSync } from 'node:child_process'
 import { git, notesRef, readEnvelope, requiredLocalSuites, verifyEnvelope, noteParent } from './lib/ios-local-delivery.mjs'
 import { errorMessage } from './lib/ios-errors.mjs'
+import { prepareTrustedParser } from './lib/ios-measurement-scope.mjs'
 
 const root = fs.realpathSync(path.join(path.dirname(fileURLToPath(import.meta.url)), '..'))
 const repository = process.env.GITHUB_REPOSITORY, number = process.env.IOS_EVIDENCE_PR
@@ -33,6 +34,7 @@ try {
   } else { head = process.env.IOS_EVIDENCE_HEAD; base = process.env.IOS_EVIDENCE_BASE }
   if (![head, base].every(value => /^[a-f0-9]{40}$/.test(value ?? ''))) throw new Error('回执 head/base 必须为完整 SHA。')
   if (publish) status('pending', '正在核验本地必需专项；不启动模拟器')
+  if (publish) prepareTrustedParser(root)
   git(root, 'fetch', '--no-tags', 'origin', head, base)
   const required = requiredLocalSuites(root, base, head)
   let envelope, observed

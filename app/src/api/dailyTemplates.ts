@@ -1,13 +1,13 @@
-import type { components } from './generated/schema'
+import type { LedgerContracts } from '../domain/ledgerContracts'
 import { TemplateService } from '../data/personal/templateService'
 import { appDatabase } from '../data/appDatabase'
 import { useBootstrapStore } from '../stores/bootstrap'
 import { localOperation } from '../data/localOperation'
 
-export type DailyTemplateSummary = components['schemas']['DailyTemplateSummary']
-export type DailyTemplateSelection = components['schemas']['DailyTemplateSelection']
-export type DailyTemplateList = components['schemas']['DailyTemplateList']
-export type DailyTemplateEntryType = components['schemas']['EntryType']
+export type DailyTemplateSummary = LedgerContracts['DailyTemplateSummary']
+export type DailyTemplateSelection = LedgerContracts['DailyTemplateSelection']
+export type DailyTemplateList = LedgerContracts['DailyTemplateList']
+export type DailyTemplateEntryType = LedgerContracts['EntryType']
 const service = new TemplateService(appDatabase)
 
 export function listDailyTemplates(type: DailyTemplateEntryType, signal?: AbortSignal): Promise<DailyTemplateList> {

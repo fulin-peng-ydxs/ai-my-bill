@@ -2,17 +2,17 @@
 import { computed, watch } from 'vue'
 import { ChevronRight } from 'lucide-vue-next'
 
-import type { components } from '../api/generated/schema'
+import type { LedgerContracts } from '../domain/ledgerContracts'
 import { formatCny } from '../domain/money'
 import { useReportChart } from '../composables/useReportChart'
 import AppStateBlock from './AppStateBlock.vue'
 
 const props = defineProps<{
   title: string
-  points: readonly components['schemas']['ReportDataPoint'][]
+  points: readonly LedgerContracts['ReportDataPoint'][]
 }>()
 
-const emit = defineEmits<{ select: [point: components['schemas']['ReportDataPoint']] }>()
+const emit = defineEmits<{ select: [point: LedgerContracts['ReportDataPoint']] }>()
 const cards = computed(() => props.points.map((point) => ({
   point,
   tone: point.value === 'EXPENSE' ? 'expense' : point.value === 'INCOME' || point.value === 'ADJUSTMENT' ? 'income' : 'neutral',

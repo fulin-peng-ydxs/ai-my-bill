@@ -44,7 +44,7 @@ test('容量单例预算独立，常用原生与完整 smoke 不暗中增加规�
   const full = fs.readFileSync('scripts/lib/ios-app-full.sh','utf8')
   assert.ok(!full.includes('scheme Capacity'))
   assert.ok(!full.includes('testCapacity10000'))
-  assert.equal(selection('--case','DictionaryUITests/DictionaryTouchTests/test51IosKeyboardNavigation',[]).fixture,undefined)
+  assert.equal(selection('--case','DictionaryUITests/DictionaryTouchTests/test51IosKeyboardNavigation',[]).fixture,'interaction-61')
   for (const phase of ['prepare','native','pages','cold']) {
     const selected = selection('--scenario','scale-10000-'+phase,[])
     assert.equal(selected.capacityPhase,phase); assert.equal(selected.cases.length,phase === 'cold' ? 5 : 1)

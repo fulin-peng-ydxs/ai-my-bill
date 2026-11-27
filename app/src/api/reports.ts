@@ -1,24 +1,24 @@
-import type { components } from './generated/schema'
+import type { LedgerContracts } from '../domain/ledgerContracts'
 import { ReportQueryService } from '../data/reports/reportQueryService'
 import { appDatabase } from '../data/appDatabase'
 import { localOperation } from '../data/localOperation'
 import { fieldError } from '../data/dictionaries/repository'
 const reports = new ReportQueryService(appDatabase)
 
-export type ReportScope = components['schemas']['ReportScope']
-export type ReportSummary = components['schemas']['ReportSummary']
-export type TimeReport = components['schemas']['TimeReport']
-export type ReportTimeGrain = components['schemas']['ReportTimeGrain']
-export type ReportTimeMetric = components['schemas']['ReportTimeMetric']
-export type ExpenseReport = components['schemas']['ExpenseReport']
-export type ExpenseReportDimension = components['schemas']['ExpenseReportDimension']
-export type IncomeReport = components['schemas']['IncomeReport']
-export type IncomeReportDimension = components['schemas']['IncomeReportDimension']
+export type ReportScope = LedgerContracts['ReportScope']
+export type ReportSummary = LedgerContracts['ReportSummary']
+export type TimeReport = LedgerContracts['TimeReport']
+export type ReportTimeGrain = LedgerContracts['ReportTimeGrain']
+export type ReportTimeMetric = LedgerContracts['ReportTimeMetric']
+export type ExpenseReport = LedgerContracts['ExpenseReport']
+export type ExpenseReportDimension = LedgerContracts['ExpenseReportDimension']
+export type IncomeReport = LedgerContracts['IncomeReport']
+export type IncomeReportDimension = LedgerContracts['IncomeReportDimension']
 
 export interface ReportFilters {
   query: string
   scope: ReportScope
-  range: components['schemas']['LedgerDateRange']
+  range: LedgerContracts['LedgerDateRange']
   startDate?: string
   endDate?: string
   fundingChannelId?: string

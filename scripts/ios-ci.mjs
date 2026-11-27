@@ -28,18 +28,19 @@ try {
   if (explicit && mode !== 'plan') throw new Error('只有 plan 接受范围参数。')
   for (let i = 0; i < args.length; i += 2) {
     if (
-      !['--execution','--base', '--head', '--results', '--group', '--attempt','--app','--candidate','--output','--input','--session'].includes(args[i]) ||
+      !['--execution','--base', '--head', '--results', '--group', '--attempt','--app','--candidate','--output','--input','--session','--from'].includes(args[i]) ||
       !args[i + 1] ||
-      Object.hasOwn(options, args[i])
+      (args[i] !== '--from' && Object.hasOwn(options, args[i]))
     )
       throw new Error('CI 参数无效。')
-    options[args[i]] = args[i + 1]
+    if (args[i] === '--from') (options['--from'] ??= []).push(args[i + 1])
+    else options[args[i]] = args[i + 1]
   }
   const allowed =
     mode === 'plan'
       ? ['--base', '--head', '--results','--execution']
       : mode === 'run'
-        ? ['--results', '--group','--session']
+        ? ['--results', '--group','--session','--from']
         : mode === 'archive'
           ? ['--results', '--group', '--attempt']
           : mode === 'signing-check' ? ['--app','--candidate','--output']
@@ -130,7 +131,8 @@ try {
       console.log(archiveGroup(root, directory, options['--group'], options['--attempt']))
     } else if (mode === 'run') {
       guardRemote(directory)
-      await (process.env.GITHUB_ACTIONS === 'true' ? executeGroup : executeLocalGroup)(root, directory, options['--group'], { session: options['--session'] })
+      if (process.env.GITHUB_ACTIONS === 'true' && options['--from']) throw new Error('远端不消费本机局部修复路径。')
+      await (process.env.GITHUB_ACTIONS === 'true' ? executeGroup : executeLocalGroup)(root, directory, options['--group'], { session: options['--session'], evidence: options['--from'] })
       console.log('所选执行组通过；完整结论须由 result 对账。')
     } else {
       let result

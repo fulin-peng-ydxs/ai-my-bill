@@ -1,9 +1,9 @@
-import type { components } from '../api/generated/schema'
+import type { LedgerContracts } from './ledgerContracts'
 
 /** 管理列表按页浏览；填报候选使用各接口自己的有界限制。 */
 export const DICTIONARY_PAGE_SIZE = 20
 
-export type DictionaryType = components['schemas']['DictionaryType']
+export type DictionaryType = LedgerContracts['DictionaryType']
 
 export interface DictionaryDefinition {
   type: DictionaryType

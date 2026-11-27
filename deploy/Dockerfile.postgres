@@ -1,6 +1,0 @@
-# 保持 PostgreSQL 主版本/发行版不变，在构建时安装发行版已发布补丁。
-FROM postgres:16.14-bookworm
-RUN apt-mark hold postgresql-16 postgresql-client-16 \
-    && apt-get update \
-    && apt-get upgrade -y \
-    && rm -rf /var/lib/apt/lists/*

@@ -1,13 +1,13 @@
 import type { LedgerFilters } from './ledgerEntries'
-import type { components } from './generated/schema'
+import type { LedgerContracts } from '../domain/ledgerContracts'
 import { dataManagement } from '../data/management/dataManagement'
 import { appDatabase } from '../data/appDatabase'
 import { ledgerTransfers } from '../platform/ledgerTransfers'
 import { LocalError, throwIfCancelled } from '../domain/localError'
 import { localOperation } from '../data/localOperation'
 
-export type ExportStatus = components['schemas']['ExportStatus']
-export type ExportResponse = components['schemas']['ExportResponse']
+export type ExportStatus = LedgerContracts['ExportStatus']
+export type ExportResponse = LedgerContracts['ExportResponse']
 export type ExportRequest = ({ scope: 'CURRENT_FILTERS' } & LedgerFilters) | { scope: 'ALL_DATA' }
 type Job = { response: ExportResponse; input: string; dataset: string; controller: AbortController; transfer?: string; done: Promise<void> }
 const jobs = new Map<string, Job>()

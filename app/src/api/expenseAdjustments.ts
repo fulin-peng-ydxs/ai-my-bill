@@ -1,4 +1,4 @@
-import type { components } from './generated/schema'
+import type { LedgerContracts } from '../domain/ledgerContracts'
 import { AdjustmentService } from '../data/entries/adjustmentService'
 import { appDatabase } from '../data/appDatabase'
 import { useBootstrapStore } from '../stores/bootstrap'
@@ -6,9 +6,9 @@ import { localOperation } from '../data/localOperation'
 import { mutateEntry } from './localEntries'
 const service = new AdjustmentService(appDatabase)
 
-export type CreateExpenseAdjustmentRequest = components['schemas']['CreateExpenseAdjustmentRequest']
-export type ExpenseAdjustmentResponse = components['schemas']['ExpenseAdjustmentResponse']
-export type ExpenseAdjustmentType = components['schemas']['ExpenseAdjustmentType']
+export type CreateExpenseAdjustmentRequest = LedgerContracts['CreateExpenseAdjustmentRequest']
+export type ExpenseAdjustmentResponse = LedgerContracts['ExpenseAdjustmentResponse']
+export type ExpenseAdjustmentType = LedgerContracts['ExpenseAdjustmentType']
 
 export function createExpenseAdjustment(
   expenseId: string,

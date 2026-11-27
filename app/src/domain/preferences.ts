@@ -1,10 +1,10 @@
-import type { components } from '../api/generated/schema'
+import type { LedgerContracts } from './ledgerContracts'
 
-export type Preferences = components['schemas']['PreferenceResponse']
-export type PreferenceRequest = components['schemas']['PreferenceRequest']
-export type LedgerDefaultRange = components['schemas']['LedgerDefaultRange']
-export type ReportDefaultRange = components['schemas']['ReportDefaultRange']
-export type EntryType = components['schemas']['EntryType']
+export type Preferences = LedgerContracts['PreferenceResponse']
+export type PreferenceRequest = LedgerContracts['PreferenceRequest']
+export type LedgerDefaultRange = LedgerContracts['LedgerDefaultRange']
+export type ReportDefaultRange = LedgerContracts['ReportDefaultRange']
+export type EntryType = LedgerContracts['EntryType']
 
 export const DEFAULT_PREFERENCES: PreferenceRequest = Object.freeze({
   defaultFundingChannelId: null,

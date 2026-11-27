@@ -11,6 +11,9 @@ import {
   nativeCases,
   uiCases,
   uiScenarios,
+  keyboardReadyScenario,
+  incomeNoteScenario,
+  incomeNoteAfterSaveScenario,
   recoveryScenarios,
   selection,
   readSession,
@@ -43,6 +46,7 @@ import {
 import { checkNames, checkDefinition } from './lib/ios-checks.mjs'
 import { spawnManaged, finishCleanup } from './lib/ios-processes.mjs'
 import { errorMessage } from './lib/ios-errors.mjs'
+import { partialMeasurement, finishPartialMeasurement, registerPartial } from './lib/ios-local-partials.mjs'
 import { resolveSimctl } from './lib/ios-simctl.mjs'
 import { assertBootStatus } from './lib/ios-boot-proof.mjs'
 import { cachedLayer, layerInputs, assetOutputs, installationMatches,
@@ -316,6 +320,12 @@ async function runCheck(args) {
   }
 }
 
+async function launchApp(id, run, prefix, log) {
+  const streams = ['stdout','stderr'].map(name => path.join(run, prefix + '-' + name + '.log'))
+  for (const file of streams) fs.writeFileSync(file, '', { flag: 'wx', mode: 0o600 })
+  return command('xcrun', ['simctl', 'launch', '--stdout=' + streams[0], '--stderr=' + streams[1], id, APP_ID], { log })
+}
+
 async function stopApp(id, log) {
   // 不等待模拟器辅助进程继承的输出管道关闭；直接落文件，仍以 simctl 退出码确认终止。
   const { status } = await command('xcrun', ['simctl', 'terminate', id, APP_ID], { accept: [0, 3], log })
@@ -400,6 +410,11 @@ async function runPartial(session, selected, toolchain, requested) {
   try {
     result.inputHash = inputHash(root)
     result.environment = toolchain
+    const measurement = partialMeasurement(root, selected, toolchain, session, invocation)
+    if (measurement) {
+      registerPartial(root, run, measurement)
+      writeJson(path.join(run, 'local-measurement.json'), measurement)
+    }
     result.coverage = []
     if (invocation) invocation.phase = 'execution'
     result.verificationHash = verificationHash(root, toolchain)
@@ -437,6 +452,10 @@ async function runPartial(session, selected, toolchain, requested) {
         ])
       ]
       deadline?.remaining()
+      if (measurement) {
+        result.timings = finishPhases(run)
+        result.measurementSeal = finishPartialMeasurement(root, run, selected, result)
+      }
       result.status = 'passed'
       return
     }
@@ -557,9 +576,7 @@ async function runPartial(session, selected, toolchain, requested) {
       !needsRepair(`native-initialize/${selected.scheme}/${selected.configuration}`, toolchain) &&
       fs.existsSync(path.join(container, 'Library/OfflineLedger/ledgerSQLite.db'))
     if (!initialized)
-      await command('xcrun', ['simctl', 'launch', device.udid, APP_ID], {
-        log: path.join(run, 'initialize-launch.log')
-      })
+      await launchApp(device.udid, run, 'initialize-app', path.join(run, 'initialize-launch.log'))
     await command('python3', ['scripts/fixtures/dictionary-touch.py', 'wait-initialized', container, device.udid, fixture],
       { log: path.join(run, 'initialize.log') })
     await stopApp(device.udid, path.join(run, 'stop-initialize.log'))
@@ -583,21 +600,23 @@ async function runPartial(session, selected, toolchain, requested) {
       await command('python3', ['-I', 'scripts/fixtures/ios-ui-baseline.py', 'arm-data',
         session.file, container, appHash, fixture, selected.fixture], { log: path.join(run, 'data-intent.log') })
     // 局部夹具已落盘且连接已关闭；让首屏与 runner 准备并行，避免重复冷启动挤占业务用例。
-    // XCTest 仍建立原生自动化会话并执行原断言；不把预启动记为冷启动/正式初始化通过。
     if (ui) {
-      const streams = ['app-stdout.log','app-stderr.log'].map(name => path.join(run,name))
-      for (const file of streams) fs.writeFileSync(file,'',{ flag:'wx',mode:0o600 })
-      await command('xcrun', ['simctl', 'launch', '--stdout='+streams[0], '--stderr='+streams[1], device.udid, APP_ID], {
-        log: path.join(run, 'ui-launch.log')
-      })
+      const measured = JSON.parse(fs.readFileSync(path.join(run, 'local-measurement.json'), 'utf8'))
+      measured.baseline = hashPaths(root, [path.relative(root, path.join(session.directory, 'ui-baseline/receipt.json'))])
+      writeJson(path.join(run, 'local-measurement.json'), measured)
     }
+    // XCTest 仍建立原生自动化会话并执行原断言；不把预启动记为冷启动/正式初始化通过。
     const testLog = path.join(run, 'test.log')
+    if (ui) {
+      // 预启动与 runner 共用同一 180 秒测试启动窗口，不能消耗已完成的账本初始化预算。
+      startPhase(run, { stage: 'test', coverage: selectedCoverage(selected), log: testLog, scenario: selected.scenario })
+      await launchApp(device.udid, run, 'app', path.join(run, 'ui-launch.log'))
+    }
+    const testCommand = ui ? command : (program, args, options) =>
+      tracked(run, 'test', selectedCoverage(selected), program, args, options)
     let testFailure
     try {
-      await tracked(
-        run,
-        'test',
-        selectedCoverage(selected),
+      await testCommand(
         'xcodebuild',
         [
           'test-without-building',
@@ -683,6 +702,10 @@ async function runPartial(session, selected, toolchain, requested) {
       ])
     ]
     deadline?.remaining()
+    if (measurement) {
+      result.timings = finishPhases(run)
+      result.measurementSeal = finishPartialMeasurement(root, run, selected, result)
+    }
     result.status = 'passed'
     console.log(`局部验证通过（${selected.cases.length} 项，不能替代完整验收）；保留本轮模拟器供下一次调试。`)
   } catch (error) {
@@ -794,7 +817,7 @@ async function main(args) {
       [
         ...nativeCases.map((x) => `--case NativeTests/NativeSqliteTests/${x}`),
         ...uiCases.map((x) => `--case DictionaryUITests/DictionaryTouchTests/${x}`),
-        ...[...scenarios, ...Object.keys(uiScenarios), ...recoveryScenarios,...capacityScenarios,'ios-review'].map((x) => `--scenario ${x}`),
+        ...[...scenarios, ...Object.keys(uiScenarios), ...recoveryScenarios,...capacityScenarios,keyboardReadyScenario,incomeNoteScenario,incomeNoteAfterSaveScenario,'ios-review'].map((x) => `--scenario ${x}`),
         ...checkNames.map((x) => `check --check ${x}`)
       ].join('\n')
     )
@@ -1016,6 +1039,7 @@ try {
     deadline = createDeadline(budget)
     invocation = {
       scope: 'invocation',
+      ownerPid: process.pid,
       mode: args.slice(0, mode === 'debug' ? 2 : 1).join(' ') || 'common',
       phase: 'preflight',
       startedAt: Date.now(),
