@@ -750,6 +750,66 @@ test('CI 工作流 PR 自动、通用门禁始终对账，手动结果隔离且�
   )
 })
 
+test('远端规划、执行与对账先准备同一锁定解析器，审计各触发入口仍不安装依赖', t => {
+  const p = fixture(t)
+  const workflow = fs.readFileSync(path.join(repository, '.github/workflows/offline-ios.yml'), 'utf8')
+  const planning = workflow.slice(workflow.indexOf('\n  plan:'), workflow.indexOf('\n  checks:'))
+  const execution = workflow.slice(workflow.indexOf('\n  checks:'), workflow.indexOf('\n  local_evidence:'))
+  const result = workflow.slice(workflow.indexOf('\n  result:'))
+  assert.match(planning, /if: steps\.request\.outputs\.profile != 'dependency-audit'\n        run: npm --prefix app ci --ignore-scripts/)
+  assert.match(execution, /if: needs\.plan\.outputs\.profile != 'dependency-audit'\n        run: npm --prefix app ci --ignore-scripts/)
+  assert.match(result, /if: needs\.plan\.result == 'success' && needs\.plan\.outputs\.profile != 'dependency-audit'\n        run: npm --prefix app ci --ignore-scripts/)
+  assert.ok(planning.indexOf('npm --prefix app ci --ignore-scripts') < planning.indexOf('npm run ci:ios-app -- prepare'))
+  assert.ok(result.indexOf('npm --prefix app ci --ignore-scripts') < result.indexOf('npm run ci:ios-app -- result'))
+  const request = planning.match(/node --input-type=module <<'NODE'\n([\s\S]*?)\n          NODE/)?.[1]
+  assert.ok(request)
+  p.write('scripts/lib/ios-ci.mjs', fs.readFileSync(path.join(repository, 'scripts/lib/ios-ci.mjs'), 'utf8'))
+  const sha = 'a'.repeat(40)
+  for (const [name, event, profile] of [
+    ['pull_request', { pull_request: { base: { sha }, head: { sha } } }, 'pull-request'],
+    ['schedule', {}, 'dependency-audit'],
+    ...['scripts', 'common', 'change', 'dependency-audit'].flatMap(profile => [
+      ['workflow_dispatch', { inputs: { verification: profile } }, profile],
+      ['push', { ref: `refs/tags/ios-ci/${profile}/${profile === 'change' ? sha + '/' : ''}controlled` }, profile]
+    ])
+  ]) {
+    const input = p.write('event.json', event), output = p.write('output.txt', '')
+    const actual = spawnSync(process.execPath, ['--input-type=module', '-e', request], {
+      cwd: p.root, encoding: 'utf8', timeout: 10000,
+      env: { ...process.env, GITHUB_EVENT_NAME: name, GITHUB_EVENT_PATH: input, GITHUB_OUTPUT: output }
+    })
+    assert.equal(actual.status, 0, actual.stderr)
+    assert.equal(fs.readFileSync(output, 'utf8'), `profile=${profile}\n`, name)
+  }
+})
+
+test('干净检出的 AST 计划在安装解析器后必须重新生成，准备后跨进程对账一致', t => {
+  const p = processFixture(t)
+  p.commit()
+  p.write('app/src/App.vue', '<template>controlled</template>')
+  const parserLink = path.join(p.root, 'app/node_modules/typescript')
+  fs.unlinkSync(parserLink) // Only this fixture's owned link; never alter the real App dependencies.
+  const invoke = code => {
+    const actual = spawnSync(process.execPath, ['--input-type=module', '-e',
+      `import fs from 'node:fs';import {createPlan,assertPlan} from './scripts/lib/ios-ci-plan.mjs';${code}`], {
+      cwd: p.root, encoding: 'utf8', timeout: 30000
+    })
+    assert.equal(actual.status, 0, actual.stderr)
+    return JSON.parse(actual.stdout)
+  }
+  const generate = `const plan=createPlan(process.cwd(),'pull-request',{base:${JSON.stringify(p.base)}});console.log(JSON.stringify(plan))`
+  const missing = invoke(generate)
+  assert.ok(Object.keys(missing.measurementScopes).length > 0)
+  fs.symlinkSync(fs.realpathSync(path.join(repository, 'app/node_modules/typescript')), parserLink, 'dir')
+  const prepared = invoke(generate)
+  assert.notDeepEqual(missing.measurementScopes, prepared.measurementScopes, '复现规划未准备解析器、执行时才安装导致的实际摘要差异')
+  p.write('.local/plan.json', prepared)
+  assert.equal(invoke("console.log(JSON.stringify(assertPlan(process.cwd(),JSON.parse(fs.readFileSync('.local/plan.json'))).id))"), prepared.id)
+  assert.equal(invoke("console.log(JSON.stringify(assertPlan(process.cwd(),JSON.parse(fs.readFileSync('.local/plan.json'))).id))"), prepared.id, '独立执行与汇总进程均保持同一计划')
+  p.write('.local/plan.json', missing)
+  assert.match(invoke("try{assertPlan(process.cwd(),JSON.parse(fs.readFileSync('.local/plan.json')));throw Error('unexpected pass')}catch(error){console.log(JSON.stringify(error.message))}"), /失效/, '保持旧计划拒绝规则')
+})
+
 test('CI 命令超时终止子进程并保留失败，不能被空输出记为通过', async (t) => {
   const p = fixture(t),
     log = path.join(p.root, 'timed.log'),
