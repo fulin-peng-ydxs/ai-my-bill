@@ -1321,8 +1321,9 @@ test('CI 迟到启动轨迹不能复活已关闭登记', t => {
 
 test('CI 诊断撤销信号通过真实命令入口清理子进程，预先撤销不启动命令', async t => {
   const p=fixture(t),controller=new AbortController(),ready=path.join(p.root,'ready.pid')
+  // 本例验证正常取消，不把 Darwin 的 Python/libproc 冷启动预算误缩为 100ms。
   const pending=runCommand(p.root,process.execPath,['-e',`require('node:fs').writeFileSync(${JSON.stringify(ready)},String(process.pid));setInterval(()=>{},1000)`],
-    path.join(p.root,'abort.log'),10000,{cleanupGraceMs:100,signal:controller.signal})
+    path.join(p.root,'abort.log'),10000,{signal:controller.signal})
   const rejected=assert.rejects(pending,/取消/)
   await waitForProcessState(()=>fs.existsSync(ready))
   const pid=Number(fs.readFileSync(ready));controller.abort();await rejected
@@ -1330,6 +1331,55 @@ test('CI 诊断撤销信号通过真实命令入口清理子进程，预先撤�
   const log=path.join(p.root,'not-started.log')
   await assert.rejects(runCommand(p.root,process.execPath,['-e','process.exit(0)'],log,1000,{signal:controller.signal}),/启动前已取消/)
   assert.equal(fs.existsSync(log),false)
+})
+
+test('CI 取消的慢快照在正式预算内完成，短宽限超时仍保留取消主因和清理失败', async t => {
+  const p=fixture(t),original=process.env.PATH,tool=process.platform==='darwin'?'python3':'ps'
+  const executable=execFileSync('which',[tool],{encoding:'utf8'}).trim()
+  const snapshot=path.join(p.root,'snapshot-started')
+  const shim=p.write('bin/'+tool,`#!${process.execPath}
+const fs=require('node:fs'),{spawnSync}=require('node:child_process'),args=process.argv.slice(2);
+if(args.includes('--process-tree')||args.includes('-axo')){
+  fs.writeFileSync(${JSON.stringify(snapshot)},'started');
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,200);
+}
+const result=spawnSync(${JSON.stringify(executable)},args,{stdio:'inherit'});process.exit(result.status??1);
+`)
+  fs.chmodSync(shim,0o755)
+  process.env.PATH=path.join(p.root,'bin')+path.delimiter+original
+  try {
+    for (const shortened of [false,true]) {
+      const label=shortened?'short':'production',controller=new AbortController(),ready=path.join(p.root,label+'.pid')
+      fs.rmSync(snapshot,{force:true})
+      const pending=runCommand(p.root,process.execPath,['-e',`require('node:fs').writeFileSync(${JSON.stringify(ready)},String(process.pid));setInterval(()=>{},1000)`],
+        path.join(p.root,label+'.log'),10000,{signal:controller.signal,...(shortened?{cleanupGraceMs:100}:{})})
+      const rejected=assert.rejects(pending,error=>{
+        if(shortened){
+          assert.ok(error instanceof AggregateError)
+          assert.equal(error.code,'IOS_PROCESS_CLEANUP_FAILED')
+          assert.match(error.errors[0].message,/取消/)
+          assert.match(error.errors[1].message,/无法读取受管进程树/)
+          assert.equal(error.errors[1].cause.code,'ETIMEDOUT')
+          assert.equal(error.errors[1].cause.path,tool)
+        }else{
+          assert.match(error.message,/取消/)
+          assert.ok(!(error instanceof AggregateError),'正式预算内的慢快照必须完成清理')
+        }
+        return true
+      })
+      try {
+        await waitForProcessState(()=>fs.existsSync(ready))
+        const pid=Number(fs.readFileSync(ready))
+        controller.abort();await rejected
+        // 短宽限也可能耗在工具冷启动、尚未来得及写标记；其真实 ETIMEDOUT/path 已在上方强断言。
+        if(!shortened)assert.ok(fs.existsSync(snapshot),'必须实际执行慢快照，不能提前取消绕过延迟')
+        await waitForProcessState(()=>!isRunningProcess(pid))
+      }finally{
+        controller.abort();await pending.catch(()=>{})
+        if(fs.existsSync(ready))killOwnedGroup(Number(fs.readFileSync(ready)))
+      }
+    }
+  }finally{process.env.PATH=original}
 })
 
 test('CI 活动进程登记按父子范围隔离，关闭后拒绝续建，错误令牌和链接不能越界', (t) => {
