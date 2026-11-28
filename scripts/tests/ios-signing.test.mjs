@@ -75,24 +75,24 @@ test('T15 实际签名 CLI 消费授权字段并在拒绝时不产出回执，�
   const before=hashPaths(app,['.']),state=path.join(root,'.local/tools/state.json')
   const executable=(name,body)=>{const p=write('.local/tools/'+name,'#!'+process.execPath+'\n'+body);fs.chmodSync(p,0o755)}
   const load=`const fs=require('node:fs'),path=require('node:path'),a=process.argv.slice(2),s=JSON.parse(fs.readFileSync(path.join(__dirname,'state.json')));`
-  executable('codesign',load+`if(a.includes('--verify'))process.exit(0);else if(a.includes('--entitlements')){console.error('controlled diagnostic');console.log(s.entitlements)}else if(a.includes('--extract-certificates'))fs.writeFileSync(a[a.indexOf('--extract-certificates')+1]+'0',Buffer.from(s.certificate,'base64'));else console.error('TeamIdentifier=${candidate.teamId}');`)
+  executable('codesign',load+`if(a.includes('--verify'))process.exit(0);else if(a.includes('--entitlements')){console.error('controlled diagnostic');console.log(s.entitlements)}else if(a.some(x=>x.startsWith('--extract-certificates'))){const option=a.find(x=>x.startsWith('--extract-certificates='));if(!option){console.error('certificate prefix must use =');process.exit(1)}if(s.extractFailure){console.error('controlled certificate extraction failure');process.exit(1)}fs.writeFileSync(option.slice('--extract-certificates='.length)+'0',Buffer.from(s.certificate,'base64'));}else console.error('TeamIdentifier=${candidate.teamId}');`)
   executable('security',load+'console.log(s.profile);')
   executable('plutil',`const fs=require('node:fs'),a=process.argv.slice(2);console.log(JSON.parse(fs.readFileSync(a.at(-1)))[a[a.indexOf('-extract')+1]]);`)
   const preload=write('.local/platform.mjs',"Object.defineProperty(process,'platform',{value:'darwin'});\n")
-  for(const mode of ['valid','wrong-app','wrong-cert','unauthorized']){
+  for(const mode of ['valid','wrong-app','wrong-cert','unauthorized','extract-failure']){
     const value=structuredClone(data)
     if(mode==='wrong-app')value.profileEntitlements['application-identifier']='PREFIX1234.other.app'
     if(mode==='unauthorized')value.signedEntitlements['unauthorized-capability']=true
     const profile={TeamIdentifier:value.profileTeamIds,ApplicationIdentifierPrefix:value.appIdPrefixes,ProvisionedDevices:[deviceId],
       DeveloperCertificates:[certificate],Entitlements:value.profileEntitlements,ExpirationDate:new Date('2030-01-01T00:00:00Z')}
-    write('.local/tools/state.json',JSON.stringify({profile:plist(profile),entitlements:plist(value.signedEntitlements),certificate:(mode==='wrong-cert'?Buffer.from('unauthorized-signer'):certificate).toString('base64')}))
+    write('.local/tools/state.json',JSON.stringify({extractFailure:mode==='extract-failure',profile:plist(profile),entitlements:plist(value.signedEntitlements),certificate:(mode==='wrong-cert'?Buffer.from('unauthorized-signer'):certificate).toString('base64')}))
     const output=path.join(root,'.local/'+mode+'.json')
     const result=spawnSync(process.execPath,['--import',preload,path.join(repository,'scripts/ios-signing-check.mjs'),app,file,output],
       {cwd:root,env:{...process.env,PATH:path.dirname(state)+path.delimiter+process.env.PATH},encoding:'utf8',timeout:15000})
     assert.equal(result.status,mode==='valid'?0:1,result.stderr)
     assert.equal(fs.existsSync(output),mode==='valid')
     if(mode==='valid')assert.deepEqual(JSON.parse(fs.readFileSync(output)).authorization,data)
-    else assert.match(result.stderr,/签名授权不匹配/)
+    else assert.match(result.stderr,mode==='extract-failure'?/签名证书提取失败：.*controlled certificate extraction failure/:/签名授权不匹配/)
     assert.ok(!fs.readdirSync(path.join(root,'.local/ios/tmp/ai-agent')).some(name=>name.startsWith('signing-check-')))
     assert.equal(hashPaths(app,['.']),before)
   }

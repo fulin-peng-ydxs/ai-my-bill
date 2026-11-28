@@ -28,6 +28,13 @@ test('拒绝短采样、旧制品、错误数据、Debug、错误设备和仅主
     const p = fixture(); alter(p); assert.throws(() => capacityReport(p.receipt,p.observation,p.capture))
   }
 })
+test('T17 按已确认的实际 iOS 27.2.1 验收，旧系统报告不能替代当前设备',() => {
+  const p = fixture()
+  assert.equal(p.receipt.iosVersion,'27.2.1')
+  assert.equal(capacityReport(p.receipt,p.observation,p.capture).status,'passed')
+  for (const iosVersion of ['27.0.1','27.2','27.2.2',undefined])
+    assert.throws(() => capacityReport({...p.receipt,iosVersion},p.observation,p.capture),/设备、制品、数据或计时范围不一致/)
+})
 test('1 万条超标失败，10 万条仅耗时超标可观测，正确性和崩溃仍拒绝',() => {
   const p = fixture(); p.capture.samples.list.fill(2000)
   p.capture.spans.list = Array(30).fill({ start:0,end:2000 })

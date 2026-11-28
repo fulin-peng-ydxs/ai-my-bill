@@ -2,7 +2,7 @@ import { scaleAppId,scaleMetrics } from '../lib/ios-capacity.mjs'
 export function capacityEvidenceFixture() {
   const receipt = { runId:'00000000-0000-4000-8000-000000000001',sourceHash:'a'.repeat(64),artifactHash:'b'.repeat(64),
     commit:'c'.repeat(40),mode:'device',appId:scaleAppId,configuration:'Release',debugger:false,workingTree:false,
-    deviceModel:'iPhone 14 Pro Max',iosVersion:'27.0.1',deviceId:'00008120-0000000000000000',teamId:'EXAMPLE123',
+    deviceModel:'iPhone 14 Pro Max',iosVersion:'27.2.1',deviceId:'00008120-0000000000000000',teamId:'EXAMPLE123',
     xcodeVersion:'27.0',sqliteVersion:'3',pluginVersion:'8.1.1',appVersion:'1.0',buildVersion:'1' }
   const samples = Object.fromEntries(scaleMetrics.filter(x => !['coldStart','filter','backup','restore'].includes(x)).map(key => ['sqlite.'+key,Array(30).fill(1)]))
   samples['files.backup'] = Array(5).fill(1); samples['files.restore'] = Array(5).fill(1)
