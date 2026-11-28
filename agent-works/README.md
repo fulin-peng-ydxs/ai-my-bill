@@ -22,7 +22,6 @@
 | 资料 | 保存内容 |
 | --- | --- |
 | [初始开发资料](initial-development/README.md) | 历史需求、闭环、原型及验证原文 |
-| [日志专项归档](deployment/logging-management/README.md) | 原归档的实施与安全证据，保持原文字节；不再提供服务器运行入口 |
-| [退役前源码与文档基线](https://github.com/fulin-peng-ydxs/ai-my-bill/tree/d152ea615d3c5e25df6dfbd250b342ef4ab790ed/) | 旧 Web、Java/PG、OpenAPI、部署案例和归档相对链接的完整上下文；按此固定版本追溯，勿恢复当前服务 |
+| [退役前源码与文档基线](https://github.com/fulin-peng-ydxs/ai-my-bill/tree/d152ea615d3c5e25df6dfbd250b342ef4ab790ed/) | 旧 Web、Java/PG、OpenAPI、部署案例、日志治理记录和归档相对链接的完整上下文；按此固定版本追溯，勿恢复当前服务 |
 
 原技术指引中的历史绝对路径及归档原文中的退役相对路径保持不变。本仓库的退役路径从上述固定基线定位；外部 stock 项目等绝对路径按计划列明的来源解释，不能用本仓库同名文件替代。不为修链接改写原始指引或历史证据。凭据、证书私钥、真实账本及外部实例均不随源码退役删除。

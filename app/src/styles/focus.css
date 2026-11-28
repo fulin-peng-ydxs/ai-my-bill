@@ -17,11 +17,11 @@ select:focus {
 }
 
 /* 搜索、日期把焦点画在可见外层，内部输入不重复强调。 */
-:is(.global-search, .admin-search, .date-time-control):focus-within {
+:is(.global-search, .date-time-control):focus-within {
   outline: 0;
   box-shadow: var(--focus-line);
 }
-:is(.global-search, .admin-search, .date-time-control) input:focus-visible {
+:is(.global-search, .date-time-control) input:focus-visible {
   outline: 0;
   box-shadow: none;
 }
@@ -43,8 +43,7 @@ select:focus {
 .dropdown-search-header input:focus { outline: 0; box-shadow: var(--focus-line); }
 
 /* 正文不是一整块动作；保留键盘滚动入口，反馈由内部操作控件承载。 */
-.page-scroll-region:focus,
-.data-table-scroll:focus { outline: none; }
+.page-scroll-region:focus { outline: none; }
 
 /* 最后按实际输入方式抑制动作轮廓，不抑制编辑和选择入口的中性底线。 */
 :is(input, textarea, select, button, a, summary, [role="button"]) {
