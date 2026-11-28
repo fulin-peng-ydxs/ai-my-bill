@@ -9,7 +9,7 @@
 | [环境配置](architecture/environment-configuration.md) | 工具链、测试配置、私密材料与证据位置 |
 | [开发验证规范](testing/guide.md) | 选测、CI、失败锁、模拟器与真机边界 |
 | [前置开发技术指引](offline-ios-app/pre-development-technical-guide.md) | 原样保存的改造评估；决定和实际状态以开发计划为准 |
-| [离线 App 开发计划](offline-ios-app/plan.md) | 已确认范围、17 项任务、验证及待交付边界 |
+| [离线 App 开发计划](offline-ios-app/plan.md) | 已确认范围、17 项任务、验证、交付结果及后续未验证范围 |
 
 ## 技术架构
 
