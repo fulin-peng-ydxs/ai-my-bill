@@ -1230,10 +1230,14 @@ test('CI 数字进程树按平台选择提供器，超时或残缺拒绝，其�
   }
 })
 
-test('CI Darwin 原生进程树覆盖退出竞争、权限错误与截断上限，不读取命令参数', () => {
+test('CI Darwin 原生进程树覆盖退出竞争、权限错误与截断上限，不读取命令参数或写入生产字节码', t => {
+  const cache = fs.mkdtempSync(path.join(os.tmpdir(), 'ios-diagnostics-cache-'))
+  t.after(() => fs.rmSync(cache, { recursive: true, force: true }))
   const source=`
-import ctypes, errno, importlib.util
+import ctypes, errno, importlib.util, sys
 from unittest.mock import patch
+assert sys.dont_write_bytecode, 'production imports must not mutate measured inputs'
+sys.pycache_prefix=${JSON.stringify(cache)}
 spec=importlib.util.spec_from_file_location('diagnostics',${JSON.stringify(path.join(repository,'scripts/lib/ios-host-diagnostics.py'))})
 d=importlib.util.module_from_spec(spec);spec.loader.exec_module(d)
 class Fn:
@@ -1265,9 +1269,10 @@ for mode in ['good','denied','truncated','oversize','invalid']:
    else:raise AssertionError(mode+' must fail')
 print('NATIVE_PROCESS_TREE_BOUNDARIES_VERIFIED')
 `
-  const result=spawnSync('python3',['-I','-c',source],{encoding:'utf8',timeout:5000})
+  const result=spawnSync('python3',['-I','-B','-c',source],{encoding:'utf8',timeout:5000})
   assert.equal(result.status,0,result.stderr)
   assert.match(result.stdout,/NATIVE_PROCESS_TREE_BOUNDARIES_VERIFIED/)
+  assert.deepEqual(fs.readdirSync(cache), [], 'importing the real tool must not produce bytecode')
 })
 
 test('CI 放行帧不等待父流 EOF，半帧和非法帧拒绝，启动轨迹不污染命令输出', {timeout:12000}, async t => {
