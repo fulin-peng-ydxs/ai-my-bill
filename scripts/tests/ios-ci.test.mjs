@@ -55,6 +55,56 @@ function killOwnedGroup(pid) {
   try { process.kill(-pid, 'SIGKILL') } catch (e) { if (e.code !== 'ESRCH') throw e }
 }
 
+/** 取消验收从 abort 前计时，命令终态和 PID 退出共用截止点，不能等执行超时兜底。 */
+async function abortAndWait(controller, outcome, pid) {
+  const started=performance.now(), budget=3500
+  const expired=()=>Object.assign(new Error('取消后 3500 毫秒内未完成命令终态和进程退出'),{code:'TEST_CANCEL_DEADLINE'})
+  const checkDeadline=()=>{if(performance.now()-started>=budget)throw expired()}
+  let timer
+  try {
+    const deadline=new Promise((_,reject)=>{timer=setTimeout(()=>reject(expired()),budget)})
+    controller.abort()
+    const result=await Promise.race([outcome,deadline])
+    // abort 的同步监听可能阻塞事件循环；迟到结果不能抢在定时回调前冒充按时完成。
+    checkDeadline()
+    assert.equal(result.status,'rejected','取消必须拒绝命令，不能接纳成功终态')
+    while(isRunningProcess(pid)) {
+      checkDeadline()
+      await new Promise(resolve=>setTimeout(resolve,20))
+    }
+    checkDeadline()
+    return result.error
+  }finally{clearTimeout(timer)}
+}
+
+/** 正反例共用真实命令及取消判据；故障仅作用于本次 signal，收尾只杀自己的独立组。 */
+async function cancelReadyCommand(p,label,{cleanupGraceMs,ignoreAbort=false}={}) {
+  const controller=new AbortController(),ready=path.join(p.root,label+'.pid')
+  let ignored=0,pid
+  if(ignoreAbort) {
+    const subscribe=controller.signal.addEventListener
+    controller.signal.addEventListener=function(type,...args) {
+      if(type==='abort'){ignored++;return}
+      return subscribe.call(this,type,...args)
+    }
+  }
+  const outcome=runCommand(p.root,process.execPath,['-e',`require('node:fs').writeFileSync(${JSON.stringify(ready)},String(process.pid));setInterval(()=>{},1000)`],
+    path.join(p.root,label+'.log'),10000,{signal:controller.signal,...(cleanupGraceMs===undefined?{}:{cleanupGraceMs})})
+    .then(value=>({status:'fulfilled',value}),error=>({status:'rejected',error}))
+  try {
+    await waitForProcessState(()=>fs.existsSync(ready))
+    pid=Number(fs.readFileSync(ready))
+    if(ignoreAbort)assert.equal(ignored,1,'必须实际屏蔽 runCommand 的取消监听')
+    return {error:await abortAndWait(controller,outcome,pid),controller}
+  }finally{
+    controller.abort()
+    // 截止失败后先结束受控子进程，再等待命令收尾，避免又等到 10 秒执行超时。
+    if(pid===undefined && fs.existsSync(ready))pid=Number(fs.readFileSync(ready))
+    killOwnedGroup(pid)
+    await outcome
+  }
+}
+
 test('CI 必需阶段逐项缺失、错误阶段、原始日志缺失及无构建成功信号均拒绝，合法模式不误拦', () => {
   for (const mode of ['common', 'ios-build', 'ios-smoke', 'ios-touch']) {
     const phases = requiredModePhases(mode).map(([stage, coverage, basename], i) => ({
@@ -1320,14 +1370,11 @@ test('CI 迟到启动轨迹不能复活已关闭登记', t => {
 })
 
 test('CI 诊断撤销信号通过真实命令入口清理子进程，预先撤销不启动命令', async t => {
-  const p=fixture(t),controller=new AbortController(),ready=path.join(p.root,'ready.pid')
+  const p=fixture(t)
   // 本例验证正常取消，不把 Darwin 的 Python/libproc 冷启动预算误缩为 100ms。
-  const pending=runCommand(p.root,process.execPath,['-e',`require('node:fs').writeFileSync(${JSON.stringify(ready)},String(process.pid));setInterval(()=>{},1000)`],
-    path.join(p.root,'abort.log'),10000,{signal:controller.signal})
-  const rejected=assert.rejects(pending,/取消/)
-  await waitForProcessState(()=>fs.existsSync(ready))
-  const pid=Number(fs.readFileSync(ready));controller.abort();await rejected
-  await waitForProcessState(()=>!isRunningProcess(pid))
+  const {error,controller}=await cancelReadyCommand(p,'abort')
+  assert.match(error.message,/取消/)
+  assert.ok(!(error instanceof AggregateError),'正常取消不能带清理失败')
   const log=path.join(p.root,'not-started.log')
   await assert.rejects(runCommand(p.root,process.execPath,['-e','process.exit(0)'],log,1000,{signal:controller.signal}),/启动前已取消/)
   assert.equal(fs.existsSync(log),false)
@@ -1349,38 +1396,33 @@ const result=spawnSync(${JSON.stringify(executable)},args,{stdio:'inherit'});pro
   process.env.PATH=path.join(p.root,'bin')+path.delimiter+original
   try {
     for (const shortened of [false,true]) {
-      const label=shortened?'short':'production',controller=new AbortController(),ready=path.join(p.root,label+'.pid')
+      const label=shortened?'short':'production'
       fs.rmSync(snapshot,{force:true})
-      const pending=runCommand(p.root,process.execPath,['-e',`require('node:fs').writeFileSync(${JSON.stringify(ready)},String(process.pid));setInterval(()=>{},1000)`],
-        path.join(p.root,label+'.log'),10000,{signal:controller.signal,...(shortened?{cleanupGraceMs:100}:{})})
-      const rejected=assert.rejects(pending,error=>{
-        if(shortened){
-          assert.ok(error instanceof AggregateError)
-          assert.equal(error.code,'IOS_PROCESS_CLEANUP_FAILED')
-          assert.match(error.errors[0].message,/取消/)
-          assert.match(error.errors[1].message,/无法读取受管进程树/)
-          assert.equal(error.errors[1].cause.code,'ETIMEDOUT')
-          assert.equal(error.errors[1].cause.path,tool)
-        }else{
-          assert.match(error.message,/取消/)
-          assert.ok(!(error instanceof AggregateError),'正式预算内的慢快照必须完成清理')
-        }
-        return true
-      })
-      try {
-        await waitForProcessState(()=>fs.existsSync(ready))
-        const pid=Number(fs.readFileSync(ready))
-        controller.abort();await rejected
-        // 短宽限也可能耗在工具冷启动、尚未来得及写标记；其真实 ETIMEDOUT/path 已在上方强断言。
-        if(!shortened)assert.ok(fs.existsSync(snapshot),'必须实际执行慢快照，不能提前取消绕过延迟')
-        await waitForProcessState(()=>!isRunningProcess(pid))
-      }finally{
-        controller.abort();await pending.catch(()=>{})
-        if(fs.existsSync(ready))killOwnedGroup(Number(fs.readFileSync(ready)))
+      const {error}=await cancelReadyCommand(p,label,shortened?{cleanupGraceMs:100}:{})
+      if(shortened){
+        assert.ok(error instanceof AggregateError)
+        assert.equal(error.code,'IOS_PROCESS_CLEANUP_FAILED')
+        assert.match(error.errors[0].message,/取消/)
+        assert.match(error.errors[1].message,/无法读取受管进程树/)
+        assert.equal(error.errors[1].cause.code,'ETIMEDOUT')
+        assert.equal(error.errors[1].cause.path,tool)
+      }else{
+        assert.match(error.message,/取消/)
+        assert.ok(!(error instanceof AggregateError),'正式预算内的慢快照必须完成清理')
       }
+      // 短宽限也可能耗在工具冷启动、尚未来得及写标记；其真实 ETIMEDOUT/path 已在上方强断言。
+      if(!shortened)assert.ok(fs.existsSync(snapshot),'必须实际执行慢快照，不能提前取消绕过延迟')
     }
   }finally{process.env.PATH=original}
 })
+
+for(const shortened of [false,true])
+  test('CI 取消监听失效必须被独立截止拒绝：'+(shortened?'短宽限':'正常取消'),async t=>{
+    const p=fixture(t),started=performance.now()
+    await assert.rejects(cancelReadyCommand(p,'ignored',{ignoreAbort:true,...(shortened?{cleanupGraceMs:100}:{})}),
+      {code:'TEST_CANCEL_DEADLINE'})
+    assert.ok(performance.now()-started<10000,'截止失败及受控进程收尾不能等到 10 秒执行超时')
+  })
 
 test('CI 活动进程登记按父子范围隔离，关闭后拒绝续建，错误令牌和链接不能越界', (t) => {
   const p = fixture(t), root = commandScope(p.root, {}), other = commandScope(p.root, {})
