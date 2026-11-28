@@ -10,7 +10,7 @@
 
 - 当前结论：
 
-  T1—T12、T14/T15 的约定开发出口已完成，T13 按 D04 跳过。自动本地核验、签名回执与远端漏验拦截、每日锁依赖审计、登记文档生成及既有 hook 兼容均已实现并核验，实际范围与证据见 V15-T3；默认主线为 codex/offline-ios-app，main 保留，分支规则已要求 CI common result 与 Local evidence result。按变更本地模拟器、远端常规、最终集中验收的边界保持，stock 服务和原页面布局交互保持。T16 退役及补充清理已完成本地验证，原基线经 PR #7、选测修复经 PR #8 集成；本次清理仍由 PR 双门禁控制集成；T17 未开始；指定真机骨架的免费签名安装和断网冷启动通过，D07 真机容量、辅助功能及最终业务/签名交付仍待 T17。各任务当前能力见第 3 章，实际证据及必要历史见第 4 章；D01—D07 决定仍见 [S1](#s1决策事项与推进边界)。
+  T1—T12、T14/T15 的约定开发出口已完成，T13 按 D04 跳过。自动本地核验、签名回执与远端漏验拦截、每日锁依赖审计、登记文档生成及既有 hook 兼容均已实现并核验，实际范围与证据见 V15-T3；默认主线为 codex/offline-ios-app，main 保留，分支规则已要求 CI common result 与 Local evidence result。按变更本地模拟器、远端常规、最终集中验收的边界保持，stock 服务和原页面布局交互保持。T16 退役及补充清理已完成本地验证，原基线经 PR #7、选测修复经 PR #8 集成；补充清理经 PR #9 双门禁通过并合并为 8dee250；T17 未开始；指定真机骨架的免费签名安装和断网冷启动通过，D07 真机容量、辅助功能及最终业务/签名交付仍待 T17。各任务当前能力见第 3 章，实际证据及必要历史见第 4 章；D01—D07 决定仍见 [S1](#s1决策事项与推进边界)。
 
   已有准备基线为 `6419b93961274002543661db6fd3a7df307aebd3`：已推送 origin/main，该提交是离线分支的历史准备起点，后续实现以本分支提交为准；Web 本地资料已隔离到 .local/web，后端相对工作目录资料在 server/.local/web，iOS 资料预留 .local/ios。Web 前端、后端与 PostgreSQL 已按用户要求停止，后续不得为执行计划自动恢复这些日常服务。原指引 SHA-256 为 `900490091f3fd445fd4eb41b6f0dd3747915f41069e54d478445f81d5d931435`，本计划不修改其原文。
 
@@ -1215,7 +1215,7 @@
 
   T5—T12 业务等价、T14/T15 验收；D04 明确不迁移，T13 跳过；T17 仍须在清理后对最终候选验证。
 
-- 任务状态：🟢 已完成实现与本地收尾验证；退役基线经 PR #7、选测修复经 PR #8 集成，当前清理按 PR 双门禁集成，见 V16-T4；T17 未开始
+- 任务状态：🟢 已完成实现与本地收尾验证；退役基线经 PR #7、选测修复经 PR #8 集成，补充清理经 PR #9 双门禁通过并合并，见 V16-T4；T17 未开始
 
 - 目标与现状依据：
 
@@ -1264,7 +1264,7 @@
 
   验证能力：按实际执行依赖及 Swift 方法选择专项，统一校验原始封存、真实触摸/SQL 回读、归属、基线、外层终态及相关失败；局部证据可逐目标汇总，原生 SQLite 仍需正式整项。AST 类型保护、兼容委托、Capacity 权威登记与不可变证据规则的唯一正文见[统一验证规范](../testing/guide.md#统一套件按需-ci-与最终验收)，不在计划重复定义。共享键盘窗口交接、原 3 秒精确回读、字典搜索完成原生编辑及 Darwin 数字进程快照已接入当前执行链；空值不可读不能视为清空，超时预算不放宽。
 
-  差异与缺口：退役基线 e1d0d93 的原生正式整项、21 项 SQLite、三处中断恢复及 22 项必需本地门禁已通过，历史证据见 V16；本轮 CSS 与外壳选择器清理另由 V16-T4 局部核验，不能将旧输入结果直接标为当前候选的原生通过。原 50 个 UI 目标因真实公共执行依赖变化失效，本轮已按缺项补验，不刷新固定摘要或改写原报告；历史成功、失败及完整锁保留。底层系统 AX 停顿、历史 ps 超时尚未确证根因，不把局部通过描述为系统问题根除。本轮候选按 PR 双门禁集成，T17 未开始；最终签名、目标真机及 Release 容量仍由 T17 完成。
+  差异与缺口：退役基线 e1d0d93 的原生正式整项、21 项 SQLite、三处中断恢复及 22 项必需本地门禁已通过，历史证据见 V16；本轮 CSS 与外壳选择器清理另由 V16-T4 局部核验，不能将旧输入结果直接标为当前候选的原生通过。原 50 个 UI 目标因真实公共执行依赖变化失效，本轮已按缺项补验，不刷新固定摘要或改写原报告；历史成功、失败及完整锁保留。底层系统 AX 停顿、历史 ps 超时尚未确证根因，不把局部通过描述为系统问题根除。补充清理候选经 PR #9 集成，选测消费守卫的后续回归见 V16-T5；T17 未开始；最终签名、目标真机及 Release 容量仍由 T17 完成。
 
 ### T17：签名安装升级与最终交付
 
@@ -1814,7 +1814,8 @@ T6 阶段工程结果见 [common](../../.local/ios/tmp/ai-agent/native-FyF9lp/)�
 | V16-T1 | 干净工作区按最终 README 安装依赖、构建、运行新常用门禁；检查命令/依赖/引用图及正式包 | 无需 Java/PG/Docker/业务服务器，旧 API、登录、管理员、PWA/SW 和部署入口无运行消费者；当前文档和链接准确 | 通过（退役基线）：[正式 native-sqlite 对账](../../.local/ios/tmp/ai-agent/ios-ci-t16-finish-native3-20261128/ci-result.json)与[原始整项](../../.local/ios/tmp/ai-agent/ios-full-aRvGSJ/result.json)均通过，包含当前 App 289 项、[188 文件覆盖率](../../.local/ios/tmp/ai-agent/native-yK7PFM/coverage/coverage-proof.json)、342 项工具回归、构建/资源检查、[21 项原生 SQLite](../../.local/ios/tmp/ai-agent/native-yK7PFM/test.log)及 snapshot-ready、migration-recorded、upgrade-committed 三处主动中断后的实际恢复。借用原独立模拟器及缓存，结束后暂停，不恢复旧 Web/PG 或操作 stock。后续仅变更 UI 方法及其定向断言，已核对原生专项输入不变；[当前严格复核](../../.local/ios/tmp/ai-agent/t16-local-stalls-gKY4c5/readiness.json)仍接纳本份整项，未重复运行。 [受管启动/关闭](../../.local/ios/tmp/ai-agent/ios-ci-t16-finish-boot2-20261128/ci-result.json)通过。必要失败保留：[工具夹具时间窗](../../.local/ios/tmp/ai-agent/ios-full-c8Dkx2/result.json)、[查询剖析超时](../../.local/ios/tmp/ai-agent/ios-full-fgpUni/result.json)及[剖析定向复验](../../.local/ios/tmp/ai-agent/ios-check-SwHJwI/result.json)，未放宽原预算或倒改终态；完整协议、AST、Capacity、旧构建与恢复证据见[修改前 V16 快照](../../.local/ios/tmp/ai-agent/t16-local-stalls-gKY4c5/before/agent-works/offline-ios-app/plan.md)。383 份原始材料及固定锚点保持，历史失败仍在验证状态中；不将本次 selected-local-checks 冒充 final 或真机交付。 |
 | V16-T2 | 核对 Git 差异、忽略规则、.local/web 与 server/.local/web 的保留、签名/敏感路径及新 CI 集合 | 只退役授权的受控材料，不删除私密资料或外部实例；原指引字节不变，原业务保持项均有新测试承接 | 通过：受控删除与忽略边界检查、原指引摘要及归档差异核对完成；[保留检查](../../.local/ios/tmp/ai-agent/t16-retirement/preservation-result.json)核对 1847 项旧私密资料，原指引与当时归档未改；本轮按用户要求移除日志治理 3 份文档，其他业务归档保持；[类型迁移比较](../../.local/ios/tmp/ai-agent/t16-retirement/runtime-equivalence.json)证明 13 个消费者的运行代码保持，页面模板/样式基线未改。旧端服务未启动，未操作 stock |
 | V16-T3 | PR 自动常规 CI 及可信本地回执双门禁，核对源 SHA、实际执行与模拟器边界 | 当前提交的 CI common result 与 Local evidence result 均成功后才能合并；远端不启动模拟器 | 通过（退役基线 3257b76）：[常规工作流](https://github.com/fulin-peng-ydxs/ai-my-bill/actions/runs/46063221029)与[可信回执工作流](https://github.com/fulin-peng-ydxs/ai-my-bill/actions/runs/46063221032)均成功，7 项检查通过，PR #7 已合并为 e1d0d93；[PR #7](https://github.com/fulin-peng-ydxs/ai-my-bill/pull/7)的匹配提交、双门禁终态与合并记录为集成事实源，不以本地结果代替远端通过。[初次计划失效](https://github.com/fulin-peng-ydxs/ai-my-bill/actions/runs/46059839191)及[后续常规失败](https://github.com/fulin-peng-ydxs/ai-my-bill/actions/runs/46061382731)保留：已统一规划/执行/汇总的锁定解析器准备，审计仍不安装依赖；容量工具回归补齐平台替身及 finally 恢复，不跳过 Linux；十万条夹具组成单测采用有界页缓存，保留 SQL、数据、约束和原 30 秒预算。5 项计划回归、平台切换下的 2 项归档正反例及 3 项容量夹具单测通过；未改生产执行器、共享夹具或固定摘要，不启动模拟器或重复完整验收。 |
-| V16-T4 | 补充旧样式与日志部署资料清理；差异选测、局部回归及三例真实交互 | 仅删除无消费者规则，保留有效声明、媒体条件、顺序与优先级；键盘改动仍验证三例；保护原指引、业务归档、私密资料及原报告/固定摘要/失败锁，保留 PR 双门禁 | 本地通过：[10 项设计/外壳回归](../../.local/ios/tmp/ai-agent/t16-retirement-cleanup-fzazv47h/app-tests.json)、2 项退役回归、类型检查及 Vite 构建通过；[资料/CSS 核对](../../.local/ios/tmp/ai-agent/t16-retirement-cleanup-fzazv47h/cleanup-checks.json)保留。[172 项工具回归](../../.local/ios/tmp/ai-agent/t16-retirement-cleanup-fzazv47h/scope-regression.log)、后续 [16 项退役选测及只读准备回归](../../.local/ios/tmp/ai-agent/t16-retirement-cleanup-fzazv47h/scope-readonly-regression.log)及 [Python 无字节码回归](../../.local/ios/tmp/ai-agent/t16-retirement-cleanup-fzazv47h/scope-bytecode-regression.log)通过，范围有重叠；策略 [PR #8](https://github.com/fulin-peng-ydxs/ai-my-bill/pull/8) 的双门禁及 7 项检查通过并合并。当前清理仅需 ui-ios-interaction：[正式三例及回读](../../.local/ios/tmp/ai-agent/ios-ci-t16-retirement-cleanup-interaction-20261128/ci-result.json)通过，三例 50.988/22.747/20.817 秒，整轮约 207 秒，原预算保持。未重复完整验收。保留必要失败：[原过宽 21 项清单](../../.local/ios/tmp/ai-agent/t16-retirement-cleanup-fzazv47h/local-gate.log)与 [PR #8 首轮](https://github.com/fulin-peng-ydxs/ai-my-bill/actions/runs/46121036079) 的字节码输入漂移；不把原报告改称通过。[本 PR 首轮只读检查](https://github.com/fulin-peng-ydxs/ai-my-bill/actions/runs/46122594976)因未准备解析器而保守报缺项，可信门禁同期通过；现只补齐只读作业的锁定解析器准备，不放宽缺项校验、不重跑三例。当前清理的集成事实以本 PR 实际双门禁和合并记录为准，未进入 T17。 |
+| V16-T4 | 补充旧样式与日志部署资料清理；差异选测、局部回归及三例真实交互 | 仅删除无消费者规则，保留有效声明、媒体条件、顺序与优先级；键盘改动仍验证三例；保护原指引、业务归档、私密资料及原报告/固定摘要/失败锁，保留 PR 双门禁 | 通过（本地及 PR #9 集成）：[10 项设计/外壳回归](../../.local/ios/tmp/ai-agent/t16-retirement-cleanup-fzazv47h/app-tests.json)、2 项退役回归、类型检查及 Vite 构建通过；[资料/CSS 核对](../../.local/ios/tmp/ai-agent/t16-retirement-cleanup-fzazv47h/cleanup-checks.json)保留。[172 项工具回归](../../.local/ios/tmp/ai-agent/t16-retirement-cleanup-fzazv47h/scope-regression.log)、后续 [16 项退役选测及只读准备回归](../../.local/ios/tmp/ai-agent/t16-retirement-cleanup-fzazv47h/scope-readonly-regression.log)及 [Python 无字节码回归](../../.local/ios/tmp/ai-agent/t16-retirement-cleanup-fzazv47h/scope-bytecode-regression.log)通过，范围有重叠；策略 [PR #8](https://github.com/fulin-peng-ydxs/ai-my-bill/pull/8) 的双门禁及 7 项检查通过并合并。当前清理仅需 ui-ios-interaction：[正式三例及回读](../../.local/ios/tmp/ai-agent/ios-ci-t16-retirement-cleanup-interaction-20261128/ci-result.json)通过，三例 50.988/22.747/20.817 秒，整轮约 207 秒，原预算保持。未重复完整验收。保留必要失败：[原过宽 21 项清单](../../.local/ios/tmp/ai-agent/t16-retirement-cleanup-fzazv47h/local-gate.log)与 [PR #8 首轮](https://github.com/fulin-peng-ydxs/ai-my-bill/actions/runs/46121036079) 的字节码输入漂移；不把原报告改称通过。[PR #9 首轮只读检查](https://github.com/fulin-peng-ydxs/ai-my-bill/actions/runs/46122594976)因未准备解析器而保守报缺项，可信门禁同期通过；现只补齐只读作业的锁定解析器准备，不放宽缺项校验、不重跑三例。[PR #9](https://github.com/fulin-peng-ydxs/ai-my-bill/pull/9) 最终 head 为 f6b5494，[常规工作流](https://github.com/fulin-peng-ydxs/ai-my-bill/actions/runs/46123026315)与[可信回执工作流](https://github.com/fulin-peng-ydxs/ai-my-bill/actions/runs/46123025738)均成功；CI common result、Local evidence result 及全部 7 项检查通过，普通合并提交为 8dee250。未进入 T17。 |
+| V16-T5 | 退役选测的选择器注释、声明 raw 及本地/可信消费回归 | 无法证明语义等价时保留原生与页面专项；普通空白、规则外注释及合法退役保持原缩小范围，失败锁与双门禁不变 | 局部通过：[20 项退役选测回归](../../.local/ios/tmp/ai-agent/t16-style-proof-vvwn8pee/style-regression.log)，包含新增四项回归组，覆盖注释伪类名、raw 选择器、声明 hack/分隔/important、未知上下文及可信基线读取 head blob；[修复前定向复现](../../.local/ios/tmp/ai-agent/t16-style-proof-vvwn8pee/before-fix.log)的 3 项失败保留。仅改验证消费端，不改 App、固定执行摘要或旧报告；未启动模拟器或重复完整验收，T17 未开始。 |
 
 
 #### 业务验证点（真实系统交互）
@@ -1890,7 +1891,7 @@ T6 阶段工程结果见 [common](../../.local/ios/tmp/ai-agent/native-FyF9lp/)�
 | 配置项 / 关联任务 / 项目或服务 / 环境 | 位置 / 键或表单字段 | 当前值 → 目标值或取值来源 | 处理类型 | 人工待办 | 时机、生效及明细 |
 | --- | --- | --- | --- | --- | --- |
 | C8 / [T15](#t15完整-ci-编排与持续覆盖) / 本地与 Actions | config/ios-ci.json、ios-ci/ios-local/ios-evidence、.githooks、两条工作流、仓库变量 IOS_LOCAL_EVIDENCE_SIGNERS 及分支保护 | 默认 codex/offline-ios-app，main 保留；CI common result 与 Local evidence result 均必需、来源 GitHub Actions，要求最新分支；本地 hook/签名回执、每日 UTC 21:17 锁依赖审计及生成清单已启用 | 已部署并通过正反例；实际证据见 V15-T3，原始报告及失败锁不改写 | 本机无需追加操作；其他开发机首次按验证规范 setup，私钥仅钥匙串，公钥由有权限者登记，不上传账本/证书 | PR 日常按变更；本地有效证据复用；最终候选及真机仍按 T17 集中执行 |
-| C9 / [T16](#t16旧-web-服务端与部署体系退役) / 根脚本与旧运行配置 | package.json、旧 HTTP/服务端/PWA/部署配置及对应依赖 | 根命令仅指向 App 检查、构建、原生调试及新 CI；旧 Web/服务端/部署受控材料已退役，本地类型接替 OpenAPI，私密资料与历史证据保留 | 原退役基线已集成；补充清理与最小交互本地通过，PR 双门禁控制集成 | 无需操作旧服务器或删除本地资料 | V16 通过后交 I2/I5 按最终候选复核无旧依赖 |
+| C9 / [T16](#t16旧-web-服务端与部署体系退役) / 根脚本与旧运行配置 | package.json、旧 HTTP/服务端/PWA/部署配置及对应依赖 | 根命令仅指向 App 检查、构建、原生调试及新 CI；旧 Web/服务端/部署受控材料已退役，本地类型接替 OpenAPI，私密资料与历史证据保留 | 退役及补充清理已通过本地验证与 PR #9 双门禁并合并 | 无需操作旧服务器或删除本地资料 | V16 通过后交 I2/I5 按最终候选复核无旧依赖 |
 | C10 / [T2](#t2ios-安装骨架与原生-sqlite-可行性验证)、[T14](#t14ios-交互无障碍与容量复核)、[T15](#t15完整-ci-编排与持续覆盖) / 真机性能环境 | 已有本机 Mac、指定 iPhone 的配对/免费签名及独立模拟器能力；Capacity Release 执行器及报告协议已具备；可选 Actions 自托管 runner/可信触发尚未配置 | 骨架在指定 iPhone 14 Pro Max / iOS 27.0.1 完成签名安装及断网冷启动 → T14 已建立按 S5 的 Release、夹具、采样、指标与报告协议，T15 接入汇总、T17 集中实测；骨架证据不证明 D07 达标 | T14 模拟器观测和 iPhone SDK 编译通过；T15 已接入并通过本机两种规模完整汇总；目标真机实测及交付仍待完成 | 已授权的配对/免费验证不重复申请；必要时由用户处理系统解锁与账号认证，不向聊天或 Git 提供凭据；当前不配置 runner | T14 实现执行器及模拟器观测，T15 编排，T17/I5 集中真机实测与核验 |
 
 ### 发布操作明细
@@ -1943,6 +1944,6 @@ D04 已排除旧 Web 导入，C7 与 V13 不适用。新 App 自身备份仍按 
 
 ### 交付结果与后续
 
-阶段 0—4 约定开发出口通过，V15-T3 保留自动门禁、远端漏验阻断、审计及 hook 兼容的实际证据。T1—T12/T14/T15 完成、T13 跳过、T16 实现与补充清理已通过本地验证，PR 双门禁控制集成，T17 未开始；不进入 T17。最终候选、目标真机与交付缺口仍由对应 V 项记录，原前置指引保持。
+阶段 0—4 约定开发出口通过，V15-T3 保留自动门禁、远端漏验阻断、审计及 hook 兼容的实际证据。T1—T12/T14/T15 完成、T13 跳过、T16 实现与补充清理已通过本地验证，PR #9 双门禁通过并合并为 8dee250，T17 未开始；不进入 T17。最终候选、目标真机与交付缺口仍由对应 V 项记录，原前置指引保持。
 
 后续按已授权的任务出口逐阶段推进，不以文档状态代替验证。保持原页面布局和交互及日常 Web/PG 服务停止；本轮只用独立模拟器，必要真机项按 T17 集中执行；工程检查和模拟器结果不替代后续真机断网/容量/签名交付。提交与推送状态以当前分支 Git 历史及上游为准。

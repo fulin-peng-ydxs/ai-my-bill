@@ -4,7 +4,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { execFileSync } from 'node:child_process'
 import { retiredStyleChanges } from '../lib/ios-retired-styles.mjs'
-import { registry, selectSuites, requiredLocalFromPolicies, changeContents } from '../lib/ios-ci-plan.mjs'
+import { registry, selectSuites, requiredLocalFromPolicies, changeContents, remoteSuite } from '../lib/ios-ci-plan.mjs'
 import { requiredLocalSuites } from '../lib/ios-local-delivery.mjs'
 
 const repository = new URL('../..', import.meta.url).pathname
@@ -79,6 +79,61 @@ test('媒体条件、声明顺序与未知at-rule不能借删除消失；focus�
   const focus = 'app/src/styles/focus.css'; f.files.push(focus)
   f.changes.set(focus, { before: ':is(.global-search, .admin-search, .date-time-control):focus{outline:0}.page-scroll-region:focus,.data-table-scroll:focus{outline:none}', after: ':is(.global-search, .date-time-control):focus{outline:0}.page-scroll-region:focus{outline:none}' })
   assert.ok(retiredStyleChanges(f.root, f.files, f.changes).has(focus))
+})
+
+function assertConservativeSelection(f) {
+  assert.equal(retiredStyleChanges(f.root, f.files, f.changes).size, 0)
+  const r = registry(repository)
+  const local = selectSuites(r, 'change', f.files, { root: f.root, changes: f.changes, execution: 'local' })
+  assert.ok(local.some(suite => suite.name === 'native-sqlite'))
+  assert.ok(local.some(suite => suite.name === 'ui-entry'))
+  const trusted = requiredLocalFromPolicies(r, r, f.files, f.changes, f.root)
+  assert.deepEqual(trusted.map(suite => suite.name), local.filter(suite => !remoteSuite(suite)).map(suite => suite.name))
+}
+
+test('选择器注释中的旧类名不能删除仍生效的规则，规范化 raw 选择器同样保守回退', t => {
+  for (const selector of ['.active/* .admin-page */:hover', '.active/* .admin-page */ .header-action', '.active/* ordinary note */:hover']) {
+    const f = fixture(t)
+    f.changes.set(css, { before: before + selector + '{color:red}', after })
+    assertConservativeSelection(f)
+  }
+  for (const [a, b] of [['.active,.admin-page:{color:red}', '.active{color:red}'],
+    ['.active[data-note=":is(.global-search, .admin-search, .date-time-control)"]{color:red}', '.active[data-note=":is(.global-search, .date-time-control)"]{color:red}']]) {
+    const f = fixture(t)
+    f.changes.set(css, { before: before + a, after: after + b })
+    assertConservativeSelection(f)
+  }
+})
+
+test('声明 raw 中的 hack、分隔注释和重要性写法不能被简化属性值遮蔽', t => {
+  for (const [a, b] of [['*color:red', 'color:red'], ['color:red', '*color:red'],
+    ['color/**/:red', 'color:red'], ['color:red ! important', 'color:red !important']]) {
+    const f = fixture(t)
+    f.changes.set(css, { before: before + '.active{' + a + '}', after: after + '.active{' + b + '}' })
+    assertConservativeSelection(f)
+  }
+})
+
+test('普通声明空白和规则外注释保持合法缩小，当前清理仍只要求三例交互', t => {
+  const f = fixture(t)
+  f.changes.set(css, { before: '/* .admin-page is retired */' + before + '.active { color : red }', after: after + '.active{color:red}' })
+  assert.ok(retiredStyleChanges(f.root, f.files, f.changes).has(css))
+  const r = registry(repository)
+  assert.deepEqual(requiredLocalFromPolicies(r, r, f.files, f.changes, f.root).map(suite => suite.name), ['ui-ios-interaction'])
+})
+
+test('可信基线实际读取 head blob 时也保留注释规则删除及 raw 声明变化的专项', t => {
+  for (const [a, b] of [['.active/* .admin-page */:hover{color:red}', ''], ['.active{*color:red}', '.active{color:red}']]) {
+    const f = fixture(t)
+    f.write(css, before + a); f.git('add', css); f.git('commit', '-qm', 'before')
+    const base = f.git('rev-parse', 'HEAD')
+    for (const [file, change] of f.changes) f.write(file, file === css ? after + b : change.after)
+    f.git('add', '.'); f.git('commit', '-qm', 'candidate'); const head = f.git('rev-parse', 'HEAD')
+    f.git('checkout', '--detach', base)
+    const trusted = requiredLocalSuites(f.root, base, head)
+    assert.ok(trusted.some(suite => suite.name === 'native-sqlite'))
+    assert.ok(trusted.some(suite => suite.name === 'ui-entry'))
+  }
 })
 
 test('无关文档/普通测试和选测消费者自身不启动模拟器，不改变失败锁或原执行测量', t => {
