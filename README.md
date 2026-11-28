@@ -1,6 +1,6 @@
 # 我的账单
 
-仅供 iPhone 安装的离线账单 App，使用 Vue 3 + Capacitor + 原生 SQLite。收支录入、字典、模板、草稿、调整、明细、报表及备份恢复均在本机运行，不需要账号、网站或业务服务器。保留原页面布局和交互；当前免费签名 Release 版已由用户完成真机功能验收，量化性能与覆盖升级的专项结论、签名交付范围见[开发计划](agent-works/offline-ios-app/plan.md#t17签名安装升级与最终交付)。
+仅供 iPhone 安装的离线账单 App，使用 Vue 3 + Capacitor + 原生 SQLite。收支录入、字典、模板、草稿、调整、明细、报表及备份恢复均在本机运行，不需要账号、网站或业务服务器。保留原页面布局和交互；当前免费签名 Release 版已由用户完成真机功能验收，本次按免费功能版交付，付费签名、真机量化性能、有数据覆盖升级和独立新装转后续专项，具体结论见[开发计划](agent-works/offline-ios-app/plan.md#t17签名安装升级与最终交付)。
 
 ## 离线 iOS App 开发入口
 
@@ -45,7 +45,7 @@ iOS 集中复核可在同一受管会话选择 `ios-review`、`ios-interaction` 
 
 ## 签名安装与首次使用
 
-在 Mac 上安装匹配的 Xcode 和 iOS SDK 后，运行 `npm run ios:open`，也可直接打开 `app/ios/App/App.xcodeproj`。在 App → Signing & Capabilities 中选择自己的 Team，连接并解锁 iPhone、完成系统要求的信任与开发者模式，然后由 Xcode 构建安装。账号、密码和系统授权只在 Apple/Xcode 界面操作。免费签名用于开发验证，日常签名及最终交付按当前账号能力维护；`build:ios-app` 生成未签名产物，不能直接安装。
+在 Mac 上安装匹配的 Xcode 和 iOS SDK 后，运行 `npm run ios:open`，也可直接打开 `app/ios/App/App.xcodeproj`。在 App → Signing & Capabilities 中选择自己的 Team，连接并解锁 iPhone、完成系统要求的信任与开发者模式，然后由 Xcode 构建安装。账号、密码和系统授权只在 Apple/Xcode 界面操作。本次交付采用免费签名，付费日常签名转后续事项；`build:ios-app` 生成未签名产物，不能直接安装。
 
 本机签名候选及其安装包、校验值位于 `.local/ios/releases/`，与 Git 源码和原始备份分开保存，不上传凭据或设备描述文件。开发签名包只适用于描述文件覆盖的设备及有效期；重新构建后核对 Bundle ID 与 Team，优先覆盖安装保留容器。到期无法打开时，在 Mac/Xcode 完成有效签名后覆盖安装，不通过卸载解决；签名身份改变时先使用外部完整备份走迁移恢复。免费账号的有效期以实际 profile 为准，不能假定每次构建都会自动延长。
 
