@@ -40,7 +40,7 @@ export function capacityReport(receipt, observation, capture) {
   }
   if (!capture) return { ...result,status:'incomplete',missing:['page-e2e','coldStart','combined-memory'] }
   if (receipt.configuration !== 'Release' || receipt.debugger !== false || receipt.workingTree !== false || receipt.deviceModel !== 'iPhone 14 Pro Max' ||
-      receipt.iosVersion !== '27.0.1' || !deviceIdentifier(receipt.deviceId) || !receipt.teamId || !receipt.xcodeVersion ||
+      receipt.iosVersion !== '27.2.1' || !deviceIdentifier(receipt.deviceId) || !receipt.teamId || !receipt.xcodeVersion ||
       !receipt.sqliteVersion || !receipt.pluginVersion || !receipt.appVersion || !receipt.buildVersion ||
       capture.runId !== receipt.runId || capture.sourceHash !== receipt.sourceHash || capture.artifactHash !== receipt.artifactHash ||
       capture.fixtureVersion !== observation.fixture.version || capture.count !== observation.count ||
