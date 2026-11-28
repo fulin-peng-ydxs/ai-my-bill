@@ -32,13 +32,18 @@ function mandatoryRetired(selector) {
 }
 
 function selectors(node, before) {
+  // PostCSS can retain or normalise selector comments; neither form is a proven class token.
+  if (node.raws.selector || /\/\*|\*\//.test(node.selector)) throw new Error('Raw selectors need ordinary validation')
+  require('css-tree').parse(node.selector, { context: 'selectorList' })
   return node.selectors.flatMap(original => {
     let selector = original
     if (before) {
+      if (mandatoryRetired(selector) || /^\.status-badge\[data-status="(?:PENDING_FIRST_LOGIN|DELETION_PENDING)"\]$/.test(selector)) return []
+      // The known guard rewrites apply to selectors, never quoted attribute values.
+      if (retiredText.test(selector) && /["']/.test(selector)) throw new Error('Quoted retired references need ordinary validation')
       selector = selector.replaceAll('.app-shell:not(.admin-shell)', '.app-shell.app-shell')
         .replaceAll('.app-shell.keyboard-open:not(.admin-shell)', '.app-shell.keyboard-open.app-shell')
         .replaceAll(':is(.global-search, .admin-search, .date-time-control)', ':is(.global-search, .date-time-control)')
-      if (mandatoryRetired(selector) || /^\.status-badge\[data-status="(?:PENDING_FIRST_LOGIN|DELETION_PENDING)"\]$/.test(selector)) return []
     }
     // New dead rules and unsupported nested references are not a retirement-only change.
     if (retiredText.test(selector)) throw new Error('Unsupported retired selector')
@@ -50,7 +55,13 @@ function projection(css, before) {
   const root = require('postcss').parse(css)
   const nodes = parent => parent.nodes.flatMap(node => {
     if (node.type === 'comment') return []
-    if (node.type === 'decl') return [['declaration', node.prop, node.value, Boolean(node.important)]]
+    if (node.type === 'decl') {
+      const { before: spacing = '', between = ':', ...raw } = node.raws
+      // Only ordinary indentation/colon spacing is irrelevant. Hacks and unknown separators fail closed;
+      // remaining raw value/important spellings stay bound instead of disappearing in parsed values.
+      if (!/^\s*$/.test(spacing) || !/^\s*:\s*$/.test(between)) throw new Error('Raw declarations need ordinary validation')
+      return [['declaration', node.prop, node.value, Boolean(node.important), raw]]
+    }
     if (node.type === 'rule') {
       const arms = selectors(node, before)
       // Nested at-rules can register cascade layers even when the outer selector never matches.
