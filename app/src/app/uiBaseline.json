@@ -37,8 +37,13 @@
   },
   "styleAdaptations": {
     "tokens.css": {
-      "sha256": "228eb19e4f4abf87c369ff36288bb540293da63ceca20fd4c9434989baf23b7a",
-      "reason": "T14：键盘避让覆盖横屏；仅低高度记一笔编辑时暂隐页头，短屏候选工具条随列表滚动。其他布局与原规则仍须反向匹配原摘要。"
+      "sha256": "fe3b7a983dc732f70a8e0ab35b4497c07f8511d717ac1ee0929de9a4503349d5",
+      "reason": "T14 键盘适配及 T16 授权退役：仅移除无消费者的旧身份/管理/PWA 选择器，保留有效声明、媒体条件、顺序和外壳选择器优先级。styles 原摘要保留历史来源；清理后的完整布局与键盘反向重建摘要继续阻止其他变化。",
+      "retiredStyleBaseSha256": "95d2a770e61d5bac0c542c30456d551c6a8ada18a00714f2fbd1c83c6ff91dcf"
+    },
+    "focus.css": {
+      "sha256": "13d2d666b26033b449feba0fee5ed6a66e57a3041949150b0cddbe89b3bcace1",
+      "reason": "T16：仅移除无消费者的管理员搜索与旧表格滚动分支；保留全局搜索、日期控件和页面滚动的焦点声明及优先级。styles 原摘要保留历史来源。"
     }
   }
 }

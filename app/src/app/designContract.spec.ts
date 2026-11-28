@@ -2,6 +2,7 @@ import { readFileSync, readdirSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { createHash } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
+import { compileStyle } from '@vue/compiler-sfc'
 import { pageRegistry } from './pageRegistry'
 import { assertComponentRegistration, assertNoPrivateColors, assertPageRegistration } from './designPolicy'
 import { routes } from '../router'
@@ -29,6 +30,7 @@ function assertOriginalTemplate(name: string, template: string, originalHash: st
 }
 
 function assertOriginalStyle(name: string, style: string, originalHash: string): void {
+  if (name === 'focus.css') { expect(digest(style)).toBe(baseline.styleAdaptations['focus.css'].sha256); return }
   if (name !== 'tokens.css') { expect(digest(style), name).toBe(originalHash); return }
   expect(digest(style)).toBe(baseline.styleAdaptations['tokens.css'].sha256)
   const marker = '\n/* iOS keyboard adaptation: apply the existing keyboard rules in landscape too. */\n'
@@ -38,7 +40,18 @@ function assertOriginalStyle(name: string, style: string, originalHash: string):
   expect(parts[1]!.endsWith(lowHeight)).toBe(true)
   const rules = parts[1]!.slice(0,-lowHeight.length).trimEnd().split('\n').map(line => '  '+line).join('\n')
   const original = parts[0]!.replace('\n\n}\n\n/* 小图标识别任务', rules+'\n\n}\n\n/* 小图标识别任务')
-  expect(digest(original), '原键盘规则与完整布局基线').toBe(originalHash)
+  // styles 保留迁移源的原始摘要；授权退役后的基线仅删除无消费者规则。
+  expect(digest(original), '退役后键盘规则与完整布局基线').toBe(baseline.styleAdaptations['tokens.css'].retiredStyleBaseSha256)
+}
+
+function assertNoRetiredSelectors(style: string): void {
+  const parsed = compileStyle({ source: style, filename: 'tokens.css', id: 'offline-styles' })
+  if (parsed.errors.length) throw new Error('全局样式不能解析')
+  parsed.rawResult?.root?.walkRules(rule => {
+    if (/\.(?:(?:auth|admin|audit)-[\w-]+|temporary-credential|user-detail-list|password-change-form|install-prompt|inline-help|app-data-table|data-table-scroll)\b|PENDING_FIRST_LOGIN|DELETION_PENDING/.test(rule.selector)) {
+      throw new Error('旧身份、管理或网页安装选择器未退役')
+    }
+  })
 }
 
 describe('沿用原界面的 iPhone 设计契约', () => {
@@ -53,6 +66,20 @@ describe('沿用原界面的 iPhone 设计契约', () => {
    const style = read('styles/tokens.css')
    expect(() => assertOriginalStyle('tokens.css',style.replace('display: none;', 'display: block;'),baseline.styles['tokens.css'])).toThrow()
    expect(() => assertOriginalStyle('tokens.css',style.replace('position: static;', 'position: fixed;'),baseline.styles['tokens.css'])).toThrow()
+ })
+ it('退役只移除旧页面规则，禁止身份和网页安装样式复活', () => {
+   const style = read('styles/tokens.css')
+   expect(() => assertNoRetiredSelectors(style)).not.toThrow()
+   expect(() => assertNoRetiredSelectors(read('styles/focus.css'))).not.toThrow()
+   for (const selector of ['.auth-card', '.admin-sidebar', '.audit-change-list', '.password-change-form', '.install-prompt', '.status-badge[data-status="PENDING_FIRST_LOGIN"]']) {
+     expect(() => assertNoRetiredSelectors(`${style}\n${selector} { display: block; }`)).toThrow('未退役')
+   }
+   expect(style).toContain('.app-shell.app-shell {')
+   expect(style).toContain('.app-shell.keyboard-open.app-shell {')
+   expect(read('composables/useKeyboardViewport.ts')).not.toContain('admin-shell')
+   expect(() => assertOriginalStyle('tokens.css', style.replace('--font-data:', '--changed-font:'), baseline.styles['tokens.css'])).toThrow()
+   const focus = read('styles/focus.css')
+   expect(() => assertOriginalStyle('focus.css', focus.replace('.global-search', '.wrong-search'), baseline.styles['focus.css'])).toThrow()
  })
  it('已登记输入适配不豁免搜索框布局或其他行为变化', () => {
    const file = read('components/GlobalLedgerSearch.vue')

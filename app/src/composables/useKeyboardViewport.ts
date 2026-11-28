@@ -34,7 +34,7 @@ function update(): void {
     && layoutHeight - viewport.height > 150)
   if (keyboardOpen.value) cancelRecovery()
   if (wasOpen && !keyboardOpen.value) {
-    const shell = globalThis.document.querySelector<globalThis.HTMLElement>('.app-shell:not(.admin-shell)')
+    const shell = globalThis.document.querySelector<globalThis.HTMLElement>('.app-shell')
     if (shell) {
       // Safari 的完成动作可能仍保留输入焦点与内部平移；结束本次输入才能真正恢复页面。
       if (editing && active && shell.contains(active)) {

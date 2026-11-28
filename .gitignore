@@ -24,7 +24,7 @@ data/exports/
 # 本地浏览器登录态凭证，不入库不入 git
 data/ths_cookie.txt
 
-# 前端
+# App 依赖与产物；同时保留旧端缓存的忽略保护
 frontend/node_modules/
 frontend/dist/
 frontend/.vite/
@@ -45,13 +45,13 @@ app/ios/App/App/capacitor.config.json
 app/ios/App/CapApp-SPM/
 app/ios/**/xcuserdata/
 app/ios/**/*.xcuserstate
-# 根目录孤立 node_modules（在错误 cwd 下跑前端命令产生的缓存残留，正常前端依赖在 frontend/ 下）
+# 根目录依赖残留；当前 App 依赖位于 app/node_modules
 /node_modules/
 
 # OS
 .DS_Store
 
-# 密钥（如 JWT secret、Tushare token 等，禁止入库）
+# 私密环境与密钥配置，包括旧端保留资料，禁止入库
 .env
 .env.local
 .env.*.local
@@ -59,7 +59,7 @@ app/ios/**/*.xcuserstate
 !.env.local.example
 config/secrets.yaml
 
-# 后端运行时日志与 PID（start.sh 产物）
+# 本地资料、历史日志和构建残留；源码退役不取消忽略保护
 logs/
 .local/
 server/target/
