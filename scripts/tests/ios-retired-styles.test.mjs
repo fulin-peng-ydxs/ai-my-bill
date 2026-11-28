@@ -50,6 +50,7 @@ for (const [name, mutate] of [
   ['优先级', f => { f.changes.get(css).after = after.replace('.app-shell.app-shell', '.app-shell') }],
   ['新增旧规则', f => { f.changes.get(css).after += '.admin-new{color:red}' }],
   ['嵌套非必需分支', f => { f.changes.get(css).before += ':is(.active,.admin-new){color:red}' }],
+  ['嵌套层注册', f => { f.changes.get(css).before += '.admin-page{@layer later{.active{color:red}}}' }],
   ['活跃消费者', f => f.write('app/src/App.vue', '<template><main class="admin-page" /></template>')],
   ['原基线变化', f => { f.changes.get(baseline).after = '{"styles":{}}' }],
   ['键盘行为变化', f => { f.changes.get(keyboard).after += ';update()' }],

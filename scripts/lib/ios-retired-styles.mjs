@@ -53,6 +53,9 @@ function projection(css, before) {
     if (node.type === 'decl') return [['declaration', node.prop, node.value, Boolean(node.important)]]
     if (node.type === 'rule') {
       const arms = selectors(node, before)
+      // Nested at-rules can register cascade layers even when the outer selector never matches.
+      if (!arms.length && node.nodes.some(child => !['decl', 'comment'].includes(child.type)))
+        throw new Error('Nested retired rules need ordinary validation')
       return arms.length ? [['rule', arms, nodes(node)]] : []
     }
     if (node.type === 'atrule') {
