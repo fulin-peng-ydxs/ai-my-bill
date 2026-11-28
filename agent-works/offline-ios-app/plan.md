@@ -1815,6 +1815,8 @@ T6 阶段工程结果见 [common](../../.local/ios/tmp/ai-agent/native-FyF9lp/)�
 | V16-T2 | 核对 Git 差异、忽略规则、.local/web 与 server/.local/web 的保留、签名/敏感路径及新 CI 集合 | 只退役授权的受控材料，不删除私密资料或外部实例；原指引字节不变，原业务保持项均有新测试承接 | 通过：受控删除与忽略边界检查、原指引摘要及归档差异核对完成；[保留检查](../../.local/ios/tmp/ai-agent/t16-retirement/preservation-result.json)核对 1847 项旧私密资料，原指引与归档未改；[类型迁移比较](../../.local/ios/tmp/ai-agent/t16-retirement/runtime-equivalence.json)证明 13 个消费者的运行代码保持，页面模板/样式基线未改。旧端服务未启动，未操作 stock |
 | V16-T3 | PR 自动常规 CI 及可信本地回执双门禁，核对源 SHA、实际执行与模拟器边界 | 当前提交的 CI common result 与 Local evidence result 均成功后才能合并；远端不启动模拟器 | 本地局部通过；[PR #7](https://github.com/fulin-peng-ydxs/ai-my-bill/pull/7)的匹配提交、双门禁终态与合并记录为集成事实源，不以本地结果代替远端通过。[初次计划失效](https://github.com/fulin-peng-ydxs/ai-my-bill/actions/runs/46059839191)及[后续常规失败](https://github.com/fulin-peng-ydxs/ai-my-bill/actions/runs/46061382731)保留：已统一规划/执行/汇总的锁定解析器准备，审计仍不安装依赖；容量工具回归补齐平台替身及 finally 恢复，不跳过 Linux；十万条夹具组成单测采用有界页缓存，保留 SQL、数据、约束和原 30 秒预算。5 项计划回归、平台切换下的 2 项归档正反例及 3 项容量夹具单测通过；未改生产执行器、共享夹具或固定摘要，不启动模拟器或重复完整验收。 |
 
+| V16-T4 | 补充退役清理的差异选测与最小交互；PR 双门禁 | 无消费者旧样式删除不扩大到无关原生/页面；有效声明或运行变化保守回退，键盘改动保留三例；原报告、固定摘要、失败锁不变 | [172 项工具回归](../../.local/ios/tmp/ai-agent/t16-retirement-cleanup-fzazv47h/scope-regression.log)通过，含 14 项新增分流回归；真实清理差异仅需 ui-ios-interaction。[本次三例及回读](../../.local/ios/tmp/ai-agent/ios-ci-t16-retirement-cleanup-interaction-20261128/ci-result.json)通过，约 207 秒，原预算保持。PR #8 首轮工具测试全部通过但最终摘要校验拒绝：生产 Python 导入生成字节码；仅修正测试禁写和无缓存断言，原失败报告保留。策略与后续清理 PR 双门禁尚待通过。 |
+
 #### 业务验证点（真实系统交互）
 
 | 检查点 / 关联差异 | 角色、操作路径与输入 | 逐步预期与最终业务结果 | AI验证结果 / 证据 / 后续处理 |
