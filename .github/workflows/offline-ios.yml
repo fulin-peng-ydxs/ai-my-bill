@@ -189,6 +189,8 @@ jobs:
         with:
           node-version-file: .nvmrc
       # Read-only bootstrap/common consumer; protected status is separately published from trusted base code.
+      - name: Prepare locked read-only receipt parsers
+        run: node --input-type=module -e "import { prepareTrustedParser } from './scripts/lib/ios-measurement-scope.mjs'; prepareTrustedParser(process.cwd())"
       - env:
           IOS_LOCAL_EVIDENCE_SIGNERS: ${{ vars.IOS_LOCAL_EVIDENCE_SIGNERS }}
           IOS_EVIDENCE_HEAD: ${{ github.event.pull_request.head.sha }}

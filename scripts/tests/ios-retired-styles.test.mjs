@@ -87,3 +87,15 @@ test('无关文档/普通测试和选测消费者自身不启动模拟器，不�
   assert.deepEqual(requiredLocalFromPolicies(r, r, files, new Map(), repository), [])
   assert.equal(retiredStyleChanges(repository, ['README.md'], new Map()).size, 0)
 })
+
+test('PR只读回执与可信发布使用同一锁定解析器准备，先准备再选测，不启动设备', () => {
+  const workflow = fs.readFileSync(path.join(repository, '.github/workflows/offline-ios.yml'), 'utf8')
+  const job = workflow.slice(workflow.indexOf('\n  local_evidence:'), workflow.indexOf('\n  result:'))
+  const setup = job.indexOf('prepareTrustedParser(process.cwd())')
+  assert.ok(setup > job.indexOf('actions/setup-node@v4'))
+  assert.ok(setup < job.indexOf('run: node scripts/ios-evidence.mjs'))
+  assert.doesNotMatch(job, /IOS_EVIDENCE_PUBLISH|simctl|xcodebuild/)
+  const metadata = fs.readFileSync(path.join(repository, 'scripts/ios-evidence.mjs'), 'utf8')
+  const trustedSetup = metadata.indexOf('if (publish) prepareTrustedParser(root)')
+  assert.ok(trustedSetup >= 0 && trustedSetup < metadata.indexOf('const required = requiredLocalSuites'))
+})
