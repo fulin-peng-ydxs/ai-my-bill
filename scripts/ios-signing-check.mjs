@@ -26,7 +26,15 @@ try {
   await runCommand(process.cwd(),'security',['cms','-D','-i',path.join(app,'embedded.mobileprovision')],path.join(directory,'profile.plist'),30000)
   await runCommand(process.cwd(),'codesign',['-d','--entitlements',':-',app],path.join(directory,'entitlements.plist'),30000)
   const certificates = path.join(directory,'signer-')
-  await runCommand(process.cwd(),'codesign',['-d','--extract-certificates',certificates,app],path.join(directory,'certificates.log'),30000)
+  const certificateLog = path.join(directory,'certificates.log')
+  try {
+    // codesign 的可选前缀必须与选项通过 = 连接，否则会被当作另一个待验签路径。
+    await runCommand(process.cwd(),'codesign',['-d','--extract-certificates='+certificates,app],certificateLog,30000)
+  } catch (error) {
+    // 清理临时授权文件前保留工具诊断；不把 profile/entitlement 内容写入异常。
+    const diagnostic = fs.existsSync(certificateLog) ? fs.readFileSync(certificateLog,'utf8').slice(-4096) : ''
+    throw new Error('签名证书提取失败：'+diagnostic,{cause:error})
+  }
   const summary = JSON.parse(execFileSync('python3',['-c',
     // 工具诊断与 plist 共用日志；只解析完整 plist 区间，不把诊断当授权字段。
     `import plistlib, json, sys, hashlib
