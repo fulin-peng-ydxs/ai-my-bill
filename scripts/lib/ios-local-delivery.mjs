@@ -116,7 +116,7 @@ export function requiredLocalSuites(root, base, head) {
   const files = git(root, 'diff', '--no-renames', '--name-only', '-z', mergeBase, head, '--').split('\0').filter(Boolean)
   const baseRegistry = JSON.parse(git(root, 'show', base + ':config/ios-ci.json'))
   const headRegistry = JSON.parse(git(root, 'show', head + ':config/ios-ci.json'))
-  return requiredLocalFromPolicies(baseRegistry, headRegistry, files, changeContents(root, files, mergeBase, head))
+  return requiredLocalFromPolicies(baseRegistry, headRegistry, files, changeContents(root, files, mergeBase, head), root)
 }
 
 export function verifyEnvelope(envelope, { repository, head, base, tree, required, signers, previousNotesSha, now = Date.now() }) {

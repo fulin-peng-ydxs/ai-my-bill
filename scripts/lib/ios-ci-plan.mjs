@@ -9,6 +9,7 @@ import { assertNpmSources } from './ios-ci.mjs'
 import { measurementInputs } from './ios-evidence-inputs.mjs'
 import { relevantChange, suiteMeasurement } from './ios-measurement-scope.mjs'
 import { equivalentSuiteInputs } from './ios-equivalent-evidence.mjs'
+import { retiredStyleChanges } from './ios-retired-styles.mjs'
 
 export const digest = (value) =>
   createHash('sha256')
@@ -204,10 +205,11 @@ export function sourceIdentity(root) {
 }
 
 /** 选中的专项可有多条理由；完整 touch 覆盖局部 UI，但局部不会反向替代完整。 */
-export function selectSuites(r, profile, files = [], {execution, changes}={}) {
+export function selectSuites(r, profile, files = [], {execution, changes, root}={}) {
   if (!['change', 'pull-request', ...Object.keys(r.profiles), ...Object.keys(r.suites)].includes(profile))
     throw new Error('未知 CI 范围。')
   const change = ['change', 'pull-request'].includes(profile)
+  const retired = change ? retiredStyleChanges(root, files, changes) : new Set()
   const chosen = new Set(change ? r.changeBase : (r.profiles[profile] ?? [profile]))
   const reasons = Object.fromEntries([...chosen].map((n) => [n, [profile]]))
   if (change)
@@ -219,7 +221,7 @@ export function selectSuites(r, profile, files = [], {execution, changes}={}) {
       )
       if (hits.length)
         for (const name of rule.suites) {
-          const relevant = remoteSuite(r.suites[name]) ? hits : hits.filter(file => relevantChange(r.suites[name], file, changes))
+          const relevant = remoteSuite(r.suites[name]) ? hits : hits.filter(file => !retired.has(file) && relevantChange(r.suites[name], file, changes))
           if (!relevant.length) continue
           chosen.add(name)
           reasons[name] = [...new Set([...(reasons[name] ?? []), ...relevant])]
@@ -232,7 +234,7 @@ export function selectSuites(r, profile, files = [], {execution, changes}={}) {
         rule.paths.some(pattern=>path.matchesGlob(file,pattern)) && !(rule.exclude ?? []).some(pattern=>path.matchesGlob(file,pattern)))
       if (!known && fallback.paths.some(pattern=>path.matchesGlob(file,pattern)) && !(fallback.exclude ?? []).some(pattern=>path.matchesGlob(file,pattern)))
         for (const name of fallback.suites) {
-          if (!remoteSuite(r.suites[name]) && !relevantChange(r.suites[name], file, changes)) continue
+          if (!remoteSuite(r.suites[name]) && (retired.has(file) || !relevantChange(r.suites[name], file, changes))) continue
           chosen.add(name);reasons[name]=[...(reasons[name] ?? []),'unknown:'+file]
         }
     }
@@ -248,10 +250,10 @@ export function selectSuites(r, profile, files = [], {execution, changes}={}) {
 }
 
 /** Keep both policy requirements during a PR; an unmerged registry cannot waive its base's local checks. */
-export function requiredLocalFromPolicies(baseRegistry, headRegistry, files, changes) {
+export function requiredLocalFromPolicies(baseRegistry, headRegistry, files, changes, root) {
   const selected = new Map()
   for (const r of [baseRegistry, headRegistry]) {
-    for (const suite of selectSuites(r, 'change', files, { execution: 'local', changes }).filter(s => !remoteSuite(s))) {
+    for (const suite of selectSuites(r, 'change', files, { execution: 'local', changes, root }).filter(s => !remoteSuite(s))) {
       const { reasons, ...definition } = suite
       const prior = selected.get(suite.name)
       if (prior) {
@@ -270,7 +272,7 @@ export function changeContents(root, files, base, head) {
     try { return git(root, 'show', revision + ':' + file).toString() }
     catch { return null }
   }
-  return new Map(files.filter(file => file.endsWith('.ts') || file === 'app/ios/App/UITests/DictionaryTouchTests.swift')
+  return new Map(files.filter(file => /\.(?:ts|css|json)$/.test(file) || file === 'app/ios/App/UITests/DictionaryTouchTests.swift')
     .map(file => {
       const absolute = path.join(root, file)
       const after = head ? read(head, file) : fs.existsSync(absolute) && fs.lstatSync(absolute).isFile() &&
@@ -298,13 +300,13 @@ export function createPlan(root, profile, { base, head, execution=profile==='pul
     }
   }
   const changes = range ? changeContents(root, files, range.mergeBase ?? base) : undefined
-  const suites = selectSuites(r, profile, files,{execution, changes})
+  const suites = selectSuites(r, profile, files,{execution, changes, root})
   const changing=['change','pull-request'].includes(profile)
   const localRequired=changing && execution==='remote'
     ? profile === 'pull-request'
-      ? requiredLocalFromPolicies(JSON.parse(git(root, 'show', base + ':' + registryPath)), r, files, changes)
-      : selectSuites(r,'change',files,{execution:'local',changes}).filter(s=>!remoteSuite(s)) : []
-  const deferred=changing ? selectSuites(r,'change',files,{changes}).filter(s=>!suites.some(x=>x.name===s.name)) : []
+      ? requiredLocalFromPolicies(JSON.parse(git(root, 'show', base + ':' + registryPath)), r, files, changes, root)
+      : selectSuites(r,'change',files,{execution:'local',changes,root}).filter(s=>!remoteSuite(s)) : []
+  const deferred=changing ? selectSuites(r,'change',files,{changes,root}).filter(s=>!suites.some(x=>x.name===s.name)) : []
   const plan = {
     schema: 1,
     profile,
